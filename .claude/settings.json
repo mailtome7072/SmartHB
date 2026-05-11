@@ -2,13 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(git *)",
-      "Bash(pytest *)",
       "Bash(pnpm *)",
-      "Bash(docker *)",
+      "Bash(cargo *)",
+      "Bash(rustup *)",
+      "Bash(sqlx *)",
       "Bash(curl *)",
-      "Bash(source .venv/bin/activate)",
       "Bash(gh *)",
-      "Bash(ssh -i *)"
+      "Bash(jq *)"
     ]
   },
   "hooks": {

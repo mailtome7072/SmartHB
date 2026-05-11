@@ -16,39 +16,51 @@ FAIL=0
 
 echo "🔍 [pre-commit] Harness Hook Compliance 검사 시작..."
 
-# ── Python syntax 검사 ────────────────────────────────────────────────────
-# staged Python 파일에 대해 syntax 검사 수행
-PY_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.py$' || true)
+# ── Rust fmt/clippy 검사 ──────────────────────────────────────────────────
+# staged Rust 파일이 있고 src-tauri/ 디렉토리가 존재하는 경우만 실행
+RS_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.rs$' || true)
 
-if [ -n "$PY_FILES" ]; then
+if [ -n "$RS_FILES" ] && [ -d "src-tauri" ] && [ -f "src-tauri/Cargo.toml" ]; then
   echo ""
-  echo "  🐍 Python syntax 검사..."
-  while IFS= read -r f; do
-    if [ -f "$f" ]; then
-      RESULT=$(python3 -m py_compile "$f" 2>&1)
-      if [ $? -ne 0 ]; then
-        echo "  ❌ syntax 오류: $f"
-        echo "$RESULT" | sed 's/^/     /'
-        FAIL=1
-      else
-        echo "  ✅ $f"
-      fi
+  echo "  🦀 Rust fmt 검사..."
+  if command -v cargo &>/dev/null; then
+    FMT_OUTPUT=$(cargo fmt --manifest-path src-tauri/Cargo.toml -- --check 2>&1)
+    FMT_EXIT=$?
+    if [ $FMT_EXIT -ne 0 ]; then
+      echo "  ❌ fmt 오류: 포맷이 일치하지 않습니다"
+      echo "$FMT_OUTPUT" | sed 's/^/     /'
+      echo "     → cargo fmt --manifest-path src-tauri/Cargo.toml 실행 후 재커밋하세요."
+      FAIL=1
+    else
+      echo "  ✅ cargo fmt 통과"
     fi
-  done <<< "$PY_FILES"
+
+    echo ""
+    echo "  🦀 Rust clippy 검사..."
+    CLIPPY_OUTPUT=$(cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings 2>&1)
+    CLIPPY_EXIT=$?
+    if [ $CLIPPY_EXIT -ne 0 ]; then
+      echo "  ❌ clippy 경고/오류 발견"
+      echo "$CLIPPY_OUTPUT" | tail -20 | sed 's/^/     /'
+      FAIL=1
+    else
+      echo "  ✅ cargo clippy 통과"
+    fi
+  else
+    echo "  ⚠️  cargo 없음 — Rust 검사 건너뜁니다."
+  fi
 fi
 
 # ── 프론트엔드 lint 검사 ──────────────────────────────────────────────────
-# staged TS/TSX 파일이 있고 app/frontend 디렉토리가 존재하는 경우만 실행
-FE_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E '^app/frontend/.*\.(ts|tsx|js|jsx)$' || true)
+# staged TS/TSX 파일이 있고 루트 package.json이 존재하는 경우만 실행
+FE_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E '^src/.*\.(ts|tsx|js|jsx)$' || true)
 
-if [ -n "$FE_FILES" ] && [ -d "app/frontend" ] && [ -f "app/frontend/package.json" ]; then
+if [ -n "$FE_FILES" ] && [ -f "package.json" ]; then
   echo ""
   echo "  🎨 프론트엔드 lint 검사..."
   if command -v pnpm &>/dev/null; then
-    cd app/frontend
     LINT_OUTPUT=$(pnpm lint --max-warnings 0 2>&1)
     LINT_EXIT=$?
-    cd - > /dev/null
     if [ $LINT_EXIT -ne 0 ]; then
       echo "  ❌ lint 오류 발견"
       echo "$LINT_OUTPUT" | tail -20 | sed 's/^/     /'
@@ -63,7 +75,7 @@ fi
 
 # ── 시크릿 패턴 검사 ─────────────────────────────────────────────────────
 # staged 파일에서 하드코딩된 시크릿 패턴 감지 (경고, 차단하지 않음)
-SECRET_MATCH=$(git diff --cached -- '*.py' '*.ts' '*.tsx' '*.js' 2>/dev/null | \
+SECRET_MATCH=$(git diff --cached -- '*.rs' '*.ts' '*.tsx' '*.js' 2>/dev/null | \
   grep -E '^\+.*(password|secret|api_key|apikey|token|private_key)\s*=\s*["'"'"'][^${\s]{6,}["'"'"']' | \
   grep -v '\.example' | head -3 || true)
 

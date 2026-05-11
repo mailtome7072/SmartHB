@@ -10,39 +10,17 @@
 *.env
 
 # ===================================
-# Python
+# Rust / Cargo
 # ===================================
-.venv/
-venv/
-env/
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-*.cover
+target/
+# Cargo.lock은 바이너리 크레이트(Tauri)이므로 커밋 대상 — 이 파일에서 제외하지 않음
+
+# ===================================
+# Tauri
+# ===================================
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/gen/
 
 # ===================================
 # Node.js / Next.js
@@ -63,10 +41,9 @@ yarn-error.log*
 .yarn/install-state.gz
 
 # ===================================
-# Docker
+# SQLite (개발 DB — 커밋 금지, migrations/*.sql은 커밋 대상)
 # ===================================
-docker-compose.override.yml
-.docker/
+# *.db, *.sqlite, *.sqlite3 은 아래 데이터베이스 섹션에서 이미 처리됨
 
 # ===================================
 # IDE / 에디터

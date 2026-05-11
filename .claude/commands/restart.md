@@ -1,49 +1,31 @@
-Docker Compose로 실행 중인 서비스를 재시작한다.
+Tauri 개발 서버를 재시작한다.
 
 ## 사용 방법
 
-`$ARGUMENTS`를 기준으로 재시작할 서비스를 결정한다:
+`$ARGUMENTS`를 기준으로 재시작할 대상을 결정한다:
 
-- 인수 없음 또는 `all`: 전체 스택 재시작 (`backend`, `frontend`)
-- `backend`: 백엔드만 재시작
-- `frontend`: 프론트엔드만 재시작
-- `db`: postgres + redis 재시작
-- 그 외 서비스명: 해당 서비스만 재시작
+- 인수 없음 또는 `all`: Tauri + Next.js dev server 전체 재시작
+- `frontend`: Next.js dev server만 재시작 (브라우저 테스트용)
+- `tauri`: Tauri 앱만 재기동
 
 ## 실행 절차
 
-1. 아래 로직에 따라 Bash로 docker compose 명령을 실행한다.
+1. 현재 실행 중인 개발 서버를 종료한다 (사용자가 직접 터미널에서 Ctrl+C).
 
-### 인수별 실행 명령
+2. 아래 명령으로 재시작한다:
 
-**인수 없음 또는 `all`:**
+**전체 재시작 (Tauri + Next.js):**
 ```bash
-docker compose restart backend frontend
+pnpm tauri dev
 ```
 
-**`backend`:**
+**프론트엔드만 (브라우저 테스트):**
 ```bash
-docker compose restart backend
+pnpm dev
 ```
 
-**`frontend`:**
-```bash
-docker compose restart frontend
-```
+3. 정상 기동 확인:
+- `pnpm tauri dev`: 데스크톱 앱 창이 열리면 정상
+- `pnpm dev`: `http://localhost:3000` 응답 확인
 
-**`db`:**
-```bash
-docker compose restart postgres redis
-```
-
-**그 외 서비스명 (예: `redis`):**
-```bash
-docker compose restart <서비스명>
-```
-
-2. 재시작 후 컨테이너 상태를 확인한다:
-```bash
-docker compose ps
-```
-
-3. 결과를 사용자에게 간결하게 보고한다.
+4. 결과를 사용자에게 간결하게 보고한다.

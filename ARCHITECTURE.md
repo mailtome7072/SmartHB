@@ -12,11 +12,11 @@
 
 | 변수 | 값 | 설명 |
 |------|----|------|
-| `project_name` | (여기에 입력) | 프로젝트 이름 (예: MyApp) |
-| `project_description` | (여기에 입력) | 프로젝트 한 줄 설명 |
-| `github_org` | (여기에 입력) | GitHub 조직 또는 계정명 (예: myorg) |
-| `github_repo` | (여기에 입력) | GitHub 저장소명 (예: myapp) |
-| `decision_date` | (여기에 입력) | PRD 작성 결정일 (예: 2026-03-24) |
+| `project_name` | SmartHB | 프로젝트 이름 (예: MyApp) |
+| `project_description` | 정쌤의 스마트해법수학 | 프로젝트 한 줄 설명 |
+| `github_org` | mailtome7072 | GitHub 조직 또는 계정명 (예: myorg) |
+| `github_repo` | SmartHB | GitHub 저장소명 (예: myapp) |
+| `decision_date` | 2026-05-11 | PRD 작성 결정일 (예: 2026-03-24) |
 
 ### 자동 조합 변수 (직접 입력 불필요)
 
@@ -43,9 +43,21 @@
 
 ```
 project-root/
-├── app/
-│   ├── backend/         # FastAPI (Python) — app/backend/requirements.txt, app/backend/tests/
-│   └── frontend/        # React (pnpm) — package.json은 루트 또는 app/frontend/에 위치
+├── src/                 # Next.js 15 소스 (App Router)
+│   ├── app/             #   — Next.js App Router (layout.tsx, page.tsx, ...)
+│   ├── components/      #   — 공유 React 컴포넌트 (shadcn/ui)
+│   ├── lib/tauri/       #   — Tauri invoke() 추상화 레이어
+│   └── types/           #   — TypeScript 공유 타입
+├── src-tauri/           # Tauri 2 Rust 크레이트 (루트 직하 — Tauri 표준)
+│   ├── src/
+│   │   ├── main.rs      #   — 앱 진입점
+│   │   ├── lib.rs       #   — Builder + 커맨드 등록
+│   │   └── commands/    #   — IPC 커맨드 핸들러
+│   ├── migrations/      #   — SQLx 마이그레이션 (*.sql)
+│   ├── .sqlx/           #   — SQLx 오프라인 캐시 (커밋 대상)
+│   ├── Cargo.toml
+│   ├── tauri.conf.json
+│   └── capabilities/
 ├── .claude/
 │   ├── agents/          # Claude 에이전트 정의 (7개)
 │   │   └── agent-memory/    # 세션 간 공유 에이전트 메모리 (버전 관리됨)
@@ -54,7 +66,10 @@ project-root/
 │   └── skills/          # Claude 스킬 정의 (명시적 호출용 — karpathy-guidelines, writing-plans 등)
 ├── strategy/            # 전략 지침 (브랜치, 테스트, 배포, 코드리뷰 등)
 ├── docs/                # 산출물 저장 (sprint/, phase/, deploy-history/, test-reports/ 등)
-└── .github/workflows/   # ci.yml (PR 검증), deploy.yml (main → 프로덕션 배포)
+├── package.json         # Next.js 15 루트 패키지 (pnpm)
+├── next.config.ts       # output: 'export' (Tauri static export)
+├── tailwind.config.ts
+└── .github/workflows/   # ci.yml (PR 검증), deploy.yml (v* 태그 → GitHub Releases)
 ```
 
 **핵심 흐름**: `PRD.md` → `ROADMAP.md` → `sprint{n}` 브랜치 → `develop` PR → `main` 배포

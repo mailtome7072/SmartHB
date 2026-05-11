@@ -15,26 +15,16 @@ else
   log_event() { :; }
 fi
 
-# stdin에서 도구 입력 추출
+# stdin에서 도구 입력 추출 (jq 우선, fallback: grep/sed)
 INPUT=$(cat)
-TOOL_NAME=$(python3 -c "
-import sys, json
-try:
-    d = json.loads(sys.stdin.read())
-    print(d.get('tool_name', ''))
-except:
-    print('')
-" <<< "$INPUT" 2>/dev/null || echo "")
 
-FILE_PATH=$(python3 -c "
-import sys, json
-try:
-    d = json.loads(sys.stdin.read())
-    ti = d.get('tool_input', {})
-    print(ti.get('file_path', ''))
-except:
-    print('')
-" <<< "$INPUT" 2>/dev/null || echo "")
+if command -v jq &>/dev/null; then
+  TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null || echo "")
+  FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null || echo "")
+else
+  TOOL_NAME=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | sed 's/"tool_name":"//;s/"//' | head -1 || echo "")
+  FILE_PATH=$(echo "$INPUT" | grep -o '"file_path":"[^"]*"' | sed 's/"file_path":"//;s/"//' | head -1 || echo "")
+fi
 
 # 도구명 또는 파일 경로가 없으면 pass
 [ -n "$TOOL_NAME" ] || exit 0
@@ -46,7 +36,6 @@ if [[ "$TOOL_NAME" != "Edit" && "$TOOL_NAME" != "Write" ]]; then
 fi
 
 # ── 규칙 1: .env 파일 수정 차단 ──────────────────────────────────────────
-# .env, .env.local, .env.production 등 수정 시 차단
 if echo "$FILE_PATH" | grep -qE '(^|/)\.(env)(\.[a-zA-Z0-9.]+)?$'; then
   echo ""
   echo "🚫 [posttooluse-validator] .env 파일 수정이 차단됩니다."
@@ -62,7 +51,6 @@ if echo "$FILE_PATH" | grep -qE '(^|/)\.(env)(\.[a-zA-Z0-9.]+)?$'; then
 fi
 
 # ── 규칙 2: .claude/settings.json 수정 경고 ─────────────────────────────
-# settings.json 수정 시 경고 출력 (차단하지 않음 — 의도적 변경 허용)
 if echo "$FILE_PATH" | grep -qE '\.claude/settings(\.local)?\.json$'; then
   echo ""
   echo "⚠️  [posttooluse-validator] Claude 설정 파일이 수정되었습니다."
@@ -70,46 +58,46 @@ if echo "$FILE_PATH" | grep -qE '\.claude/settings(\.local)?\.json$'; then
   echo "  파일: $FILE_PATH"
   echo "  → Hook 또는 권한 변경이 적용됩니다. 의도한 변경인지 확인하세요."
   echo ""
-  # 차단하지 않음 (exit 0으로 계속)
   exit 0
 fi
 
 # ── 규칙 5: Forbidden Areas — 사용자 확인 후 허가 ───────────────────────
-# Harness Engineering 원칙 2: Forbidden Areas
-# 인프라·CI/CD·보안 핵심 파일은 사용자 명시적 허가 후에만 수정 가능
-#
-# [허가 흐름]
-#   1. Edit/Write 시도 → 이 훅이 차단 + 허가 명령 안내
-#   2. Claude가 사용자에게 허가 요청
-#   3. 사용자 승인 → Claude가 아래 명령 실행: touch {PERMIT_FLAG}
-#   4. Edit/Write 재시도 → 훅이 플래그 확인 후 허용 + 플래그 삭제 (1회용)
-
-# 허가 플래그 경로 계산 (파일 경로 기반 해시 → .claude/tmp/claude-permit-{hash})
+# 허가 플래그 경로 계산 (파일 경로 기반 MD5 해시)
 _permit_flag() {
-  python3 -c "
-import hashlib, sys
+  if command -v python3 &>/dev/null; then
+    python3 -c "
+import hashlib
 h = hashlib.md5('$FILE_PATH'.encode()).hexdigest()[:12]
 print('.claude/tmp/claude-permit-' + h)
 " 2>/dev/null
+  elif command -v md5sum &>/dev/null; then
+    local h
+    h=$(echo -n "$FILE_PATH" | md5sum | cut -c1-12)
+    echo ".claude/tmp/claude-permit-$h"
+  elif command -v powershell &>/dev/null; then
+    local h
+    h=$(powershell -NoProfile -Command "\$md5=[System.Security.Cryptography.MD5]::Create(); \$h=[System.BitConverter]::ToString(\$md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes('$FILE_PATH'))).Replace('-','').ToLower().Substring(0,12); Write-Output \$h" 2>/dev/null)
+    echo ".claude/tmp/claude-permit-$h"
+  else
+    echo ".claude/tmp/claude-permit-unknown"
+  fi
 }
 
-# 허가 플래그 존재 시 1회 허용 (플래그 즉시 삭제)
 _check_permit() {
   local flag
   flag=$(_permit_flag)
-  mkdir -p "$(dirname "$flag")"
+  mkdir -p "$(dirname "$flag")" 2>/dev/null || true
   if [ -f "$flag" ]; then
     rm -f "$flag"
     echo ""
     echo "✅ [posttooluse-validator] Forbidden Area 수정이 허가되었습니다 (1회 사용)."
     echo "  파일: $FILE_PATH"
     echo ""
-    return 0  # 허가됨
+    return 0
   fi
-  return 1  # 허가 없음
+  return 1
 }
 
-# 허가 요청 메시지 출력 공통 함수
 _deny_with_permit() {
   local reason="$1"
   local flag
@@ -144,32 +132,30 @@ fi
 # 5-C: Harness 정책 문서 (정책 임의 약화 방지)
 if echo "$FILE_PATH" | grep -qE 'docs/harness-engineering/'; then
   _check_permit && exit 0
-  _deny_with_permit "Harness Engineering 정책 변경은 팀 합의가 필요합니다. 정책 약화(guardrail 완화, 차단 조건 제거)는 특히 주의가 필요합니다."
+  _deny_with_permit "Harness Engineering 정책 변경은 팀 합의가 필요합니다."
 fi
 
-# 5-D: Docker/인프라 설정
-if echo "$FILE_PATH" | grep -qE '(^|/)(docker-compose[^/]*\.ya?ml|docker/[^/])'; then
+# 5-D: Tauri 앱 설정 (배포 번들에 직접 영향)
+if echo "$FILE_PATH" | grep -qE 'src-tauri/tauri\.conf\.json$'; then
   _check_permit && exit 0
-  _deny_with_permit "컨테이너 설정 변경은 스테이징·프로덕션 환경에 영향을 줍니다."
+  _deny_with_permit "tauri.conf.json은 앱 번들 ID, 권한, 배포 설정에 직접 영향을 줍니다."
 fi
 
-# ── 규칙 3: Python 파일 syntax 검증 ─────────────────────────────────────
-if echo "$FILE_PATH" | grep -qE '\.py$'; then
-  if [ -f "$FILE_PATH" ]; then
-    SYNTAX_OUTPUT=$(python3 -m py_compile "$FILE_PATH" 2>&1)
+# ── 규칙 3: Rust 파일 syntax 검증 ─────────────────────────────────────
+if echo "$FILE_PATH" | grep -qE '\.rs$'; then
+  if [ -f "src-tauri/Cargo.toml" ]; then
+    SYNTAX_OUTPUT=$(cargo check --manifest-path src-tauri/Cargo.toml 2>&1)
     SYNTAX_EXIT=$?
     if [ $SYNTAX_EXIT -ne 0 ]; then
       echo ""
-      echo "🚨 [posttooluse-validator] Python syntax 오류 감지!"
+      echo "🚨 [posttooluse-validator] Rust 컴파일 오류 감지!"
       echo ""
       echo "  파일: $FILE_PATH"
-      echo "  오류:"
-      echo "$SYNTAX_OUTPUT" | sed 's/^/    /'
+      echo "  오류 (최근 20줄):"
+      echo "$SYNTAX_OUTPUT" | tail -20 | sed 's/^/    /'
       echo ""
       echo "  → 즉시 수정이 필요합니다. 커밋 전 반드시 해결하세요."
       echo ""
-      # syntax 오류는 경고만 출력 (exit 1, non-blocking)
-      # 에이전트가 즉시 인지하고 수정할 수 있도록 함
       exit 1
     fi
   fi
@@ -190,23 +176,18 @@ if [ -f "$FILE_PATH" ]; then
     echo "$SECRET_MATCH" | sed 's/^/    /'
     echo ""
     echo "  → 실제 시크릿이라면 즉시 제거하고 환경변수로 교체하세요."
-    echo "  → 테스트용 더미 값이라면 무시해도 됩니다."
     echo ""
     log_event "code-validator" "WARN" "secret-pattern" "$FILE_PATH"
-    # 경고만 출력, 차단하지 않음
     exit 0
   fi
 fi
 
 # ── 규칙 6: Planning First — sprint 브랜치 scope.md 존재 확인 (비차단 경고) ──
-# sprint{N} 브랜치에서 코드 파일(.py, .ts, .tsx 등) 수정 시
-# docs/sprint/sprint{N}/scope.md 없으면 Planning First 원칙 경고 출력
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 SPRINT_N=$(echo "$BRANCH" | grep -oE '(sprint|Sprint)([0-9]+)' | grep -oE '[0-9]+' | head -1 2>/dev/null || echo "")
 
 if [ -n "$SPRINT_N" ]; then
   SCOPE_FILE="docs/sprint/sprint${SPRINT_N}/scope.md"
-  # .md 파일, docs/ 내 파일, .claude/ 내 파일 수정은 제외 (코드 파일만 검사)
   if ! echo "$FILE_PATH" | grep -qE '(\.md$|/docs/|\.claude/)'; then
     if [ ! -f "$SCOPE_FILE" ]; then
       echo ""
@@ -217,7 +198,6 @@ if [ -n "$SPRINT_N" ]; then
       echo "  → $SCOPE_FILE 을 먼저 작성하세요 (Harness 원칙 1)."
       echo ""
       log_event "code-validator" "WARN" "planning-first" "$FILE_PATH"
-      # 비차단 — 경고만 출력
     fi
   fi
 fi

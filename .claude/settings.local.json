@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(grep -rn '\\\\${github_org}\\\\|${github_repo}\\\\|${project_name}\\\\|${project_description}\\\\|${decision_date}' README.md CLAUDE.md PRD.md docs/ci-policy.md docker-compose.prod.yml)",
+      "Bash(dir C:\\\\Projects\\\\SmartHB *)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "notion"
+  ]
 }

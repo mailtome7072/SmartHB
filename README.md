@@ -1,5 +1,5 @@
-# ${project_name}
-${project_description}
+# SmartHB
+정쌤의 스마트해법수학
 
 ---
 

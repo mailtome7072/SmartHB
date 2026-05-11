@@ -2,8 +2,8 @@
 
 > **문서 메타데이터**
 > - 버전: v0.1.0
-> - 작성일: ${decision_date}
-> - 최종 수정: ${decision_date}
+> - 작성일: 2026-05-11
+> - 최종 수정: 2026-05-11
 > - 상태: Draft / In Review / Approved
 
 ---
