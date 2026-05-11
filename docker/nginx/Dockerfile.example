@@ -1,0 +1,63 @@
+# nginx 리버스 프록시 예시
+# 사용법: 이 파일을 docker/nginx/Dockerfile 로 복사한 후 프로젝트에 맞게 수정하세요.
+#
+# deploy.yml에서 참조하는 경로: docker/nginx/Dockerfile
+# build context: 프로젝트 루트 (.)
+#
+# 역할:
+#   - /api/* → 백엔드 (포트 8000)
+#   - /* → 프론트엔드 (포트 3000)
+
+FROM nginx:alpine
+
+# 기본 nginx 설정 제거
+RUN rm /etc/nginx/conf.d/default.conf
+
+# TODO: docker/nginx/nginx.conf 파일을 생성한 후 아래 COPY를 활성화하세요
+# COPY docker/nginx/nginx.conf /etc/nginx/conf.d/default.conf
+
+# 인라인 설정 예시 (nginx.conf 파일로 분리 권장)
+RUN cat > /etc/nginx/conf.d/default.conf <<'EOF'
+upstream backend {
+    server backend:8000;
+}
+
+upstream frontend {
+    server frontend:3000;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # 업로드 크기 제한 (필요에 따라 조정)
+    client_max_body_size 20M;
+
+    # 백엔드 API
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 프론트엔드
+    location / {
+        proxy_pass http://frontend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket 지원 (Next.js HMR 등)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,231 @@
+name: CI - PR 체크
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  test:
+    name: 백엔드 테스트
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app_user
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: app_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.12 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/backend/requirements.txt
+
+      - name: 의존성 설치
+        run: pip install -r app/backend/requirements.txt
+
+      - name: Python Lint (ruff)
+        run: |
+          PY_COUNT=$(find app/backend -name '*.py' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$PY_COUNT" -gt 0 ]; then
+            ruff check app/backend/
+          else
+            echo "Python 파일 없음 — ruff 건너뜁니다."
+          fi
+
+      - name: pytest 실행
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: app_test
+          POSTGRES_USER: app_user
+          POSTGRES_PASSWORD: testpassword
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_SECRET: test-jwt-secret-for-ci
+          SECRET_KEY: test-secret-key-for-ci
+          DEBUG: "false"
+        run: pytest app/backend/tests/ -v --tb=short
+
+  frontend:
+    name: 프론트엔드 테스트
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node.js 20 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: pnpm 설치
+        run: npm install -g pnpm
+
+      - name: 프론트엔드 디렉토리 존재 여부 확인
+        id: check-frontend
+        run: |
+          if [ -d "app/frontend" ] && [ -f "app/frontend/package.json" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⏭️  app/frontend/package.json 없음 — 프론트엔드 CI 건너뜁니다."
+          fi
+
+      - name: 의존성 설치
+        if: steps.check-frontend.outputs.exists == 'true'
+        run: pnpm install
+        working-directory: app/frontend
+
+      - name: 빌드
+        if: steps.check-frontend.outputs.exists == 'true'
+        run: pnpm build
+        working-directory: app/frontend
+
+      - name: 테스트
+        if: steps.check-frontend.outputs.exists == 'true'
+        run: pnpm test
+        working-directory: app/frontend
+
+      - name: 린트
+        if: steps.check-frontend.outputs.exists == 'true'
+        run: pnpm lint
+        working-directory: app/frontend
+
+  # ── Harness Engineering: 보안 스캔 ──────────────────────────────────────
+  # Harness Policy Enforcement 원칙 — 백엔드 정적 보안 분석
+  # app/backend/ 없으면 자동 건너뜀 (--exit-zero로 non-blocking, 첫 도입 단계)
+  security-scan:
+    name: 보안 스캔 (bandit + safety)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.12 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 백엔드 디렉토리 존재 여부 확인
+        id: check-backend
+        run: |
+          if [ -d "app/backend" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⏭️  app/backend 없음 — 보안 스캔 건너뜁니다."
+          fi
+
+      - name: bandit 설치 (정적 보안 분석)
+        if: steps.check-backend.outputs.exists == 'true'
+        run: pip install bandit safety
+
+      - name: bandit 실행 (High severity 리포트)
+        if: steps.check-backend.outputs.exists == 'true'
+        run: |
+          bandit -r app/backend/ -ll -f txt --exit-zero
+        # --exit-zero: 첫 도입 단계로 non-blocking. 팀 안정화 후 --exit-zero 제거하여 blocking 전환 권장
+
+      - name: requirements.txt 취약점 스캔
+        if: steps.check-backend.outputs.exists == 'true'
+        run: |
+          if [ -f "app/backend/requirements.txt" ]; then
+            safety check -r app/backend/requirements.txt --exit-zero
+          else
+            echo "requirements.txt 없음 — 건너뜁니다."
+          fi
+        # --exit-zero: 초기 단계 non-blocking. 이후 blocking 전환 권장
+
+  # ── Harness Engineering: Hotfix 범위 자동 검증 ──────────────────────────
+  # Harness Strict Guardrails 원칙 — hotfix/* 브랜치 PR 시에만 실행
+  # 파일 3개 초과 또는 코드 50줄 초과 시 CI 실패 → Sprint 프로세스 강제
+  validate-hotfix-scope:
+    name: Hotfix 범위 검증 (파일≤3, 코드≤50줄)
+    runs-on: ubuntu-latest
+    if: startsWith(github.head_ref, 'hotfix/')
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: main 브랜치 fetch
+        run: git fetch origin main
+
+      - name: Hotfix 범위 검증
+        run: |
+          FILES=$(git diff origin/main...HEAD --name-only | grep -v '^$' | wc -l | tr -d ' ')
+          LINES=$(git diff origin/main...HEAD | grep -E '^[+-][^+-]' | wc -l | tr -d ' ')
+
+          echo "── Hotfix 범위 검증 ──────────────────────────"
+          echo "변경 파일 수: ${FILES} (허용: ≤ 3)"
+          echo "변경 코드 줄 수: ${LINES} (허용: ≤ 50)"
+          echo "────────────────────────────────────────────"
+
+          FAIL=0
+          if [ "$FILES" -gt 3 ]; then
+            echo "❌ FAIL: 파일 ${FILES}개 > 3개"
+            echo "   → Sprint 프로세스를 사용하세요. docs/dev-process.md 섹션 2 참조"
+            FAIL=1
+          fi
+          if [ "$LINES" -gt 50 ]; then
+            echo "❌ FAIL: 코드 ${LINES}줄 > 50줄"
+            echo "   → Sprint 프로세스를 사용하세요. docs/dev-process.md 섹션 2 참조"
+            FAIL=1
+          fi
+
+          if [ "$FAIL" -eq 0 ]; then
+            echo "✅ Hotfix 범위 검증 통과"
+          fi
+
+          exit $FAIL
+
+  build:
+    name: Docker 빌드 확인
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # TODO: 프로젝트의 Dockerfile 경로에 맞게 빌드 스텝을 수정하세요
+      - name: 백엔드 이미지 빌드 테스트
+        run: docker build -f docker/backend/Dockerfile.prod --target runtime -t app-backend:test .
+
+      - name: 프론트엔드 이미지 빌드 테스트
+        run: docker build -f docker/frontend/Dockerfile.prod --target runtime -t app-frontend:test .
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+
+      - name: nginx 이미지 빌드 테스트
+        run: docker build -f docker/nginx/Dockerfile -t app-nginx:test .
