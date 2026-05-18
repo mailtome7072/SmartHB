@@ -1,4 +1,3 @@
 # PRD to ROADMAP 메모리
 
-이 파일은 prd-to-roadmap 에이전트의 영구 메모리입니다.
-PRD 분석 패턴, 로드맵 생성 이력 등을 기록합니다.
+- [PRD v1.5 ROADMAP 결정사항](prd-v1.5-roadmap-decisions.md) — Phase 분할 근거, 인프라 우선순위, PI 미결정 배치 (2026-05-18)
