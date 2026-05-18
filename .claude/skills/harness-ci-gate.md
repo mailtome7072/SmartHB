@@ -63,13 +63,13 @@ git diff develop...HEAD -- CHANGELOG.md | grep '^\+' | head -3
 - `✅ sprint-review` 존재 → ✅ 통과
 - `⬜ sprint-review` 또는 없음 → ❌ 차단: "sprint-review 에이전트를 먼저 실행하세요"
 
-#### 1.7 Self-verify (pytest) 완료 확인
-- `docs/sprint/sprint{n}/scope.md`에서 수정된 Python 파일 목록을 확인합니다.
+#### 1.7 Self-verify (cargo test) 완료 확인
+- `docs/sprint/sprint{n}/scope.md`에서 수정된 Rust/TypeScript 파일 목록을 확인합니다.
 - 해당 파일에 대한 Self-verify 실행 기록 여부를 확인합니다:
-  - scope.md `## 완료 기준` 중 pytest 관련 항목이 `✅` 상태인지 확인
-  - 또는 에이전트에게 "마지막으로 pytest를 실행한 시점과 결과"를 직접 확인
-- 백엔드 코드 변경이 없는 경우 해당 없음 (Python 파일 미수정 시 스킵)
-- 미확인 시: "Self-verify(pytest) 실행 기록이 없습니다. `pytest app/backend/tests/`를 실행하고 결과를 확인하세요." → **CONFIRM** 조건 (차단하지 않음)
+  - scope.md `## 완료 기준` 중 테스트 관련 항목이 `✅` 상태인지 확인
+  - 또는 에이전트에게 "마지막으로 cargo test를 실행한 시점과 결과"를 직접 확인
+- Rust 파일 변경이 없는 경우 해당 없음 (src-tauri/ 미수정 시 스킵)
+- 미확인 시: "Self-verify(cargo test) 실행 기록이 없습니다. `cargo test`를 실행하고 결과를 확인하세요." → **CONFIRM** 조건 (차단하지 않음)
 
 ---
 

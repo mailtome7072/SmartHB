@@ -52,6 +52,24 @@ else
   echo "✅ jq: $(jq --version)"
 fi
 
+# ── python3 설치 확인 (Claude Code hooks 의존성) ───────────────────────────
+echo ""
+echo "=== python3 확인 (Claude Code hooks 의존성) ==="
+
+if ! command -v python3 &> /dev/null; then
+  echo "⚠️  python3가 설치되어 있지 않습니다."
+  echo "   Claude Code의 일부 hooks(특히 posttooluse-scope-tracker)가 python3에 의존합니다."
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "   설치: xcode-select --install  또는  brew install python3"
+  else
+    echo "   Windows: winget install Python.Python.3  또는  https://python.org"
+    echo "   Linux:   sudo apt install python3"
+  fi
+  echo "   ⚠️  python3 없이는 일부 hooks가 비활성화됩니다(jq 폴백 적용)."
+else
+  echo "✅ python3: $(python3 --version 2>&1)"
+fi
+
 # ── Rust/Cargo 확인 ──────────────────────────────────────────────────────────
 echo ""
 echo "=== Rust toolchain 확인 ==="
@@ -85,7 +103,11 @@ echo "=== Tauri 시스템 의존성 안내 ==="
 if [[ "$OSTYPE" == "darwin"* ]]; then
   echo "macOS: Xcode Command Line Tools 필요"
   if ! xcode-select -p &> /dev/null; then
-    echo "⚠️  설치 필요: xcode-select --install"
+    echo "❌ Xcode Command Line Tools 미설치"
+    echo "   설치 명령: xcode-select --install"
+    echo "   설치 후 SETUP.sh 를 다시 실행하세요."
+    echo "   ⚠️  Xcode CLI 없이는 Rust 컴파일 및 Tauri 빌드가 모두 실패합니다."
+    exit 1
   else
     echo "✅ Xcode CLI: $(xcode-select -p)"
   fi
@@ -102,6 +124,7 @@ if [ -f "package.json" ]; then
   echo "pnpm install 실행 중..."
   pnpm install
   echo "✅ 프론트엔드 의존성 설치 완료"
+  echo "   (Tauri CLI는 pnpm devDependency로 포함됨 — pnpm exec tauri --version 으로 확인 가능)"
 else
   echo "package.json 없음 — 프론트엔드 의존성 설치 생략"
 fi
@@ -126,12 +149,13 @@ echo ""
 echo "=== Git Hooks 설치 (Harness Hook Compliance) ==="
 
 if [ -d ".git" ]; then
-  if [ -f "scripts/pre-commit-lint.sh" ]; then
+  if [ -f "scripts/hooks/pre-commit" ]; then
     git config --local core.hooksPath scripts/hooks
     echo "✅ git hooks 경로 설정 완료 (scripts/hooks)"
     echo "   → 커밋 전 cargo fmt/clippy + 프론트엔드 lint 자동 검사"
   else
-    echo "⚠️  scripts/pre-commit-lint.sh 없음 — git hook 설치 생략"
+    echo "ℹ️  scripts/hooks/ 디렉토리가 비어있어 git hook 설치를 생략합니다."
+    echo "   스프린트 개발 중 pre-commit hook이 필요하면 scripts/hooks/pre-commit 파일을 추가하세요."
   fi
 else
   echo "⚠️  .git 디렉토리 없음 — git init 후 SETUP.sh 재실행"

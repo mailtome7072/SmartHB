@@ -19,7 +19,6 @@
 
 자동 조합 (치환 후 실제값이 채워진 예시):
 - `repo_url` = `https://github.com/${github_org}/${github_repo}.git`
-- `ghcr_prefix` = `ghcr.io/${github_org}/${github_repo}`
 
 ### 2단계: 파일별 치환 실행
 
@@ -42,10 +41,6 @@
 - `${github_org}` → 실제 github_org 값
 - `${github_repo}` → 실제 github_repo 값
 
-**docker-compose.prod.yml**
-- `${github_org}` → 실제 github_org 값
-- `${github_repo}` → 실제 github_repo 값
-
 ### 3단계: 결과 요약 출력
 
 치환 완료 후 다음 형식으로 결과를 출력한다:
@@ -60,28 +55,25 @@
   github_repo       = {실제값}
   decision_date     = {실제값}
   repo_url          = {조합값}
-  ghcr_prefix       = {조합값}
 
 수정된 파일:
   - README.md
   - CLAUDE.md
   - PRD.md
   - docs/ci-policy.md
-  - docker-compose.prod.yml
 
 참고: .github/workflows/deploy.yml은 github.repository 내장 변수를 사용하므로 치환 불필요합니다.
 
 🔍 치환 결과 확인 (선택):
   각 파일에서 아래 명령으로 잔류 플레이스홀더를 검색하세요:
-  grep -r '\${github_org}\|${github_repo}\|${project_name}\|${decision_date}' README.md CLAUDE.md PRD.md docs/ci-policy.md docker-compose.prod.yml
+  grep -r '\${github_org}\|${github_repo}\|${project_name}\|${decision_date}' README.md CLAUDE.md PRD.md docs/ci-policy.md
   결과가 없으면 치환이 정상 완료된 것입니다.
 
 ⚠️  다음 항목은 수동 설정이 필요합니다:
-  - GitHub Secrets: LIGHTSAIL_HOST, LIGHTSAIL_USER, LIGHTSAIL_SSH_KEY (GHCR 인증은 GITHUB_TOKEN 자동 제공)
-    앱 시크릿(POSTGRES_PASSWORD, JWT_SECRET 등) 전체 목록: docs/ci-policy.md 참조
+  - GitHub Secrets (선택적 — Tauri 자동 업데이트 서명용):
+      TAURI_PRIVATE_KEY, TAURI_KEY_PASSWORD
+      (도입하지 않으면 서명 없이 배포됨 — 초기에는 생략 가능)
   - .env 파일: .env.example 복사 후 실제 값 입력
-  - docs/dev-process.md 섹션 6.3: SSH 접속 정보 직접 입력
-    (SSH_KEY_PATH, USER, SERVER_IP, APP_PATH — deploy-prod 에이전트 실서버 검증 시 참조)
 ```
 
 ### 오류 처리

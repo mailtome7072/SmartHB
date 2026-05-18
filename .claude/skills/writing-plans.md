@@ -46,8 +46,8 @@
 ## 완료 기준 (Definition of Done)
 
 **필수**
-- ⬜ pytest 전체 통과
-- ⬜ Docker 빌드 성공
+- ⬜ cargo test 전체 통과 (Rust 변경 시)
+- ⬜ pnpm build 성공 (Next.js static export)
 - ⬜ 코드 리뷰 통과
 
 **프로세스 (sprint-close 에이전트가 처리)**

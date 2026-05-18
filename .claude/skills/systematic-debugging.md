@@ -33,8 +33,8 @@
 - 한 번에 하나의 가설만 수정합니다 (여러 곳을 동시에 바꾸지 않음)
 - 수정 후 반드시 검증:
   ```bash
-  pytest app/backend/tests/test_<관련>.py -v   # 백엔드
-  pnpm test -- --testPathPattern=<관련파일>     # 프론트엔드
+  cargo test {관련_테스트명} --manifest-path src-tauri/Cargo.toml   # Rust 백엔드
+  pnpm tsc --noEmit && pnpm lint                                     # 프론트엔드
   ```
 - 수정이 다른 기능을 깨뜨리지 않았는지 전체 테스트 실행
 

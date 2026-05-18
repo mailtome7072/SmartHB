@@ -14,9 +14,12 @@ else
   log_event() { :; }
 fi
 
-# stdin에서 명령어 추출 (python3 사용)
+# stdin 읽기
 INPUT=$(cat)
-COMMAND=$(python3 -c "
+
+# JSON 파서 선택 — python3 우선, jq 폴백. 둘 다 없으면 안전을 위해 차단.
+if command -v python3 &>/dev/null; then
+  COMMAND=$(python3 -c "
 import sys, json
 try:
     d = json.loads(sys.stdin.read())
@@ -24,8 +27,17 @@ try:
 except:
     print('')
 " <<< "$INPUT" 2>/dev/null || echo "")
+elif command -v jq &>/dev/null; then
+  COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
+else
+  echo ""
+  echo "🚫 [bash-guard] python3 또는 jq가 필요합니다. 둘 다 미설치 상태에서는 위험 명령 차단을 보장할 수 없어 안전을 위해 차단합니다."
+  echo "   macOS: brew install jq  (또는 xcode-select --install 로 python3)"
+  echo "   Windows: winget install jqlang.jq"
+  exit 2
+fi
 
-# 명령어가 없으면 허용
+# 명령어가 없으면 허용 (다른 도구 호출일 가능성)
 [ -n "$COMMAND" ] || exit 0
 
 # 차단 함수 — stdout에 메시지 출력 후 exit 2

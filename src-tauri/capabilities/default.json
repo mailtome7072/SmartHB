@@ -3,6 +3,7 @@
   "identifier": "default",
   "description": "SmartHB 기본 권한",
   "windows": ["main"],
+  "macos": ["main"],
   "permissions": [
     "core:default",
     "shell:allow-open"

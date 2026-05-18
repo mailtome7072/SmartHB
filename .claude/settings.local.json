@@ -3,7 +3,10 @@
     "allow": [
       "WebSearch",
       "Bash(grep -rn '\\\\${github_org}\\\\|${github_repo}\\\\|${project_name}\\\\|${project_description}\\\\|${decision_date}' README.md CLAUDE.md PRD.md docs/ci-policy.md docker-compose.prod.yml)",
-      "Bash(dir C:\\\\Projects\\\\SmartHB *)"
+      "Bash(dir C:\\\\Projects\\\\SmartHB *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Projects\\\\SmartHB\\\\.claude\" -Recurse -Filter \"*.md\")",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)"
     ]
   },
   "enableAllProjectMcpServers": true,

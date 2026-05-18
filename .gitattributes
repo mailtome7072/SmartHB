@@ -1,0 +1,47 @@
+# 줄 끝(line ending) 정규화 — macOS/Windows 양 OS 개발 환경 보장
+# Windows에서 작성된 셸 스크립트가 CRLF로 커밋되어 macOS에서 `^M: bad interpreter` 오류로 실패하는 것을 방지
+
+# 기본: 텍스트는 자동 감지, LF로 정규화
+* text=auto eol=lf
+
+# 셸 스크립트 — 반드시 LF
+*.sh text eol=lf
+*.bash text eol=lf
+SETUP.sh text eol=lf
+scripts/hooks/pre-commit text eol=lf
+scripts/hooks/* text eol=lf
+.claude/hooks/* text eol=lf
+
+# Windows 전용 스크립트 — CRLF 유지
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 바이너리 — 변환 금지
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+
+# Rust/TypeScript 소스
+*.rs text eol=lf
+*.toml text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sql text eol=lf

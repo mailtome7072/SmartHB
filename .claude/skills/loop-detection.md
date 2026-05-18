@@ -97,9 +97,9 @@ sprint-dev 세션에서 `docs/sprint/sprint{n}/scope.md`의 수정 파일 목록
 ## 이번 세션에서 수정할 파일
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| app/backend/api/auth.py | [1회] | 로그인 로직 추가 |
-| app/backend/api/auth.py | [2회] | 버그 수정 |
-| app/backend/api/auth.py | [3회 ⚠️] | → loop-detection 실행 |
+| src-tauri/src/commands/auth.rs | [1회] | 로그인 로직 추가 |
+| src-tauri/src/commands/auth.rs | [2회] | 버그 수정 |
+| src-tauri/src/commands/auth.rs | [3회 ⚠️] | → loop-detection 실행 |
 ```
 
 **3회 도달 시**: 수정 전에 loop-detection 스킬을 실행하고, 사용자 승인 후에만 수정을 계속한다.

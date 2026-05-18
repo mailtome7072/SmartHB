@@ -23,7 +23,8 @@
 | 변수 | 조합 규칙 |
 |------|----------|
 | `repo_url` | `https://github.com/${github_org}/${github_repo}.git` |
-| `ghcr_prefix` | `ghcr.io/${github_org}/${github_repo}` |
+
+> SmartHB는 Tauri 데스크톱 앱이므로 컨테이너 이미지(GHCR) 및 Docker Compose 변수는 사용하지 않습니다.
 
 ### 적용 대상 파일
 
@@ -32,8 +33,7 @@
 | `README.md` | 제목(`project_name`), 설명(`project_description`), git remote URL(`github_org`, `github_repo`) |
 | `CLAUDE.md` | 원격 저장소 URL(`repo_url`) |
 | `PRD.md` | 작성일 메타데이터(`decision_date`) |
-| `docs/ci-policy.md` | GHCR 이미지명(`github_org`, `github_repo`) |
-| `docker-compose.prod.yml` | GHCR 이미지명(`github_org`, `github_repo`) |
+| `docs/ci-policy.md` | 저장소 식별자(`github_org`, `github_repo`) |
 
 > **`.github/workflows/deploy.yml`은 치환 불필요**: `github.repository` 내장 변수를 사용하므로 클론 직후 바로 동작합니다.
 
@@ -82,3 +82,28 @@ project-root/
 - `sprint-review` (Sonnet) — 스프린트 코드 리뷰 + 자동 검증 + 회고
 - `deploy-prod` (Sonnet) — develop → main 프로덕션 배포
 - `hotfix-close` (Sonnet) — 긴급 패치 마무리 (main 직접 배포)
+
+---
+
+## 데이터·보안·동시성 모델 (PRD v1.5 기반)
+
+> 본 섹션은 SmartHB 특유의 데스크톱 단독 사용자 + 클라우드 동기화 폴더 모델을 한눈에 정리한다. 상세 규칙은 `PRD.md` §5 및 `.claude/rules/backend.md` 참조.
+
+| 영역 | 결정 | PRD 참조 |
+|------|------|---------|
+| **사용자 모델** | 단일 계정 1인 (원장) — 멀티 사용자 미고려 | §1.3, §8.1 |
+| **데이터 위치** | 클라우드 동기화 폴더 하위 `smarthb/app.db` — Tauri `app_data_dir()` 미사용 | §5.3 |
+| **클라우드 폴더** | 네이버 MYBOX 우선, iCloud Drive / Dropbox 대체 — OS 클라이언트가 동기화 담당 | §5.1, §5.3 |
+| **암호화** | SQLCipher AES-256, 키는 PBKDF2 유도 후 OS Keychain/Credential Manager 보관 | §5.1, §5.5 |
+| **인증** | 사용자 비밀번호 또는 OS 생체인증(Touch ID/Windows Hello) + 복구 코드 12자리 | §5.5 |
+| **동시성** | `app.lock` 파일 — 60초 heartbeat, 5분 미갱신 시 강제해제 옵션 | §5.3, §8.1 |
+| **백업 4계층** | exit(10) + hourly(24) + daily(30) + weekly(4) — SQLite Online Backup API | §5.4 |
+| **백업 복원 리허설** | 정기 수행 없음 — 사용자 필요 시 격리 환경에서 1클릭 실행 (KPI 제외) | §5.4 |
+| **무결성** | 앱 시작 시 `PRAGMA integrity_check` → 손상 시 최신 백업 자동 복원 | §5.3, §5.4 |
+| **자가 진단** | 매월 1일 첫 실행 자동 + 수동 — 데이터 정합성 위반 항목 대시보드 안내 | §6.6 |
+| **청구 상태** | 3단계 (미확정 / 확정 / 마감) — 마감 후 수정 시 사유 입력 필수 | §4.9.7 |
+| **학습보고서** | **분기 단위** (학사력 3·6·9·12월 시작), 키 `(분기, 원생)`, 단원평가 점수에 종속 — 점수 수정 시 보고서 표시 자동 반영 | §4.8 |
+| **글로벌 검색** | 모든 화면 상단 상시 노출 — 원생/학교/메뉴 즉시 이동 | §4.14 |
+| **외부 통신** | 앱 자체는 외부 네트워크 없음 — 클라우드 동기화는 OS 클라이언트 위임 | §5.5, §8.1 |
+| **배포** | GitHub Releases 인스톨러 — Windows `.msi`/`.exe`, macOS `.dmg` | (배포부) |
+| **UI 접근성** | Pretendard 18pt+, WCAG AA, 클릭 영역 ≥ 44×44px, F1/Ctrl+F/N/S/Z/P/ESC 단축키 | §5.7 |

@@ -9,8 +9,8 @@
 
 | 환경 | 브랜치 | 방법 |
 |------|--------|------|
-| 로컬 스테이징 | `develop` | `docker compose up --build` |
-| 프로덕션 | `main` | GitHub Actions → GHCR → SSH 자동 배포 |
+| 로컬 스테이징 | `develop` | `pnpm tauri:dev` |
+| 프로덕션 | `main` | `v*` 태그 push → GitHub Actions → GitHub Releases (Windows/macOS 인스톨러) |
 
 ## 배포 원칙
 

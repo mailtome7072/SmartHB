@@ -9,9 +9,9 @@
 
 | 브랜치 | 역할 | 배포 환경 |
 |--------|------|----------|
-| `sprint{n}` | 스프린트 단위 개발 | 로컬 |
-| `develop` | 스테이징 통합 브랜치 | 로컬 Docker |
-| `main` | 프로덕션 브랜치 | 프로덕션 서버 |
+| `sprint{n}` | 스프린트 단위 개발 | 로컬 (`pnpm tauri:dev`) |
+| `develop` | 스테이징 통합 브랜치 | 로컬 (`pnpm tauri:dev`) |
+| `main` | 프로덕션 브랜치 | GitHub Releases (인스톨러 — Windows `.msi`/`.exe`, macOS `.dmg`) |
 | `hotfix/*` | 긴급 운영 패치 | main + develop 역머지 |
 
 ## 핵심 원칙

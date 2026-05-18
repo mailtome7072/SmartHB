@@ -29,8 +29,8 @@ Sprint: {n}  |  Date: YYYY-MM-DD  |  Session: #1
 <!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행 -->
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| app/backend/... | [0회] | (수정 목적) |
-| app/frontend/... | [0회] | (수정 목적) |
+| src-tauri/... | [0회] | (수정 목적) |
+| src/... | [0회] | (수정 목적) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)
@@ -146,9 +146,9 @@ Sprint {n} 구현 모드 진입
 ```
 
 **Self-verify** (커밋 전 의무 단계):
-- 변경된 파일 관련 단위 테스트: `pytest app/backend/tests/test_{파일명}.py`
-- 전체 통합 테스트: `pytest app/backend/tests/` (가능한 경우)
-- 린트: `pnpm lint` (프론트엔드 파일 변경 시)
+- 백엔드(Rust) 파일 변경 시: `cargo test` (src-tauri/ 기준)
+- 백엔드 정적 분석: `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
+- 프론트엔드 파일 변경 시: `pnpm lint` + `pnpm tsc --noEmit`
 - Self-verify 실패 → 검증 실패 대응(3회 재시도 원칙) 적용
 
 **simplify** (Self-verify 통과 후):
@@ -172,7 +172,7 @@ Task 구현 중 테스트/린트 실패 발생 시 아래 절차를 따릅니다
 - 동일한 오류 메시지로 테스트가 **3회 이상 연속 실패**
 - 동일한 파일을 **3회 이상 반복 수정** (scope.md에 `[3회 ⚠️]` 기록 시)
 
-**CI 파이프라인 실패** (pytest, pnpm test, pnpm lint, Docker 빌드):
+**CI 파이프라인 실패** (cargo test, cargo clippy, pnpm lint, pnpm build):
 `docs/dev-process.md` 섹션 9.1을 참조하여 로컬에서 원인을 먼저 재현합니다.
 
 **재시도 금지 패턴**: 동일한 코드 변경 반복 / `--no-verify` 우회 시도.

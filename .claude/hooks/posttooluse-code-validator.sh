@@ -74,6 +74,10 @@ print('.claude/tmp/claude-permit-' + h)
     local h
     h=$(echo -n "$FILE_PATH" | md5sum | cut -c1-12)
     echo ".claude/tmp/claude-permit-$h"
+  elif command -v md5 &>/dev/null; then
+    local h
+    h=$(echo -n "$FILE_PATH" | md5 -q | cut -c1-12)
+    echo ".claude/tmp/claude-permit-$h"
   elif command -v powershell &>/dev/null; then
     local h
     h=$(powershell -NoProfile -Command "\$md5=[System.Security.Cryptography.MD5]::Create(); \$h=[System.BitConverter]::ToString(\$md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes('$FILE_PATH'))).Replace('-','').ToLower().Substring(0,12); Write-Output \$h" 2>/dev/null)

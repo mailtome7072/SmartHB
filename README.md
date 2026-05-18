@@ -1,6 +1,15 @@
 # SmartHB
 정쌤의 스마트해법수학
 
+> 초등 및 예비중등 1:1 맞춤 수학 교습소(스마트해법수학 서현효자점)의 운영 전반을 단일 데스크톱 앱으로 관리한다.
+>
+> - **단일 사용자**: 50대 원장 1인 — 큰 글자·저자극 색상의 50대 친화 UI
+> - **단일 도구로 통합**: 원생 / 출결·보강 / 단원평가 / 청구·수납 / 카톡 공지문 이미지 / 대시보드
+> - **자동 데이터 흐름**: 출결 → 보강 → 청구의 일관된 자동 흐름으로 입력 누락·계산 실수 방지
+> - **양 PC 시점 분리**: Windows(교습소) ↔ Mac(자택), OS 클라우드 동기화 폴더로 데이터 공유 (인터넷 단절 시에도 로컬 작업 가능)
+>
+> 상세 요구사항: [PRD.md](PRD.md)
+
 ---
 
 ## 이 템플릿 사용 방법
@@ -32,7 +41,6 @@ project-root/                    # 프로젝트 루트(Root) 폴더
 ├── CLAUDE.md                    # AI 협업 지시 문서
 ├── DEPLOY.md                    # 배포 후 수동 작업 목록
 ├── CHANGELOG.md                 # 버전별 변경 이력 관리
-├── docker-compose.prod.yml      # 프로덕션 Docker Compose (/setup-project로 이미지명 자동 치환)
 ├── .claude/
 │   ├── agents/                  # Claude 에이전트 정의
 │   │   ├── prd-to-roadmap.md    # PRD → ROADMAP 변환 에이전트 (Opus)
@@ -62,8 +70,8 @@ project-root/                    # 프로젝트 루트(Root) 폴더
 │   ├── rules/                   # 조건부 자동 로드 규칙
 │   │   ├── sprint-workflow.md      # 모든 대화에 자동 적용 — 에이전트 순서, 브랜치 규칙
 │   │   ├── harness-engineering.md  # 모든 대화에 자동 적용 — 5대 하네스 원칙
-│   │   ├── backend.md              # app/backend/**/*.py 접근 시
-│   │   ├── frontend.md             # app/frontend/**/*.ts,tsx 접근 시
+│   │   ├── backend.md              # src-tauri/**/*.rs, src-tauri/Cargo.toml, src-tauri/migrations/**/*.sql 접근 시
+│   │   ├── frontend.md             # src/**/*.{ts,tsx,css}, next.config.*, tailwind.config.* 접근 시
 │   │   └── notion.md               # "Notion/노션" 언급 또는 Notion MCP 사용 시
 │   ├── skills/                  # Claude 스킬 정의
 │   │   ├── karpathy-guidelines.md  # 개발 원칙 지침
@@ -82,8 +90,8 @@ project-root/                    # 프로젝트 루트(Root) 폴더
 │
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml               # PR 체크 (pytest, Docker 빌드)
-│   │   └── deploy.yml           # main merge 시 프로덕션 배포
+│   │   ├── ci.yml               # PR 체크 (cargo test/clippy/fmt + pnpm tsc/lint/build)
+│   │   └── deploy.yml           # v* 태그 push 시 Windows/macOS 인스톨러 빌드 + GitHub Release
 │   └── PULL_REQUEST_TEMPLATE.md # PR 코드리뷰 템플릿
 
 ├── strategy/                    # 전략 지침 모음 폴더
@@ -111,16 +119,25 @@ project-root/                    # 프로젝트 루트(Root) 폴더
 │   ├── deploy-history/          # 배포 이력 및 장애/롤백 기록 (폴더)
 │   └── retrospectives/          # 장기/팀 회고 기록 — 분기별 또는 필요 시 수동 작성 (폴더)
 
-├── app/                         # 애플리케이션 소스 코드 (개발 코드 전체)
-│   ├── frontend/                # 프론트엔드 소스 코드 (React 등, 프로젝트 시작 시 생성)
-│   └── backend/                 # 백엔드 소스 코드 (FastAPI 등, 프로젝트 시작 시 생성)
-│       ├── ...                  # 메인 애플리케이션 코드
-│       ├── tests/               # pytest 테스트 (ci.yml: app/backend/tests/)
-│       └── requirements.txt     # Python 의존성 (ruff 포함 — pip install -r로 설치)
+├── src/                         # Next.js 15 소스 (App Router)
+│   ├── app/                     #   — layout.tsx, page.tsx, globals.css
+│   ├── components/              #   — 공유 React 컴포넌트 (shadcn/ui)
+│   ├── lib/tauri/               #   — Tauri invoke() 추상화 레이어
+│   └── types/                   #   — TypeScript 공유 타입
+├── src-tauri/                   # Tauri 2 Rust 크레이트
+│   ├── src/
+│   │   ├── main.rs              #   — 앱 진입점
+│   │   ├── lib.rs               #   — Builder + 커맨드 등록
+│   │   └── commands/            #   — IPC 커맨드 핸들러
+│   ├── migrations/              #   — SQLx 마이그레이션 (*.sql)
+│   ├── .sqlx/                   #   — SQLx 오프라인 캐시 (커밋 대상)
+│   ├── Cargo.toml
+│   ├── tauri.conf.json
+│   └── capabilities/            #   — Tauri 권한 정의
 
 ├── scripts/                     # 유틸리티 스크립트
 │   └── hooks/
-│       └── pre-commit           # Git pre-commit 훅 — Python syntax + ruff + 프론트엔드 lint
+│       └── pre-commit           # Git pre-commit 훅 — Rust fmt/clippy + 프론트엔드 lint
 ```
 
 ---
@@ -159,7 +176,7 @@ ROADMAP.md를 분석하고 writing-plans 스킬을 참조하여 실행 가능한
 **트리거**: sprint-close 완료 후 (이슈 수정 후 독립 재실행 가능)
 코드 품질 검토 및 검증을 담당합니다:
 1. 코드 리뷰 (보안/성능/품질 체크리스트)
-2. 자동 검증 실행 (pytest, API curl, Playwright UI)
+2. 자동 검증 실행 (cargo test/clippy, pnpm tsc/lint/build, Tauri WebDriver E2E)
 3. 테스트 결과 기록 (`docs/test-reports/`)
 4. 리스크 기록 (`docs/risk-register/` — Medium/High 이슈 발견 시)
 5. Sprint 회고 작성 (`docs/sprint-retrospectives/`)
@@ -226,9 +243,9 @@ AI 에이전트의 자율성을 보장하면서도 가드레일을 강제하는 
 | 커맨드 | 구분 | 설명 |
 |--------|------|------|
 | `/init` | Claude Code 내장 | 코드베이스 분석 후 CLAUDE.md 검토·갱신 — 첫 실행 시 및 프로젝트 구조 변경 후 사용 |
-| `/setup-project` | 프로젝트 커스텀 | ARCHITECTURE.md 변수 → README.md, CLAUDE.md, PRD.md, docs/ci-policy.md, docker-compose.prod.yml 일괄 치환 |
+| `/setup-project` | 프로젝트 커스텀 | ARCHITECTURE.md 변수 → README.md, CLAUDE.md, PRD.md, docs/ci-policy.md 플레이스홀더 일괄 치환 (`deploy.yml`은 `github.repository` 내장 변수 사용으로 치환 불필요) |
 | `/sprint-dev [n]` | 프로젝트 커스텀 | sprint{n}.md 기반 구현 오케스트레이터 — 브랜치 생성, 현황 파악, 가이드라인 주입 (**사용자가 직접 입력하는 커맨드** — 에이전트가 대신 호출하지 않음) |
-| `/restart` | 프로젝트 커스텀 | Docker Compose 서비스 재시작 |
+| `/restart` | 프로젝트 커스텀 | Tauri 개발 서버 재시작 (`pnpm tauri:dev`) |
 
 ---
 
@@ -239,7 +256,7 @@ AI 에이전트의 자율성을 보장하면서도 가드레일을 강제하는 
 | Hook 이벤트 | 파일 | 동작 |
 |------------|------|------|
 | **PreToolUse** (Bash) | `pretooluse-bash-guard.sh` | 디렉토리 체이닝, force push, main/develop 직접 push, hard reset, 브랜치 명명 위반 차단 |
-| **PostToolUse** (Edit/Write) | `posttooluse-code-validator.sh` | `.env` 수정 차단, Forbidden Area 허가 검증, Python syntax, 시크릿 패턴 감지, Planning First 경고 |
+| **PostToolUse** (Edit/Write) | `posttooluse-code-validator.sh` | `.env` 수정 차단, Forbidden Area 허가 검증, Rust syntax (cargo check), 시크릿 패턴 감지, Planning First 경고 |
 | **PostToolUse** (Edit/Write) | `posttooluse-scope-tracker.sh` | `scope.md` 수정 횟수 자동 증가 — 3회 시 loop-detection 경고, 30% 초과 시 Re-planning 트리거 |
 | **Stop** | `stop-doc-checker.sh` | 에이전트 유형별 필수 문서 누락 감지, `.claude/logs/session-summary.md` 갱신 |
 
@@ -326,7 +343,7 @@ git push -u origin main
 ### 1단계: 프로젝트 변수 설정 (/setup-project)
 
 > GitHub 저장소 연결이 완료되면, 프로젝트 식별 정보를 한 번에 설정합니다.
-> `ARCHITECTURE.md`를 열어 프로젝트 변수를 채운 뒤 `/setup-project`를 실행하면 `README.md`, `CLAUDE.md`, `PRD.md`, `docs/ci-policy.md`, `docker-compose.prod.yml`의 플레이스홀더가 일괄 치환됩니다. (`deploy.yml`은 `github.repository` 내장 변수를 사용하므로 치환 불필요)
+> `ARCHITECTURE.md`를 열어 프로젝트 변수를 채운 뒤 `/setup-project`를 실행하면 `README.md`, `CLAUDE.md`, `PRD.md`, `docs/ci-policy.md`의 플레이스홀더가 일괄 치환됩니다. (`deploy.yml`은 `github.repository` 내장 변수를 사용하므로 치환 불필요)
 
 - ⬜ `ARCHITECTURE.md` — **프로젝트 변수** 테이블의 5개 값 입력
   - `project_name`: 프로젝트 이름
@@ -335,7 +352,7 @@ git push -u origin main
   - `github_repo`: GitHub 저장소명
   - `decision_date`: PRD 작성 결정일 (예: 2026-03-24)
 - ⬜ Claude Code 실행 → `/setup-project` → `README.md`, `CLAUDE.md`, `PRD.md`, `docs/ci-policy.md` 플레이스홀더 일괄 치환 확인
-- ⬜ `./SETUP.sh` 실행 — 개발 환경 초기화 (pnpm, Python venv, .env 생성)
+- ⬜ `./SETUP.sh` 실행 — 개발 환경 초기화 (Node/pnpm/Rust/SQLx CLI 확인, 의존성 설치, `.env` 생성, git hooks 등록)
 
 ---
 
@@ -363,21 +380,17 @@ git push -u origin main
 
 ### 3단계: 인프라 및 CI/CD 설정
 
-> **항목 순서를 지켜주세요.** Docker 파일 생성 전에 ci.yml 빌드 스텝을 활성화하면 CI가 즉시 실패합니다.
+> SmartHB는 **Tauri 2 데스크톱 앱**이므로 컨테이너/Docker가 필요하지 않습니다. GitHub Actions가 `v*` 태그 push 시 Windows `.msi`/`.exe` 및 macOS `.dmg` 인스톨러를 자동 빌드하여 GitHub Releases에 첨부합니다.
 
-- ⬜ `.env` — SETUP.sh가 생성한 `.env` 파일에 실제 값 입력 (DB 비밀번호, API 키 등)
-- ⬜ GitHub Secrets 설정: `LIGHTSAIL_HOST`, `LIGHTSAIL_USER`, `LIGHTSAIL_SSH_KEY` (GHCR 인증은 `GITHUB_TOKEN` 자동 제공 — 별도 PAT 불필요)
-  > 앱 레벨 시크릿(`POSTGRES_PASSWORD`, `JWT_SECRET`, `SECRET_KEY`, `NEXT_PUBLIC_API_URL`) 전체 목록: `docs/ci-policy.md` 참조
+- ⬜ `.env` — SETUP.sh가 생성한 `.env` 파일에 실제 값 입력 (DATABASE_URL 등 — `.env.example` 참조)
+- ⬜ **Tauri 아이콘 생성** — 1024×1024 이상의 정사각형 PNG 로고를 준비한 뒤 `pnpm tauri icon ./path/to/logo.png` 1회 실행 (상세: `docs/setup-guide.md` 5-A 섹션)
 - ⬜ `docs/ci-policy.md` — 프로젝트 환경에 맞는 CI 정책 세부 내용 (브랜치명, 테스트 범위 등) 기입
-- ⬜ `docs/dev-process.md` 섹션 6.3 — 실서버 SSH 접속 정보 기입 (호스팅 미정이면 생략)
-- ⬜ Docker 파일 생성 (CI/CD 실행에 필수 — 아래 ci.yml 활성화의 전제조건):
-  - `docker/backend/Dockerfile.prod` — 백엔드 프로덕션 이미지
-  - `docker/frontend/Dockerfile.prod` — 프론트엔드 프로덕션 이미지
-  - `docker/nginx/Dockerfile` — Nginx 리버스 프록시 이미지
-  - `docker-compose.yml` — 로컬 개발 환경 (**첫 스프린트에서 앱 코드와 함께 작성** — sprint-planner가 Sprint 1 시 자동 태스크로 포함)
-  - `docker-compose.prod.yml` — 프로덕션 환경 (**템플릿에 포함됨** — `/setup-project` 실행 시 이미지명 자동 치환)
-- ⬜ `.github/workflows/ci.yml` — Docker 빌드 스텝 경로 확인 후 주석 해제 (Docker 파일 생성 후 진행)
-- ⬜ `.github/workflows/ci.yml` — 프론트엔드 빌드·테스트 스텝 주석 해제 (**첫 스프린트에서 프론트엔드 코드 생성 후 진행**)
+- ⬜ GitHub Secrets (선택 — 자동 업데이트 서명 도입 시):
+  - `TAURI_PRIVATE_KEY` — `tauri signer generate` 명령으로 생성한 프라이빗 키
+  - `TAURI_KEY_PASSWORD` — 위 키의 비밀번호
+  - `GITHUB_TOKEN` — 자동 제공됨 (별도 설정 불필요)
+- ⬜ macOS 코드 사이닝/노타리제이션 도입 시 (정식 배포 직전, 별도 Sprint):
+  - `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
 
 ---
 
@@ -386,27 +399,33 @@ git push -u origin main
 > 팀원 온보딩을 위한 문서입니다. 첫 스프린트 시작의 전제조건이 아니므로 스프린트 진행 중에 작성해도 무방합니다.
 > `docs/setup-guide.md`를 프로젝트 환경에 맞게 작성합니다.
 
-- ⬜ `docs/setup-guide.md` — Node.js·Python 권장 버전 명시 (예: Node.js 20, Python 3.12)
-- ⬜ `docs/setup-guide.md` — OS별 (macOS/Linux/Windows) 의존성 설치 명령어 작성
-- ⬜ `docs/setup-guide.md` — 프로젝트 전용 환경 변수 항목 및 설명 추가
-- ⬜ `docs/setup-guide.md` — IDE 추천 설정 및 확장 플러그인 가이드 작성
-- ⬜ `docs/setup-guide.md` — 로컬 실행 검증 절차 (`docker compose up` 후 확인 방법) 기재
+- ⬜ `docs/setup-guide.md` — Node.js·Rust 권장 버전 명시 (Node.js 20, Rust stable, pnpm)
+- ⬜ `docs/setup-guide.md` — OS별 (macOS/Windows) 의존성 설치 명령어 작성 (WebView2, Xcode CLI, SQLCipher 등)
+- ⬜ `docs/setup-guide.md` — 프로젝트 전용 환경 변수 항목 및 설명 추가 (`.env.example` 기반)
+- ⬜ `docs/setup-guide.md` — IDE 추천 설정 및 확장 플러그인 가이드 작성 (rust-analyzer, ESLint, Prettier 등)
+- ⬜ `docs/setup-guide.md` — 로컬 실행 검증 절차 (`pnpm tauri:dev` 실행 후 앱 정상 기동 확인) 기재
 
 #### 주요 개발 명령어
 ```bash
 # 프론트엔드 (pnpm)
-pnpm install && pnpm build
-pnpm test                                          # 전체 테스트
+pnpm install
+pnpm dev                                                       # Next.js dev server만
+pnpm build                                                     # static export → out/
 pnpm lint
+pnpm tsc --noEmit                                              # 타입 검사
 
-# 백엔드 (Python/pytest + ruff)
-source .venv/bin/activate
-pytest app/backend/tests/                          # 전체 테스트
-pytest app/backend/tests/test_foo.py::test_bar     # 단일 테스트 함수
-ruff check app/backend/                            # Python 린트 (pre-commit 자동 실행)
+# 백엔드 (Rust/Tauri, src-tauri/ 기준 — 루트에 Cargo.toml 없음)
+cargo build --manifest-path src-tauri/Cargo.toml               # 컴파일
+cargo test --manifest-path src-tauri/Cargo.toml                # 전체 단위 테스트
+cargo test --manifest-path src-tauri/Cargo.toml test_greet     # 단일 테스트
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
-# 로컬 스테이징 (Docker)
-docker compose up --build
+# DB 마이그레이션 (SQLx)
+sqlx migrate run                                               # 마이그레이션 적용 (.env DATABASE_URL 기반)
+sqlx prepare --manifest-path src-tauri/Cargo.toml              # 오프라인 캐시 갱신
+
+# 통합 개발 서버 (Tauri 앱 + Next.js dev 동시)
+pnpm tauri:dev
 ```
 
 ---

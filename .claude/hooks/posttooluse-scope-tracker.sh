@@ -23,8 +23,9 @@ fi
 
 INPUT=$(cat)
 
-# ── tool_name, file_path 추출 ─────────────────────────────────────────────
-TOOL_NAME=$(python3 -c "
+# ── JSON 파서 선택 (python3 우선, jq 폴백, 둘 다 없으면 조용히 종료) ────
+if command -v python3 &>/dev/null; then
+  TOOL_NAME=$(python3 -c "
 import sys, json
 try:
     d = json.loads(sys.stdin.read())
@@ -32,7 +33,7 @@ try:
 except: print('')
 " <<< "$INPUT" 2>/dev/null || echo "")
 
-FILE_PATH=$(python3 -c "
+  FILE_PATH=$(python3 -c "
 import sys, json
 try:
     d = json.loads(sys.stdin.read())
@@ -40,6 +41,13 @@ try:
     print(ti.get('file_path', ''))
 except: print('')
 " <<< "$INPUT" 2>/dev/null || echo "")
+elif command -v jq &>/dev/null; then
+  TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null || echo "")
+  FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null || echo "")
+else
+  # python3/jq 모두 미설치 — scope tracking은 비차단성이므로 조용히 종료
+  exit 0
+fi
 
 # Edit / Write 도구만 처리
 [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]] || exit 0

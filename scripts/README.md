@@ -19,12 +19,12 @@
 다음 조건 중 하나라도 해당하면 `scripts/`에 추가합니다.
 
 - 개발자가 직접 실행해야 하는 1회성 또는 수동 작업
-- Docker 컨테이너 내부에서 실행하는 백엔드 유틸리티
+- 개발 DB 시드 / 픽스처 생성 등 로컬 유틸리티
 - CI/CD 파이프라인에 포함되지 않는 보조 작업
 
 **해당하지 않는 경우** (이 폴더에 추가하지 않음):
 - 배포 자동화 → `.github/workflows/deploy.yml`
-- 테스트 실행 → `pytest` / `pnpm test` (CI에서 실행)
+- 테스트 실행 → `cargo test` / `pnpm tsc/lint/build` (CI에서 실행)
 - 개발 환경 초기화 → `SETUP.sh`
 
 ---
@@ -33,9 +33,9 @@
 
 | 파일명 | 용도 | 실행 방법 |
 |--------|------|-----------|
-| `seed.py` | 초기 데이터 시드 | `docker compose exec backend python scripts/seed.py` |
+| `seed.sql` | 초기 시드 데이터 (학교/결제수단/카드사 코드 등) | `sqlx migrate run` (마이그레이션 안에 시드 포함) 또는 `sqlite3 ./SmartHB-dev.db < scripts/seed.sql` |
 | `reset_db.sh` | 개발용 DB 초기화 | `bash scripts/reset_db.sh` |
-| `generate_fixtures.py` | 테스트 픽스처 생성 | `docker compose exec backend python scripts/generate_fixtures.py` |
+| `generate_fixtures.rs` | 테스트 픽스처 생성 (개발용 바이너리) | `cargo run --manifest-path src-tauri/Cargo.toml --bin generate_fixtures` |
 
 > 스크립트를 추가할 때는 이 표에 항목을 함께 추가하세요.
 
