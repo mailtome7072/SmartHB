@@ -26,6 +26,6 @@ pnpm dev
 
 3. 정상 기동 확인:
 - `pnpm tauri dev`: 데스크톱 앱 창이 열리면 정상
-- `pnpm dev`: `http://localhost:3000` 응답 확인
+- `pnpm dev`: `http://localhost:1420` 응답 확인 (Tauri 컨벤션 포트)
 
 4. 결과를 사용자에게 간결하게 보고한다.
