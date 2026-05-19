@@ -3,7 +3,15 @@
  * 컴포넌트에서 invoke() 직접 호출 금지 — 이 파일을 통해서만 Tauri 커맨드 호출
  */
 
-import type { AuthStatus, BackupLayer, BackupMetadata, LockStatus } from '@/types'
+import type {
+  AuthStatus,
+  BackupLayer,
+  BackupMetadata,
+  IntegrityCheckResult,
+  IntegrityMode,
+  LockStatus,
+  RestoreResult,
+} from '@/types'
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
 
@@ -170,12 +178,52 @@ export async function listBackups(layer?: BackupLayer): Promise<BackupMetadata[]
 }
 
 /**
- * 지정 백업 파일로 DB 복원을 시도한다 — T8 단계에서 활성화 (현재는 스텁).
+ * 지정 백업 파일로 현재 DB 를 복원한다 (T8).
  *
- * 호출 시 백엔드가 "T8 단계에서 활성화" 안내 메시지로 throw 한다.
+ * `integrity::restore_from_path` 안전망 공유 — 후보 백업이 무결한지 quick_check 통과 확인 후
+ * 현재 DB 를 `restore_rollback/` 에 보존한 뒤 복사. 복사 실패 시 자동으로 rollback 되돌림.
+ *
+ * 브라우저 개발 모드에서는 더미 결과를 반환하여 UI 흐름만 검증 가능.
  */
-export async function restoreBackup(path: string): Promise<void> {
+export async function restoreBackup(path: string): Promise<RestoreResult> {
   const inv = await getInvoke()
-  if (!inv) return
-  await inv('restore_backup', { path })
+  if (!inv) {
+    return {
+      restored_from: `[개발 모드] ${path}`,
+      rollback_path: '[개발 모드] ./SmartHB-data/restore_rollback/rollback_dev.db',
+    }
+  }
+  return inv('restore_backup', { path }) as Promise<RestoreResult>
+}
+
+/**
+ * 현재 DB 의 무결성을 검증한다 (T8 PRD §5.3/§5.4).
+ *
+ * - `'quick'`: PRAGMA quick_check (~50ms, 앱 시작 시 사용)
+ * - `'full'`: PRAGMA integrity_check (일일 백업 시점 또는 사용자 수동 실행)
+ *
+ * 결과는 discriminated union `{ kind: 'ok' }` 또는 `{ kind: 'failed', detail }`.
+ * 브라우저 개발 모드에서는 항상 `{ kind: 'ok' }` 반환.
+ */
+export async function checkIntegrity(mode: IntegrityMode): Promise<IntegrityCheckResult> {
+  const inv = await getInvoke()
+  if (!inv) return { kind: 'ok' }
+  return inv('check_integrity', { mode }) as Promise<IntegrityCheckResult>
+}
+
+/**
+ * `backup/exit/` 의 가장 최신 무결한 백업으로 자동 복원한다 (T8).
+ *
+ * 백엔드가 시간 역순으로 후보를 검증하며 quick_check 통과한 첫 백업을 선택. 모든 후보가
+ * 손상되었으면 사용자에게 명확한 에러로 throw — UI 가 사용자에게 daily/weekly 수동 선택 안내.
+ */
+export async function autoRestore(): Promise<RestoreResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      restored_from: '[개발 모드] ./SmartHB-data/backup/exit/app_dev.db',
+      rollback_path: '[개발 모드] ./SmartHB-data/restore_rollback/rollback_dev.db',
+    }
+  }
+  return inv('auto_restore') as Promise<RestoreResult>
 }

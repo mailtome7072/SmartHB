@@ -9,7 +9,7 @@
 //! 1. `create_backup(layer)`: 계층 디렉토리 보장 → 파일명 생성 → SQLCipher 백업 →
 //!    `PRAGMA quick_check` 검증 → 4계층 순환 삭제.
 //! 2. `list_backups(layer?)`: 계층별(또는 전체) 백업 메타데이터를 시간 역순으로 반환.
-//! 3. `restore_backup(path)`: T8 (무결성 검증 + 자동 복원) 에서 활성화 — 현재는 스텁.
+//! 3. `restore_backup(path)`: 지정 백업 파일로 현재 DB 복원 (`integrity` 모듈 안전망 공유).
 //!
 //! ## Feature 게이트
 //!
@@ -27,16 +27,17 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// 백업 루트 디렉토리 (T7 임시).
+/// 앱 데이터 루트 디렉토리 (T7 임시).
 ///
-/// T9 통합 시점에 사용자 마법사가 지정한 클라우드 동기화 폴더 하위로 이전한다.
-const BACKUP_ROOT_DEV: &str = "./SmartHB-data/backup";
+/// 백업·락·rollback 모듈이 공유하는 단일 루트. T9 통합 시점에 사용자 마법사가 지정한
+/// 클라우드 동기화 폴더로 교체된다 (`./SmartHB-data` → `<클라우드폴더>/smarthb`).
+const DATA_ROOT_DEV: &str = "./SmartHB-data";
 
-/// 소스 DB 경로 (T7 임시).
-///
-/// T9 마법사가 클라우드 폴더 경로로 교체한다. T7 에서는 임시 위치를 사용하므로 실제
-/// SmartHB 운영 DB 가 아직 없는 단계에서도 백업 흐름을 검증할 수 있다.
-const DB_PATH_DEV: &str = "./SmartHB-data/app.db";
+/// 백업 디렉토리 서브패스 — `DATA_ROOT_DEV` 하위.
+const BACKUP_SUBDIR: &str = "backup";
+
+/// 소스 DB 파일명 — `DATA_ROOT_DEV` 하위.
+const DB_FILENAME: &str = "app.db";
 
 /// 백업 파일명 구성 요소 — UTC 기준 1초 단위 정렬을 위해 PREFIX + STEM(`YYYYMMDD_HHMMSS`) + SUFFIX 조합.
 const FILENAME_PREFIX: &str = "app_";
@@ -92,8 +93,20 @@ fn backup_err(context: &str, e: impl std::fmt::Display) -> AppError {
     AppError::Backup(format!("{}: {}", context, e))
 }
 
+/// 앱 데이터 루트 — backup·integrity·lock 모듈 공유.
+///
+/// T9 마법사 통합 시점에 클라우드 동기화 폴더 경로로 교체된다 — 본 함수가 단일 변경 지점.
+pub(crate) fn data_root() -> PathBuf {
+    PathBuf::from(DATA_ROOT_DEV)
+}
+
+/// 소스 DB 파일 경로 — integrity 모듈의 검증·복원 대상.
+pub(crate) fn db_path() -> PathBuf {
+    data_root().join(DB_FILENAME)
+}
+
 fn backup_root() -> PathBuf {
-    PathBuf::from(BACKUP_ROOT_DEV)
+    data_root().join(BACKUP_SUBDIR)
 }
 
 fn backup_dir(layer: BackupLayer) -> PathBuf {
@@ -106,8 +119,15 @@ fn ensure_backup_dir(layer: BackupLayer) -> Result<PathBuf, AppError> {
     Ok(dir)
 }
 
+/// 일반화된 타임스탬프 파일명 생성기 — `{prefix}{YYYYMMDD_HHMMSS}{suffix}`.
+///
+/// integrity 모듈의 rollback 파일명도 동일 형식을 공유하므로 prefix/suffix 인자화.
+pub(crate) fn timestamped_filename(prefix: &str, suffix: &str, now: DateTime<Utc>) -> String {
+    format!("{}{}{}", prefix, now.format(FILENAME_STEM_FORMAT), suffix)
+}
+
 fn generate_filename(now: DateTime<Utc>) -> String {
-    format!("{}{}{}", FILENAME_PREFIX, now.format(FILENAME_STEM_FORMAT), FILENAME_SUFFIX)
+    timestamped_filename(FILENAME_PREFIX, FILENAME_SUFFIX, now)
 }
 
 /// 파일명에서 타임스탬프를 추출한다. `app_` 접두사·`.db` 접미사·UTC 포맷 모두 매치되어야 한다.
@@ -154,7 +174,7 @@ fn scan_dir(dir: &Path, layer: BackupLayer) -> Result<Vec<BackupMetadata>, AppEr
     Ok(entries)
 }
 
-fn scan_layer(layer: BackupLayer) -> Result<Vec<BackupMetadata>, AppError> {
+pub(crate) fn scan_layer(layer: BackupLayer) -> Result<Vec<BackupMetadata>, AppError> {
     scan_dir(&backup_dir(layer), layer)
 }
 
@@ -180,8 +200,10 @@ fn rotate_layer(layer: BackupLayer) -> Result<(), AppError> {
 // ----------------------------------------------------------------------------
 
 /// PRAGMA key 적용용 SQL 단편을 생성한다. hex 인코딩이므로 `[0-9a-f]` 만 사용 → SQL injection 안전.
+///
+/// integrity 모듈에서도 동일 형식으로 PRAGMA key 적용이 필요하여 `pub(crate)` 노출.
 #[cfg(feature = "cipher")]
-fn pragma_key_sql(hex_key: &str) -> String {
+pub(crate) fn pragma_key_sql(hex_key: &str) -> String {
     format!("PRAGMA key = \"x'{}'\";", hex_key)
 }
 
@@ -240,7 +262,7 @@ fn create_backup_sync(layer: BackupLayer) -> Result<BackupMetadata, AppError> {
     let filename = generate_filename(now);
     let dest = dir.join(&filename);
 
-    let source = PathBuf::from(DB_PATH_DEV);
+    let source = db_path();
     if let Err(e) = perform_backup_with_cipher(&source, &dest) {
         let _ = std::fs::remove_file(&dest);
         return Err(e);
@@ -307,10 +329,16 @@ pub async fn list_backups(layer: Option<BackupLayer>) -> Result<Vec<BackupMetada
     run_blocking("백업 목록 작업 실패", move || list_backups_sync(layer)).await
 }
 
-/// 백업 복원 — 무결성 자동 복원 흐름에 통합 예정 (현재 스텁).
+/// 사용자가 지정한 백업 파일 경로로 현재 DB 를 복원한다.
+///
+/// `integrity::restore_from_path` 를 호출하여 무결성 검증·rollback 보존을 공유한다 —
+/// `auto_restore` 와 동일한 안전망(quick_check 통과 + 복원 직전 DB 보존).
 #[tauri::command]
-pub async fn restore_backup(path: String) -> Result<(), String> {
-    Err(AppError::Backup(format!("복원 기능 미구현. 요청 경로: {}", path)).into())
+pub async fn restore_backup(path: String) -> Result<crate::commands::integrity::RestoreResult, String> {
+    run_blocking("백업 복원 작업 실패", move || {
+        crate::commands::integrity::restore_from_path(Path::new(&path))
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -452,12 +480,18 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg(not(feature = "cipher"))]
     #[test]
-    fn restore_backup_stub_returns_error() {
+    fn restore_backup_rejects_invalid_path_without_cipher() {
         let result = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(restore_backup("/tmp/some.db".to_string()));
-        let err = result.expect_err("T7 스텁은 에러 반환");
-        assert!(err.contains("백업") || err.contains("디스크"), "사용자 메시지: {}", err);
+            .block_on(restore_backup("/tmp/nonexistent.db".to_string()));
+        let err = result.expect_err("cipher off 빌드에서는 무결성 검증이 거부");
+        // AppError::Integrity::user_message 한국어 검증 키워드 확인
+        assert!(
+            err.contains("검증") || err.contains("복원"),
+            "사용자 메시지: {}",
+            err
+        );
     }
 }

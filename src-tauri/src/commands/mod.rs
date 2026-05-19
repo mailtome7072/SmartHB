@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod backup;
+pub mod integrity;
 pub mod lock;
 pub mod recovery;
 

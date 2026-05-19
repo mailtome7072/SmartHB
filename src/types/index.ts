@@ -52,3 +52,32 @@ export interface BackupMetadata {
   created_at: string
   size_bytes: number
 }
+
+/**
+ * 무결성 검증 모드 — T8 PRD §5.3/§5.4.
+ *
+ * - `quick`: PRAGMA quick_check, ~50ms — 앱 시작 시 사용 (PRD §5.6 < 3초 예산)
+ * - `full`: PRAGMA integrity_check — 일일 백업 시점 또는 사용자 수동 실행
+ */
+export type IntegrityMode = 'quick' | 'full'
+
+/**
+ * 무결성 검증 결과 — `src-tauri/src/commands/integrity.rs::IntegrityCheckResult` 와 정합.
+ *
+ * - `ok`: quick_check / integrity_check 가 "ok" 단일 행 반환
+ * - `failed`: 손상 — 다중 행 메시지가 `\n` 으로 결합된 `detail` 포함
+ */
+export type IntegrityCheckResult =
+  | { kind: 'ok' }
+  | { kind: 'failed'; detail: string }
+
+/**
+ * 자동 복원 / 백업 복원 결과 — `src-tauri/src/commands/integrity.rs::RestoreResult` 와 정합.
+ *
+ * `rollback_path`: 복원 직전 현재 DB 가 보존된 위치. 사용자가 복원이 실패했다고 판단할 경우
+ * 수동으로 되돌릴 수 있도록 안내한다.
+ */
+export interface RestoreResult {
+  restored_from: string
+  rollback_path: string
+}
