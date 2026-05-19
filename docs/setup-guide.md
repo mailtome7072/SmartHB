@@ -93,6 +93,59 @@ pnpm tauri icon ./path/to/logo.png
 
 ---
 
+## 5-B. SQLCipher 빌드 환경 (cipher feature 사용 시)
+
+`cargo build --features cipher` 또는 `pnpm tauri:build` (프로덕션·릴리즈) 실행 시 SQLCipher 가 vendored OpenSSL 과 함께 소스에서 빌드된다. OpenSSL 빌드는 Perl 스크립트에 의존하므로 OS별 사전 조건이 다르다.
+
+### 일상 개발 (cipher off, 평문 SQLite)
+
+```bash
+cargo build --manifest-path src-tauri/Cargo.toml
+pnpm tauri:dev    # 동일하게 default features 로 빌드
+```
+
+- Perl 사전 설치 불필요
+- 빠른 빌드 (~30초 warm cache)
+- DB 파일은 `./SmartHB-dev.db` 평문 SQLite
+
+### 프로덕션 / CI 빌드 (cipher on, SQLCipher 적용)
+
+#### Windows: Strawberry Perl 필수
+
+Windows 의 기본 Perl (MSYS2 / Git Bash 포함) 은 OpenSSL 빌드에 필요한 `Locale::Maketext::Simple.pm` 등의 모듈이 누락되어 있어 vendored OpenSSL 빌드가 실패한다. **Strawberry Perl 1회 설치 (~10분)** 가 필요하다.
+
+```
+1. https://strawberryperl.com/ 접속
+2. "Recommended version" (64-bit MSI) 다운로드
+3. 기본 옵션으로 설치 (PATH 자동 추가됨)
+4. 새 터미널 (Git Bash / PowerShell) 열고 `perl -v` 로 확인
+   → "This is perl 5.xx.x ..." 출력되면 정상
+5. cargo build --manifest-path src-tauri/Cargo.toml --features cipher
+```
+
+> GitHub Actions `windows-latest` runner 는 Strawberry Perl 이 기본 포함되어 있어 추가 설치 단계 불필요.
+
+#### macOS: system Perl 충분
+
+macOS 12+ 는 system Perl 5.30+ 이 OpenSSL 빌드 모듈을 모두 포함한다. 별도 설치 없이 다음으로 진행:
+
+```bash
+cargo build --manifest-path src-tauri/Cargo.toml --features cipher
+```
+
+### 검증: SQLCipher 정상 통합 확인
+
+빌드 성공 후 런타임에 `PRAGMA cipher_version` 으로 확인 가능 (T3 키 관리 구현 후):
+
+```sql
+PRAGMA cipher_version;
+-- 응답: "4.x.x community" 형식 → SQLCipher 정상 통합
+```
+
+> 상세 배경: `docs/arch/adr-001-sqlcipher-integration.md` 참조
+
+---
+
 ## 6. 외부 서비스 설정
 
 > TODO: 프로젝트에서 사용하는 외부 서비스 설정 방법을 작성하세요.

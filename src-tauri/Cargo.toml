@@ -16,12 +16,27 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+default = []
+# SQLCipher AES-256 암호화 활성화 (프로덕션 빌드용).
+# - cargo build (default): cipher off → 평문 SQLite (개발/일상 빌드, Windows Perl 의존 회피)
+# - cargo build --features cipher: SQLCipher + vendored OpenSSL 빌드 (CI/릴리즈/인스톨러)
+#   * macOS: system Perl 충분
+#   * Windows: Strawberry Perl 필요 (docs/setup-guide.md 참조)
+# ADR-001 참조: docs/arch/adr-001-sqlcipher-integration.md
+cipher = ["dep:libsqlite3-sys"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# sqlx-sqlite 0.8.6 는 libsqlite3-sys 0.30.x 를 의존한다. cipher feature 가 켜진 빌드에서만
+# `bundled-sqlcipher-vendored-openssl` 가 활성화되어 SQLCipher + 정적 OpenSSL 이 통합된다.
+# cipher off 일 때는 sqlx-sqlite 자체의 libsqlite3-sys 가 평문 SQLite 빌드로 사용된다.
+# ADR-001 의 (A) 안. 양 OS 빌드 자동화 + 인스톨러 배포 모델 호환을 위해 채택.
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate"] }
+libsqlite3-sys = { version = "0.30", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 
