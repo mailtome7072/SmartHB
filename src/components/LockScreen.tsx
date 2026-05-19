@@ -19,12 +19,12 @@
  */
 
 import { useEffect, useState } from 'react'
-import { checkAuthStatus, setPassword, unlockDb } from '@/lib/tauri'
-import type { AuthStatus } from '@/types'
+import { appStartupSequence, checkAuthStatus, setPassword } from '@/lib/tauri'
+import type { AuthStatus, StartupResult } from '@/types'
 
 const MIN_PASSWORD_LENGTH = 8
 
-export function LockScreen({ onUnlocked }: { onUnlocked?: () => void }) {
+export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult) => void }) {
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [password, setPasswordInput] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -62,11 +62,13 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: () => void }) {
     setSubmitting(true)
     try {
       if (isInitialSetup) {
+        // 최초 비밀번호 설정 — keyring 에 salt + key 저장 (audit log 포함).
         await setPassword(password)
-      } else {
-        await unlockDb(password)
       }
-      onUnlocked?.()
+      // 양 모드 공통: startup 시퀀스로 락 + 무결성 + DB pool 초기화 + 백그라운드 task 시작.
+      // 백엔드가 내부적으로 verify_password 수행 → unlockDb IPC 별도 호출 불필요.
+      const startup = await appStartupSequence(password, false)
+      onUnlocked?.(startup)
     } catch (e) {
       setError(typeof e === 'string' ? e : '처리 중 오류가 발생했습니다. 다시 시도해주세요.')
     } finally {
