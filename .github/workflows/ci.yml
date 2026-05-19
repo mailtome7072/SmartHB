@@ -141,6 +141,7 @@ jobs:
 
   # ── Job 4: Tauri 빌드 매트릭스 (main PR에서만) ────────────────────────
   # develop → main PR 시에만 실행 (Windows + macOS 빌드 검증)
+  # cipher feature 활성화 — SQLCipher + vendored OpenSSL 통합 검증 (T11, ADR-001)
   tauri-build:
     name: Tauri 빌드 (${{ matrix.platform }})
     needs: [rust, frontend]
@@ -150,9 +151,9 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            args: ''
+            args: '--features cipher'
           - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
+            args: '--target aarch64-apple-darwin --features cipher'
 
     runs-on: ${{ matrix.platform }}
 
@@ -168,6 +169,13 @@ jobs:
       - name: pnpm 설치
         run: npm install -g pnpm
 
+      - name: Strawberry Perl 설치 (Windows — SQLCipher OpenSSL 빌드)
+        if: matrix.platform == 'windows-latest'
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+          distribution: strawberry
+
       - name: Rust stable 설치
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -181,7 +189,7 @@ jobs:
       - name: 의존성 설치
         run: pnpm install
 
-      - name: Tauri 빌드
+      - name: Tauri 빌드 (cipher feature on)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
