@@ -4,6 +4,7 @@
  */
 
 import type {
+  AuditLogEntry,
   AuthStatus,
   BackupLayer,
   BackupMetadata,
@@ -11,6 +12,7 @@ import type {
   IntegrityMode,
   LockStatus,
   RestoreResult,
+  SyncStatus,
 } from '@/types'
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
@@ -226,4 +228,37 @@ export async function autoRestore(): Promise<RestoreResult> {
     }
   }
   return inv('auto_restore') as Promise<RestoreResult>
+}
+
+/**
+ * 클라우드 동기화 상태를 조회한다 (T9 PRD §5.3).
+ *
+ * `'waiting'` 응답 시 UI 가 일정 간격으로 본 함수를 재호출 — 30초 대기 후에도 `'waiting'`
+ * 이면 "새로고침" 옵션 노출. 브라우저 개발 모드에서는 항상 `'ready'` 반환.
+ */
+export async function checkSyncStatus(): Promise<SyncStatus> {
+  const inv = await getInvoke()
+  if (!inv) return { kind: 'ready' }
+  return inv('check_sync_status') as Promise<SyncStatus>
+}
+
+/**
+ * 감사 로그를 시간 역순으로 조회한다 (T9 PRD §6.6).
+ *
+ * @param since ISO8601 UTC 시각 (선택). 본 시각 이후 항목만 조회.
+ * @param limit 페이지당 최대 항목 수. 기본 100, 최대 1000.
+ *
+ * 백엔드 DB pool 미초기화 상태(unlock 미수행)에서 호출 시 사용자 친화 메시지로 throw.
+ * 브라우저 개발 모드에서는 빈 배열 반환.
+ */
+export async function getAuditLogs(
+  since?: string,
+  limit?: number,
+): Promise<AuditLogEntry[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_audit_logs', {
+    since: since ?? null,
+    limit: limit ?? null,
+  }) as Promise<AuditLogEntry[]>
 }

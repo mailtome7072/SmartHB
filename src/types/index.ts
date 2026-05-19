@@ -81,3 +81,41 @@ export interface RestoreResult {
   restored_from: string
   rollback_path: string
 }
+
+/**
+ * 클라우드 동기화 대기 상태 — T9 PRD §5.3.
+ *
+ * `src-tauri/src/commands/sync.rs::SyncStatus` 와 serde `tag = "kind"` + `kebab-case` 정합.
+ * - `ready`: DB/락 파일 mtime 안정 — 시작 시퀀스 진입 가능
+ * - `waiting`: 최근 30초 이내 mtime 변경 감지 — 동기화 진행 중 가능성, UI 가 일정 간격 재호출
+ */
+export type SyncStatus =
+  | { kind: 'ready' }
+  | { kind: 'waiting'; seconds_since_change: number }
+
+/**
+ * 감사 로그 이벤트 종류 — T9 PRD §6.6.
+ *
+ * `src-tauri/src/commands/audit.rs::AuditEventType` 와 kebab-case 직렬화 정합.
+ */
+export type AuditEventType =
+  | 'password-change'
+  | 'recovery-code-issued'
+  | 'backup-created'
+  | 'backup-restored'
+  | 'lock-forced'
+  | 'integrity-check-failed'
+
+/**
+ * 감사 로그 항목 — `src-tauri/src/commands/audit.rs::AuditLogEntry` 와 정합.
+ *
+ * `created_at`: ISO8601 UTC. `event_type`: AuditEventType 문자열 또는 향후 추가될 신규 코드.
+ * `details`: JSON 문자열 (호출자가 사전 마스킹 — 민감 데이터 미포함).
+ */
+export interface AuditLogEntry {
+  id: number
+  created_at: string
+  event_type: string
+  event_subject: string | null
+  details: string | null
+}

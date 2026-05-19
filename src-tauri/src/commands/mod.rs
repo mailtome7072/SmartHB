@@ -1,8 +1,11 @@
+pub mod audit;
 pub mod auth;
 pub mod backup;
+pub mod db;
 pub mod integrity;
 pub mod lock;
 pub mod recovery;
+pub mod sync;
 
 /// 예시 Tauri 커맨드
 /// 실제 커맨드는 기능별로 서브모듈로 분리 (예: mod students; mod classes;)

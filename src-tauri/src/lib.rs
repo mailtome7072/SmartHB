@@ -22,6 +22,8 @@ pub fn run() {
             commands::backup::restore_backup,
             commands::integrity::check_integrity,
             commands::integrity::auto_restore,
+            commands::sync::check_sync_status,
+            commands::audit::get_audit_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
