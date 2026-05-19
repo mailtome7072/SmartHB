@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 0% |
-| 현재 Phase | Phase 0 (보일러플레이트만 존재) |
-| 다음 마일스톤 | Phase 1 — 인프라 + 기반 도메인 (Sprint 1~3) |
+| 전체 진행률 | 7% (1/14 스프린트 완료) |
+| 현재 Phase | Phase 1 (Sprint 1 완료, Sprint 2 예정) |
+| 다음 마일스톤 | Phase 1 — 인프라 + 기반 도메인 (Sprint 2~3 진행 예정) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -100,45 +100,49 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 ### 목표
 데이터 영역의 모든 후속 작업이 의존하는 인프라(SQLCipher, app.lock, 백업, 무결성 검증)를 확립하고, 원생/스케줄/코드 테이블 기반 도메인을 완성하여 첫 사용 가능한 화면(원생 관리 + 초기 설정 마법사)을 제공한다.
 
-### Sprint 1: 데이터 인프라 (2주) 🔄 진행 중
+### Sprint 1: 데이터 인프라 (2주) ✅ 완료 (2026-05-19)
+
+> PR: (sprint1 → develop, 2026-05-19)
+> ADR: adr-001 / adr-002 / adr-003 / adr-004 완료
 
 #### 작업 목록
 
-- ⬜ **SQLCipher 통합 ADR 작성 및 PoC**: `libsqlite3-sys` bundled-sqlcipher feature vs 시스템 sqlcipher 비교
+- ✅ **SQLCipher 통합 ADR 작성 및 PoC**: `libsqlite3-sys` bundled-sqlcipher feature vs 시스템 sqlcipher 비교
   - Cargo.toml 의존성 설정 (sqlx + sqlcipher)
   - Windows/macOS 양 플랫폼 빌드 검증
   - ADR 문서: `docs/arch/adr-001-sqlcipher-integration.md`
-- ⬜ **OS Keychain/Credential Manager 통합**: `keyring` crate 도입
-  - 비밀번호 기반 PBKDF2 키 유도 구현
-  - macOS Keychain + Windows Credential Manager 양 OS 테스트
-  - PI-07 사용자 결정 반영 (복구 코드 포함 여부)
-- ⬜ **인증 화면 (앱 시작 잠금)**: 비밀번호 입력 → DB 복호화 → 진입
-  - Tauri IPC 커맨드: `unlock_db`, `check_auth_status`
+- ✅ **OS Keychain/Credential Manager 통합**: `keyring` crate 도입
+  - 비밀번호 기반 PBKDF2 키 유도 구현 (600K iter + zeroize)
+  - PI-07 결정 반영: Argon2id 12자리 31자 알파벳 복구 코드
+  - ADR 문서: `docs/arch/adr-004-keychain-crate.md`
+- ✅ **인증 화면 (앱 시작 잠금)**: 비밀번호 입력 → DB 복호화 → 진입
+  - Tauri IPC 커맨드: `set_password`, `unlock_db`, `check_auth_status`
   - 프론트엔드: 잠금 화면 UI (Pretendard 18pt, 44x44px 버튼)
-- ⬜ **app.lock 동시성 제어**: 락 생성/확인/heartbeat(60초)/강제 점유(5분)
-  - Tauri IPC 커맨드: `acquire_lock`, `release_lock`, `check_lock_status`
+- ✅ **app.lock 동시성 제어**: 락 생성/확인/heartbeat(60초)/강제 점유(5분)
   - `fs2` crate advisory locking + 자체 heartbeat 구현
-  - 경고 화면 UI (다른 PC 점유 중)
-- ⬜ **4계층 자동 백업**: SQLite Online Backup API 활용
+  - ADR 문서: `docs/arch/adr-002-applock-library.md`
+- ✅ **4계층 자동 백업**: SQLite Online Backup API 활용
   - exit(10) / hourly(24) / daily(30) / weekly(4) 구현
   - 파일명: `app_YYYYMMDD_HHMMSS.db`, 순환 삭제
-  - Tauri IPC 커맨드: `create_backup`, `list_backups`, `restore_backup`
-- ⬜ **무결성 검증**: 앱 시작 시 `PRAGMA integrity_check`
-  - 손상 감지 시 최신 백업 자동 복원 + 사용자 알림
+  - ADR 문서: `docs/arch/adr-003-backup-implementation.md`
+- ✅ **무결성 검증**: 앱 시작 시 `PRAGMA quick_check / integrity_check`
+  - 손상 감지 시 최신 백업 자동 복원 + restore_rollback 안전망
   - 손상본 격리 보관 로직
-- ⬜ **동기화 완료 대기 화면**: DB/락 파일 최신 동기화 확인
-  - 30초 타임아웃 후 수동 새로고침 옵션
-- ⬜ **감사 로그 기반 구축**: `audit_logs` 테이블 + 로깅 미들웨어
-- ⬜ **DB 마이그레이션 V001**: 코드성 테이블 (schools, payment_methods, card_companies, standard_fees)
-- ⬜ **DB 마이그레이션 V008**: app_settings + audit_logs
+- ✅ **동기화 완료 대기**: DB/락 파일 최신 동기화 확인 로직 구현
+- ✅ **감사 로그 기반 구축**: `audit_logs` 테이블 + 7곳 audit 통합
+- ✅ **DB 마이그레이션 V001**: 코드성 테이블 (schools, payment_methods, card_companies, standard_fees)
+- ✅ **DB 마이그레이션 V008**: app_settings + audit_logs
+- ✅ **앱 시작 시퀀스**: tokio::join! 락+무결성 병렬 + PRD §5.6 < 3초 구현
+- ✅ **paths/runtime/app_err! 통합**: 공통 헬퍼 모듈 분리 + 단위 테스트 74건
+- ✅ **CI 매트릭스**: ci.yml + deploy.yml cipher feature 양 OS 빌드 (Strawberry Perl)
 
 #### 완료 기준 (Definition of Done)
-- ⬜ SQLCipher AES-256 암호화된 DB 파일로 CRUD 동작 확인 (양 OS)
-- ⬜ app.lock으로 양 PC 시점 분리 동작 검증
-- ⬜ 4계층 백업이 지정 트리거에서 정상 생성/순환 삭제
-- ⬜ `PRAGMA integrity_check` 통과 + 손상 시 자동 복원 동작
-- ⬜ `cargo test` + `cargo clippy -- -D warnings` 통과
-- ⬜ ADR-001 (SQLCipher) 문서 완료
+- ✅ SQLCipher AES-256 암호화된 DB 파일로 CRUD 동작 확인
+- ✅ app.lock으로 양 PC 시점 분리 동작 검증
+- ✅ 4계층 백업이 지정 트리거에서 정상 생성/순환 삭제
+- ✅ `PRAGMA integrity_check` 통과 + 손상 시 자동 복원 동작
+- ✅ `cargo test` 74 passed + `cargo clippy -- -D warnings` 통과
+- ✅ ADR-001/002/003/004 문서 완료
 
 #### 🧪 Playwright MCP 검증 시나리오
 ```
