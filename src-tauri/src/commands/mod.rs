@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod lock;
 pub mod recovery;
 
 /// 예시 Tauri 커맨드

@@ -14,6 +14,9 @@ pub fn run() {
             commands::recovery::generate_recovery_code,
             commands::recovery::verify_recovery_code,
             commands::recovery::reset_password_with_code,
+            commands::lock::check_lock_status,
+            commands::lock::acquire_lock,
+            commands::lock::release_lock,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

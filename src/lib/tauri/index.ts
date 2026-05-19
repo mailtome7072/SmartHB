@@ -3,7 +3,7 @@
  * 컴포넌트에서 invoke() 직접 호출 금지 — 이 파일을 통해서만 Tauri 커맨드 호출
  */
 
-import type { AuthStatus } from '@/types'
+import type { AuthStatus, LockStatus } from '@/types'
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
 
@@ -104,4 +104,36 @@ export async function resetPasswordWithCode(code: string, newPassword: string): 
   const inv = await getInvoke()
   if (!inv) return
   await inv('reset_password_with_code', { code, newPassword })
+}
+
+/**
+ * 현재 app.lock 점유 상태를 조회한다 (T6 PRD §5.3).
+ *
+ * 브라우저 개발 모드에서는 `free` 를 반환하여 UI 흐름만 검증 가능.
+ */
+export async function checkLockStatus(): Promise<LockStatus> {
+  const inv = await getInvoke()
+  if (!inv) return { kind: 'free' }
+  return inv('check_lock_status') as Promise<LockStatus>
+}
+
+/**
+ * app.lock 점유를 시도한다.
+ *
+ * `force=true` 는 5분 이상 미갱신(stale) 락만 강제 점유 — 정상 동작 중인 다른 디바이스
+ * 락은 백엔드가 보호한다. UI 가 사전 사용자 확인 후 force=true 호출.
+ */
+export async function acquireLock(force: boolean): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('acquire_lock', { force })
+}
+
+/**
+ * 본 디바이스의 app.lock 을 해제한다 (다른 디바이스 락은 보호됨).
+ */
+export async function releaseLock(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('release_lock')
 }

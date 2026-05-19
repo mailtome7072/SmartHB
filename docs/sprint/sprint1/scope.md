@@ -1,5 +1,5 @@
 ---
-Sprint: 1  |  Date: 2026-05-19  |  Session: #5 (T5 진입)
+Sprint: 1  |  Date: 2026-05-19  |  Session: #6 (T6 진입)
 ---
 
 ## 세션 진행 기록
@@ -8,9 +8,37 @@ Sprint: 1  |  Date: 2026-05-19  |  Session: #5 (T5 진입)
 - **Session #2** (T2 에러 처리 기반): ✅ 완료. commit `9ba7f6a`.
 - **Session #3** (T3 Keychain + PBKDF2 + ADR-004): ✅ 완료. commit `8e17324`.
 - **Session #4** (T4 인증 IPC + 잠금 화면 UI): ✅ 완료. commit `c00fa7e`.
-- **Session #5** (T5 PI-07 복구 코드 Argon2id): 🔄 진행 중 (현재)
+- **Session #5** (T5 PI-07 복구 코드 Argon2id): ✅ 완료. commit `80eb975`.
+- **Session #6** (T6 app.lock + ADR-002): 🔄 진행 중 (현재)
 
-## 이번 세션의 목표 (T5 — Day 5~6 첫 작업)
+## 이번 세션의 목표 (T6 — Day 5~6 두 번째 작업)
+
+**app.lock 동시성 제어 + ADR-002** · skill: brainstorming
+
+### 백엔드 (src-tauri/src/commands/lock.rs 신규)
+
+- 락 파일 `app.lock` — JSON: `{"device_id": "UUIDv4", "last_heartbeat": "ISO8601"}`
+- 디바이스 ID: 앱 시작 시 1회 OsRng UUIDv4 생성 (MAC/하드웨어 시리얼 사용 금지)
+- 60초 heartbeat (T10 startup sequence 통합 시 background task)
+- 5분 미갱신 시 강제 점유 가능
+- 정상 종료 시 락 자동 해제
+- 락 파일 위치: T6 임시로 `./SmartHB-data/app.lock` (dev), T9 정식 클라우드 동기화 폴더로 이전
+- ADR 문서: `docs/arch/adr-002-applock-library.md` (brainstorming)
+- 3개 IPC: `acquire_lock`, `release_lock`, `check_lock_status`
+
+### 새 의존성
+
+- `fs2 = "0.4"` — advisory file locking (Win + macOS)
+- `uuid = "1"` with `v4` feature — 디바이스 ID
+- `chrono = "0.4"` with `serde` — heartbeat 타임스탬프
+
+### 프론트엔드
+
+- `src/components/LockWarning.tsx` — 다른 PC 점유 경고 화면 (timer + 강제 점유 버튼 44x44px)
+- `src/lib/tauri/index.ts`: IPC 래퍼 3개
+- `src/types/index.ts`: `LockStatus` 타입
+
+### 이전 세션 (T5 — 참고)
 
 **PI-07 복구 코드 발급/검증** (Argon2id 메모리-하드 해시)
 

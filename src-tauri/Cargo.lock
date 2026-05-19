@@ -358,8 +358,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link 0.2.1",
 ]
 
@@ -973,6 +975,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -3387,6 +3399,8 @@ name = "smarthb"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "chrono",
+ "fs2",
  "hex",
  "hmac",
  "keyring",
@@ -3402,6 +3416,7 @@ dependencies = [
  "tauri-plugin-shell",
  "thiserror 2.0.18",
  "tokio",
+ "uuid",
  "zeroize",
 ]
 

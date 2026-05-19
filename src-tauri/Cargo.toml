@@ -52,6 +52,11 @@ hex = "0.4"
 # T5 PI-07 복구 코드 (PRD v1.5.1) — Argon2id 메모리-하드 해시.
 # 파라미터: m=19456 KiB, t=2, p=1 (OWASP 2024 권장). PHC 문자열 형식으로 PHC salt 포함 저장.
 argon2 = "0.5"
+# T6 app.lock 동시성 제어 (ADR-002, PRD §5.3) — fs2 advisory file locking + 자체 heartbeat.
+# 락 파일 위치는 T9 마법사 통합 시 클라우드 동기화 폴더 하위로 이전한다.
+fs2 = "0.4"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 [profile.release]
 codegen-units = 1
