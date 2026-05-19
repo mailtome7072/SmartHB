@@ -1,12 +1,55 @@
 ---
-Sprint: 1  |  Date: 2026-05-19  |  Session: #3 (T3 진입)
+Sprint: 1  |  Date: 2026-05-19  |  Session: #4 (T4 진입)
 ---
 
 ## 세션 진행 기록
 
 - **Session #1** (T1 SQLCipher PoC + ADR-001): ✅ 완료. commit `10bf105`.
-- **Session #2** (T2 에러 처리 기반 + AppError 첫 마이그레이션): ✅ 완료. commit `9ba7f6a`.
-- **Session #3** (T3 OS Keychain + PBKDF2 + ADR-004): 🔄 진행 중 (현재)
+- **Session #2** (T2 에러 처리 기반): ✅ 완료. commit `9ba7f6a`.
+- **Session #3** (T3 Keychain + PBKDF2 + ADR-004): ✅ 완료. commit `8e17324`.
+- **Session #4** (T4 인증 IPC + 잠금 화면 UI): 🔄 진행 중 (현재)
+
+## 이번 세션의 목표 (T4 — Day 3~4 마지막 작업)
+
+**인증 IPC + 잠금 화면 UI** (frontend-design 스킬 — 본 프로젝트에는 부재, `.claude/rules/frontend.md` 자동 로드 적용)
+
+### 백엔드 (Tauri IPC)
+
+- `set_password(password)`: 최초 비밀번호 설정 — salt 생성 + key 유도 + keyring 저장
+- `unlock_db(password)`: 입력 비밀번호로 키 유도 후 keyring 저장 키와 비교
+- `check_auth_status()`: `NotInitialized` / `Locked` 반환 (Unlocked 는 메모리 상태)
+- `auth.rs` 의 `#![allow(dead_code)]` 제거 (T3 임시 조치 자연 해소)
+- salt 저장 위치: 임시로 OS Keychain 별도 항목 — T9 마법사 통합 시 클라우드 동기화 폴더로 이전 예정
+
+### 프론트엔드 (Next.js + Tauri)
+
+- `src/types/index.ts`: `AuthStatus` 타입 정의 (Rust enum 과 serde rename_all 정합)
+- `src/lib/tauri/index.ts`: 3개 IPC 래퍼 추가
+- `src/components/LockScreen.tsx`: 잠금/최초 설정 자동 분기 컴포넌트 (frontend.md PRD §5.7 준수)
+- `src/app/lock/page.tsx`: 잠금 화면 라우트
+- `src/app/globals.css`: 색상 팔레트 (`#F9F7F4` / `#2563EB` / `#1A1A1A`) + 18pt 본문
+
+### 보류 (T9 이후 통합 예정)
+
+- 실제 SQLCipher DB 연결·암호화: T9 (코드 테이블 + 마법사 통합) 시점에 결정
+- Pretendard 폰트 임베드: T6 ADR-006 결정 (system sans-serif 임시 사용)
+- shadcn/ui 도입: T11 또는 후속 sprint (기본 Tailwind 사용)
+- 비밀번호 표시 토글 아이콘: lucide-react 도입 전까지 Unicode 문자 (👁) 임시 사용
+
+## 이번 세션에서 수정할 파일
+
+<!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행 -->
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/src/commands/auth.rs | [0회] | Tauri command 3개 + salt 저장/조회 + allow(dead_code) 제거 |
+| src-tauri/src/lib.rs | [0회] | invoke_handler 에 새 커맨드 3개 등록 |
+| src/types/index.ts | [0회] | AuthStatus 타입 |
+| src/lib/tauri/index.ts | [0회] | setPassword/unlockDb/checkAuthStatus IPC 래퍼 |
+| src/components/LockScreen.tsx | [0회] | 신규 — 잠금/최초 설정 화면 |
+| src/app/lock/page.tsx | [0회] | 신규 — 라우트 |
+| src/app/globals.css | [0회] | 색상 팔레트 + 본문 18pt |
+| docs/sprint/sprint1/scope.md | [0회] | 본 파일 — Session #4 갱신 |
 
 ## 이번 세션의 목표 (T3 — Day 3 두 번째 작업)
 

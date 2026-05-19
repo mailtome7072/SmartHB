@@ -8,6 +8,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::greet,
             commands::diagnose_sqlcipher,
+            commands::auth::check_auth_status,
+            commands::auth::set_password,
+            commands::auth::unlock_db,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

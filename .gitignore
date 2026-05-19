@@ -29,6 +29,7 @@ node_modules/
 .next/
 out/
 next-env.d.ts
+tsconfig.tsbuildinfo
 .nuxt/
 .cache/
 npm-debug.log*
