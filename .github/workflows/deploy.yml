@@ -8,14 +8,15 @@ on:
 jobs:
   build-and-release:
     name: 빌드 & 릴리즈 (${{ matrix.platform }})
+    # cipher feature 활성화 — SQLCipher AES-256 통합 (PRD §5.5, ADR-001)
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: windows-latest
-            args: ''
+            args: '--features cipher'
           - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
+            args: '--target aarch64-apple-darwin --features cipher'
 
     runs-on: ${{ matrix.platform }}
     permissions:
@@ -33,6 +34,13 @@ jobs:
       - name: pnpm 설치
         run: npm install -g pnpm
 
+      - name: Strawberry Perl 설치 (Windows — SQLCipher OpenSSL 빌드)
+        if: matrix.platform == 'windows-latest'
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+          distribution: strawberry
+
       - name: Rust stable 설치
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -46,7 +54,7 @@ jobs:
       - name: 의존성 설치
         run: pnpm install
 
-      - name: Tauri 빌드 및 GitHub Release 업로드
+      - name: Tauri 빌드 및 GitHub Release 업로드 (cipher feature on)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
