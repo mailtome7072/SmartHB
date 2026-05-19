@@ -22,6 +22,7 @@
 //! - T7 (현재): `./SmartHB-data/backup/{exit,hourly,daily,weekly}/` 임시 위치 (dev).
 //! - T9 (마법사 통합): 클라우드 동기화 폴더 하위 `smarthb/backup/...` 로 이전.
 
+use crate::commands::audit::{self, AuditEventType};
 use crate::error::AppError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -320,7 +321,21 @@ where
 /// 지정 계층에 백업을 생성한다. `cipher` feature off 빌드에서는 안내 메시지를 반환한다.
 #[tauri::command]
 pub async fn create_backup(layer: BackupLayer) -> Result<BackupMetadata, String> {
-    run_blocking("백업 작업 실패", move || create_backup_sync(layer)).await
+    let meta = run_blocking("백업 작업 실패", move || create_backup_sync(layer)).await?;
+    audit::try_record(AuditEventType::BackupCreated, Some(layer.subdir()), None).await;
+    Ok(meta)
+}
+
+/// 백그라운드 hourly task 용 wrapper — 실패해도 panic 없이 stderr 로만 보고.
+///
+/// cipher off 빌드에서는 첫 시도부터 stub 에러 — 반복 노이즈 방지를 위해 단일 메시지로 출력.
+pub(crate) async fn try_create_backup(layer: BackupLayer) {
+    match run_blocking("백업 작업 실패", move || create_backup_sync(layer)).await {
+        Ok(_) => {
+            audit::try_record(AuditEventType::BackupCreated, Some(layer.subdir()), None).await;
+        }
+        Err(e) => eprintln!("[backup] {} 백업 실패 (백그라운드, 재시도 다음 주기): {}", layer.subdir(), e),
+    }
 }
 
 /// 백업 파일 목록을 시간 역순으로 반환한다. `layer` 미지정 시 4계층 전체.
@@ -335,10 +350,13 @@ pub async fn list_backups(layer: Option<BackupLayer>) -> Result<Vec<BackupMetada
 /// `auto_restore` 와 동일한 안전망(quick_check 통과 + 복원 직전 DB 보존).
 #[tauri::command]
 pub async fn restore_backup(path: String) -> Result<crate::commands::integrity::RestoreResult, String> {
-    run_blocking("백업 복원 작업 실패", move || {
-        crate::commands::integrity::restore_from_path(Path::new(&path))
+    let result = run_blocking("백업 복원 작업 실패", {
+        let path = path.clone();
+        move || crate::commands::integrity::restore_from_path(Path::new(&path))
     })
-    .await
+    .await?;
+    audit::try_record(AuditEventType::BackupRestored, Some(&path), None).await;
+    Ok(result)
 }
 
 #[cfg(test)]

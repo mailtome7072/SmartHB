@@ -17,6 +17,8 @@
 //! - T6 (현재): `./SmartHB-data/app.lock` 임시 위치 (dev).
 //! - T9 (마법사 통합): 클라우드 동기화 폴더 하위 `smarthb/app.lock` 으로 이전.
 
+use crate::commands::audit::{self, AuditEventType};
+use crate::commands::backup;
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use fs2::FileExt;
@@ -29,11 +31,6 @@ use uuid::Uuid;
 
 /// 락 파일명.
 const LOCK_FILENAME: &str = "app.lock";
-
-/// 락 파일이 위치할 디렉토리 (T6 임시).
-///
-/// T9 통합 시점에 사용자 마법사가 지정한 클라우드 동기화 폴더 경로로 이전한다.
-const LOCK_DIR_DEV: &str = "./SmartHB-data";
 
 /// 5분 미갱신 시 strale 판정 (PRD §5.3).
 const STALE_THRESHOLD_SECONDS: i64 = 300;
@@ -95,8 +92,9 @@ pub enum LockStatus {
     },
 }
 
-fn lock_path() -> PathBuf {
-    PathBuf::from(LOCK_DIR_DEV).join(LOCK_FILENAME)
+/// 락 파일 경로 — `backup::data_root()` 와 단일 데이터 루트 공유. sync 모듈이 mtime 감시에 재사용.
+pub(crate) fn lock_path() -> PathBuf {
+    backup::data_root().join(LOCK_FILENAME)
 }
 
 /// `AppError::Lock` 을 한 줄로 생성하는 헬퍼 — `.map_err(|e| lock_err("...", e))` 형태로 사용.
@@ -147,7 +145,7 @@ fn read_lock_info() -> Result<Option<LockInfo>, AppError> {
 /// 5. 함수 종료 시 file drop → fs2 락 자동 해제
 ///
 /// fs2 락 보유 구간이 read→판정→write 전체를 감싸므로 동시 acquire 가 직렬화된다.
-fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
+pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
     ensure_lock_dir()?;
     let path = lock_path();
     let mut file = OpenOptions::new()
@@ -216,7 +214,27 @@ pub async fn check_lock_status() -> Result<LockStatus, String> {
 /// 동시 acquire race 가 직렬화된다.
 #[tauri::command]
 pub async fn acquire_lock(force: bool) -> Result<(), String> {
-    acquire_lock_atomic(force).map_err(String::from)
+    acquire_lock_atomic(force).map_err(String::from)?;
+    // force=true 호출은 사용자가 명시적으로 강제 점유를 결정한 시점 — 사실로 기록.
+    // pool 미초기화 (startup 전) 일 수 있으므로 try_record (silent fail).
+    if force {
+        audit::try_record(AuditEventType::LockForced, None, None).await;
+    }
+    Ok(())
+}
+
+/// 백그라운드 heartbeat task — 60초마다 호출되어 mtime 갱신.
+///
+/// `acquire_lock_atomic(false)` 는 본 디바이스 점유 중일 때도 성공하므로 heartbeat 효과와 동등.
+/// 실패는 stderr 로만 기록 — 백그라운드 task 가 panic 으로 죽지 않도록 한다.
+pub(crate) async fn heartbeat_tick() {
+    if let Err(e) = tokio::task::spawn_blocking(|| acquire_lock_atomic(false))
+        .await
+        .map_err(|e| AppError::Lock(format!("heartbeat 작업 실패: {}", e)))
+        .and_then(|r| r)
+    {
+        eprintln!("[lock] heartbeat 실패 (재시도 60초 후): {}", e);
+    }
 }
 
 /// 락을 해제한다 (본 디바이스 점유일 때만).

@@ -20,6 +20,7 @@
 //! - exit 계층 전체 후보가 손상되었을 경우 daily/weekly 자동 폴백은 수행하지 않는다 —
 //!   사용자에게 명확한 에러로 보고 후 수동 결정(T10 startup UI 흐름에서 처리).
 
+use crate::commands::audit::{self, AuditEventType};
 use crate::commands::backup::{self, BackupLayer, BackupMetadata};
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
@@ -252,6 +253,26 @@ pub(crate) fn restore_from_path(backup_path: &Path) -> Result<RestoreResult, App
     restore_from_path_sync(backup_path)
 }
 
+/// T10 시작 시퀀스 전용 동기 quick_check — 현재 DB 가 없거나 cipher off 빌드면 `Ok` 로 fail-soft.
+///
+/// startup 의 tokio::join! 안에서 spawn_blocking 으로 호출되며, 무결성 실패가 startup 자체를
+/// 차단하지 않도록 한다. cipher off 개발 빌드에서는 DB 가 평문이거나 존재하지 않을 수 있으므로
+/// 안내 메시지를 startup 결과 필드(`integrity_ok=false`) 로 전달한다.
+pub(crate) fn check_integrity_quick_for_startup() -> Result<IntegrityCheckResult, AppError> {
+    let db_path = backup::db_path();
+    if !db_path.exists() {
+        // 첫 실행 — DB 파일 자체가 아직 없음. startup 이 db::initialize 로 생성한다.
+        return Ok(IntegrityCheckResult::Ok);
+    }
+    match run_pragma_check(&db_path, IntegrityMode::Quick) {
+        Ok(r) => Ok(r),
+        // cipher off 개발 빌드 — run_pragma_check 가 stub 안내. startup 은 fail-soft 진행.
+        #[cfg(not(feature = "cipher"))]
+        Err(AppError::Integrity(_)) => Ok(IntegrityCheckResult::Ok),
+        Err(e) => Err(e),
+    }
+}
+
 // ============================================================================
 // Tauri IPC commands
 // ============================================================================
@@ -271,16 +292,25 @@ where
 /// 현재 DB 에 대해 무결성 검증을 수행한다.
 #[tauri::command]
 pub async fn check_integrity(mode: IntegrityMode) -> Result<IntegrityCheckResult, String> {
-    run_blocking("무결성 검증 작업 실패", move || {
+    let result = run_blocking("무결성 검증 작업 실패", move || {
         run_pragma_check(&backup::db_path(), mode)
     })
-    .await
+    .await?;
+    if let IntegrityCheckResult::Failed { detail } = &result {
+        // detail 첫 줄만 기록 — 다중 행 결합이 너무 길어질 수 있음. 민감 데이터 포함 위험 없음
+        // (SQLite quick_check 출력은 row id + 손상 타입 텍스트).
+        let first_line = detail.lines().next().unwrap_or("(no detail)");
+        audit::try_record(AuditEventType::IntegrityCheckFailed, None, Some(first_line)).await;
+    }
+    Ok(result)
 }
 
 /// `backup/exit/` 의 가장 최신 무결한 백업으로 자동 복원한다.
 #[tauri::command]
 pub async fn auto_restore() -> Result<RestoreResult, String> {
-    run_blocking("자동 복원 작업 실패", auto_restore_sync).await
+    let result = run_blocking("자동 복원 작업 실패", auto_restore_sync).await?;
+    audit::try_record(AuditEventType::BackupRestored, Some(&result.restored_from), None).await;
+    Ok(result)
 }
 
 #[cfg(test)]

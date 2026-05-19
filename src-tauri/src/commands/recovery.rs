@@ -23,6 +23,7 @@
 //! - **PHC 문자열**: salt + 파라미터 + 해시가 단일 문자열에 포함 → keyring 1개 항목으로 충분.
 //! - **평문 폐기**: `Zeroizing<String>` 으로 IPC 응답 직후 메모리 영(0) 덮어쓰기.
 
+use crate::commands::audit::{self, AuditEventType};
 use crate::commands::auth::{
     derive_key_async, generate_salt, keyring_entry_for, keyring_get_or_none, store_key_in_keyring,
     store_salt_in_keyring,
@@ -129,6 +130,7 @@ pub async fn generate_recovery_code() -> Result<String, String> {
     .map_err(String::from)?;
 
     store_recovery_hash(&phc).map_err(String::from)?;
+    audit::try_record(AuditEventType::RecoveryCodeIssued, None, None).await;
     Ok((*plaintext).clone())
 }
 
@@ -178,6 +180,7 @@ pub async fn reset_password_with_code(code: String, new_password: String) -> Res
         .map_err(String::from)?;
     store_salt_in_keyring(&salt).map_err(String::from)?;
     store_key_in_keyring(&new_key).map_err(String::from)?;
+    audit::try_record(AuditEventType::PasswordChange, Some("recovery-reset"), None).await;
     Ok(())
 }
 

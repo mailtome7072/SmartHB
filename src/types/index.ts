@@ -119,3 +119,19 @@ export interface AuditLogEntry {
   event_subject: string | null
   details: string | null
 }
+
+/**
+ * 앱 시작 시퀀스 결과 — T10 PRD §5.6 < 3초 예산 검증.
+ *
+ * `src-tauri/src/startup.rs::StartupResult` 와 정합. `elapsed_ms` 가 3000 미만이면
+ * 시작 예산 통과 — UI 가 임계 초과 시 사용자에게 환경 점검 안내.
+ *
+ * `integrity_ok=false` 는 cipher off 개발 빌드 또는 stub 케이스 — startup 자체는 성공.
+ * `audit_cleaned` 는 1년 이전 audit_logs 삭제 행 수 (정보성).
+ */
+export interface StartupResult {
+  elapsed_ms: number
+  lock_force_used: boolean
+  integrity_ok: boolean
+  audit_cleaned: number
+}

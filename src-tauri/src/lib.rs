@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod startup;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,7 +25,14 @@ pub fn run() {
             commands::integrity::auto_restore,
             commands::sync::check_sync_status,
             commands::audit::get_audit_logs,
+            startup::app_startup_sequence,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_handle, event| {
+            // PRD §5.3 — 종료 시 exit 백업 + 락 해제. async runtime 이 살아있는 동안 block_on.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                tauri::async_runtime::block_on(startup::exit_hook());
+            }
+        });
 }

@@ -66,8 +66,8 @@ type AuditLogRow = (i64, String, String, Option<String>, Option<String>);
 
 /// 감사 이벤트 1건을 기록한다. `details` 는 JSON 문자열 권장 (마스킹된 상태).
 ///
-/// T10 통합 예정 — 본 sprint 에서는 호출자 없음. 단위 테스트로만 동작 검증.
-#[allow(dead_code)]
+/// T10 호출자 (auth/recovery/lock/backup/integrity) 는 [`try_record`] 를 통해 호출하여
+/// pool 미초기화 (unlock 전) 상태에서도 startup 흐름을 차단하지 않는다.
 pub(crate) async fn record(
     event_type: AuditEventType,
     event_subject: Option<&str>,
@@ -83,6 +83,20 @@ pub(crate) async fn record(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// best-effort 기록 — pool 미초기화 또는 DB 오류 시 silent fail.
+///
+/// startup 시퀀스 / set_password / acquire_lock 등 pool 이 아직 초기화되지 않은 시점에서
+/// 호출될 수 있는 위치에서 사용한다. 실패는 stderr 로만 기록되어 사용자 흐름에 영향을 주지 않는다.
+pub(crate) async fn try_record(
+    event_type: AuditEventType,
+    event_subject: Option<&str>,
+    details: Option<&str>,
+) {
+    if let Err(e) = record(event_type, event_subject, details).await {
+        eprintln!("[audit] 기록 생략 ({:?}): {}", event_type, e);
+    }
 }
 
 /// 시간 역순 페이지네이션 — `since` 이후 항목 중 `limit` 개 반환.
@@ -123,8 +137,7 @@ async fn list_logs(
 
 /// 1년(또는 임의 days) 이상 된 audit_logs 를 삭제한다.
 ///
-/// T10 시작 시퀀스에서 호출 예정 — 본 sprint 에서는 헬퍼만 노출.
-#[allow(dead_code)]
+/// T10 시작 시퀀스 [`crate::startup::app_startup_sequence`] 에서 호출되어 보관 기간 정책을 강제한다.
 pub(crate) async fn cleanup_older_than(days: i64) -> Result<u64, AppError> {
     let pool = db::pool()?;
     let cutoff = Utc::now() - chrono::Duration::days(days);

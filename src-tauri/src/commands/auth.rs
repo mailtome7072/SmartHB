@@ -15,6 +15,7 @@
 //! 본 모듈은 T4 (인증 IPC) 와 T5 (복구 코드 검증) 에서 사용된다.
 //! Tauri IPC 커맨드는 T4 에서 본 모듈을 호출하는 형태로 추가된다.
 
+use crate::commands::audit::{self, AuditEventType};
 use crate::error::AppError;
 use hmac::Hmac;
 use pbkdf2::pbkdf2;
@@ -260,29 +261,36 @@ pub async fn set_password(password: String) -> Result<(), String> {
     let key = derive_key_async(password, salt).await.map_err(String::from)?;
     store_salt_in_keyring(&salt).map_err(String::from)?;
     store_key_in_keyring(&key).map_err(String::from)?;
+    // 최초 설정 시점은 pool 미초기화 — try_record 가 silent skip. 비밀번호 변경 IPC(추후)는 unlock 후 호출되어 정상 기록.
+    audit::try_record(AuditEventType::PasswordChange, None, None).await;
+    Ok(())
+}
+
+/// 비밀번호 정합성을 검증한다 (내부 헬퍼).
+///
+/// 흐름: keyring 에서 salt 조회 → 입력 비밀번호로 key 유도 (blocking) → 저장된 key 와 비교.
+/// `unlock_db` IPC 와 T10 `app_startup_sequence` 양쪽이 공유.
+pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), AppError> {
+    if password.is_empty() {
+        return Err(AppError::Auth("비밀번호를 입력해주세요.".to_string()));
+    }
+    let salt = retrieve_salt_from_keyring()?;
+    let candidate = derive_key_async(password.clone(), salt).await?;
+    let stored = retrieve_key_from_keyring()?;
+    if !candidate.matches(&stored) {
+        return Err(AppError::Auth("비밀번호가 일치하지 않습니다.".to_string()));
+    }
     Ok(())
 }
 
 /// 비밀번호로 DB 잠금을 해제한다.
 ///
-/// 흐름: keyring 에서 salt 조회 → 입력 비밀번호로 key 유도 (blocking) → 저장된 key 와 비교.
-/// 일치하지 않으면 `AppError::Auth`.
-///
-/// 본 함수는 SQLCipher DB 연결을 직접 열지 않는다 — T9 (마법사 + 시작 시퀀스 통합)
-/// 시점에 실제 DB pool 초기화 흐름이 추가된다. 현재는 비밀번호 정합성만 검증.
+/// 본 함수는 SQLCipher DB 연결을 직접 열지 않는다 — 실제 DB pool 초기화는
+/// `app_startup_sequence` (T10) 가 담당. 본 IPC 는 잠금 화면에서 비밀번호 정합성 사전 검증에 사용.
 #[tauri::command]
 pub async fn unlock_db(password: String) -> Result<(), String> {
     let password = Zeroizing::new(password);
-    if password.is_empty() {
-        return Err(AppError::Auth("비밀번호를 입력해주세요.".to_string()).into());
-    }
-    let salt = retrieve_salt_from_keyring().map_err(String::from)?;
-    let candidate = derive_key_async(password, salt).await.map_err(String::from)?;
-    let stored = retrieve_key_from_keyring().map_err(String::from)?;
-    if !candidate.matches(&stored) {
-        return Err(AppError::Auth("비밀번호가 일치하지 않습니다.".to_string()).into());
-    }
-    Ok(())
+    verify_password(&password).await.map_err(String::from)
 }
 
 #[cfg(test)]

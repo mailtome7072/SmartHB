@@ -12,6 +12,7 @@ import type {
   IntegrityMode,
   LockStatus,
   RestoreResult,
+  StartupResult,
   SyncStatus,
 } from '@/types'
 
@@ -261,4 +262,35 @@ export async function getAuditLogs(
     since: since ?? null,
     limit: limit ?? null,
   }) as Promise<AuditLogEntry[]>
+}
+
+/**
+ * 앱 시작 시퀀스를 실행한다 (T10 PRD §5.6).
+ *
+ * 흐름: 락 + 무결성 quick_check 병렬 → 비밀번호 검증 → DB pool 초기화 → audit 1년 정리 →
+ * 백그라운드 task spawn. UI 가 `checkSyncStatus` 로 동기화 대기를 먼저 처리한 후 본 함수를 호출한다.
+ *
+ * `forceLock=true` 는 사용자가 이전 화면에서 stale 락 강제 점유에 동의한 후에만 호출.
+ * 브라우저 개발 모드에서는 더미 결과를 반환하여 UI 흐름만 검증 가능.
+ *
+ * 반환값 `elapsed_ms` 가 3000 미만이면 시작 예산 통과 — 임계 초과 시 UI 가 사용자에게
+ * 환경 점검(클라우드 동기화 상태, 디스크 부하 등) 안내.
+ */
+export async function appStartupSequence(
+  password: string,
+  forceLock = false,
+): Promise<StartupResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      elapsed_ms: 0,
+      lock_force_used: forceLock,
+      integrity_ok: true,
+      audit_cleaned: 0,
+    }
+  }
+  return inv('app_startup_sequence', {
+    password,
+    forceLock,
+  }) as Promise<StartupResult>
 }

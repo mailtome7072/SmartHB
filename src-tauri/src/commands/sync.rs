@@ -14,7 +14,7 @@
 //! mtime 은 advisory — 클라우드 클라이언트별로 동작 다름. 본 IPC 는 시작 시퀀스 게이트의
 //! soft signal 이며, 사용자 새로고침 옵션이 보완한다.
 
-use crate::commands::backup;
+use crate::commands::{backup, lock};
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -32,10 +32,6 @@ pub enum SyncStatus {
     Ready,
     /// mtime 이 최근 변경됨 — 동기화 진행 중일 가능성. UI 가 안내 + 일정 시간 후 재호출.
     Waiting { seconds_since_change: i64 },
-}
-
-fn lock_path() -> PathBuf {
-    backup::data_root().join("app.lock")
 }
 
 /// 파일 mtime 을 UTC `DateTime` 으로 변환. 파일이 없으면 `None`.
@@ -69,7 +65,7 @@ fn determine_status(now: DateTime<Utc>, latest_mtime: Option<DateTime<Utc>>) -> 
 pub async fn check_sync_status() -> Result<SyncStatus, String> {
     tokio::task::spawn_blocking(|| {
         let db_mtime = file_mtime(&backup::db_path());
-        let lock_mtime = file_mtime(&lock_path());
+        let lock_mtime = file_mtime(&lock::lock_path());
         let latest = match (db_mtime, lock_mtime) {
             (Some(a), Some(b)) => Some(a.max(b)),
             (Some(a), None) | (None, Some(a)) => Some(a),

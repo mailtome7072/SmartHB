@@ -87,12 +87,27 @@ async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
         .await?;
 
     apply_cipher_key_if_enabled(&pool).await?;
+    apply_startup_pragmas(&pool).await?;
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
         .map_err(|e| AppError::Config(format!("마이그레이션 실행 실패: {}", e)))?;
 
     Ok(pool)
+}
+
+/// PRD §5.6 시작 < 3초 예산을 위한 PRAGMA 설정.
+///
+/// - `journal_mode=WAL`: 동시 reader 허용 + 쓰기 latency 감소
+/// - `cache_size=-8000`: 8MB 페이지 캐시 (음수는 KiB 단위, 시작 시 큰 마이그레이션도 메모리에서 처리)
+/// - `foreign_keys=ON`: SQLite 기본값 OFF — 외래키 제약 강제
+///
+/// `PRAGMA key` 가 적용된 후 호출되어야 한다 (SQLCipher 빌드). 마이그레이션 실행 전에 호출.
+async fn apply_startup_pragmas(pool: &SqlitePool) -> Result<(), AppError> {
+    sqlx::query("PRAGMA journal_mode=WAL").execute(pool).await?;
+    sqlx::query("PRAGMA cache_size=-8000").execute(pool).await?;
+    sqlx::query("PRAGMA foreign_keys=ON").execute(pool).await?;
+    Ok(())
 }
 
 #[cfg(feature = "cipher")]
