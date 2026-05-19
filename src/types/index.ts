@@ -7,3 +7,131 @@ export interface ApiResult<T> {
   data: T
   error?: string
 }
+
+/**
+ * 사용자 인증 상태.
+ *
+ * `src-tauri/src/commands/auth.rs::AuthStatus` 와 serde rename_all="kebab-case" 정합.
+ * Rust enum 의 `NotInitialized` / `Locked` 가 각각 `"not-initialized"` / `"locked"` 로
+ * 직렬화되어 IPC 응답으로 전달된다.
+ *
+ * `Unlocked` 는 메모리 상태로만 관리되어 IPC 응답에 포함되지 않으므로 본 타입에 없다.
+ */
+export type AuthStatus = 'not-initialized' | 'locked'
+
+/**
+ * app.lock 점유 상태 — T6 PRD §5.3.
+ *
+ * `src-tauri/src/commands/lock.rs::LockStatus` 와 serde `tag = "kind"` + `rename_all = "kebab-case"` 정합.
+ * - `free`: 락 파일 없음, 즉시 점유 가능
+ * - `owned-by-self`: 본 디바이스가 점유 중
+ * - `owned-by-other`: 다른 디바이스 점유 중 (`stale: true` 면 5분 이상 미갱신 — 강제 점유 가능)
+ */
+export type LockStatus =
+  | { kind: 'free' }
+  | { kind: 'owned-by-self'; last_heartbeat_seconds_ago: number }
+  | { kind: 'owned-by-other'; stale: boolean; last_heartbeat_seconds_ago: number }
+
+/**
+ * 백업 계층 — T7 PRD §5.3/§5.4 (ADR-003).
+ *
+ * `src-tauri/src/commands/backup.rs::BackupLayer` 와 serde rename_all="kebab-case" 정합.
+ * 보관 정책: exit(10) / hourly(24) / daily(30) / weekly(4) — 초과 시 가장 오래된 파일 삭제.
+ */
+export type BackupLayer = 'exit' | 'hourly' | 'daily' | 'weekly'
+
+/**
+ * 백업 파일 메타데이터 — IPC 응답.
+ *
+ * `created_at` 은 ISO8601 UTC 문자열 (chrono::DateTime<Utc> serde 직렬화). UI 표시 시
+ * 사용자 로컬 타임존으로 변환 필요.
+ */
+export interface BackupMetadata {
+  path: string
+  layer: BackupLayer
+  created_at: string
+  size_bytes: number
+}
+
+/**
+ * 무결성 검증 모드 — T8 PRD §5.3/§5.4.
+ *
+ * - `quick`: PRAGMA quick_check, ~50ms — 앱 시작 시 사용 (PRD §5.6 < 3초 예산)
+ * - `full`: PRAGMA integrity_check — 일일 백업 시점 또는 사용자 수동 실행
+ */
+export type IntegrityMode = 'quick' | 'full'
+
+/**
+ * 무결성 검증 결과 — `src-tauri/src/commands/integrity.rs::IntegrityCheckResult` 와 정합.
+ *
+ * - `ok`: quick_check / integrity_check 가 "ok" 단일 행 반환
+ * - `failed`: 손상 — 다중 행 메시지가 `\n` 으로 결합된 `detail` 포함
+ */
+export type IntegrityCheckResult =
+  | { kind: 'ok' }
+  | { kind: 'failed'; detail: string }
+
+/**
+ * 자동 복원 / 백업 복원 결과 — `src-tauri/src/commands/integrity.rs::RestoreResult` 와 정합.
+ *
+ * `rollback_path`: 복원 직전 현재 DB 가 보존된 위치. 사용자가 복원이 실패했다고 판단할 경우
+ * 수동으로 되돌릴 수 있도록 안내한다.
+ */
+export interface RestoreResult {
+  restored_from: string
+  rollback_path: string
+}
+
+/**
+ * 클라우드 동기화 대기 상태 — T9 PRD §5.3.
+ *
+ * `src-tauri/src/commands/sync.rs::SyncStatus` 와 serde `tag = "kind"` + `kebab-case` 정합.
+ * - `ready`: DB/락 파일 mtime 안정 — 시작 시퀀스 진입 가능
+ * - `waiting`: 최근 30초 이내 mtime 변경 감지 — 동기화 진행 중 가능성, UI 가 일정 간격 재호출
+ */
+export type SyncStatus =
+  | { kind: 'ready' }
+  | { kind: 'waiting'; seconds_since_change: number }
+
+/**
+ * 감사 로그 이벤트 종류 — T9 PRD §6.6.
+ *
+ * `src-tauri/src/commands/audit.rs::AuditEventType` 와 kebab-case 직렬화 정합.
+ */
+export type AuditEventType =
+  | 'password-change'
+  | 'recovery-code-issued'
+  | 'backup-created'
+  | 'backup-restored'
+  | 'lock-forced'
+  | 'integrity-check-failed'
+
+/**
+ * 감사 로그 항목 — `src-tauri/src/commands/audit.rs::AuditLogEntry` 와 정합.
+ *
+ * `created_at`: ISO8601 UTC. `event_type`: AuditEventType 문자열 또는 향후 추가될 신규 코드.
+ * `details`: JSON 문자열 (호출자가 사전 마스킹 — 민감 데이터 미포함).
+ */
+export interface AuditLogEntry {
+  id: number
+  created_at: string
+  event_type: string
+  event_subject: string | null
+  details: string | null
+}
+
+/**
+ * 앱 시작 시퀀스 결과 — T10 PRD §5.6 < 3초 예산 검증.
+ *
+ * `src-tauri/src/startup.rs::StartupResult` 와 정합. `elapsed_ms` 가 3000 미만이면
+ * 시작 예산 통과 — UI 가 임계 초과 시 사용자에게 환경 점검 안내.
+ *
+ * `integrity_ok=false` 는 cipher off 개발 빌드 또는 stub 케이스 — startup 자체는 성공.
+ * `audit_cleaned` 는 1년 이전 audit_logs 삭제 행 수 (정보성).
+ */
+export interface StartupResult {
+  elapsed_ms: number
+  lock_force_used: boolean
+  integrity_ok: boolean
+  audit_cleaned: number
+}

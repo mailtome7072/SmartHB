@@ -16,14 +16,54 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+default = []
+# SQLCipher AES-256 암호화 활성화 (프로덕션 빌드용).
+# - cargo build (default): cipher off → 평문 SQLite (개발/일상 빌드, Windows Perl 의존 회피).
+#   backup 모듈은 stub 으로 동작 (사용자 친화 안내 메시지 반환).
+# - cargo build --features cipher: SQLCipher + vendored OpenSSL 빌드 (CI/릴리즈/인스톨러).
+#   rusqlite Online Backup API 활성화로 4계층 자동 백업 동작.
+#   * macOS: system Perl 충분
+#   * Windows: Strawberry Perl 필요 (docs/setup-guide.md 참조)
+# ADR-001, ADR-003 참조: docs/arch/adr-001-sqlcipher-integration.md, adr-003-backup-implementation.md
+cipher = ["dep:libsqlite3-sys", "dep:rusqlite"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# sqlx-sqlite 0.8.6 는 libsqlite3-sys 0.30.x 를 의존한다. cipher feature 가 켜진 빌드에서만
+# `bundled-sqlcipher-vendored-openssl` 가 활성화되어 SQLCipher + 정적 OpenSSL 이 통합된다.
+# cipher off 일 때는 sqlx-sqlite 자체의 libsqlite3-sys 가 평문 SQLite 빌드로 사용된다.
+# ADR-001 의 (A) 안. 양 OS 빌드 자동화 + 인스톨러 배포 모델 호환을 위해 채택.
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate"] }
+libsqlite3-sys = { version = "0.30", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
+
+# T3 키 관리 (ADR-004) — OS Keychain 통합 + PBKDF2 키 유도 + zeroize 메모리 폐기.
+# PBKDF2-HMAC-SHA256 600,000 iter (OWASP 2024) 로 비밀번호에서 AES-256 키 유도.
+keyring = "3"
+pbkdf2 = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
+rand = "0.8"
+hex = "0.4"
+# T5 PI-07 복구 코드 (PRD v1.5.1) — Argon2id 메모리-하드 해시.
+# 파라미터: m=19456 KiB, t=2, p=1 (OWASP 2024 권장). PHC 문자열 형식으로 PHC salt 포함 저장.
+argon2 = "0.5"
+# T6 app.lock 동시성 제어 (ADR-002, PRD §5.3) — fs2 advisory file locking + 자체 heartbeat.
+# 락 파일 위치는 T9 마법사 통합 시 클라우드 동기화 폴더 하위로 이전한다.
+fs2 = "0.4"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# T7 4계층 자동 백업 (ADR-003, PRD §5.3/§5.4) — SQLite Online Backup API.
+# `cipher` feature 와 함께만 활성 (libsqlite3-sys 0.30 sqlx 와 공유). cipher off 시 stub.
+# bundled-sqlcipher-vendored-openssl: rusqlite 가 자체적으로 libsqlite3-sys 의 SQLCipher 빌드를 활성.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "backup"], optional = true }
 
 [profile.release]
 codegen-units = 1

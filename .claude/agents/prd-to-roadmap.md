@@ -69,7 +69,7 @@ memory: project
 
 ```
 # 검증 시나리오 예시 (각 Phase별 구체적 항목으로 작성)
-1. browser_navigate → http://localhost:3000 접속
+1. browser_navigate → http://localhost:1420 접속
 2. browser_snapshot → 페이지 렌더링 상태 확인
 3. browser_click → [검증할 요소] 클릭
 4. browser_snapshot → 상태 변화 확인

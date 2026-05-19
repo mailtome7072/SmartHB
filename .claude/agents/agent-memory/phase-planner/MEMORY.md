@@ -1,0 +1,1 @@
+- [Phase 1 설계 기록](phase1-design-record.md) -- Phase 1 설계 결정, ADR 6건, 전문가 4관점 검토 요약
