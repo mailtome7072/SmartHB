@@ -1,3 +1,5 @@
+pub mod auth;
+
 /// 예시 Tauri 커맨드
 /// 실제 커맨드는 기능별로 서브모듈로 분리 (예: mod students; mod classes;)
 #[tauri::command]

@@ -40,6 +40,16 @@ libsqlite3-sys = { version = "0.30", features = ["bundled-sqlcipher-vendored-ope
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 
+# T3 키 관리 (ADR-004) — OS Keychain 통합 + PBKDF2 키 유도 + zeroize 메모리 폐기.
+# PBKDF2-HMAC-SHA256 600,000 iter (OWASP 2024) 로 비밀번호에서 AES-256 키 유도.
+keyring = "3"
+pbkdf2 = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
+rand = "0.8"
+hex = "0.4"
+
 [profile.release]
 codegen-units = 1
 lto = true

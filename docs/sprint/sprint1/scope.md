@@ -1,23 +1,24 @@
 ---
-Sprint: 1  |  Date: 2026-05-19  |  Session: #2 (T2 진입)
+Sprint: 1  |  Date: 2026-05-19  |  Session: #3 (T3 진입)
 ---
 
 ## 세션 진행 기록
 
-- **Session #1** (T1 SQLCipher PoC + ADR-001): ✅ 완료. commit `10bf105`. cipher feature optional 패턴 채택. Strawberry Perl 안내 추가.
-- **Session #2** (T2 에러 처리 기반): 🔄 진행 중 (현재)
+- **Session #1** (T1 SQLCipher PoC + ADR-001): ✅ 완료. commit `10bf105`.
+- **Session #2** (T2 에러 처리 기반 + AppError 첫 마이그레이션): ✅ 완료. commit `9ba7f6a`.
+- **Session #3** (T3 OS Keychain + PBKDF2 + ADR-004): 🔄 진행 중 (현재)
 
-## 이번 세션의 목표 (T2 — Day 3 첫 작업)
+## 이번 세션의 목표 (T3 — Day 3 두 번째 작업)
 
-**에러 처리 기반 구축** (skill 명시 없음 — 단순 구조 작업)
+**OS Keychain 통합 + PBKDF2 키 유도 + ADR-004** · skill: brainstorming
 
-- `src-tauri/src/error.rs` 신규 — `thiserror::Error` derive 한 `AppError` enum
-- 에러 카테고리 7종: `Auth`, `Db`, `Lock`, `Backup`, `Integrity`, `Io`, `Config`
-- Tauri IPC 직렬화: `impl From<AppError> for String` (사용자 친화 한국어 메시지)
-- 기술 상세는 Debug trait 으로 (향후 tracing crate 통합 시 로그 출력)
-- `src-tauri/src/lib.rs` 에 `mod error;` 추가
-
-PRD §6.4 준수 — 사용자 친화 메시지만 IPC 로 노출, 기술 에러 코드/스택 트레이스 비공개.
+- `keyring` crate v3.x 도입 (양 OS Keychain/Credential Manager 통합 API)
+- PBKDF2-HMAC-SHA256 + **600,000 iterations** (OWASP 2024 권장) + 32바이트 salt + 32바이트 출력 (AES-256 키 크기)
+- `zeroize` crate 통합 — `DerivedKey` 가 Drop 시 자동으로 메모리 폐기
+- `Debug` trait 수동 구현 — 키 바이트 로그 출력 차단 (`"DerivedKey([REDACTED])"`)
+- `docs/arch/adr-004-keychain-crate.md` 작성 — brainstorming 스킬 적용 (Weighted Matrix + SWOT)
+- `src-tauri/src/commands/auth.rs` 신규 — 키 유도/저장/조회/삭제 함수 + 단위 테스트
+- T4 (인증 IPC + 잠금 화면 UI) 의 기반 모듈
 
 ## 이번 세션에서 수정할 파일
 
@@ -25,19 +26,22 @@ PRD §6.4 준수 — 사용자 친화 메시지만 IPC 로 노출, 기술 에러
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/error.rs | [0회] | 신규 — AppError enum, 한국어 user_message, From 구현 |
-| src-tauri/src/lib.rs | [0회] | mod error; 추가 |
-| docs/sprint/sprint1/scope.md | [0회] | 본 파일 — Session #2 갱신 |
+| src-tauri/Cargo.toml | [0회] | keyring/pbkdf2/sha2/hmac/zeroize/rand/hex crate 추가 |
+| src-tauri/src/commands/auth.rs | [0회] | 신규 — 키 유도/Keychain 통합 함수 |
+| src-tauri/src/commands/mod.rs | [0회] | mod auth; 추가 |
+| docs/arch/adr-004-keychain-crate.md | [0회] | 신규 — brainstorming 스킬 적용 |
+| docs/sprint/sprint1/scope.md | [0회] | 본 파일 — Session #3 갱신 |
 
-### Session #1 변경 파일 (참고)
+### 이전 세션 변경 파일 (참고)
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/Cargo.toml | [1회] | cipher feature + libsqlite3-sys optional |
-| src-tauri/src/lib.rs | [1회] | invoke_handler 에 diagnose_sqlcipher 등록 |
-| src-tauri/src/commands/mod.rs | [1회] | diagnose_sqlcipher PoC IPC |
-| docs/arch/adr-001-sqlcipher-integration.md | [1회] | 신규 작성 |
-| docs/setup-guide.md | [1회] | 5-B 섹션 Strawberry Perl 안내 |
+| src-tauri/Cargo.toml | [1회] | T1: cipher feature + libsqlite3-sys optional |
+| src-tauri/src/error.rs | [1회] | T2: AppError 7종 |
+| src-tauri/src/lib.rs | [2회] | T1 invoke_handler, T2 mod error |
+| src-tauri/src/commands/mod.rs | [2회] | T1 diagnose_sqlcipher, T2 AppError 마이그레이션 |
+| docs/arch/adr-001-sqlcipher-integration.md | [1회] | T1 ADR |
+| docs/setup-guide.md | [1회] | T1 Strawberry Perl 안내 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
