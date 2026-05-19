@@ -1,5 +1,5 @@
 ---
-Sprint: 1  |  Date: 2026-05-19  |  Session: #4 (T4 진입)
+Sprint: 1  |  Date: 2026-05-19  |  Session: #5 (T5 진입)
 ---
 
 ## 세션 진행 기록
@@ -7,34 +7,34 @@ Sprint: 1  |  Date: 2026-05-19  |  Session: #4 (T4 진입)
 - **Session #1** (T1 SQLCipher PoC + ADR-001): ✅ 완료. commit `10bf105`.
 - **Session #2** (T2 에러 처리 기반): ✅ 완료. commit `9ba7f6a`.
 - **Session #3** (T3 Keychain + PBKDF2 + ADR-004): ✅ 완료. commit `8e17324`.
-- **Session #4** (T4 인증 IPC + 잠금 화면 UI): 🔄 진행 중 (현재)
+- **Session #4** (T4 인증 IPC + 잠금 화면 UI): ✅ 완료. commit `c00fa7e`.
+- **Session #5** (T5 PI-07 복구 코드 Argon2id): 🔄 진행 중 (현재)
 
-## 이번 세션의 목표 (T4 — Day 3~4 마지막 작업)
+## 이번 세션의 목표 (T5 — Day 5~6 첫 작업)
 
-**인증 IPC + 잠금 화면 UI** (frontend-design 스킬 — 본 프로젝트에는 부재, `.claude/rules/frontend.md` 자동 로드 적용)
+**PI-07 복구 코드 발급/검증** (Argon2id 메모리-하드 해시)
 
-### 백엔드 (Tauri IPC)
+### 백엔드 (src-tauri/src/commands/recovery.rs 신규)
 
-- `set_password(password)`: 최초 비밀번호 설정 — salt 생성 + key 유도 + keyring 저장
-- `unlock_db(password)`: 입력 비밀번호로 키 유도 후 keyring 저장 키와 비교
-- `check_auth_status()`: `NotInitialized` / `Locked` 반환 (Unlocked 는 메모리 상태)
-- `auth.rs` 의 `#![allow(dead_code)]` 제거 (T3 임시 조치 자연 해소)
-- salt 저장 위치: 임시로 OS Keychain 별도 항목 — T9 마법사 통합 시 클라우드 동기화 폴더로 이전 예정
+- `generate_recovery_code()` IPC — 12자리 영숫자 코드 생성
+  - 알파벳: 32자 Crockford Base32 변형 (`23456789ABCDEFGHJKLMNPQRSTUVWXYZ`) — 혼동 문자 0/O/1/I/L 제거
+  - `OsRng` CSPRNG, ~60비트 엔트로피
+  - 사용자에게 1회 표시 후 평문은 즉시 `Zeroizing` 폐기
+  - 해시는 Argon2id PHC 문자열로 OS Keychain 별도 항목에 저장
+- `verify_recovery_code(code)` — Argon2id 해시 비교 (constant-time, argon2 crate 내장)
+- `reset_password_with_code(code, new_password)` — 검증 성공 시 새 비밀번호 + salt + key 재설정
+  - 본 sprint T5 에서는 keyring 갱신만 수행, SQLCipher DB rekey 는 T9 통합 시점
+- 추가: PRD §7.2 "분실 시 데이터 영구 접근 불가" 경고는 프론트엔드 UI 책임
 
-### 프론트엔드 (Next.js + Tauri)
+### 새 의존성
 
-- `src/types/index.ts`: `AuthStatus` 타입 정의 (Rust enum 과 serde rename_all 정합)
-- `src/lib/tauri/index.ts`: 3개 IPC 래퍼 추가
-- `src/components/LockScreen.tsx`: 잠금/최초 설정 자동 분기 컴포넌트 (frontend.md PRD §5.7 준수)
-- `src/app/lock/page.tsx`: 잠금 화면 라우트
-- `src/app/globals.css`: 색상 팔레트 (`#F9F7F4` / `#2563EB` / `#1A1A1A`) + 18pt 본문
+- `argon2 = "0.5"` — Argon2id (OWASP 2024: m=19MiB, t=2, p=1)
 
-### 보류 (T9 이후 통합 예정)
+### 프론트엔드 (최소)
 
-- 실제 SQLCipher DB 연결·암호화: T9 (코드 테이블 + 마법사 통합) 시점에 결정
-- Pretendard 폰트 임베드: T6 ADR-006 결정 (system sans-serif 임시 사용)
-- shadcn/ui 도입: T11 또는 후속 sprint (기본 Tailwind 사용)
-- 비밀번호 표시 토글 아이콘: lucide-react 도입 전까지 Unicode 문자 (👁) 임시 사용
+- `src/components/RecoveryCodeDisplay.tsx` — 발급된 코드 표시 (4-4-4 형식, 복사 버튼, 분실 경고)
+- `src/components/RecoveryCodeInput.tsx` — 비밀번호 분실 시 코드 입력 화면
+- 정식 설정 메뉴 통합은 Sprint 3+ — T5 는 컴포넌트 + IPC 래퍼만
 
 ## 이번 세션에서 수정할 파일
 
@@ -42,14 +42,33 @@ Sprint: 1  |  Date: 2026-05-19  |  Session: #4 (T4 진입)
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/commands/auth.rs | [0회] | Tauri command 3개 + salt 저장/조회 + allow(dead_code) 제거 |
-| src-tauri/src/lib.rs | [0회] | invoke_handler 에 새 커맨드 3개 등록 |
-| src/types/index.ts | [0회] | AuthStatus 타입 |
-| src/lib/tauri/index.ts | [0회] | setPassword/unlockDb/checkAuthStatus IPC 래퍼 |
-| src/components/LockScreen.tsx | [0회] | 신규 — 잠금/최초 설정 화면 |
-| src/app/lock/page.tsx | [0회] | 신규 — 라우트 |
-| src/app/globals.css | [0회] | 색상 팔레트 + 본문 18pt |
-| docs/sprint/sprint1/scope.md | [0회] | 본 파일 — Session #4 갱신 |
+| src-tauri/Cargo.toml | [0회] | argon2 crate 추가 |
+| src-tauri/src/commands/recovery.rs | [0회] | 신규 — Argon2id 해시 + 12자리 코드 + 3개 IPC |
+| src-tauri/src/commands/mod.rs | [0회] | `pub mod recovery;` 추가 |
+| src-tauri/src/commands/auth.rs | [0회] | 비밀번호 재설정 helper 노출 (필요 시) |
+| src-tauri/src/lib.rs | [0회] | invoke_handler 에 3개 IPC 등록 |
+| src/types/index.ts | [0회] | (필요 시 타입 추가) |
+| src/lib/tauri/index.ts | [0회] | generateRecoveryCode / verifyRecoveryCode / resetPasswordWithCode 래퍼 |
+| src/components/RecoveryCodeDisplay.tsx | [0회] | 신규 |
+| src/components/RecoveryCodeInput.tsx | [0회] | 신규 |
+| docs/sprint/sprint1/scope.md | [0회] | 본 파일 — Session #5 갱신 |
+
+## 보안 원칙 (T3·T4 연장)
+
+- 복구 코드 평문은 `Zeroizing<String>` 으로 메모리 폐기 — 발급 시 1회 표시 후 백엔드 메모리 즉시 소멸
+- Argon2id 파라미터: m=19456 KiB (19 MiB), t=2, p=1 — OWASP 2024 권장
+- PHC 문자열에 salt 가 포함되어 키체인 단일 항목에 저장
+- 재발급 시 비밀번호 재입력 확인 (PRD v1.5.1) — `reset_password_with_code` 는 별개 흐름 (코드 입력 시점)
+
+### Session #4 변경 파일 (T4 완료, 참고)
+
+| 파일 | 비고 |
+|------|------|
+| src-tauri/src/commands/auth.rs | Tauri command 3개 + salt/key 헬퍼 제너릭화 + spawn_blocking |
+| src/components/LockScreen.tsx, src/app/lock/page.tsx | 잠금 화면 UI |
+| src/lib/tauri/index.ts, src/types/index.ts | IPC 래퍼 + AuthStatus 타입 |
+| src/app/globals.css | Tailwind v4 + 색상 팔레트 |
+| .eslintrc.json | ESLint 9 + Next.js 15 |
 
 ## 이번 세션의 목표 (T3 — Day 3 두 번째 작업)
 

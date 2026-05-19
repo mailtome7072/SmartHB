@@ -11,6 +11,9 @@ pub fn run() {
             commands::auth::check_auth_status,
             commands::auth::set_password,
             commands::auth::unlock_db,
+            commands::recovery::generate_recovery_code,
+            commands::recovery::verify_recovery_code,
+            commands::recovery::reset_password_with_code,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

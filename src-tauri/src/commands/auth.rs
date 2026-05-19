@@ -32,8 +32,8 @@ pub const SALT_LEN: usize = 32;
 /// SQLCipher 키 길이 (AES-256 = 32바이트).
 pub const KEY_LEN: usize = 32;
 
-/// OS Keychain service 식별자.
-const KEYRING_SERVICE: &str = "SmartHB";
+/// OS Keychain service 식별자. recovery 모듈 등 같은 crate 의 다른 인증 관련 모듈에서 재사용.
+pub(crate) const KEYRING_SERVICE: &str = "SmartHB";
 
 /// SQLCipher DB 암호화 키의 Keychain user 식별자.
 ///
@@ -134,7 +134,7 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
 
 /// Keychain `Entry` 핸들을 생성한다. `Entry::new` 자체는 OS 핸들만 생성하는 단순 객체이므로
 /// 캐싱하지 않고 호출 시점마다 새로 만든다.
-fn keyring_entry_for(user: &str) -> Result<keyring::Entry, AppError> {
+pub(crate) fn keyring_entry_for(user: &str) -> Result<keyring::Entry, AppError> {
     keyring::Entry::new(KEYRING_SERVICE, user)
         .map_err(|e| AppError::Config(format!("Keychain 항목 생성 실패: {}", e)))
 }
@@ -142,8 +142,8 @@ fn keyring_entry_for(user: &str) -> Result<keyring::Entry, AppError> {
 /// 항목 부재(`keyring::Error::NoEntry`) 와 실제 에러를 구분하여 조회한다.
 ///
 /// `check_auth_status` 가 "Keychain 에 항목 없음" 을 `NotInitialized` 로 정확히 매핑하기 위해
-/// 사용된다. 다른 에러는 그대로 전파.
-fn keyring_get_or_none(user: &str) -> Result<Option<Zeroizing<String>>, AppError> {
+/// 사용된다. 다른 에러는 그대로 전파. recovery 모듈 등 같은 crate 의 다른 사용처도 활용.
+pub(crate) fn keyring_get_or_none(user: &str) -> Result<Option<Zeroizing<String>>, AppError> {
     match keyring_entry_for(user)?.get_password() {
         Ok(value) => Ok(Some(Zeroizing::new(value))),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -204,7 +204,7 @@ pub fn delete_key_from_keyring() -> Result<(), AppError> {
 }
 
 /// Salt 를 OS Keychain 에 저장한다.
-fn store_salt_in_keyring(salt: &[u8; SALT_LEN]) -> Result<(), AppError> {
+pub(crate) fn store_salt_in_keyring(salt: &[u8; SALT_LEN]) -> Result<(), AppError> {
     store_bytes_in_keyring(KEYRING_USER_SALT, salt, "Salt")
 }
 
@@ -222,7 +222,10 @@ fn retrieve_salt_from_keyring() -> Result<[u8; SALT_LEN], AppError> {
 /// PRD §5.6 (앱 시작 < 3초) 보장 — async runtime 이벤트 루프가 PBKDF2 ~500ms 동안 다른
 /// IPC 요청을 처리할 수 있도록 한다. `tokio::task::spawn_blocking` 은 dedicated worker
 /// thread 풀을 사용.
-async fn derive_key_async(password: Zeroizing<String>, salt: [u8; SALT_LEN]) -> Result<DerivedKey, AppError> {
+pub(crate) async fn derive_key_async(
+    password: Zeroizing<String>,
+    salt: [u8; SALT_LEN],
+) -> Result<DerivedKey, AppError> {
     tokio::task::spawn_blocking(move || derive_key(&password, &salt))
         .await
         .map_err(|e| AppError::Auth(format!("키 유도 작업 실패: {}", e)))

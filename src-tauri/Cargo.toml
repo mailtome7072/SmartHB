@@ -49,6 +49,9 @@ hmac = "0.12"
 zeroize = { version = "1.7", features = ["zeroize_derive"] }
 rand = "0.8"
 hex = "0.4"
+# T5 PI-07 복구 코드 (PRD v1.5.1) — Argon2id 메모리-하드 해시.
+# 파라미터: m=19456 KiB, t=2, p=1 (OWASP 2024 권장). PHC 문자열 형식으로 PHC salt 포함 저장.
+argon2 = "0.5"
 
 [profile.release]
 codegen-units = 1
