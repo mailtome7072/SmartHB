@@ -31,3 +31,24 @@ export type LockStatus =
   | { kind: 'free' }
   | { kind: 'owned-by-self'; last_heartbeat_seconds_ago: number }
   | { kind: 'owned-by-other'; stale: boolean; last_heartbeat_seconds_ago: number }
+
+/**
+ * 백업 계층 — T7 PRD §5.3/§5.4 (ADR-003).
+ *
+ * `src-tauri/src/commands/backup.rs::BackupLayer` 와 serde rename_all="kebab-case" 정합.
+ * 보관 정책: exit(10) / hourly(24) / daily(30) / weekly(4) — 초과 시 가장 오래된 파일 삭제.
+ */
+export type BackupLayer = 'exit' | 'hourly' | 'daily' | 'weekly'
+
+/**
+ * 백업 파일 메타데이터 — IPC 응답.
+ *
+ * `created_at` 은 ISO8601 UTC 문자열 (chrono::DateTime<Utc> serde 직렬화). UI 표시 시
+ * 사용자 로컬 타임존으로 변환 필요.
+ */
+export interface BackupMetadata {
+  path: string
+  layer: BackupLayer
+  created_at: string
+  size_bytes: number
+}

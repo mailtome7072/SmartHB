@@ -17,6 +17,9 @@ pub fn run() {
             commands::lock::check_lock_status,
             commands::lock::acquire_lock,
             commands::lock::release_lock,
+            commands::backup::create_backup,
+            commands::backup::list_backups,
+            commands::backup::restore_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,7 +3,7 @@
  * 컴포넌트에서 invoke() 직접 호출 금지 — 이 파일을 통해서만 Tauri 커맨드 호출
  */
 
-import type { AuthStatus, LockStatus } from '@/types'
+import type { AuthStatus, BackupLayer, BackupMetadata, LockStatus } from '@/types'
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
 
@@ -136,4 +136,46 @@ export async function releaseLock(): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('release_lock')
+}
+
+/**
+ * 지정 계층에 SQLCipher DB 백업을 생성한다 (T7 PRD §5.3/§5.4, ADR-003).
+ *
+ * 백엔드가 4계층 순환 삭제까지 자동 수행한다 — 호출자는 계층 정책 미관여.
+ * `cipher` feature off 개발 빌드에서는 백엔드가 사용자 친화 안내 메시지로 reject.
+ * 브라우저 개발 모드에서는 더미 메타데이터를 반환하여 UI 흐름만 검증 가능.
+ */
+export async function createBackup(layer: BackupLayer): Promise<BackupMetadata> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      path: `[개발 모드] ./SmartHB-data/backup/${layer}/app_dev.db`,
+      layer,
+      created_at: new Date().toISOString(),
+      size_bytes: 0,
+    }
+  }
+  return inv('create_backup', { layer }) as Promise<BackupMetadata>
+}
+
+/**
+ * 백업 파일 목록을 시간 역순으로 조회한다.
+ *
+ * `layer` 미지정 시 4계층 전체. 브라우저 개발 모드에서는 빈 배열.
+ */
+export async function listBackups(layer?: BackupLayer): Promise<BackupMetadata[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_backups', { layer: layer ?? null }) as Promise<BackupMetadata[]>
+}
+
+/**
+ * 지정 백업 파일로 DB 복원을 시도한다 — T8 단계에서 활성화 (현재는 스텁).
+ *
+ * 호출 시 백엔드가 "T8 단계에서 활성화" 안내 메시지로 throw 한다.
+ */
+export async function restoreBackup(path: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('restore_backup', { path })
 }

@@ -19,12 +19,14 @@ tauri-build = { version = "2", features = [] }
 [features]
 default = []
 # SQLCipher AES-256 암호화 활성화 (프로덕션 빌드용).
-# - cargo build (default): cipher off → 평문 SQLite (개발/일상 빌드, Windows Perl 의존 회피)
-# - cargo build --features cipher: SQLCipher + vendored OpenSSL 빌드 (CI/릴리즈/인스톨러)
+# - cargo build (default): cipher off → 평문 SQLite (개발/일상 빌드, Windows Perl 의존 회피).
+#   backup 모듈은 stub 으로 동작 (사용자 친화 안내 메시지 반환).
+# - cargo build --features cipher: SQLCipher + vendored OpenSSL 빌드 (CI/릴리즈/인스톨러).
+#   rusqlite Online Backup API 활성화로 4계층 자동 백업 동작.
 #   * macOS: system Perl 충분
 #   * Windows: Strawberry Perl 필요 (docs/setup-guide.md 참조)
-# ADR-001 참조: docs/arch/adr-001-sqlcipher-integration.md
-cipher = ["dep:libsqlite3-sys"]
+# ADR-001, ADR-003 참조: docs/arch/adr-001-sqlcipher-integration.md, adr-003-backup-implementation.md
+cipher = ["dep:libsqlite3-sys", "dep:rusqlite"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -57,6 +59,11 @@ argon2 = "0.5"
 fs2 = "0.4"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+# T7 4계층 자동 백업 (ADR-003, PRD §5.3/§5.4) — SQLite Online Backup API.
+# `cipher` feature 와 함께만 활성 (libsqlite3-sys 0.30 sqlx 와 공유). cipher off 시 stub.
+# bundled-sqlcipher-vendored-openssl: rusqlite 가 자체적으로 libsqlite3-sys 의 SQLCipher 빌드를 활성.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "backup"], optional = true }
 
 [profile.release]
 codegen-units = 1
