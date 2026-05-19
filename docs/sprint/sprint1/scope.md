@@ -1,16 +1,23 @@
 ---
-Sprint: 1  |  Date: 2026-05-19  |  Session: #1
+Sprint: 1  |  Date: 2026-05-19  |  Session: #2 (T2 진입)
 ---
 
-## 이번 세션의 목표 (T1 — Day 1~2)
+## 세션 진행 기록
 
-**SQLCipher PoC + ADR-001 작성** · skill: brainstorming
+- **Session #1** (T1 SQLCipher PoC + ADR-001): ✅ 완료. commit `10bf105`. cipher feature optional 패턴 채택. Strawberry Perl 안내 추가.
+- **Session #2** (T2 에러 처리 기반): 🔄 진행 중 (현재)
 
-- `libsqlite3-sys`의 `bundled-sqlcipher-vendored-openssl` feature를 Windows + macOS에서 빌드 검증
-- sqlx + SQLCipher 통합 CRUD 테스트 (인메모리 + 파일 DB)
-- Cargo.toml feature flag로 개발/프로덕션 전환 가능성 설계
-- ADR 문서 `docs/arch/adr-001-sqlcipher-integration.md` 작성
-- **Go/No-Go 게이트**: 양 OS 빌드 성공 → 후속 Task 진행 / 실패 시 시스템 sqlcipher 대체안 → 2차 실패 시 사용자 보고
+## 이번 세션의 목표 (T2 — Day 3 첫 작업)
+
+**에러 처리 기반 구축** (skill 명시 없음 — 단순 구조 작업)
+
+- `src-tauri/src/error.rs` 신규 — `thiserror::Error` derive 한 `AppError` enum
+- 에러 카테고리 7종: `Auth`, `Db`, `Lock`, `Backup`, `Integrity`, `Io`, `Config`
+- Tauri IPC 직렬화: `impl From<AppError> for String` (사용자 친화 한국어 메시지)
+- 기술 상세는 Debug trait 으로 (향후 tracing crate 통합 시 로그 출력)
+- `src-tauri/src/lib.rs` 에 `mod error;` 추가
+
+PRD §6.4 준수 — 사용자 친화 메시지만 IPC 로 노출, 기술 에러 코드/스택 트레이스 비공개.
 
 ## 이번 세션에서 수정할 파일
 
@@ -18,11 +25,19 @@ Sprint: 1  |  Date: 2026-05-19  |  Session: #1
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/Cargo.toml | [0회] | sqlx feature 변경(sqlite → sqlite-unbundled or 유지) + libsqlite3-sys bundled-sqlcipher-vendored-openssl 추가 |
-| src-tauri/src/lib.rs | [0회] | SQLCipher PRAGMA key 적용 + sqlx pool 생성 PoC 코드 |
-| src-tauri/src/commands/mod.rs | [0회] | greet 외 PoC용 임시 IPC 1~2개 추가 (테스트용) |
-| docs/arch/adr-001-sqlcipher-integration.md | [0회] | 신규 작성 (brainstorming 스킬 Weighted Matrix + SWOT) |
-| docs/sprint/sprint1/scope.md | [0회] | 본 파일 — 진행 상황 갱신 |
+| src-tauri/src/error.rs | [0회] | 신규 — AppError enum, 한국어 user_message, From 구현 |
+| src-tauri/src/lib.rs | [0회] | mod error; 추가 |
+| docs/sprint/sprint1/scope.md | [0회] | 본 파일 — Session #2 갱신 |
+
+### Session #1 변경 파일 (참고)
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/Cargo.toml | [1회] | cipher feature + libsqlite3-sys optional |
+| src-tauri/src/lib.rs | [1회] | invoke_handler 에 diagnose_sqlcipher 등록 |
+| src-tauri/src/commands/mod.rs | [1회] | diagnose_sqlcipher PoC IPC |
+| docs/arch/adr-001-sqlcipher-integration.md | [1회] | 신규 작성 |
+| docs/setup-guide.md | [1회] | 5-B 섹션 Strawberry Perl 안내 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 

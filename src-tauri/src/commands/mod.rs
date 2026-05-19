@@ -14,6 +14,7 @@ pub fn greet(name: &str) -> String {
 /// 후속 T3 (키 관리) 구현 시 본 진단 IPC 는 제거되고 정식 `unlock_db` 흐름으로 대체된다.
 #[tauri::command]
 pub async fn diagnose_sqlcipher() -> Result<String, String> {
+    use crate::error::AppError;
     use sqlx::Row;
     use sqlx::sqlite::SqlitePoolOptions;
 
@@ -21,12 +22,12 @@ pub async fn diagnose_sqlcipher() -> Result<String, String> {
         .max_connections(1)
         .connect("sqlite::memory:")
         .await
-        .map_err(|e| format!("DB 연결 실패: {}", e))?;
+        .map_err(AppError::Db)?;
 
     let row = sqlx::query("PRAGMA cipher_version")
         .fetch_optional(&pool)
         .await
-        .map_err(|e| format!("PRAGMA 실행 실패: {}", e))?;
+        .map_err(AppError::Db)?;
 
     let cipher_version: Option<String> = row.and_then(|r| r.try_get(0).ok());
 
