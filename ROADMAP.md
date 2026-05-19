@@ -161,13 +161,13 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 2: 기반 도메인 백엔드 (2주) 📋 예정
+### Sprint 2: 기반 도메인 백엔드 (2주) 🔄 진행 중
 
 #### 작업 목록
 
 - ⬜ **DB 마이그레이션 V002**: students + student_schedules 테이블
   - 재원생 조건 쿼리, serial_no UNIQUE, effective_from/to 이력
-  - PI-05 사용자 결정 반영 (자동 채번 규칙 또는 수동 입력만)
+  - PI-05 확정 반영: 자동 채번(`MAX+1` + `BEGIN IMMEDIATE`) + 사용자 override 허용
 - ⬜ **DB 마이그레이션 V003**: study_periods + schedule_codes 테이블
   - 시스템 예약 5종 시드 데이터 INSERT
 - ⬜ **DB 마이그레이션 V004**: schedule_events 테이블
@@ -201,7 +201,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 #### 기술 고려사항
 - `query!`/`query_as!` 매크로로 컴파일 타임 타입 검사 필수
 - 에러 처리: `thiserror` + `Result<T, String>` (Tauri 커맨드 규약)
-- PI-05 미결정 시 수동 입력만 구현 (자동 채번은 Post-Sprint)
+- PI-05 확정: 자동 채번 구현 (`MAX+1` + override 허용)
 
 ---
 
@@ -844,7 +844,7 @@ PRD §4.15에 명시된 Post-MVP 항목:
 ### PRD 미해결 항목 (스프린트 진행 중 결정 필요)
 - ⬜ **PI-01** (High): 소멸 자동 전이 트리거 시점 → Sprint 7에서 구현
 - ⬜ **PI-02** (High): 보강-결석 시간값 매칭 규칙 → Sprint 6 착수 전 결정 필요
-- ⬜ **PI-05** (Medium): 일련번호 자동 채번 규칙 → Sprint 2 착수 전 결정 필요
+- ✅ **PI-05** (Medium): 일련번호 자동 채번 규칙 → **확정**: `MAX+1` + `BEGIN IMMEDIATE` + override 허용 (2026-05-20)
 - ⬜ **PI-07** (High): 복구 코드 발급/검증 Feature → Sprint 1 착수 전 결정 필요
 
 ---
