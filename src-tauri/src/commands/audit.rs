@@ -241,6 +241,18 @@ mod tests {
         assert_eq!(rows[0].4.as_deref(), Some(r#"{"layer":"exit"}"#));
     }
 
+    #[tokio::test]
+    async fn try_record_silent_fails_when_pool_uninitialized() {
+        // pool 미초기화 상태 — record 는 Err 반환, try_record 는 silent fail.
+        // 본 테스트는 try_record 가 panic 없이 즉시 반환하는지만 검증.
+        if !crate::commands::db::is_initialized() {
+            // 호출 자체가 panic 없이 완료되어야 한다.
+            try_record(AuditEventType::PasswordChange, None, None).await;
+            try_record(AuditEventType::BackupCreated, Some("test"), Some(r#"{"k":"v"}"#)).await;
+            // 통과 — silent fail 정상 동작
+        }
+    }
+
     #[cfg(not(feature = "cipher"))]
     #[tokio::test]
     async fn cleanup_deletes_only_old_rows() {

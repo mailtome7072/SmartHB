@@ -20,8 +20,11 @@
 //! - exit 계층 전체 후보가 손상되었을 경우 daily/weekly 자동 폴백은 수행하지 않는다 —
 //!   사용자에게 명확한 에러로 보고 후 수동 결정(T10 startup UI 흐름에서 처리).
 
+use crate::app_err;
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::backup::{self, BackupLayer, BackupMetadata};
+use crate::commands::paths;
+use crate::commands::runtime::run_blocking;
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -71,17 +74,13 @@ pub struct RestoreResult {
     pub rollback_path: String,
 }
 
-fn integrity_err(context: &str, e: impl std::fmt::Display) -> AppError {
-    AppError::Integrity(format!("{}: {}", context, e))
-}
-
 fn rollback_dir() -> PathBuf {
-    backup::data_root().join(ROLLBACK_SUBDIR)
+    paths::data_root().join(ROLLBACK_SUBDIR)
 }
 
 fn ensure_rollback_dir() -> Result<PathBuf, AppError> {
     let dir = rollback_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| integrity_err("rollback 디렉토리 생성 실패", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| app_err!(Integrity, "rollback 디렉토리 생성 실패", e))?;
     Ok(dir)
 }
 
@@ -105,19 +104,19 @@ fn run_pragma_check_with_key(
 ) -> Result<IntegrityCheckResult, AppError> {
     use rusqlite::Connection;
 
-    let conn = Connection::open(db_path).map_err(|e| integrity_err("DB 열기 실패", e))?;
-    conn.execute_batch(&backup::pragma_key_sql(hex_key))
-        .map_err(|e| integrity_err("PRAGMA key 적용 실패", e))?;
+    let conn = Connection::open(db_path).map_err(|e| app_err!(Integrity, "DB 열기 실패", e))?;
+    conn.execute_batch(&paths::pragma_key_sql(hex_key))
+        .map_err(|e| app_err!(Integrity, "PRAGMA key 적용 실패", e))?;
 
     let pragma = mode.pragma();
     let mut stmt = conn
         .prepare(pragma)
-        .map_err(|e| integrity_err("PRAGMA 준비 실패", e))?;
+        .map_err(|e| app_err!(Integrity, "PRAGMA 준비 실패", e))?;
     let rows: Vec<String> = stmt
         .query_map([], |r| r.get::<_, String>(0))
-        .map_err(|e| integrity_err("PRAGMA 실행 실패", e))?
+        .map_err(|e| app_err!(Integrity, "PRAGMA 실행 실패", e))?
         .collect::<Result<_, _>>()
-        .map_err(|e| integrity_err("PRAGMA 결과 읽기 실패", e))?;
+        .map_err(|e| app_err!(Integrity, "PRAGMA 결과 읽기 실패", e))?;
 
     Ok(classify_pragma_rows(rows))
 }
@@ -215,17 +214,17 @@ fn restore_from_path_sync(backup_path: &Path) -> Result<RestoreResult, AppError>
 
     let rollback_dir = ensure_rollback_dir()?;
     let rollback_path = rollback_dir.join(generate_rollback_filename(Utc::now()));
-    let current_db = backup::db_path();
+    let current_db = paths::db_path();
 
     if current_db.exists() {
         std::fs::rename(&current_db, &rollback_path)
-            .map_err(|e| integrity_err("현재 DB rollback 이동 실패", e))?;
+            .map_err(|e| app_err!(Integrity, "현재 DB rollback 이동 실패", e))?;
     }
 
     if let Err(e) = std::fs::copy(backup_path, &current_db) {
         // 복원 실패 — rollback 을 되돌려 원상복구 시도
         let _ = std::fs::rename(&rollback_path, &current_db);
-        return Err(integrity_err("백업 파일 복사 실패", e));
+        return Err(app_err!(Integrity, "백업 파일 복사 실패", e));
     }
 
     Ok(RestoreResult {
@@ -259,7 +258,7 @@ pub(crate) fn restore_from_path(backup_path: &Path) -> Result<RestoreResult, App
 /// 차단하지 않도록 한다. cipher off 개발 빌드에서는 DB 가 평문이거나 존재하지 않을 수 있으므로
 /// 안내 메시지를 startup 결과 필드(`integrity_ok=false`) 로 전달한다.
 pub(crate) fn check_integrity_quick_for_startup() -> Result<IntegrityCheckResult, AppError> {
-    let db_path = backup::db_path();
+    let db_path = paths::db_path();
     if !db_path.exists() {
         // 첫 실행 — DB 파일 자체가 아직 없음. startup 이 db::initialize 로 생성한다.
         return Ok(IntegrityCheckResult::Ok);
@@ -277,23 +276,11 @@ pub(crate) fn check_integrity_quick_for_startup() -> Result<IntegrityCheckResult
 // Tauri IPC commands
 // ============================================================================
 
-async fn run_blocking<T, F>(ctx: &'static str, f: F) -> Result<T, String>
-where
-    F: FnOnce() -> Result<T, AppError> + Send + 'static,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|e| AppError::Integrity(format!("{}: {}", ctx, e)))
-        .and_then(|r| r)
-        .map_err(String::from)
-}
-
 /// 현재 DB 에 대해 무결성 검증을 수행한다.
 #[tauri::command]
 pub async fn check_integrity(mode: IntegrityMode) -> Result<IntegrityCheckResult, String> {
-    let result = run_blocking("무결성 검증 작업 실패", move || {
-        run_pragma_check(&backup::db_path(), mode)
+    let result = run_blocking(AppError::Integrity, "무결성 검증 작업 실패", move || {
+        run_pragma_check(&paths::db_path(), mode)
     })
     .await?;
     if let IntegrityCheckResult::Failed { detail } = &result {
@@ -308,7 +295,7 @@ pub async fn check_integrity(mode: IntegrityMode) -> Result<IntegrityCheckResult
 /// `backup/exit/` 의 가장 최신 무결한 백업으로 자동 복원한다.
 #[tauri::command]
 pub async fn auto_restore() -> Result<RestoreResult, String> {
-    let result = run_blocking("자동 복원 작업 실패", auto_restore_sync).await?;
+    let result = run_blocking(AppError::Integrity, "자동 복원 작업 실패", auto_restore_sync).await?;
     audit::try_record(AuditEventType::BackupRestored, Some(&result.restored_from), None).await;
     Ok(result)
 }

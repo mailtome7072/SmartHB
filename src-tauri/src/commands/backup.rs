@@ -22,23 +22,17 @@
 //! - T7 (현재): `./SmartHB-data/backup/{exit,hourly,daily,weekly}/` 임시 위치 (dev).
 //! - T9 (마법사 통합): 클라우드 동기화 폴더 하위 `smarthb/backup/...` 로 이전.
 
+use crate::app_err;
 use crate::commands::audit::{self, AuditEventType};
+use crate::commands::paths;
+use crate::commands::runtime::run_blocking;
 use crate::error::AppError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// 앱 데이터 루트 디렉토리 (T7 임시).
-///
-/// 백업·락·rollback 모듈이 공유하는 단일 루트. T9 통합 시점에 사용자 마법사가 지정한
-/// 클라우드 동기화 폴더로 교체된다 (`./SmartHB-data` → `<클라우드폴더>/smarthb`).
-const DATA_ROOT_DEV: &str = "./SmartHB-data";
-
-/// 백업 디렉토리 서브패스 — `DATA_ROOT_DEV` 하위.
+/// 백업 디렉토리 서브패스 — `paths::data_root()` 하위.
 const BACKUP_SUBDIR: &str = "backup";
-
-/// 소스 DB 파일명 — `DATA_ROOT_DEV` 하위.
-const DB_FILENAME: &str = "app.db";
 
 /// 백업 파일명 구성 요소 — UTC 기준 1초 단위 정렬을 위해 PREFIX + STEM(`YYYYMMDD_HHMMSS`) + SUFFIX 조합.
 const FILENAME_PREFIX: &str = "app_";
@@ -89,25 +83,8 @@ pub struct BackupMetadata {
     pub size_bytes: u64,
 }
 
-/// `AppError::Backup` 을 한 줄로 생성하는 헬퍼 — lock.rs 의 `lock_err` 와 동일 패턴.
-fn backup_err(context: &str, e: impl std::fmt::Display) -> AppError {
-    AppError::Backup(format!("{}: {}", context, e))
-}
-
-/// 앱 데이터 루트 — backup·integrity·lock 모듈 공유.
-///
-/// T9 마법사 통합 시점에 클라우드 동기화 폴더 경로로 교체된다 — 본 함수가 단일 변경 지점.
-pub(crate) fn data_root() -> PathBuf {
-    PathBuf::from(DATA_ROOT_DEV)
-}
-
-/// 소스 DB 파일 경로 — integrity 모듈의 검증·복원 대상.
-pub(crate) fn db_path() -> PathBuf {
-    data_root().join(DB_FILENAME)
-}
-
 fn backup_root() -> PathBuf {
-    data_root().join(BACKUP_SUBDIR)
+    paths::data_root().join(BACKUP_SUBDIR)
 }
 
 fn backup_dir(layer: BackupLayer) -> PathBuf {
@@ -116,7 +93,7 @@ fn backup_dir(layer: BackupLayer) -> PathBuf {
 
 fn ensure_backup_dir(layer: BackupLayer) -> Result<PathBuf, AppError> {
     let dir = backup_dir(layer);
-    std::fs::create_dir_all(&dir).map_err(|e| backup_err("백업 디렉토리 생성 실패", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| app_err!(Backup, "백업 디렉토리 생성 실패", e))?;
     Ok(dir)
 }
 
@@ -151,11 +128,11 @@ fn scan_dir(dir: &Path, layer: BackupLayer) -> Result<Vec<BackupMetadata>, AppEr
     let read = match std::fs::read_dir(dir) {
         Ok(r) => r,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(backup_err("백업 디렉토리 스캔 실패", e)),
+        Err(e) => return Err(app_err!(Backup, "백업 디렉토리 스캔 실패", e)),
     };
     let mut entries: Vec<BackupMetadata> = Vec::new();
     for entry in read {
-        let entry = entry.map_err(|e| backup_err("백업 디렉토리 항목 읽기 실패", e))?;
+        let entry = entry.map_err(|e| app_err!(Backup, "백업 디렉토리 항목 읽기 실패", e))?;
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
@@ -187,7 +164,7 @@ fn rotate_dir(dir: &Path, layer: BackupLayer, max: usize) -> Result<(), AppError
     }
     let to_delete = entries.len() - max;
     for m in entries.into_iter().take(to_delete) {
-        std::fs::remove_file(&m.path).map_err(|e| backup_err("순환 삭제 실패", e))?;
+        std::fs::remove_file(&m.path).map_err(|e| app_err!(Backup, "순환 삭제 실패", e))?;
     }
     Ok(())
 }
@@ -199,14 +176,6 @@ fn rotate_layer(layer: BackupLayer) -> Result<(), AppError> {
 // ----------------------------------------------------------------------------
 // SQLCipher 백업 — cipher feature 게이트 (ADR-003 9번 항목)
 // ----------------------------------------------------------------------------
-
-/// PRAGMA key 적용용 SQL 단편을 생성한다. hex 인코딩이므로 `[0-9a-f]` 만 사용 → SQL injection 안전.
-///
-/// integrity 모듈에서도 동일 형식으로 PRAGMA key 적용이 필요하여 `pub(crate)` 노출.
-#[cfg(feature = "cipher")]
-pub(crate) fn pragma_key_sql(hex_key: &str) -> String {
-    format!("PRAGMA key = \"x'{}'\";", hex_key)
-}
 
 /// SQLCipher Online Backup + 즉시 `PRAGMA quick_check` 검증을 단일 dst Connection 에서 수행.
 ///
@@ -221,25 +190,25 @@ fn perform_backup_with_cipher(source: &Path, dest: &Path) -> Result<(), AppError
 
     let key = retrieve_key_from_keyring()?;
     let hex_key = key.to_hex();
-    let pragma_sql = pragma_key_sql(hex_key.as_str());
+    let pragma_sql = paths::pragma_key_sql(hex_key.as_str());
 
-    let src = Connection::open(source).map_err(|e| backup_err("소스 DB 열기 실패", e))?;
-    src.execute_batch(&pragma_sql).map_err(|e| backup_err("소스 PRAGMA key 적용 실패", e))?;
+    let src = Connection::open(source).map_err(|e| app_err!(Backup, "소스 DB 열기 실패", e))?;
+    src.execute_batch(&pragma_sql).map_err(|e| app_err!(Backup, "소스 PRAGMA key 적용 실패", e))?;
 
-    let mut dst = Connection::open(dest).map_err(|e| backup_err("대상 DB 열기 실패", e))?;
-    dst.execute_batch(&pragma_sql).map_err(|e| backup_err("대상 PRAGMA key 적용 실패", e))?;
+    let mut dst = Connection::open(dest).map_err(|e| app_err!(Backup, "대상 DB 열기 실패", e))?;
+    dst.execute_batch(&pragma_sql).map_err(|e| app_err!(Backup, "대상 PRAGMA key 적용 실패", e))?;
 
     {
-        let backup = Backup::new(&src, &mut dst).map_err(|e| backup_err("백업 초기화 실패", e))?;
+        let backup = Backup::new(&src, &mut dst).map_err(|e| app_err!(Backup, "백업 초기화 실패", e))?;
         backup
             .run_to_completion(100, Duration::from_millis(0), None)
-            .map_err(|e| backup_err("백업 실행 실패", e))?;
+            .map_err(|e| app_err!(Backup, "백업 실행 실패", e))?;
     }
     drop(src);
 
     let result: String = dst
         .query_row("PRAGMA quick_check", [], |r| r.get(0))
-        .map_err(|e| backup_err("quick_check 실행 실패", e))?;
+        .map_err(|e| app_err!(Backup, "quick_check 실행 실패", e))?;
     if result != "ok" {
         return Err(AppError::Backup(format!("백업 quick_check 실패: {}", result)));
     }
@@ -263,7 +232,7 @@ fn create_backup_sync(layer: BackupLayer) -> Result<BackupMetadata, AppError> {
     let filename = generate_filename(now);
     let dest = dir.join(&filename);
 
-    let source = db_path();
+    let source = paths::db_path();
     if let Err(e) = perform_backup_with_cipher(&source, &dest) {
         let _ = std::fs::remove_file(&dest);
         return Err(e);
@@ -302,26 +271,10 @@ fn list_backups_sync(layer: Option<BackupLayer>) -> Result<Vec<BackupMetadata>, 
 // Tauri IPC commands
 // ----------------------------------------------------------------------------
 
-/// `spawn_blocking` 으로 동기 작업을 실행하고 결과를 IPC 응답용 `Result<T, String>` 으로 변환한다.
-///
-/// SQLite Online Backup API 의 동기 호출이 async 런타임 이벤트 루프를 막지 않도록 보장한다
-/// (PRD §5.6, 앱 시작 < 3초 예산 영향 방지).
-async fn run_blocking<T, F>(join_ctx: &'static str, f: F) -> Result<T, String>
-where
-    F: FnOnce() -> Result<T, AppError> + Send + 'static,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|e| AppError::Backup(format!("{}: {}", join_ctx, e)))
-        .and_then(|r| r)
-        .map_err(String::from)
-}
-
 /// 지정 계층에 백업을 생성한다. `cipher` feature off 빌드에서는 안내 메시지를 반환한다.
 #[tauri::command]
 pub async fn create_backup(layer: BackupLayer) -> Result<BackupMetadata, String> {
-    let meta = run_blocking("백업 작업 실패", move || create_backup_sync(layer)).await?;
+    let meta = run_blocking(AppError::Backup, "백업 작업 실패", move || create_backup_sync(layer)).await?;
     audit::try_record(AuditEventType::BackupCreated, Some(layer.subdir()), None).await;
     Ok(meta)
 }
@@ -330,7 +283,7 @@ pub async fn create_backup(layer: BackupLayer) -> Result<BackupMetadata, String>
 ///
 /// cipher off 빌드에서는 첫 시도부터 stub 에러 — 반복 노이즈 방지를 위해 단일 메시지로 출력.
 pub(crate) async fn try_create_backup(layer: BackupLayer) {
-    match run_blocking("백업 작업 실패", move || create_backup_sync(layer)).await {
+    match run_blocking(AppError::Backup, "백업 작업 실패", move || create_backup_sync(layer)).await {
         Ok(_) => {
             audit::try_record(AuditEventType::BackupCreated, Some(layer.subdir()), None).await;
         }
@@ -341,7 +294,7 @@ pub(crate) async fn try_create_backup(layer: BackupLayer) {
 /// 백업 파일 목록을 시간 역순으로 반환한다. `layer` 미지정 시 4계층 전체.
 #[tauri::command]
 pub async fn list_backups(layer: Option<BackupLayer>) -> Result<Vec<BackupMetadata>, String> {
-    run_blocking("백업 목록 작업 실패", move || list_backups_sync(layer)).await
+    run_blocking(AppError::Backup, "백업 목록 작업 실패", move || list_backups_sync(layer)).await
 }
 
 /// 사용자가 지정한 백업 파일 경로로 현재 DB 를 복원한다.
@@ -350,7 +303,7 @@ pub async fn list_backups(layer: Option<BackupLayer>) -> Result<Vec<BackupMetada
 /// `auto_restore` 와 동일한 안전망(quick_check 통과 + 복원 직전 DB 보존).
 #[tauri::command]
 pub async fn restore_backup(path: String) -> Result<crate::commands::integrity::RestoreResult, String> {
-    let result = run_blocking("백업 복원 작업 실패", {
+    let result = run_blocking(AppError::Backup, "백업 복원 작업 실패", {
         let path = path.clone();
         move || crate::commands::integrity::restore_from_path(Path::new(&path))
     })
@@ -496,6 +449,15 @@ mod tests {
         // 본 테스트는 환경에 따라 false-positive 가능하므로 layer 없이 호출 결과 타입만 검증.
         let result = list_backups_sync(Some(BackupLayer::Weekly));
         assert!(result.is_ok());
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn try_create_backup_silent_skips_without_cipher() {
+        // cipher off 빌드 — create_backup_sync 가 안내 에러 반환.
+        // try_create_backup 은 stderr 만 출력하고 panic 없이 반환해야 한다.
+        try_create_backup(BackupLayer::Hourly).await;
+        // 통과 — silent skip 정상 동작
     }
 
     #[cfg(not(feature = "cipher"))]

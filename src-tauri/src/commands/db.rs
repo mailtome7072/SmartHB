@@ -113,7 +113,7 @@ async fn apply_startup_pragmas(pool: &SqlitePool) -> Result<(), AppError> {
 #[cfg(feature = "cipher")]
 async fn apply_cipher_key_if_enabled(pool: &SqlitePool) -> Result<(), AppError> {
     use crate::commands::auth::retrieve_key_from_keyring;
-    use crate::commands::backup::pragma_key_sql;
+    use crate::commands::paths::pragma_key_sql;
 
     let key = retrieve_key_from_keyring()?;
     let hex_key = key.to_hex();

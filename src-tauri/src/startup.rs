@@ -32,7 +32,7 @@
 //! 자체는 fail-soft — 무결성/백업 실패는 startup 실패가 아니라 결과 필드(`integrity_ok=false`,
 //! `backup_available=false`) 로 보고하여 개발 빌드에서도 메인 진입을 허용한다.
 
-use crate::commands::{audit, auth, backup, db, integrity, lock};
+use crate::commands::{audit, auth, backup, db, integrity, lock, paths};
 use crate::error::AppError;
 use serde::Serialize;
 use std::sync::OnceLock;
@@ -117,7 +117,7 @@ pub async fn app_startup_sequence(
     auth::verify_password(&password).await.map_err(String::from)?;
 
     // 3. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
-    db::initialize(backup::db_path())
+    db::initialize(paths::db_path())
         .await
         .map_err(String::from)?;
 
@@ -207,5 +207,18 @@ mod tests {
         assert!(json.contains(r#""lock_force_used":false"#));
         assert!(json.contains(r#""integrity_ok":true"#));
         assert!(json.contains(r#""audit_cleaned":0"#));
+    }
+
+    /// cipher off 환경에서 무결성 검증 fail-soft 동작을 검증한다.
+    ///
+    /// startup IPC 자체는 keyring 의존 (verify_password) + DB 파일 의존 (db::initialize) 이라
+    /// 전체 통합은 사용자 환경 테스트에서만 가능. 본 단위 테스트는 fail-soft 분기만 확인.
+    #[cfg(not(feature = "cipher"))]
+    #[test]
+    fn integrity_quick_check_for_startup_is_fail_soft_when_db_missing() {
+        // 정확한 db_path 가 존재하지 않을 때 quick_check 가 Ok 로 fail-soft 동작.
+        let result = integrity::check_integrity_quick_for_startup();
+        // db_path 존재 여부에 따라 Ok 또는 Failed — 둘 다 panic 없이 반환.
+        assert!(result.is_ok(), "fail-soft: cipher off 에서 Ok 반환 기대");
     }
 }

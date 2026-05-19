@@ -17,8 +17,9 @@
 //! - T6 (현재): `./SmartHB-data/app.lock` 임시 위치 (dev).
 //! - T9 (마법사 통합): 클라우드 동기화 폴더 하위 `smarthb/app.lock` 으로 이전.
 
+use crate::app_err;
 use crate::commands::audit::{self, AuditEventType};
-use crate::commands::backup;
+use crate::commands::paths;
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use fs2::FileExt;
@@ -92,20 +93,15 @@ pub enum LockStatus {
     },
 }
 
-/// 락 파일 경로 — `backup::data_root()` 와 단일 데이터 루트 공유. sync 모듈이 mtime 감시에 재사용.
+/// 락 파일 경로 — `paths::data_root()` 와 단일 데이터 루트 공유. sync 모듈이 mtime 감시에 재사용.
 pub(crate) fn lock_path() -> PathBuf {
-    backup::data_root().join(LOCK_FILENAME)
-}
-
-/// `AppError::Lock` 을 한 줄로 생성하는 헬퍼 — `.map_err(|e| lock_err("...", e))` 형태로 사용.
-fn lock_err(context: &str, e: impl std::fmt::Display) -> AppError {
-    AppError::Lock(format!("{}: {}", context, e))
+    paths::data_root().join(LOCK_FILENAME)
 }
 
 /// 락 파일 디렉토리를 보장한다 (없으면 생성). heartbeat 호출 시 idempotent.
 fn ensure_lock_dir() -> Result<(), AppError> {
     if let Some(parent) = lock_path().parent() {
-        std::fs::create_dir_all(parent).map_err(|e| lock_err("락 디렉토리 생성 실패", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| app_err!(Lock, "락 디렉토리 생성 실패", e))?;
     }
     Ok(())
 }
@@ -117,7 +113,7 @@ fn parse_lock_info(content: &str) -> Result<Option<LockInfo>, AppError> {
     }
     serde_json::from_str(content)
         .map(Some)
-        .map_err(|e| lock_err("락 파일 파싱 실패", e))
+        .map_err(|e| app_err!(Lock, "락 파일 파싱 실패", e))
 }
 
 /// 락 파일을 (열고 → 읽고) 한 번에 수행하는 read-only 헬퍼.
@@ -128,9 +124,9 @@ fn read_lock_info() -> Result<Option<LockInfo>, AppError> {
     if !path.exists() {
         return Ok(None);
     }
-    let mut file = File::open(&path).map_err(|e| lock_err("락 파일 열기 실패", e))?;
+    let mut file = File::open(&path).map_err(|e| app_err!(Lock, "락 파일 열기 실패", e))?;
     let mut content = String::new();
-    file.read_to_string(&mut content).map_err(|e| lock_err("락 파일 읽기 실패", e))?;
+    file.read_to_string(&mut content).map_err(|e| app_err!(Lock, "락 파일 읽기 실패", e))?;
     parse_lock_info(&content)
 }
 
@@ -154,12 +150,12 @@ pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
         .create(true)
         .truncate(false)
         .open(&path)
-        .map_err(|e| lock_err("락 파일 생성 실패", e))?;
+        .map_err(|e| app_err!(Lock, "락 파일 생성 실패", e))?;
     file.try_lock_exclusive()
-        .map_err(|e| lock_err("락 획득 실패 — 다른 프로세스가 락 파일 점유 중", e))?;
+        .map_err(|e| app_err!(Lock, "락 획득 실패 — 다른 프로세스가 락 파일 점유 중", e))?;
 
     let mut content = String::new();
-    file.read_to_string(&mut content).map_err(|e| lock_err("락 파일 읽기 실패", e))?;
+    file.read_to_string(&mut content).map_err(|e| app_err!(Lock, "락 파일 읽기 실패", e))?;
     let current = parse_lock_info(&content)?;
 
     match current {
@@ -176,10 +172,10 @@ pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
 
     let new_info = LockInfo::new_for_self();
     let json = serde_json::to_string_pretty(&new_info)
-        .map_err(|e| lock_err("락 JSON 직렬화 실패", e))?;
-    file.set_len(0).map_err(|e| lock_err("락 파일 truncate 실패", e))?;
-    file.seek(SeekFrom::Start(0)).map_err(|e| lock_err("락 파일 seek 실패", e))?;
-    file.write_all(json.as_bytes()).map_err(|e| lock_err("락 파일 쓰기 실패", e))?;
+        .map_err(|e| app_err!(Lock, "락 JSON 직렬화 실패", e))?;
+    file.set_len(0).map_err(|e| app_err!(Lock, "락 파일 truncate 실패", e))?;
+    file.seek(SeekFrom::Start(0)).map_err(|e| app_err!(Lock, "락 파일 seek 실패", e))?;
+    file.write_all(json.as_bytes()).map_err(|e| app_err!(Lock, "락 파일 쓰기 실패", e))?;
     Ok(())
 }
 
@@ -230,7 +226,7 @@ pub async fn acquire_lock(force: bool) -> Result<(), String> {
 pub(crate) async fn heartbeat_tick() {
     if let Err(e) = tokio::task::spawn_blocking(|| acquire_lock_atomic(false))
         .await
-        .map_err(|e| AppError::Lock(format!("heartbeat 작업 실패: {}", e)))
+        .map_err(|e| app_err!(Lock, "heartbeat 작업 실패", e))
         .and_then(|r| r)
     {
         eprintln!("[lock] heartbeat 실패 (재시도 60초 후): {}", e);
@@ -246,7 +242,7 @@ pub async fn release_lock() -> Result<(), String> {
     match current {
         None => Ok(()),
         Some(info) if info.is_self() => {
-            std::fs::remove_file(lock_path()).map_err(|e| lock_err("락 파일 삭제 실패", e))?;
+            std::fs::remove_file(lock_path()).map_err(|e| app_err!(Lock, "락 파일 삭제 실패", e))?;
             Ok(())
         }
         Some(_) => Err(AppError::Lock(
@@ -315,5 +311,23 @@ mod tests {
         let id1 = device_id();
         let id2 = device_id();
         assert_eq!(id1, id2, "OnceLock 으로 1회 생성된 ID 가 stable 해야 함");
+    }
+
+    #[tokio::test]
+    async fn heartbeat_tick_does_not_panic_on_success() {
+        // 본 디바이스 락 점유 후 heartbeat 호출 — 락 디렉토리는 SmartHB-data 공유.
+        // acquire_lock_atomic 이 idempotent 하므로 결과적으로 mtime 만 갱신.
+        let acquired = acquire_lock_atomic(false);
+        if acquired.is_err() {
+            // 다른 테스트 또는 외부 프로세스가 점유 중 — heartbeat 도 동일하게 거부될 것.
+            // 본 테스트는 panic 없는 동작만 검증하므로 skip.
+            return;
+        }
+        // heartbeat 호출이 panic 없이 완료되어야 한다.
+        heartbeat_tick().await;
+        heartbeat_tick().await; // 2회 호출도 안전 (재진입)
+
+        // 정리 — 다른 테스트와 격리.
+        let _ = std::fs::remove_file(lock_path());
     }
 }

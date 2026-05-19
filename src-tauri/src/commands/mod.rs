@@ -4,7 +4,9 @@ pub mod backup;
 pub mod db;
 pub mod integrity;
 pub mod lock;
+pub mod paths;
 pub mod recovery;
+pub mod runtime;
 pub mod sync;
 
 /// 예시 Tauri 커맨드
