@@ -1,6 +1,6 @@
 {
   "productName": "SmartHB",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "co.kr.ubcare.smarthb",
   "build": {
     "beforeDevCommand": "pnpm dev",

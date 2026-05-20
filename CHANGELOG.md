@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2026-05-20
+
 ### Added
 - Sprint 2: 루트 라우팅 + 인증 게이트 — `src/app/page.tsx` 클라이언트 가드, `lock/page.tsx` onUnlocked → `app_startup_sequence` → 메인 redirect, `src/lib/auth-state.ts` 모듈 스코프 인증 상태 (Sprint 3 Zustand 도입 전)
 - Sprint 2: DB 마이그레이션 V101 — students + student_schedules 테이블 (PI-05 자동 채번: `MAX+1` + `BEGIN IMMEDIATE` + override 허용)
@@ -59,6 +63,9 @@
 - Sprint 2: T8 `query!()`/`query_as!()` 매크로 전환 이연 — 동적 `query() + bind()` 패턴 유지, 별도 backlog 추가
 
 > **이연 사유**: salt 이전은 마법사 DB 경로 설정과 coupled, `query!()` 매크로는 V101~V105 스키마 안정화 후 일괄 전환이 안전
+
+### Fixed
+- R15: `startup::exit_hook`에서 `release_lock_atomic()` 직접 호출로 교체 (6c85f5c)
 
 ---
 
