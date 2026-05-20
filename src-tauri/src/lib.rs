@@ -25,6 +25,12 @@ pub fn run() {
             commands::integrity::auto_restore,
             commands::sync::check_sync_status,
             commands::audit::get_audit_logs,
+            commands::students::next_serial_number,
+            commands::students::create_student,
+            commands::students::update_student,
+            commands::students::get_student,
+            commands::students::withdraw_student,
+            commands::students::list_students,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())

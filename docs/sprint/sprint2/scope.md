@@ -1,11 +1,12 @@
 ---
-Sprint: 2  |  Date: 2026-05-20  |  Session: #2 (T5~T8 마이그레이션)
+Sprint: 2  |  Date: 2026-05-20  |  Session: #3 (T9 원생 CRUD IPC)
 ---
 
 ## 세션 진행 기록
 
 - **Session #1** (T1/T3/T4 — Sprint 1 잔여 해소): ✅ 완료. commits `a466541`, `84b18e5`, `052bb81`. T2 는 Sprint 3 마법사 통합으로 이연 (`c010423`).
-- **Session #2** (T5~T8 — V101~V103 마이그레이션 + .sqlx 캐시): 🔄 진행 중 (현재)
+- **Session #2** (T5~T7 — V101~V103 마이그레이션): ✅ 완료. commit `16edbd1`. T8 는 매크로 도입 시점으로 이연.
+- **Session #3** (T9 — 원생 CRUD IPC + PI-05 자동 채번): 🔄 진행 중 (현재)
 
 ## 이번 세션의 목표 (T5~T8 — Day 3~4)
 
