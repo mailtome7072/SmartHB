@@ -1,5 +1,11 @@
 # Sprint Plan sprint2
 
+## 완료 기록
+
+- **완료일**: 2026-05-20
+- **브랜치**: `sprint2` (develop 대비 11 commits ahead)
+- **Self-verify 최종**: `cargo test` 97 passed / `cargo clippy` 깨끗 / `pnpm lint` 깨끗 / `pnpm tsc --noEmit` 깨끗 / `pnpm build` 3 routes prerendered
+
 ## 기간
 2026-05-20 ~ 2026-06-02 (2주, 10 영업일)
 

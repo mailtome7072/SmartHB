@@ -37,6 +37,29 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 2: 루트 라우팅 + 인증 게이트 — `src/app/page.tsx` 클라이언트 가드, `lock/page.tsx` onUnlocked → `app_startup_sequence` → 메인 redirect, `src/lib/auth-state.ts` 모듈 스코프 인증 상태 (Sprint 3 Zustand 도입 전)
+- Sprint 2: DB 마이그레이션 V101 — students + student_schedules 테이블 (PI-05 자동 채번: `MAX+1` + `BEGIN IMMEDIATE` + override 허용)
+- Sprint 2: DB 마이그레이션 V102 — study_periods + schedule_codes 테이블 (시스템 예약 코드 5종 시드 데이터 포함)
+- Sprint 2: DB 마이그레이션 V103 — schedule_events 테이블
+- Sprint 2: DB 마이그레이션 V104 — standard_fees 재설계 (weekly_minutes 기준 교습비 자동 매칭)
+- Sprint 2: DB 마이그레이션 V105 — schools 보강 (school_type / region 컬럼)
+- Sprint 2: 원생 CRUD IPC 커맨드 4종 (`create_student`, `update_student`, `list_students`, `get_student`) — 이름/학교급/학년/학교명/요일/성별 다중 필터, 이름순/입교일순/학년순 정렬, 재원 상태 필터
+- Sprint 2: 수업 스케줄 IPC 커맨드 3종 (`set_schedule`, `get_schedules`, `get_weekly_hours`) — (원생, 요일) UNIQUE 검증, 변경 이력 자동 생성, 주 총 수업시간 자동 산정
+- Sprint 2: 표준 교습비 IPC 커맨드 3종 (`list_fees`, `create_fee`, `update_fee`) + 주 수업시간 → 교습비 자동 매칭 함수
+- Sprint 2: 코드 테이블 CRUD IPC 커맨드 — 학교/결제수단/카드사 공용 CRUD (is_active 소프트 삭제, sort_order 변경)
+- Sprint 2: 도메인 타입 4종 — `src/types/{student,schedule,fee,code}.ts`
+- Sprint 2: 프론트엔드 IPC 래퍼 18개 추가 (`src/lib/tauri/index.ts`) — dev mode fallback 포함, 총 22 신규 IPC
+- Sprint 2: `AppError::UserFacing(String)` variant 신규 — 도메인 검증 메시지 사용자 친화적 노출
+- Sprint 2: `AuditEventType` 확장 — StudentCreated / StudentUpdated / StudentWithdrawn 추가
+- Sprint 2: 단위 테스트 97건 (Sprint 1 64건 → +33건)
+
+### Changed
+- Sprint 2: R6 salt 이전 이연 확정 — `{data_root}/salt.bin` 평문 파일 보관, Sprint 3 마법사 통합 시점에 Keychain 이전 (R12 신설 추적)
+- Sprint 2: T8 `query!()`/`query_as!()` 매크로 전환 이연 — 동적 `query() + bind()` 패턴 유지, 별도 backlog 추가
+
+> **이연 사유**: salt 이전은 마법사 DB 경로 설정과 coupled, `query!()` 매크로는 V101~V105 스키마 안정화 후 일괄 전환이 안전
+
 ---
 
 ## [0.1.0] - 2026-05-19
