@@ -1,79 +1,86 @@
 ---
-Sprint: 3  |  Date: 2026-05-20  |  Session: #2
+Sprint: 3  |  Date: 2026-05-20  |  Session: #3
 ---
 
-## 세션 #2 목표
+## 세션 #3 목표
 
-T3 R14 페이지네이션 완료 — `list_students`/`list_codes`에 `limit/offset` + `count_*` 신규 IPC + 프론트 IPC 래퍼 + 타입 갱신.
+T4 Zustand + TanStack Query 셋업 — 세션·앱 전역 store 도입, IPC 응답 캐싱 인프라 확립.
 
 ## 이번 세션에서 수정할 파일
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| `src-tauri/src/commands/students.rs` | [0회] | StudentFilter에 limit/offset 추가, list_students SQL 갱신, count_students 신규 |
-| `src-tauri/src/commands/codes.rs` | [0회] | list_codes에 limit/offset 적용, count_codes 신규 |
-| `src-tauri/src/lib.rs` | [0회] | count_students/count_codes invoke_handler 등록 |
-| `src/lib/tauri/index.ts` | [0회] | listStudents 시그니처 갱신, countStudents/listCodes(limit·offset)/countCodes 추가 |
-| `src/types/student.ts` | [0회] | StudentFilter에 limit/offset 필드 |
+| `package.json` | [0회] | zustand, @tanstack/react-query 신규 의존성 |
+| `src/stores/session-store.ts` (신규) | [0회] | 인증 여부 + 디바이스 정보 + StartupResult (auth-state.ts 대체) |
+| `src/stores/app-store.ts` (신규) | [0회] | 락 점유, 사이드바 열림/닫힘, 선택된 교습기간월 |
+| `src/providers/query-provider.tsx` (신규) | [0회] | TanStack Query Provider client component |
+| `src/app/layout.tsx` | [0회] | Provider 래핑 |
+| `src/app/page.tsx` | [0회] | auth-state → session-store 마이그레이션 |
+| `src/app/lock/page.tsx` | [0회] | auth-state → session-store 마이그레이션 |
+| `src/lib/auth-state.ts` | [0회] | 제거 (session-store가 대체) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
 - ⬜ `.github/workflows/` — CI/CD 파이프라인 (hook이 차단)
 - ⬜ `SETUP.sh` — 초기화 스크립트 (hook이 차단)
 - ⬜ `docs/harness-engineering/` — Harness 정책
-- ⬜ `src-tauri/migrations/` (이번 세션) — V200 마이그레이션은 T8 도달 시
-- ⬜ `src/app/setup/`, `src/app/students/`, `src/components/layout/` (이번 세션) — Day 3 이후 Task
+- ⬜ `src-tauri/` (이번 세션) — T4는 프론트 전용
+- ⬜ `src/app/setup/`, `src/app/students/`, `src/components/layout/` (이번 세션)
 
 ## 완료 기준 (이번 세션)
 
-- ✅ StudentFilter 에 `limit`/`offset` 추가 (codes 는 별도 인자 — over-engineering 회피)
-- ✅ `list_students` / `list_codes` SQL 에 `LIMIT ? OFFSET ?` 적용
-- ✅ `count_students` / `count_codes` 신규 IPC
-- ✅ `lib.rs` invoke_handler 등록
-- ✅ 프론트 래퍼 갱신 (`listStudents` / `listCodes` / `countStudents` / `countCodes`)
-- ✅ TypeScript 타입 갱신
-- ✅ 단위 테스트 — pagination 모듈 2건 + students 3건 + codes 2건 (총 +7)
-- ✅ Self-verify: cargo test 106 passed / clippy / lint / tsc / build 모두 통과
-- ✅ simplify — `pagination.rs` 공유 모듈 추출, `build_filter_clause` 시그니처 정리
+- ✅ `pnpm add zustand@5.0.13 @tanstack/react-query@5.100.11`
+- ✅ session-store: `useSessionStore` (unlocked, lastStartup, markUnlocked)
+- ✅ app-store: `useAppStore` (lockStatus, sidebarOpen, selectedPeriodMonth + setters/toggle)
+- ✅ QueryProvider client component + layout.tsx 래핑
+- ✅ page.tsx / lock/page.tsx — auth-state → session-store 마이그레이션
+- ✅ `src/lib/auth-state.ts` 삭제
+- ✅ Self-verify: pnpm lint / pnpm tsc / pnpm build 통과
+- ✅ simplify — session-store 의 reset 액션 제거 (YAGNI)
 
 ## simplify 적용 사항
 
-- 3-agent 병렬 리뷰 → 채택 2건, 기각 1건:
-  - **채택**: `DEFAULT_LIST_LIMIT`/`MAX_LIST_LIMIT` + clamp 로직 중복(students/codes) → `commands/pagination.rs` 신규 모듈로 통합 (audit.rs 도 동일 패턴이지만 scope 외 — 별도 sweep)
-  - **채택**: `build_filter_clause` 반환 `(WHERE, bool)` → `(WHERE, JOIN)` 두 String — 호출부의 if 분기 제거
-  - **기각**: `listCodes` 도 CodeFilter 구조체로 통일 — codes 에는 다른 필터가 없어 over-engineering. 현재 `(table, limit, offset)` 인자 시그니처가 자연스러움.
+- 3-agent 병렬 리뷰 → 채택 1건:
+  - **채택**: `session-store.ts` 의 `reset` 액션 미사용 → 제거 (YAGNI — T5 이후 필요 시 재도입)
+- 나머지 항목은 모두 ✓ 또는 "no issues":
+  - app-store 의 forward-looking 필드(lockStatus/sidebarOpen/selectedPeriodMonth) — T5/T8 직접 소비 예정이라 premature 아님
+  - QueryClient defaults (staleTime 30s, retry 1, refetchOnWindowFocus false) — Tauri 데스크톱 환경에 적절
+  - page.tsx 의 dual selector 패턴 — Zustand 권장 패턴
 
 ## 발견된 이슈
 
 (없음)
 
-## 다음 세션 진입점 — T4 (Zustand + TanStack Query 셋업)
+## 다음 세션 진입점 — T5 (앱 레이아웃 셸)
 
-- **대상**: 신규 의존성 + 신규 디렉토리/파일
-  - `pnpm add zustand @tanstack/react-query`
-  - `src/stores/session-store.ts` (인증 여부, 디바이스 정보)
-  - `src/stores/app-store.ts` (락 점유 상태, 선택된 교습기간월, 사이드바 열림/닫힘)
-  - `src/providers/query-provider.tsx` (TanStack Query Provider client component)
-  - `src/app/layout.tsx` Provider 래핑
-- **신규 의존성 허가 필요**: sprint3.md 계획서에 명시된 의존성이므로 별도 사용자 허가 불요 (계획 단계에서 승인됨)
-- **검증**: `pnpm tsc --noEmit` + `pnpm lint` 통과
-- **세션 시작 시 확인**: `git log develop..HEAD --oneline` 으로 T1/T2/T3 커밋(7d8af2c, 6766693, 58aeab6) 존재 확인 + 세션 번호 +1 (#3)
+- **대상**: 신규 파일 + page.tsx 리팩토링
+  - `src/components/layout/sidebar.tsx`: 메뉴 항목 + 단축키 표기 (대시보드/원생/수업/출결/청구/단원평가/학습보고서/공지문/설정). Phase 2+ 메뉴는 disabled 처리 + "다음 업데이트 예정" 툴팁
+  - `src/components/layout/top-bar.tsx`: 점유 디바이스, 마지막 백업 시각, 동기화 상태 (app-store.lockStatus 소비)
+  - `src/components/layout/app-shell.tsx`: sidebar + top-bar + 콘텐츠 영역 조합
+  - `src/app/layout.tsx`: 인증 완료 후 AppShell 렌더링 — 현재는 page.tsx 내부에서만 분기 처리 중. layout 자체에는 AppShell 을 넣지 않고 page.tsx 가 AppShell 로 감싸도록 유지(/lock 등 비-AppShell 페이지 분기)
+- **저자극 톤**: 베이지/연그레이 배경, 명도 대비 4.5:1 이상, 18pt/44×44px 충족
+- **검증**: pnpm build + 시각 확인
+- **세션 시작 시 확인**: `git log develop..HEAD --oneline` 으로 T1~T4 커밋(7d8af2c, 6766693, 58aeab6, c441f5c) 존재 확인 + 세션 번호 +1 (#4)
+
+---
+
+## 세션 #1·#2·#3 결과 (참고)
+
+- ✅ `2905663` — Sprint 3 진입
+- ✅ `7d8af2c` — T1 Pretendard self-host
+- ✅ `6766693` — T2 R13 audit PII 마스킹
+- ✅ `b955ff1` — 세션 #1 마감
+- ✅ `58aeab6` — T3 R14 페이지네이션
+- ✅ `db3ca53` — 세션 #2 마감
+- ✅ `c441f5c` — T4 Zustand + TanStack Query 셋업
 
 ---
 
 ## 세션 #1·#2 결과 (참고)
 
-- ✅ `2905663` — Sprint 3 진입 (계획 + scope.md + CLAUDE.md cipher feature)
-- ✅ `7d8af2c` — T1 Pretendard self-host (세션 #1)
-- ✅ `6766693` — T2 R13 audit PII 마스킹 (세션 #1)
-- ✅ `b955ff1` — 세션 #1 마감
-- ✅ `58aeab6` — T3 R14 페이지네이션 (세션 #2)
-
----
-
-## 세션 #1 결과 (참고)
-
-- ✅ `2905663` — Sprint 3 진입 (계획 + scope.md + CLAUDE.md cipher feature)
+- ✅ `2905663` — Sprint 3 진입
 - ✅ `7d8af2c` — T1 Pretendard self-host
 - ✅ `6766693` — T2 R13 audit PII 마스킹
 - ✅ `b955ff1` — 세션 #1 마감
+- ✅ `58aeab6` — T3 R14 페이지네이션
+- ✅ `db3ca53` — 세션 #2 마감
