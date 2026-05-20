@@ -284,6 +284,10 @@ export async function appStartupSequence(
   if (!inv) {
     return {
       elapsed_ms: 0,
+      parallel_phase_ms: 0,
+      password_verify_ms: 0,
+      db_init_ms: 0,
+      audit_cleanup_ms: 0,
       lock_force_used: forceLock,
       integrity_ok: true,
       audit_cleaned: 0,
