@@ -39,6 +39,10 @@ pub fn run() {
             commands::fees::create_fee,
             commands::fees::update_fee,
             commands::fees::match_fee_by_hours,
+            commands::codes::list_codes,
+            commands::codes::create_code,
+            commands::codes::update_code,
+            commands::codes::reorder_codes,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())

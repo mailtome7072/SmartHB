@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod auth;
 pub mod backup;
+pub mod codes;
 pub mod db;
 pub mod fees;
 pub mod integrity;
