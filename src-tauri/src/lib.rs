@@ -46,6 +46,9 @@ pub fn run() {
             commands::codes::create_code,
             commands::codes::update_code,
             commands::codes::reorder_codes,
+            commands::setup::save_cloud_folder,
+            commands::setup::complete_setup,
+            commands::setup::get_setup_status,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())

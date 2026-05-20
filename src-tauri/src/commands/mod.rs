@@ -11,6 +11,7 @@ pub mod paths;
 pub mod recovery;
 pub mod runtime;
 pub mod schedules;
+pub mod setup;
 pub mod students;
 pub mod sync;
 
