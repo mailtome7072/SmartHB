@@ -243,7 +243,7 @@ pub async fn release_lock() -> Result<(), String> {
     release_lock_atomic().map_err(String::from)
 }
 
-fn release_lock_atomic() -> Result<(), AppError> {
+pub(crate) fn release_lock_atomic() -> Result<(), AppError> {
     let path = lock_path();
     // 락 파일이 없으면 이미 해제 상태로 간주 — idempotent.
     if !path.exists() {

@@ -204,15 +204,16 @@ fn spawn_background_tasks() {
 ///
 /// exit 백업을 동기 실행한 후 락을 해제한다. async runtime 이 살아있을 때만 동작하므로
 /// `tauri::async_runtime::block_on` 으로 호출된다 (lib.rs).
+///
+/// R15 (sprint-review Medium): `release_lock_atomic` 을 호출하여 advisory lock 보유 + 본
+/// 디바이스 점유 재확인 후 삭제. `std::fs::remove_file` 직접 호출 시 다른 디바이스 락을
+/// 손상시키는 엣지 케이스를 방지한다.
 pub async fn exit_hook() {
     backup::try_create_backup(backup::BackupLayer::Exit).await;
-    // 락 해제 — 본 디바이스 점유일 때만 동작 (다른 디바이스 락은 자동 보호).
-    if let Err(e) = tokio::task::spawn_blocking(|| {
-        std::fs::remove_file(lock::lock_path()).ok();
-    })
-    .await
-    {
-        eprintln!("[startup] exit 락 정리 실패 (무시): {}", e);
+    match tokio::task::spawn_blocking(lock::release_lock_atomic).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => eprintln!("[startup] exit 락 해제 실패 (무시): {}", e),
+        Err(e) => eprintln!("[startup] exit 락 작업 실패 (무시): {}", e),
     }
 }
 
