@@ -40,13 +40,14 @@ T5 → T6 → T7 → T8 → T9 순차 구현. 각 Task 종료마다 self-verify 
 
 ## 완료 기준 (이번 세션)
 
-- ⬜ T5: AppShell + Sidebar + TopBar — 메뉴 항목 클릭 시 disabled 안내, Pretendard 18pt / 44×44px
-- ⬜ T6: 글로벌 검색바 — 원생/메뉴 검색 동작, Ctrl+F 단축키, 200ms 디바운스
-- ⬜ T7: `tauri-plugin-dialog` 통합 + `selectFolder()` IPC 래퍼 동작
-- ⬜ T8: setup.rs 신규 모듈 (3 IPC) + salt 이전 로직 + paths::data_root() 동적화 + V200 마이그레이션 + 단위 테스트
-- ⬜ T9: `/setup` 라우트 4단계 마법사 동작 + 라우팅 분기 (`not-initialized` → `/setup`)
-- ⬜ 각 Task self-verify (cargo test / clippy / lint / tsc / build) 통과
-- ⬜ simplify 적용 후 분리 커밋
+- ✅ T5: AppShell + Sidebar + TopBar — Pretendard 18pt / 44×44px / disabled 메뉴 처리 (`9efd4d7`)
+- ✅ T6: 글로벌 검색바 — 한글 자모 부분 일치, useDeferredValue 디바운스, Ctrl+F 단축키 (`9efd4d7`)
+- ✅ T7: `tauri-plugin-dialog` 통합 + `selectFolder()` 래퍼 (`a7b02d3`)
+- ✅ T8: setup.rs 모듈 (3 IPC) + V200 마이그레이션 시드 + config.json 분리 + 단위 테스트 3건 (`c97f260`)
+  - **부분 구현 — salt 이전(R12)·paths::data_root() 동적화는 후속 sweep**
+- ✅ T9: `/setup` 라우트 4단계 마법사 + LockScreen 재사용 + 라우팅 분기 (`d137c4f`)
+- ✅ 각 Task self-verify (cargo test 108 passed / clippy / lint / tsc / build) 통과
+- ✅ simplify — Task 그룹별 3-agent 병렬 리뷰 후 분리 커밋
 
 ## 발견된 이슈
 
@@ -58,13 +59,23 @@ sprint3.md plan 은 `app_settings.cloud_folder_path` 에 클라우드 폴더 경
 
 추가 의존성: Tauri Path API 는 `app_config_dir()` 가 `tauri::Manager` trait 에 있어 별도 plugin 불요. config 파일 read/write 는 std::fs 로 충분.
 
-## 다음 세션 진입점
+## 다음 세션 진입점 — T10 (원생 목록 화면)
 
-세션 #4 종료 시 다음 세션 진입점(T10 원생 목록 화면)을 본 섹션에 명시.
+- **대상**:
+  - `src/app/students/page.tsx` (신규): TanStack Query 로 listStudents/countStudents 구독, 필터(이름·학교급·학년·학교·요일·성별·재원상태), 정렬, 페이지네이션 UI
+  - 200ms 이내 필터 반응, 44×44px 행, Ctrl+N → 신규 등록 단축키 (T14 와 연계)
+- **활용 가능한 자산**: T3 의 listStudents/countStudents IPC, T4 의 TanStack Query/Zustand, T5 의 AppShell, T6 의 GlobalSearch.
+- **참고**: T7 부터의 sprint3.md plan 잔여(T10~T15)는 분량이 크므로 다음 세션에서 T10·T11 2 Task 진행 권장.
+- **세션 시작 시 확인**: `git log develop..HEAD --oneline` 으로 T1~T9 커밋 9건 + scope 마감 커밋 확인 + 세션 번호 +1 (#5).
+
+### 이연된 후속 sweep (Sprint 3 또는 Sprint 4)
+
+- **R12 salt 이전**: Keychain → `{cloud_folder}/smarthb/salt.bin`. auth.rs/recovery.rs/backup.rs 광범위 영향.
+- **paths::data_root() 동적화**: backup/integrity/lock/sync/startup 모듈 통합. setup_completed=true 시점에 OnceLock 캐싱.
 
 ---
 
-## 세션 #1~#3 결과 (참고)
+## 세션 #1~#4 결과 (참고)
 
 - ✅ `2905663` — Sprint 3 진입
 - ✅ `7d8af2c` — T1 Pretendard self-host
@@ -74,3 +85,7 @@ sprint3.md plan 은 `app_settings.cloud_folder_path` 에 클라우드 폴더 경
 - ✅ `db3ca53` — 세션 #2 마감
 - ✅ `c441f5c` — T4 Zustand + TanStack Query
 - ✅ `4c0ce54` — 세션 #3 마감
+- ✅ `9efd4d7` — T5+T6 앱 셸 + 글로벌 검색
+- ✅ `a7b02d3` — T7 dialog 플러그인 + selectFolder
+- ✅ `c97f260` — T8 마법사 백엔드 (config.json 분리)
+- ✅ `d137c4f` — T9 마법사 프론트엔드
