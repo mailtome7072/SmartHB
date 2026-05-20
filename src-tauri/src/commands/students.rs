@@ -290,12 +290,8 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
     let student = Student::from_row(&row).map_err(String::from)?;
     tx.commit().await.map_err(AppError::Db).map_err(String::from)?;
 
-    audit::try_record(
-        AuditEventType::StudentCreated,
-        Some(&serial),
-        Some(&payload.name),
-    )
-    .await;
+    // R13 PII 마스킹: 원생 이름은 details 에 기록하지 않는다 — event_subject(serial_no) 만으로 추적 가능.
+    audit::try_record(AuditEventType::StudentCreated, Some(&serial), None).await;
     Ok(student)
 }
 
@@ -335,12 +331,8 @@ pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, 
         String::from(AppError::UserFacing(format!("원생을 찾을 수 없습니다 (id={}).", id)))
     })?;
     let student = Student::from_row(&row).map_err(String::from)?;
-    audit::try_record(
-        AuditEventType::StudentUpdated,
-        Some(&student.serial_no),
-        Some(&student.name),
-    )
-    .await;
+    // R13 PII 마스킹: 원생 이름 미기록 — event_subject(serial_no) 만 기록.
+    audit::try_record(AuditEventType::StudentUpdated, Some(&student.serial_no), None).await;
     Ok(student)
 }
 
@@ -386,12 +378,8 @@ pub async fn withdraw_student(id: i64, withdraw_date: String) -> Result<(), Stri
             id
         ))));
     }
-    audit::try_record(
-        AuditEventType::StudentWithdrawn,
-        Some(&id.to_string()),
-        Some(&withdraw_date),
-    )
-    .await;
+    // R13 PII 마스킹: 퇴교 일자도 민감 정보로 분류 — event_subject(student id) 만 기록.
+    audit::try_record(AuditEventType::StudentWithdrawn, Some(&id.to_string()), None).await;
     Ok(())
 }
 
