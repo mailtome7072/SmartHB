@@ -1,12 +1,21 @@
 ---
-Sprint: 2  |  Date: 2026-05-20  |  Session: #3 (T9 원생 CRUD IPC)
+Sprint: 2  |  Date: 2026-05-20  |  Session: #4 (T12 + T13 + T14 — Sprint 2 마무리)
 ---
 
 ## 세션 진행 기록
 
-- **Session #1** (T1/T3/T4 — Sprint 1 잔여 해소): ✅ 완료. commits `a466541`, `84b18e5`, `052bb81`. T2 는 Sprint 3 마법사 통합으로 이연 (`c010423`).
-- **Session #2** (T5~T7 — V101~V103 마이그레이션): ✅ 완료. commit `16edbd1`. T8 는 매크로 도입 시점으로 이연.
-- **Session #3** (T9 — 원생 CRUD IPC + PI-05 자동 채번): 🔄 진행 중 (현재)
+- **Session #1** (T1/T3/T4): ✅ 완료. T2 Sprint 3 이연.
+- **Session #2** (T5~T7 V101~V103 마이그레이션): ✅ 완료. T8 매크로 도입 시 처리.
+- **Session #3** (T9 원생 CRUD / T10 스케줄 / T11 V104 + 교습비): ✅ 완료. commits `8dec8d9`, `e7ef695`, `5be8e6a`.
+- **Session #4** (T12 코드 + T13 프론트 + T14 검증 — Sprint 2 마무리): ✅ 완료
+
+## Sprint 2 종료 마커
+
+- **Sprint 2 전체 종료**: 2026-05-20
+- **최종 commit 수**: 13 commits (T1, T3~T7, T9~T13/T14, plan, scope, T2/T8 이연)
+- **최종 테스트**: cargo test **97 passed**, clippy 깨끗, pnpm lint/tsc/build 통과
+- **이연된 항목**: T2 (Sprint 3 마법사), T8 (매크로 도입 시점)
+- **다음 단계**: sprint-close → sprint-review → 직접 머지 → deploy-prod
 
 ## 이번 세션의 목표 (T5~T8 — Day 3~4)
 
