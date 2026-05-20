@@ -54,7 +54,12 @@ export interface StudentUpdate {
   withdraw_date: string | null
 }
 
-/** 목록 조회 필터 — 모든 필드 Optional. */
+/**
+ * 목록 조회 필터 — 모든 필드 Optional.
+ *
+ * R14 페이지네이션: `limit` 미지정 시 백엔드 기본값 100 (상한 1000), `offset` 기본 0.
+ * `countStudents` 는 동일 필터(`limit`/`offset` 제외)로 총 건수를 반환.
+ */
 export interface StudentFilter {
   active_only?: boolean
   name_query?: string
@@ -64,4 +69,6 @@ export interface StudentFilter {
   gender?: Gender
   day_of_week?: number
   sort?: StudentSort
+  limit?: number
+  offset?: number
 }

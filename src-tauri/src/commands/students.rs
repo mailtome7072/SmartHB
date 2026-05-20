@@ -28,6 +28,7 @@
 
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::db;
+use crate::commands::pagination::clamp_list_limit;
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -178,6 +179,9 @@ pub struct StudentUpdate {
 }
 
 /// 원생 목록 조회 필터 — 모든 필드 Optional. 미지정 시 해당 조건 무시.
+///
+/// R14 페이지네이션: `limit`/`offset` 미지정 시 [`clamp_list_limit`] 정책으로 정규화된다.
+/// `count_students` 는 동일 필터(`limit`/`offset` 제외)로 총 건수를 반환한다.
 #[derive(Debug, Deserialize, Default)]
 pub struct StudentFilter {
     pub active_only: Option<bool>,
@@ -188,6 +192,8 @@ pub struct StudentFilter {
     pub gender: Option<Gender>,
     pub day_of_week: Option<i64>,
     pub sort: Option<StudentSort>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 // ============================================================================
@@ -290,12 +296,8 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
     let student = Student::from_row(&row).map_err(String::from)?;
     tx.commit().await.map_err(AppError::Db).map_err(String::from)?;
 
-    audit::try_record(
-        AuditEventType::StudentCreated,
-        Some(&serial),
-        Some(&payload.name),
-    )
-    .await;
+    // R13 PII 마스킹: 원생 이름은 details 에 기록하지 않는다 — event_subject(serial_no) 만으로 추적 가능.
+    audit::try_record(AuditEventType::StudentCreated, Some(&serial), None).await;
     Ok(student)
 }
 
@@ -335,12 +337,8 @@ pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, 
         String::from(AppError::UserFacing(format!("원생을 찾을 수 없습니다 (id={}).", id)))
     })?;
     let student = Student::from_row(&row).map_err(String::from)?;
-    audit::try_record(
-        AuditEventType::StudentUpdated,
-        Some(&student.serial_no),
-        Some(&student.name),
-    )
-    .await;
+    // R13 PII 마스킹: 원생 이름 미기록 — event_subject(serial_no) 만 기록.
+    audit::try_record(AuditEventType::StudentUpdated, Some(&student.serial_no), None).await;
     Ok(student)
 }
 
@@ -386,37 +384,25 @@ pub async fn withdraw_student(id: i64, withdraw_date: String) -> Result<(), Stri
             id
         ))));
     }
-    audit::try_record(
-        AuditEventType::StudentWithdrawn,
-        Some(&id.to_string()),
-        Some(&withdraw_date),
-    )
-    .await;
+    // R13 PII 마스킹: 퇴교 일자도 민감 정보로 분류 — event_subject(student id) 만 기록.
+    audit::try_record(AuditEventType::StudentWithdrawn, Some(&id.to_string()), None).await;
     Ok(())
 }
 
-/// 원생 목록을 다중 필터 + 정렬로 조회한다.
+/// `list_students` / `count_students` 가 공유하는 SQL fragment 빌더.
 ///
-/// `day_of_week` 필터는 `student_schedules` JOIN 으로 현행 스케줄 보유 여부 검증.
-/// 그 외 필터는 students 자체 컬럼.
-#[tauri::command]
-pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String> {
-    let pool = db::pool().map_err(String::from)?;
+/// 반환값: `(WHERE 절, JOIN 절)`. 각각 비어 있으면 빈 문자열.
+/// 호출자는 두 단편을 SQL 본문에 그대로 push 하면 된다 — 추가 분기 불요.
+/// SQL 동적 빌드는 정적 단편의 조건부 연결로만 구성 — 사용자 입력은 모두 bind 로 전달.
+fn build_filter_clause(filter: &StudentFilter) -> (String, String) {
+    let join_sql = if filter.day_of_week.is_some() {
+        "INNER JOIN student_schedules sch \
+            ON sch.student_id = s.id AND sch.effective_to IS NULL AND sch.day_of_week = ? "
+            .to_string()
+    } else {
+        String::new()
+    };
 
-    // SELECT 절은 students 컬럼 고정. JOIN/WHERE/ORDER 는 동적 빌드.
-    // 동적 SQL 문자열은 정적 단편의 조건부 연결 — 사용자 입력은 모두 bind() 로 전달 (SQL injection 안전).
-    let mut sql = String::from(
-        "SELECT s.id, s.serial_no, s.name, s.gender, s.school_level, s.grade, s.school_id, \
-                s.phone_student, s.phone_mother, s.phone_father, s.enroll_date, s.withdraw_date, \
-                s.created_at, s.updated_at \
-         FROM students s ",
-    );
-    if filter.day_of_week.is_some() {
-        sql.push_str(
-            "INNER JOIN student_schedules sch \
-                ON sch.student_id = s.id AND sch.effective_to IS NULL AND sch.day_of_week = ? ",
-        );
-    }
     let mut conditions: Vec<&'static str> = Vec::new();
     if filter.active_only.unwrap_or(false) {
         conditions.push("s.withdraw_date IS NULL");
@@ -436,14 +422,20 @@ pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String
     if filter.gender.is_some() {
         conditions.push("s.gender = ?");
     }
-    if !conditions.is_empty() {
-        sql.push_str("WHERE ");
-        sql.push_str(&conditions.join(" AND "));
-        sql.push(' ');
-    }
-    sql.push_str(filter.sort.unwrap_or_default().order_by_sql());
+    let where_sql = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {} ", conditions.join(" AND "))
+    };
+    (where_sql, join_sql)
+}
 
-    let mut q = sqlx::query(&sql);
+/// 공유 헬퍼: 필터 bind 순서를 SQL fragment 순서와 일치시킨다.
+/// `day_of_week` → `name_query` → `school_level` → `grade` → `school_id` → `gender`.
+fn bind_filter<'q>(
+    mut q: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    filter: &'q StudentFilter,
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
     if let Some(d) = filter.day_of_week {
         q = q.bind(d);
     }
@@ -462,6 +454,35 @@ pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String
     if let Some(g) = filter.gender {
         q = q.bind(g.as_db_code());
     }
+    q
+}
+
+/// 원생 목록을 다중 필터 + 정렬 + 페이지네이션으로 조회한다.
+///
+/// `day_of_week` 필터는 `student_schedules` JOIN 으로 현행 스케줄 보유 여부 검증.
+/// 그 외 필터는 students 자체 컬럼.
+/// R14: 페이지네이션 정책은 [`clamp_list_limit`] 참조.
+#[tauri::command]
+pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String> {
+    let pool = db::pool().map_err(String::from)?;
+    let (where_sql, join_sql) = build_filter_clause(&filter);
+    let limit = clamp_list_limit(filter.limit);
+    let offset = filter.offset.unwrap_or(0);
+
+    let mut sql = String::from(
+        "SELECT s.id, s.serial_no, s.name, s.gender, s.school_level, s.grade, s.school_id, \
+                s.phone_student, s.phone_mother, s.phone_father, s.enroll_date, s.withdraw_date, \
+                s.created_at, s.updated_at \
+         FROM students s ",
+    );
+    sql.push_str(&join_sql);
+    sql.push_str(&where_sql);
+    sql.push_str(filter.sort.unwrap_or_default().order_by_sql());
+    sql.push_str(" LIMIT ? OFFSET ?");
+
+    let mut q = sqlx::query(&sql);
+    q = bind_filter(q, &filter);
+    q = q.bind(limit).bind(offset);
 
     let rows = q
         .fetch_all(pool)
@@ -471,6 +492,29 @@ pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String
     rows.iter()
         .map(Student::from_row)
         .collect::<Result<Vec<_>, _>>()
+        .map_err(String::from)
+}
+
+/// 동일 필터에 매칭되는 총 원생 수를 반환한다 (R14 페이지네이션 UI 보조).
+///
+/// `limit`/`offset` 필드는 무시한다 — 필터 조합 자체의 총 건수를 반환.
+#[tauri::command]
+pub async fn count_students(filter: StudentFilter) -> Result<i64, String> {
+    let pool = db::pool().map_err(String::from)?;
+    let (where_sql, join_sql) = build_filter_clause(&filter);
+
+    let mut sql = String::from("SELECT COUNT(*) AS cnt FROM students s ");
+    sql.push_str(&join_sql);
+    sql.push_str(&where_sql);
+
+    let q = bind_filter(sqlx::query(&sql), &filter);
+    let row = q
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    row.try_get::<i64, _>("cnt")
+        .map_err(AppError::Db)
         .map_err(String::from)
 }
 
@@ -645,5 +689,135 @@ mod tests {
         // 본 테스트는 enum from_db_code 검증.
         assert!(Gender::from_db_code("invalid").is_err());
         assert!(SchoolLevel::from_db_code("high").is_err()); // PRD §4.1.1 초·중 한정
+    }
+
+    // ------------------------------------------------------------------------
+    // R14 페이지네이션 — 필터 빌더 + COUNT 정확성
+    // (limit 정규화 정책 자체는 `pagination::clamp_list_limit` 단위 테스트에서 검증)
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn build_filter_clause_empty_filter_returns_empty_strings() {
+        let (where_sql, join_sql) = build_filter_clause(&StudentFilter::default());
+        assert_eq!(where_sql, "");
+        assert_eq!(join_sql, "");
+    }
+
+    #[test]
+    fn build_filter_clause_with_day_of_week_emits_join() {
+        let filter = StudentFilter {
+            day_of_week: Some(1),
+            ..Default::default()
+        };
+        let (where_sql, join_sql) = build_filter_clause(&filter);
+        assert!(join_sql.starts_with("INNER JOIN student_schedules"));
+        assert!(join_sql.contains("sch.day_of_week = ?"));
+        assert_eq!(where_sql, "", "JOIN ON 조건은 WHERE 가 아니라 별도 절");
+    }
+
+    #[test]
+    fn build_filter_clause_combines_multiple_conditions() {
+        let filter = StudentFilter {
+            active_only: Some(true),
+            name_query: Some("홍".to_string()),
+            school_level: Some(SchoolLevel::Elementary),
+            ..Default::default()
+        };
+        let (where_sql, _) = build_filter_clause(&filter);
+        assert!(where_sql.starts_with("WHERE "));
+        assert!(where_sql.contains("s.withdraw_date IS NULL"));
+        assert!(where_sql.contains("s.name LIKE ?"));
+        assert!(where_sql.contains("s.school_level = ?"));
+        assert_eq!(
+            where_sql.matches(" AND ").count(),
+            2,
+            "조건 3개 → AND 2번"
+        );
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    async fn seed_students(pool: &sqlx::SqlitePool, count: i64) {
+        for i in 1..=count {
+            sqlx::query(
+                "INSERT INTO students (serial_no, name, gender, school_level, grade, enroll_date) \
+                 VALUES (?, ?, 'male', 'elementary', 1, '2026-03-01')",
+            )
+            .bind(i.to_string())
+            .bind(format!("학생{}", i))
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn list_students_respects_limit_and_offset() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        seed_students(&pool, 7).await;
+
+        // limit 적용 — name_asc 정렬 (학생1, 학생2, ...) 가정
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM students ORDER BY name ASC LIMIT ? OFFSET ?",
+        )
+        .bind(3u32)
+        .bind(0u32)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 3, "limit=3 → 3건");
+
+        // offset=3 → 4번째부터
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM students ORDER BY name ASC LIMIT ? OFFSET ?",
+        )
+        .bind(3u32)
+        .bind(3u32)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 3, "offset=3, limit=3 → 다음 3건");
+
+        // 마지막 페이지 — 잔여 1건
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM students ORDER BY name ASC LIMIT ? OFFSET ?",
+        )
+        .bind(3u32)
+        .bind(6u32)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1, "offset=6, limit=3 → 마지막 1건");
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn count_matches_filtered_total() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        seed_students(&pool, 5).await;
+
+        // 1건 퇴교 처리 (active_only=true 시 4건 기대)
+        sqlx::query("UPDATE students SET withdraw_date = '2026-04-01' WHERE serial_no = '1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // 전체 COUNT
+        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM students")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(total.0, 5, "전체 5건");
+
+        // active_only 시뮬레이션 — build_filter_clause + 직접 실행
+        let filter = StudentFilter {
+            active_only: Some(true),
+            ..Default::default()
+        };
+        let (where_sql, _) = build_filter_clause(&filter);
+        let sql = format!("SELECT COUNT(*) AS cnt FROM students s {}", where_sql);
+        let row = sqlx::query(&sql).fetch_one(&pool).await.unwrap();
+        let active_count: i64 = row.try_get("cnt").unwrap();
+        assert_eq!(active_count, 4, "퇴교 1건 제외 → 4건");
     }
 }

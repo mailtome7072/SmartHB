@@ -6,9 +6,34 @@
  * - 강조: 차분한 남색 (#2563EB) — 주요 버튼, 포커스, 링크
  * - 텍스트: 짙은 검정 (#1A1A1A) — WCAG AA 명도 대비 ≥ 4.5:1 보장
  *
- * 폰트: Pretendard 는 T6 ADR-006 (Sprint 3) 에서 self-host 도입.
- * 본 sprint 에서는 system sans-serif 임시 사용 (한국어 환경: Malgun Gothic/Apple SD Gothic Neo).
+ * 폰트: Pretendard self-host (ADR-006, Sprint 3 T1).
+ * - 출처: orioncactus/pretendard v1.3.9 (SIL OFL 1.1), web/static/woff2-subset/
+ * - 포함 weight: Regular(400) / SemiBold(600) / Bold(700) — 총 ~806KB
+ * - 한글+영문+숫자+기호 subset (R17 ~2MB 한도 만족)
+ * - 시스템 fallback: 한국어 환경에서 다운로드 실패/미적용 시 Malgun Gothic·Apple SD Gothic Neo
  */
+@font-face {
+  font-family: 'Pretendard';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Pretendard-Regular.subset.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Pretendard';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/Pretendard-SemiBold.subset.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Pretendard';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Pretendard-Bold.subset.woff2') format('woff2');
+}
+
 :root {
   --background: #F9F7F4;
   --foreground: #1A1A1A;
@@ -16,6 +41,12 @@
   --accent-hover: #1D4ED8;
   --danger: #DC2626;
   --border: #D1D5DB;
+
+  /* PRD §5.7 접근성 토큰 — 모든 컴포넌트의 SSOT */
+  --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Malgun Gothic", "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif;
+  --font-size-body: 18px;        /* 본문 18pt 권장 (16pt 하한) */
+  --line-height-base: 1.5;
 }
 
 @theme {
@@ -25,14 +56,25 @@
   --color-accent-hover: var(--accent-hover);
   --color-danger: var(--danger);
   --color-border: var(--border);
+  --font-sans: var(--font-sans);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic",
-    "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif;
-  /* PRD §5.7: 본문 18pt 권장 (16pt 하한). 50대 사용자 시각 친화. */
-  font-size: 18px;
-  line-height: 1.5;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-base);
 }
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+h1 { font-size: 32px; }
+h2 { font-size: 28px; }
+h3 { font-size: 24px; } /* PRD §5.7 헤더 24pt+ 하한 */
+h4 { font-size: 22px; }
+h5 { font-size: 20px; }
+h6 { font-size: 18px; }

@@ -64,6 +64,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # `cipher` feature 와 함께만 활성 (libsqlite3-sys 0.30 sqlx 와 공유). cipher off 시 stub.
 # bundled-sqlcipher-vendored-openssl: rusqlite 가 자체적으로 libsqlite3-sys 의 SQLCipher 빌드를 활성.
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "backup"], optional = true }
+tauri-plugin-dialog = "2.7.1"
 
 [profile.release]
 codegen-units = 1

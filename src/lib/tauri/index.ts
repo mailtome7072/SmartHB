@@ -39,6 +39,26 @@ import type {
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
 
+/**
+ * OS 폴더 선택 다이얼로그를 띄우고 사용자가 선택한 경로를 반환한다 (Sprint 3 T7).
+ *
+ * 마법사(`/setup`)에서 클라우드 동기화 폴더(MYBOX/iCloud Drive/Dropbox) 선택용.
+ * 사용자가 취소하면 `null` 반환. 개발 모드(Tauri 미동작)에서는 더미 경로 반환.
+ *
+ * 권한: `capabilities/default.json` 의 `dialog:allow-open` 필요.
+ */
+export async function selectFolder(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({ directory: true, multiple: false })
+    if (selected === null) return null
+    return typeof selected === 'string' ? selected : selected[0] ?? null
+  } catch {
+    return '[개발 모드] /Users/dev/MYBOX'
+  }
+}
+
 async function getInvoke() {
   if (typeof window === 'undefined') return null
   if (!invoke) {
@@ -379,10 +399,29 @@ export async function withdrawStudent(id: number, withdrawDate: string): Promise
   await inv('withdraw_student', { id, withdrawDate })
 }
 
+/**
+ * 원생 목록을 다중 필터·정렬·페이지네이션으로 조회한다.
+ *
+ * R14: `filter.limit` 미지정 시 백엔드 기본 100 (상한 1000), `filter.offset` 기본 0.
+ * 페이지 UI 는 `countStudents(filter)` 로 총 건수를 별도 조회.
+ * 개발 모드(Tauri 미동작)에서는 빈 배열을 반환한다.
+ */
 export async function listStudents(filter: StudentFilter = {}): Promise<Student[]> {
   const inv = await getInvoke()
   if (!inv) return []
   return inv('list_students', { filter }) as Promise<Student[]>
+}
+
+/**
+ * 동일 필터에 매칭되는 총 원생 수를 반환한다 (R14 페이지네이션 UI 보조).
+ *
+ * `filter.limit` / `filter.offset` 은 백엔드에서 무시된다 — 필터 조합 자체의 총 건수.
+ * 개발 모드에서는 0 을 반환.
+ */
+export async function countStudents(filter: StudentFilter = {}): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_students', { filter }) as Promise<number>
 }
 
 // ----------------------------------------------------------------------------
@@ -475,10 +514,33 @@ export async function matchFeeByHours(weeklyHours: number): Promise<StandardFee 
 // Sprint 2 — 코드 테이블
 // ----------------------------------------------------------------------------
 
-export async function listCodes(table: CodeTable): Promise<CodeEntry[]> {
+/**
+ * 코드 항목 목록을 페이지네이션으로 조회한다 (R14).
+ *
+ * `limit` 미지정 시 백엔드 기본 100 (상한 1000), `offset` 기본 0.
+ * 개발 모드에서는 빈 배열을 반환한다.
+ */
+export async function listCodes(
+  table: CodeTable,
+  limit?: number,
+  offset?: number,
+): Promise<CodeEntry[]> {
   const inv = await getInvoke()
   if (!inv) return []
-  return inv('list_codes', { table }) as Promise<CodeEntry[]>
+  return inv('list_codes', {
+    table,
+    limit: limit ?? null,
+    offset: offset ?? null,
+  }) as Promise<CodeEntry[]>
+}
+
+/**
+ * 코드 테이블 총 항목 수 (R14 페이지네이션 UI 보조).
+ */
+export async function countCodes(table: CodeTable): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_codes', { table }) as Promise<number>
 }
 
 export async function createCode(table: CodeTable, payload: NewCode): Promise<CodeEntry> {
@@ -521,4 +583,34 @@ export async function reorderCodes(
   const inv = await getInvoke()
   if (!inv) return
   await inv('reorder_codes', { table, orders })
+}
+
+// ----------------------------------------------------------------------------
+// Sprint 3 — 초기 설정 마법사 (T8/T9, PRD §4.0)
+// ----------------------------------------------------------------------------
+
+export interface SetupStatus {
+  cloud_folder_path: string
+  setup_completed: boolean
+}
+
+/** 마법사 진행 상태 — 미진입 시 빈 경로 + setup_completed=false. */
+export async function getSetupStatus(): Promise<SetupStatus> {
+  const inv = await getInvoke()
+  if (!inv) return { cloud_folder_path: '', setup_completed: false }
+  return inv('get_setup_status') as Promise<SetupStatus>
+}
+
+/** 클라우드 동기화 폴더 경로를 저장 — 폴더 안에 smarthb/ 디렉토리 생성. */
+export async function saveCloudFolder(path: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_cloud_folder', { path })
+}
+
+/** 마법사 완료 표시 — 모든 단계 완료 후 호출. */
+export async function completeSetup(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('complete_setup')
 }

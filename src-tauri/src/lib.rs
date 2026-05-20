@@ -6,6 +6,7 @@ mod startup;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::greet,
             commands::diagnose_sqlcipher,
@@ -31,6 +32,7 @@ pub fn run() {
             commands::students::get_student,
             commands::students::withdraw_student,
             commands::students::list_students,
+            commands::students::count_students,
             commands::schedules::set_schedule,
             commands::schedules::get_schedules,
             commands::schedules::get_schedule_history,
@@ -40,9 +42,13 @@ pub fn run() {
             commands::fees::update_fee,
             commands::fees::match_fee_by_hours,
             commands::codes::list_codes,
+            commands::codes::count_codes,
             commands::codes::create_code,
             commands::codes::update_code,
             commands::codes::reorder_codes,
+            commands::setup::save_cloud_folder,
+            commands::setup::complete_setup,
+            commands::setup::get_setup_status,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())
