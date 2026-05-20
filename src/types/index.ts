@@ -121,16 +121,23 @@ export interface AuditLogEntry {
 }
 
 /**
- * 앱 시작 시퀀스 결과 — T10 PRD §5.6 < 3초 예산 검증.
+ * 앱 시작 시퀀스 결과 — T10 PRD §5.6 < 3초 예산 검증 + Sprint 2 T4 timing breakdown.
  *
  * `src-tauri/src/startup.rs::StartupResult` 와 정합. `elapsed_ms` 가 3000 미만이면
  * 시작 예산 통과 — UI 가 임계 초과 시 사용자에게 환경 점검 안내.
+ *
+ * 각 `*_ms` 필드는 R8 cipher on 실측 디버깅용 timing breakdown — 3초 초과 시 어느 단계가
+ * 병목인지 식별 가능. `password_verify_ms` 가 보통 가장 큰 비중 (PBKDF2 600K iter, ~500ms).
  *
  * `integrity_ok=false` 는 cipher off 개발 빌드 또는 stub 케이스 — startup 자체는 성공.
  * `audit_cleaned` 는 1년 이전 audit_logs 삭제 행 수 (정보성).
  */
 export interface StartupResult {
   elapsed_ms: number
+  parallel_phase_ms: number
+  password_verify_ms: number
+  db_init_ms: number
+  audit_cleanup_ms: number
   lock_force_used: boolean
   integrity_ok: boolean
   audit_cleaned: number

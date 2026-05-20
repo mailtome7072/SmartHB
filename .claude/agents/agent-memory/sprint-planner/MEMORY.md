@@ -6,8 +6,9 @@
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 1 (2026-05-19)
-- 다음 스프린트 번호: 2
+- 마지막 완료 스프린트: Sprint 2 (2026-05-20)
+- 다음 스프린트 번호: 3
+- Sprint 2 계획 수립: 2026-05-20 (sprint1 잔여 + 기반 도메인 백엔드 통합)
 
 ## 프로젝트 기본 정보
 
@@ -19,13 +20,21 @@
 
 ## 미결정 항목 (PI)
 
-- PI-05 (Medium): 일련번호 자동 채번 규칙 → Sprint 2 진입 전 사용자 결정 필요
+- PI-05 (Medium): 일련번호 자동 채번 — **확정 (2026-05-20)**: `MAX+1` + `BEGIN IMMEDIATE` + override 허용
 - PI-07 (High): 복구 코드 — **결정 완료** (PRD v1.5.1). Argon2id 해시, Sprint 1 구현
 
-## Sprint 1 핵심 리스크
+## Sprint 1 핵심 리스크 (해소 완료)
 
-- SQLCipher PoC: 첫 2일에 `bundled-sqlcipher-vendored-openssl` 양 OS 빌드 검증 필수
-- CI Forbidden Area: .github/workflows/ 수정 시 사용자 허가 필요
+- SQLCipher PoC: bundled-sqlcipher-vendored-openssl 양 OS 빌드 성공 (ADR-001)
+- CI Forbidden Area: 사용자 허가 받아 ci.yml/deploy.yml 수정 완료
+
+## Sprint 2 핵심 사항
+
+- 마이그레이션 번호 예약: V100~V199
+- PI-05 (일련번호 자동 채번): 확정 — `MAX+1` + `BEGIN IMMEDIATE` + override. T5/T9/T13/T14에 반영
+- Sprint 1 잔여 3건: R6(salt 이전), R7(release_lock), R8(cipher on 실측)
+- 루트 라우팅 + 인증 게이트: Sprint 1 범위 외였으나 PRD SS5.6 인수 기준 필수
+- PR 단계 생략 정책: 단일 개발자, `gh pr create` 금지
 
 ## 반복 위반 패턴 (세션 로그 기반)
 

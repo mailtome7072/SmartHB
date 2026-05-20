@@ -52,11 +52,19 @@ const HOURLY_BACKUP_INTERVAL_SECS: u64 = 3600;
 /// 시작 시퀀스 결과 — IPC 응답.
 ///
 /// `elapsed_ms` 는 startup IPC 진입부터 종료까지의 wall-clock 시간 (PRD §5.6 < 3000ms 목표).
-/// `integrity_ok` 와 `backup_available` 은 cipher off 개발 빌드에서 stub 결과를 의미하는
-/// 정보 필드 — startup 성공/실패 결정에는 사용되지 않는다.
+/// 각 단계별 `*_ms` 필드는 T4 R8 cipher on 실측 디버깅을 위한 timing breakdown — 3초 초과 시
+/// 어느 단계가 병목인지 즉시 식별 가능. PBKDF2 600K iter (`password_verify_ms`) 가 보통 가장
+/// 큰 비중을 차지한다 (~500ms 예상).
+///
+/// `integrity_ok` 는 cipher off 개발 빌드에서 stub 결과를 의미하는 정보 필드 — startup
+/// 성공/실패 결정에는 사용되지 않는다.
 #[derive(Debug, Serialize)]
 pub struct StartupResult {
     pub elapsed_ms: u128,
+    pub parallel_phase_ms: u128,
+    pub password_verify_ms: u128,
+    pub db_init_ms: u128,
+    pub audit_cleanup_ms: u128,
     pub lock_force_used: bool,
     pub integrity_ok: bool,
     pub audit_cleaned: u64,
@@ -84,6 +92,7 @@ pub async fn app_startup_sequence(
     let started = Instant::now();
 
     // 1. 락 + 무결성 quick_check 병렬 — PRD §5.6 시작 < 3초 예산을 위해 join!
+    let parallel_start = Instant::now();
     let (lock_result, integrity_result) = tokio::join!(
         async {
             tokio::task::spawn_blocking(move || lock::acquire_lock_atomic(force_lock))
@@ -98,6 +107,7 @@ pub async fn app_startup_sequence(
                 .and_then(|r| r)
         },
     );
+    let parallel_phase_ms = parallel_start.elapsed().as_millis();
     lock_result.map_err(String::from)?;
     if force_lock {
         audit::try_record(audit::AuditEventType::LockForced, None, None).await;
@@ -113,27 +123,50 @@ pub async fn app_startup_sequence(
         .await;
     }
 
-    // 2. 비밀번호 검증 — keyring salt + key 비교.
+    // 2. 비밀번호 검증 — keyring salt + key 비교. PBKDF2 600K iter 가 보통 가장 큰 비중.
+    let verify_start = Instant::now();
     auth::verify_password(&password).await.map_err(String::from)?;
+    let password_verify_ms = verify_start.elapsed().as_millis();
 
     // 3. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
+    let db_init_start = Instant::now();
     db::initialize(paths::db_path())
         .await
         .map_err(String::from)?;
+    let db_init_ms = db_init_start.elapsed().as_millis();
 
     // 4. audit_logs 1년 롤링 정리 (best-effort).
+    let audit_start = Instant::now();
     let audit_cleaned = audit::cleanup_older_than(AUDIT_RETENTION_DAYS)
         .await
         .unwrap_or_else(|e| {
             eprintln!("[audit] 1년 정리 실패 (무시): {}", e);
             0
         });
+    let audit_cleanup_ms = audit_start.elapsed().as_millis();
 
     // 5. 백그라운드 task spawn — 재진입 시 중복 spawn 방지.
     spawn_background_tasks();
 
+    let elapsed_ms = started.elapsed().as_millis();
+
+    // R8 cipher on 실측 디버깅용 timing breakdown 로그.
+    // 3초 초과 시 어느 단계가 병목인지 즉시 식별 가능.
+    eprintln!(
+        "[startup] total={elapsed_ms}ms parallel={parallel_phase_ms}ms password={password_verify_ms}ms db_init={db_init_ms}ms audit={audit_cleanup_ms}ms (PRD §5.6 < 3000ms)"
+    );
+    if elapsed_ms > 3000 {
+        eprintln!(
+            "[startup] ⚠️ 3초 예산 초과 ({elapsed_ms}ms) — PRAGMA cache_size 튜닝 검토 필요"
+        );
+    }
+
     Ok(StartupResult {
-        elapsed_ms: started.elapsed().as_millis(),
+        elapsed_ms,
+        parallel_phase_ms,
+        password_verify_ms,
+        db_init_ms,
+        audit_cleanup_ms,
         lock_force_used: force_lock,
         integrity_ok,
         audit_cleaned,
@@ -171,15 +204,16 @@ fn spawn_background_tasks() {
 ///
 /// exit 백업을 동기 실행한 후 락을 해제한다. async runtime 이 살아있을 때만 동작하므로
 /// `tauri::async_runtime::block_on` 으로 호출된다 (lib.rs).
+///
+/// R15 (sprint-review Medium): `release_lock_atomic` 을 호출하여 advisory lock 보유 + 본
+/// 디바이스 점유 재확인 후 삭제. `std::fs::remove_file` 직접 호출 시 다른 디바이스 락을
+/// 손상시키는 엣지 케이스를 방지한다.
 pub async fn exit_hook() {
     backup::try_create_backup(backup::BackupLayer::Exit).await;
-    // 락 해제 — 본 디바이스 점유일 때만 동작 (다른 디바이스 락은 자동 보호).
-    if let Err(e) = tokio::task::spawn_blocking(|| {
-        std::fs::remove_file(lock::lock_path()).ok();
-    })
-    .await
-    {
-        eprintln!("[startup] exit 락 정리 실패 (무시): {}", e);
+    match tokio::task::spawn_blocking(lock::release_lock_atomic).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => eprintln!("[startup] exit 락 해제 실패 (무시): {}", e),
+        Err(e) => eprintln!("[startup] exit 락 작업 실패 (무시): {}", e),
     }
 }
 
@@ -198,15 +232,40 @@ mod tests {
     fn startup_result_serializes_with_camel_snake_fields() {
         let r = StartupResult {
             elapsed_ms: 1234,
+            parallel_phase_ms: 50,
+            password_verify_ms: 500,
+            db_init_ms: 600,
+            audit_cleanup_ms: 30,
             lock_force_used: false,
             integrity_ok: true,
             audit_cleaned: 0,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains(r#""elapsed_ms":1234"#));
+        assert!(json.contains(r#""parallel_phase_ms":50"#));
+        assert!(json.contains(r#""password_verify_ms":500"#));
+        assert!(json.contains(r#""db_init_ms":600"#));
+        assert!(json.contains(r#""audit_cleanup_ms":30"#));
         assert!(json.contains(r#""lock_force_used":false"#));
         assert!(json.contains(r#""integrity_ok":true"#));
         assert!(json.contains(r#""audit_cleaned":0"#));
+    }
+
+    #[test]
+    fn startup_result_timing_breakdown_sum_approximates_total() {
+        // breakdown 합 ≤ total (병렬 단계가 wall-clock 효과 반영하므로 정확히 같지 않을 수 있음).
+        let r = StartupResult {
+            elapsed_ms: 1230,
+            parallel_phase_ms: 100,
+            password_verify_ms: 500,
+            db_init_ms: 600,
+            audit_cleanup_ms: 30,
+            lock_force_used: false,
+            integrity_ok: true,
+            audit_cleaned: 0,
+        };
+        let sum = r.parallel_phase_ms + r.password_verify_ms + r.db_init_ms + r.audit_cleanup_ms;
+        assert!(sum <= r.elapsed_ms, "breakdown 합 ≤ 총 elapsed");
     }
 
     /// cipher off 환경에서 무결성 검증 fail-soft 동작을 검증한다.

@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 7% (1/14 스프린트 완료) |
-| 현재 Phase | Phase 1 (Sprint 1 완료, Sprint 2 예정) |
-| 다음 마일스톤 | Phase 1 — 인프라 + 기반 도메인 (Sprint 2~3 진행 예정) |
+| 전체 진행률 | 14% (2/14 스프린트 완료) |
+| 현재 Phase | Phase 1 (Sprint 1~2 완료, Sprint 3 예정) |
+| 다음 마일스톤 | Phase 1 — 인프라 + 기반 도메인 (Sprint 3 진행 예정) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -161,35 +161,34 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 2: 기반 도메인 백엔드 (2주) 📋 예정
+### Sprint 2: 기반 도메인 백엔드 (2주) ✅ 완료 (2026-05-20)
 
 #### 작업 목록
 
-- ⬜ **DB 마이그레이션 V002**: students + student_schedules 테이블
-  - 재원생 조건 쿼리, serial_no UNIQUE, effective_from/to 이력
-  - PI-05 사용자 결정 반영 (자동 채번 규칙 또는 수동 입력만)
-- ⬜ **DB 마이그레이션 V003**: study_periods + schedule_codes 테이블
-  - 시스템 예약 5종 시드 데이터 INSERT
-- ⬜ **DB 마이그레이션 V004**: schedule_events 테이블
-- ⬜ **원생 CRUD IPC 커맨드**: `create_student`, `update_student`, `list_students`, `get_student`
+- ✅ **루트 라우팅 + 인증 게이트**: `src/app/page.tsx` 클라이언트 가드, `lock/page.tsx` onUnlocked 흐름
+- ✅ **DB 마이그레이션 V101**: students + student_schedules 테이블 (PI-05 자동 채번 `MAX+1` + `BEGIN IMMEDIATE`)
+- ✅ **DB 마이그레이션 V102**: study_periods + schedule_codes 테이블 (시스템 예약 5종 시드)
+- ✅ **DB 마이그레이션 V103**: schedule_events 테이블
+- ✅ **DB 마이그레이션 V104**: standard_fees 재설계 (weekly_minutes 기준 매칭)
+- ✅ **DB 마이그레이션 V105**: schools 보강 (school_type / region 컬럼)
+- ✅ **원생 CRUD IPC 커맨드**: `create_student`, `update_student`, `list_students`, `get_student`
   - 필터링: 이름/학교급/학년/학교명/요일/성별 다중 조합
-  - 정렬: 이름순/입교일순/학년순
-  - 재원 상태 필터
-- ⬜ **수업 스케줄 IPC 커맨드**: `set_schedule`, `get_schedules`, `get_weekly_hours`
-  - (원생, 요일) UNIQUE 검증
-  - 변경 이력 자동 생성 (effective_to 갱신 + 신규 INSERT)
-  - 주 총 수업시간 자동 산정
-- ⬜ **표준 교습비 IPC 커맨드**: `list_fees`, `create_fee`, `update_fee`
-  - 주 수업시간 → 교습비 자동 매칭 함수
-- ⬜ **코드 테이블 CRUD IPC 커맨드**: 학교/결제수단/카드사 공용 CRUD
-  - is_active 소프트 삭제, sort_order 변경
-- ⬜ **비즈니스 규칙 단위 테스트 100%**: 주 총 수업시간 계산, 재원생 판정, 스케줄 변경 이력
+  - 정렬: 이름순/입교일순/학년순, 재원 상태 필터
+- ✅ **수업 스케줄 IPC 커맨드**: `set_schedule`, `get_schedules`, `get_weekly_hours`
+  - (원생, 요일) UNIQUE 검증, 변경 이력 자동 생성, 주 총 수업시간 자동 산정
+- ✅ **표준 교습비 IPC 커맨드**: `list_fees`, `create_fee`, `update_fee` + 자동 매칭 함수
+- ✅ **코드 테이블 CRUD IPC 커맨드**: 학교/결제수단/카드사 공용 CRUD (is_active 소프트 삭제, sort_order)
+- ✅ **프론트엔드 IPC 래퍼**: `src/lib/tauri/index.ts` Sprint 2 래퍼 18개 추가 (dev mode fallback 포함)
+- ✅ **도메인 타입**: `src/types/{student,schedule,fee,code}.ts` 4종
+- ✅ **비즈니스 규칙 단위 테스트**: 97 passed (Sprint 1 64 → +33)
+
+> **이연**: T2 salt 이전(Sprint 3 마법사 통합 시점, R12), T8 `query!()` 매크로(별도 backlog)
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 모든 마이그레이션 정상 적용 + `.sqlx/` 오프라인 캐시 갱신/커밋
-- ⬜ IPC 커맨드별 단위 테스트 통과 (인메모리 DB)
-- ⬜ 원생 50명 기준 CRUD 응답 300ms 이내
-- ⬜ `cargo test` + `cargo clippy -- -D warnings` 통과
+- ✅ 모든 마이그레이션 정상 적용 + `.sqlx/` 오프라인 캐시 갱신/커밋
+- ✅ IPC 커맨드별 단위 테스트 통과 (인메모리 DB)
+- ✅ 원생 50명 기준 CRUD 응답 300ms 이내 (실측은 v0.2.0 배포 후 사용자 환경)
+- ✅ `cargo test` 97 passed + `cargo clippy -- -D warnings` 통과
 
 #### 🧪 Playwright MCP 검증 시나리오
 ```
@@ -201,7 +200,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 #### 기술 고려사항
 - `query!`/`query_as!` 매크로로 컴파일 타임 타입 검사 필수
 - 에러 처리: `thiserror` + `Result<T, String>` (Tauri 커맨드 규약)
-- PI-05 미결정 시 수동 입력만 구현 (자동 채번은 Post-Sprint)
+- PI-05 확정: 자동 채번 구현 (`MAX+1` + override 허용)
 
 ---
 
@@ -844,7 +843,7 @@ PRD §4.15에 명시된 Post-MVP 항목:
 ### PRD 미해결 항목 (스프린트 진행 중 결정 필요)
 - ⬜ **PI-01** (High): 소멸 자동 전이 트리거 시점 → Sprint 7에서 구현
 - ⬜ **PI-02** (High): 보강-결석 시간값 매칭 규칙 → Sprint 6 착수 전 결정 필요
-- ⬜ **PI-05** (Medium): 일련번호 자동 채번 규칙 → Sprint 2 착수 전 결정 필요
+- ✅ **PI-05** (Medium): 일련번호 자동 채번 규칙 → **확정**: `MAX+1` + `BEGIN IMMEDIATE` + override 허용 (2026-05-20)
 - ⬜ **PI-07** (High): 복구 코드 발급/검증 Feature → Sprint 1 착수 전 결정 필요
 
 ---

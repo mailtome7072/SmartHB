@@ -15,6 +15,27 @@ import type {
   StartupResult,
   SyncStatus,
 } from '@/types'
+import type {
+  CodeEntry,
+  CodeTable,
+  CodeUpdate,
+  NewCode,
+} from '@/types/code'
+import type {
+  FeeUpdate,
+  NewFee,
+  StandardFee,
+} from '@/types/fee'
+import type {
+  ScheduleSet,
+  StudentSchedule,
+} from '@/types/schedule'
+import type {
+  NewStudent,
+  Student,
+  StudentFilter,
+  StudentUpdate,
+} from '@/types/student'
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
 
@@ -284,6 +305,10 @@ export async function appStartupSequence(
   if (!inv) {
     return {
       elapsed_ms: 0,
+      parallel_phase_ms: 0,
+      password_verify_ms: 0,
+      db_init_ms: 0,
+      audit_cleanup_ms: 0,
       lock_force_used: forceLock,
       integrity_ok: true,
       audit_cleaned: 0,
@@ -293,4 +318,207 @@ export async function appStartupSequence(
     password,
     forceLock,
   }) as Promise<StartupResult>
+}
+
+// ----------------------------------------------------------------------------
+// Sprint 2 — 원생 도메인
+// ----------------------------------------------------------------------------
+
+/** PI-05 자동 채번 후보 — UI 등록 폼 기본값 표시용. */
+export async function nextSerialNumber(): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) return '1'
+  return inv('next_serial_number') as Promise<string>
+}
+
+export async function createStudent(payload: NewStudent): Promise<Student> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      serial_no: payload.serial_no ?? '1',
+      name: payload.name,
+      gender: payload.gender,
+      school_level: payload.school_level,
+      grade: payload.grade,
+      school_id: payload.school_id ?? null,
+      phone_student: payload.phone_student ?? null,
+      phone_mother: payload.phone_mother ?? null,
+      phone_father: payload.phone_father ?? null,
+      enroll_date: payload.enroll_date,
+      withdraw_date: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_student', { payload }) as Promise<Student>
+}
+
+export async function updateStudent(id: number, payload: StudentUpdate): Promise<Student> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      ...payload,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_student', { id, payload }) as Promise<Student>
+}
+
+export async function getStudent(id: number): Promise<Student> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] 원생 조회는 Tauri 환경에서만 동작합니다.')
+  return inv('get_student', { id }) as Promise<Student>
+}
+
+export async function withdrawStudent(id: number, withdrawDate: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('withdraw_student', { id, withdrawDate })
+}
+
+export async function listStudents(filter: StudentFilter = {}): Promise<Student[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_students', { filter }) as Promise<Student[]>
+}
+
+// ----------------------------------------------------------------------------
+// Sprint 2 — 수업 스케줄
+// ----------------------------------------------------------------------------
+
+export async function setSchedule(payload: ScheduleSet): Promise<StudentSchedule> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      student_id: payload.student_id,
+      day_of_week: payload.day_of_week,
+      start_time: payload.start_time,
+      duration_hours: payload.duration_hours,
+      effective_from: payload.effective_from,
+      effective_to: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('set_schedule', { payload }) as Promise<StudentSchedule>
+}
+
+export async function getSchedules(studentId: number): Promise<StudentSchedule[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_schedules', { studentId }) as Promise<StudentSchedule[]>
+}
+
+export async function getScheduleHistory(studentId: number): Promise<StudentSchedule[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_schedule_history', { studentId }) as Promise<StudentSchedule[]>
+}
+
+export async function getWeeklyHours(studentId: number): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('get_weekly_hours', { studentId }) as Promise<number>
+}
+
+// ----------------------------------------------------------------------------
+// Sprint 2 — 표준 교습비
+// ----------------------------------------------------------------------------
+
+export async function listFees(): Promise<StandardFee[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_fees') as Promise<StandardFee[]>
+}
+
+export async function createFee(payload: NewFee): Promise<StandardFee> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      weekly_hours: payload.weekly_hours,
+      amount: payload.amount,
+      sort_order: payload.sort_order ?? 0,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_fee', { payload }) as Promise<StandardFee>
+}
+
+export async function updateFee(id: number, payload: FeeUpdate): Promise<StandardFee> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      ...payload,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_fee', { id, payload }) as Promise<StandardFee>
+}
+
+/** 주 수업시간 → 매칭 교습비 (정확 일치 우선, 없으면 이하 최댓값). */
+export async function matchFeeByHours(weeklyHours: number): Promise<StandardFee | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('match_fee_by_hours', { weeklyHours }) as Promise<StandardFee | null>
+}
+
+// ----------------------------------------------------------------------------
+// Sprint 2 — 코드 테이블
+// ----------------------------------------------------------------------------
+
+export async function listCodes(table: CodeTable): Promise<CodeEntry[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_codes', { table }) as Promise<CodeEntry[]>
+}
+
+export async function createCode(table: CodeTable, payload: NewCode): Promise<CodeEntry> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      code: payload.code,
+      label: payload.label ?? payload.code,
+      sort_order: payload.sort_order ?? 0,
+      is_active: true,
+    }
+  }
+  return inv('create_code', { table, payload }) as Promise<CodeEntry>
+}
+
+export async function updateCode(
+  table: CodeTable,
+  id: number,
+  payload: CodeUpdate,
+): Promise<CodeEntry> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      code: payload.label,
+      label: payload.label,
+      sort_order: payload.sort_order,
+      is_active: payload.is_active,
+    }
+  }
+  return inv('update_code', { table, id, payload }) as Promise<CodeEntry>
+}
+
+/** 정렬 순서 일괄 변경 — (id, sort_order) 쌍 배열. */
+export async function reorderCodes(
+  table: CodeTable,
+  orders: [number, number][],
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('reorder_codes', { table, orders })
 }

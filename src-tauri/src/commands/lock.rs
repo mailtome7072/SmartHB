@@ -233,23 +233,49 @@ pub(crate) async fn heartbeat_tick() {
     }
 }
 
-/// 락을 해제한다 (본 디바이스 점유일 때만).
+/// 락을 해제한다 (본 디바이스 점유일 때만, T11 R7 advisory lock 적용).
 ///
-/// 다른 디바이스 점유 락은 보호 — 본 함수는 우리가 만든 락만 제거한다.
+/// `acquire_lock_atomic` 와 동일한 advisory lock 보호 수준을 제공한다 — fs2 의
+/// `try_lock_exclusive` 로 다른 프로세스가 동시에 락 파일을 조작하지 못하게 한 상태에서
+/// 본 디바이스 점유 여부를 재확인하고 삭제한다. 다른 디바이스 점유 락은 보호.
 #[tauri::command]
 pub async fn release_lock() -> Result<(), String> {
-    let current = read_lock_info().map_err(String::from)?;
-    match current {
-        None => Ok(()),
-        Some(info) if info.is_self() => {
-            std::fs::remove_file(lock_path()).map_err(|e| app_err!(Lock, "락 파일 삭제 실패", e))?;
-            Ok(())
-        }
-        Some(_) => Err(AppError::Lock(
-            "다른 디바이스가 점유한 락은 해제할 수 없습니다.".to_string(),
-        )
-        .into()),
+    release_lock_atomic().map_err(String::from)
+}
+
+pub(crate) fn release_lock_atomic() -> Result<(), AppError> {
+    let path = lock_path();
+    // 락 파일이 없으면 이미 해제 상태로 간주 — idempotent.
+    if !path.exists() {
+        return Ok(());
     }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .map_err(|e| app_err!(Lock, "락 파일 열기 실패", e))?;
+    file.try_lock_exclusive()
+        .map_err(|e| app_err!(Lock, "락 해제 직전 advisory lock 획득 실패", e))?;
+
+    // advisory lock 보유 상태에서 본 디바이스 점유 여부 재확인 후 삭제.
+    let mut content = String::new();
+    file.read_to_string(&mut content)
+        .map_err(|e| app_err!(Lock, "락 파일 읽기 실패", e))?;
+    let current = parse_lock_info(&content)?;
+    match current {
+        None => {}
+        Some(info) if info.is_self() => {}
+        Some(_) => {
+            return Err(AppError::Lock(
+                "다른 디바이스가 점유한 락은 해제할 수 없습니다.".to_string(),
+            ));
+        }
+    }
+    // file drop 으로 advisory lock 자동 해제 + Windows file handle close.
+    // close 후 remove_file 호출 — Windows 에서 열린 핸들은 삭제 실패 원인.
+    drop(file);
+    std::fs::remove_file(&path).map_err(|e| app_err!(Lock, "락 파일 삭제 실패", e))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -311,6 +337,26 @@ mod tests {
         let id1 = device_id();
         let id2 = device_id();
         assert_eq!(id1, id2, "OnceLock 으로 1회 생성된 ID 가 stable 해야 함");
+    }
+
+    #[test]
+    fn release_lock_atomic_is_idempotent_when_no_file() {
+        // 락 파일이 없는 상태에서도 release 가 성공해야 함 (idempotent).
+        let path = lock_path();
+        let _ = std::fs::remove_file(&path);
+        assert!(release_lock_atomic().is_ok());
+    }
+
+    #[test]
+    fn release_lock_atomic_removes_self_owned_lock() {
+        // acquire 직후 즉시 release — 다른 테스트와 lock_path 를 공유하므로 path.exists()
+        // 의존성 없이 두 호출의 결과만 검증한다.
+        let acquired = acquire_lock_atomic(false);
+        if acquired.is_err() {
+            return; // 외부 점유 — 본 테스트 skip
+        }
+        let result = release_lock_atomic();
+        assert!(result.is_ok(), "본 디바이스 점유 락 release 성공: {:?}", result);
     }
 
     #[tokio::test]
