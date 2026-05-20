@@ -1,14 +1,29 @@
-import { LockScreen } from '@/components/LockScreen'
+'use client'
 
 /**
  * `/lock` 라우트 — 잠금 화면.
  *
- * T9 (시작 시퀀스 통합) 시점에 앱 진입 흐름이 추가된다:
- * - 앱 시작 → `check_auth_status` IPC → `not-initialized` | `locked` 시 본 라우트로 자동 이동
- * - 인증 성공 시 메인 화면(`/`) 라우팅
+ * Sprint 2 T1 에서 `onUnlocked` 콜백을 연결하여 인증 성공 시:
+ * 1. `LockScreen` 내부에서 `app_startup_sequence(password)` 가 호출되어 DB pool 초기화·
+ *    백그라운드 task spawn·audit 정리가 일괄 수행되고
+ * 2. 그 결과 `StartupResult` 를 받아 `auth-state` 에 저장한 뒤
+ * 3. `useRouter().replace('/')` 로 메인 화면에 진입한다.
  *
- * 현재 sprint 1 T4 범위에서는 직접 `/lock` URL 로 진입하여 UI 흐름만 검증.
+ * PRD §5.6 의 < 3000 ms 측정값은 루트 페이지에서 표시한다 (`StartupResult.elapsed_ms`).
  */
+
+import { useRouter } from 'next/navigation'
+import { LockScreen } from '@/components/LockScreen'
+import { markUnlocked } from '@/lib/auth-state'
+import type { StartupResult } from '@/types'
+
 export default function LockPage() {
-  return <LockScreen />
+  const router = useRouter()
+
+  const handleUnlocked = (result: StartupResult) => {
+    markUnlocked(result)
+    router.replace('/')
+  }
+
+  return <LockScreen onUnlocked={handleUnlocked} />
 }

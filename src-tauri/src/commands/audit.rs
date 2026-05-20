@@ -26,15 +26,23 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// 감사 이벤트 종류 — 신규 이벤트 추가 시 본 enum 에 variant 만 추가하면 된다.
+///
+/// 보안 이벤트(Sprint 1) + 도메인 이벤트(Sprint 2~) 를 모두 포함. 도메인 이벤트는 PRD §6.6
+/// 자가 진단 + 운영 추적에 사용된다.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum AuditEventType {
+    // Sprint 1 — 보안 이벤트
     PasswordChange,
     RecoveryCodeIssued,
     BackupCreated,
     BackupRestored,
     LockForced,
     IntegrityCheckFailed,
+    // Sprint 2 — 원생 도메인 이벤트
+    StudentCreated,
+    StudentUpdated,
+    StudentWithdrawn,
 }
 
 impl AuditEventType {
@@ -47,6 +55,9 @@ impl AuditEventType {
             Self::BackupRestored => "backup-restored",
             Self::LockForced => "lock-forced",
             Self::IntegrityCheckFailed => "integrity-check-failed",
+            Self::StudentCreated => "student-created",
+            Self::StudentUpdated => "student-updated",
+            Self::StudentWithdrawn => "student-withdrawn",
         }
     }
 }

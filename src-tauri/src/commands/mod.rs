@@ -1,12 +1,16 @@
 pub mod audit;
 pub mod auth;
 pub mod backup;
+pub mod codes;
 pub mod db;
+pub mod fees;
 pub mod integrity;
 pub mod lock;
 pub mod paths;
 pub mod recovery;
 pub mod runtime;
+pub mod schedules;
+pub mod students;
 pub mod sync;
 
 /// 예시 Tauri 커맨드

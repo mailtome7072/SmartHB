@@ -48,6 +48,13 @@ pub enum AppError {
     /// 설정값 누락·형식 오류 — 초기 마법사 미완료, 환경변수 누락 등.
     #[error("설정 오류: {0}")]
     Config(String),
+
+    /// 사용자 친화 한국어 메시지를 그대로 노출 — 도메인 검증 오류, 비즈니스 규칙 위반 등.
+    ///
+    /// 다른 variant 는 `user_message()` 가 정형 메시지로 변환하지만, 본 variant 는 inner string
+    /// 을 그대로 IPC 응답에 사용한다. 호출자가 이미 사용자 친화 한국어 메시지를 작성한 경우 사용.
+    #[error("{0}")]
+    UserFacing(String),
 }
 
 impl AppError {
@@ -76,6 +83,7 @@ impl AppError {
             AppError::Config(_) => {
                 "설정 정보를 불러오는 중 오류가 발생했습니다. 초기 설정 마법사를 다시 실행해주세요.".to_string()
             }
+            AppError::UserFacing(msg) => msg.clone(),
         }
     }
 }
