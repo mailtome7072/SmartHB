@@ -185,11 +185,24 @@ mod tests {
             .expect("card_companies 조회 성공");
         assert!(card_count.0 >= 10, "card_companies 시드 ≥ 10개: {}", card_count.0);
 
-        let grade_count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM standard_fees")
+        // V104 적용 후 standard_fees 는 주 수업시간별 모델 (V001 학년별 모델 폐기, data-model §5.1)
+        let fee_count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM standard_fees")
             .fetch_one(&pool)
             .await
             .expect("standard_fees 조회 성공");
-        assert_eq!(grade_count.0, 12, "초중고 12학년 표준 교습비");
+        assert_eq!(fee_count.0, 5, "주 2~6시간 시드 5건 (V104)");
+
+        let fee_columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(standard_fees)")
+            .fetch_all(&pool)
+            .await
+            .expect("schema 조회 성공")
+            .into_iter()
+            .map(|r: (i32, String, String, i32, Option<String>, i32)| (r.1,))
+            .collect();
+        let col_names: Vec<&str> = fee_columns.iter().map(|c| c.0.as_str()).collect();
+        assert!(col_names.contains(&"weekly_hours"), "V104 schema 컬럼 weekly_hours");
+        assert!(col_names.contains(&"amount"), "V104 schema 컬럼 amount");
+        assert!(!col_names.contains(&"grade_code"), "V001 학년별 컬럼은 폐기");
 
         // V008 audit_logs 적용 확인
         let audit_count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM audit_logs")
