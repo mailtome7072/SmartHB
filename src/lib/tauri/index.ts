@@ -39,6 +39,26 @@ import type {
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
 
+/**
+ * OS 폴더 선택 다이얼로그를 띄우고 사용자가 선택한 경로를 반환한다 (Sprint 3 T7).
+ *
+ * 마법사(`/setup`)에서 클라우드 동기화 폴더(MYBOX/iCloud Drive/Dropbox) 선택용.
+ * 사용자가 취소하면 `null` 반환. 개발 모드(Tauri 미동작)에서는 더미 경로 반환.
+ *
+ * 권한: `capabilities/default.json` 의 `dialog:allow-open` 필요.
+ */
+export async function selectFolder(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({ directory: true, multiple: false })
+    if (selected === null) return null
+    return typeof selected === 'string' ? selected : selected[0] ?? null
+  } catch {
+    return '[개발 모드] /Users/dev/MYBOX'
+  }
+}
+
 async function getInvoke() {
   if (typeof window === 'undefined') return null
   if (!invoke) {
