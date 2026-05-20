@@ -74,6 +74,23 @@ PRD §5.6 인수 기준 "최초 실행 시 비밀번호 설정 화면 자동 진
 - ⬜ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과
 - ⬜ 첫 진입 / 재시작 / 인증 성공 후 흐름 모두 로컬에서 시연 가능 (수동 검증은 사용자 일정 시)
 
+## 발견된 이슈 — T2 명세 chicken-and-egg
+
+**이슈**: sprint2.md T2 명세 "Keychain salt → `app_settings` 테이블 마이그레이션" 은 구조적으로 불가능.
+
+**근거**:
+- DB pool 초기화 = `PRAGMA key` 적용 + 마이그레이션 실행
+- `PRAGMA key` 적용 = PBKDF2 `derive_key(password, salt)` 필요
+- salt 가 DB 안에 있으면 DB 를 열 키가 없는 상태에서 salt 조회 불가
+- 즉 salt 는 항상 **평문 (DB 외부)** 에 보관되어야 한다
+
+**대안** (backend.md 가 이미 권장하는 방향):
+- Keychain (현재 방식) → **클라우드 동기화 폴더 평문 파일** `{data_root}/salt.bin` 로 이전
+- 양 PC 동기화 시 동일 salt 자동 공유 → 동일 키 유도 가능
+- PBKDF2 의 salt 는 비밀이 아니므로 평문 보관 정당 (OWASP 권장사항)
+
+**적용**: T2 의 마이그레이션 V100 추가는 생략. `auth.rs` 의 salt 이전 헬퍼는 Keychain → `{data_root}/salt.bin` 으로 변경. sprint2.md 와 risk-register 도 함께 갱신.
+
 ## 다음 세션 예정 (참고)
 
 - **Session #2**: T2 R6 salt 이전 준비 + T3 R7 release_lock + T4 R8 startup 측정 (Day 2 묶음, 총 1.5일)
