@@ -1,10 +1,81 @@
 ---
-Sprint: 2  |  Date: 2026-05-20  |  Session: #1
+Sprint: 2  |  Date: 2026-05-20  |  Session: #2 (T5~T8 마이그레이션)
 ---
 
 ## 세션 진행 기록
 
-- **Session #1** (T1 루트 라우팅 + 인증 게이트): 🔄 진행 중 (현재)
+- **Session #1** (T1/T3/T4 — Sprint 1 잔여 해소): ✅ 완료. commits `a466541`, `84b18e5`, `052bb81`. T2 는 Sprint 3 마법사 통합으로 이연 (`c010423`).
+- **Session #2** (T5~T8 — V101~V103 마이그레이션 + .sqlx 캐시): 🔄 진행 중 (현재)
+
+## 이번 세션의 목표 (T5~T8 — Day 3~4)
+
+**원생/스케줄/학사/표준교습비 DB 스키마 + sqlx 오프라인 캐시 갱신**
+
+### T5: V101 students + student_schedules
+
+- 파일: `src-tauri/migrations/101__create_students_and_schedules.sql`
+- **SSOT 정합**: data-model.md §1.1, §1.2 우선 (sprint2.md 의 `INTEGER serial_no` / `REAL duration_hours` 표기는 미스 — data-model.md `TEXT serial_no` / `INTEGER duration_hours` 따름)
+- `students`:
+  - `serial_no TEXT NOT NULL UNIQUE` (PI-05 자동 채번은 숫자 문자열 생성)
+  - `gender CHECK IN ('male', 'female')`
+  - `school_level CHECK IN ('elementary', 'middle')` (PRD §4.1.1 초·중 한정)
+  - `grade CHECK BETWEEN 1 AND 9` (초1~6 + 중1~3)
+  - `school_id` FK → `schools(id)`
+  - `withdraw_date >= enroll_date` CHECK (AC-4.1.1-4)
+- `student_schedules`:
+  - `day_of_week CHECK BETWEEN 1 AND 7` (1=월, 7=일)
+  - `duration_hours INTEGER CHECK > 0` (시간 단위)
+  - `effective_to NULL ALLOWED` (현행 스케줄)
+  - 부분 인덱스: `UNIQUE(student_id, day_of_week) WHERE effective_to IS NULL` (R11 SQLite 3.8.0+ 의존)
+
+### T6: V102 study_periods + schedule_codes
+
+- 파일: `src-tauri/migrations/102__create_study_periods_and_schedule_codes.sql`
+- `study_periods`: `year_month UNIQUE "YYYY-MM"`, `start_date`, `end_date`, `is_confirmed`, `is_closed`
+- `schedule_codes`: 3속성 모델 (`allows_regular_class`, `allows_makeup_class`, `is_duplicate_blocked`) + 시스템 예약 5종 시드 (보강데이/공휴수업일/방학/단원평가 응시일/휴원일)
+
+### T7: V103 schedule_events
+
+- 파일: `src-tauri/migrations/103__create_schedule_events.sql`
+- `schedule_events`: `code_id FK`, `event_date`, `period_end_date`, `display_name`
+
+### T8: .sqlx 오프라인 캐시 갱신
+
+- `cargo install sqlx-cli` (이미 설치 가정) → `sqlx migrate run` 으로 dev DB 에 적용
+- `cargo sqlx prepare --manifest-path src-tauri/Cargo.toml` → `.sqlx/` 갱신
+- `SQLX_OFFLINE=true cargo build --manifest-path src-tauri/Cargo.toml` 성공 확인
+
+## 이번 세션에서 수정할 파일
+
+<!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행 -->
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/migrations/101__create_students_and_schedules.sql | [0회] | 신규 — T5 |
+| src-tauri/migrations/102__create_study_periods_and_schedule_codes.sql | [0회] | 신규 — T6 |
+| src-tauri/migrations/103__create_schedule_events.sql | [0회] | 신규 — T7 |
+| src-tauri/.sqlx/ | [0회] | sqlx prepare 결과물 — T8 |
+| docs/sprint/sprint2/scope.md | [0회] | 본 파일 — Session #2 갱신 |
+
+## 수정하지 않을 파일 (Forbidden Areas 포함)
+
+- ⬜ `.github/workflows/` — CI/CD 파이프라인
+- ⬜ `SETUP.sh` — 초기화 스크립트
+- ⬜ `docs/harness-engineering/`, `.claude/agents/`
+- ⬜ `PRD.md`, `docs/phase/`, `docs/sprint/sprint2.md` (sprint-planner 결과물)
+- ⬜ `src-tauri/migrations/001__*`, `008__*` (Sprint 1 산출물)
+- ⬜ `src-tauri/src/commands/*.rs` (IPC 는 T9 이후)
+
+## 이번 세션의 완료 기준 (T5~T8)
+
+- ⬜ V101 마이그레이션 작성 — students + student_schedules + 부분 인덱스
+- ⬜ V102 마이그레이션 작성 — study_periods + schedule_codes + 시스템 예약 5종 시드
+- ⬜ V103 마이그레이션 작성 — schedule_events
+- ⬜ `.sqlx/` 오프라인 캐시 갱신 + 커밋
+- ⬜ `cargo test` 통과 (db::tests::in_memory_pool_runs_migrations 가 새 테이블도 검증)
+- ⬜ `cargo clippy --all-targets -- -D warnings` 통과
+
+## 다음 세션 예정 (참고)
 
 ## 이번 세션의 목표 (T1 — Day 1)
 
@@ -73,6 +144,22 @@ PRD §5.6 인수 기준 "최초 실행 시 비밀번호 설정 화면 자동 진
 - ⬜ 모든 IPC 호출 try/catch + 한국어 에러 메시지
 - ⬜ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과
 - ⬜ 첫 진입 / 재시작 / 인증 성공 후 흐름 모두 로컬에서 시연 가능 (수동 검증은 사용자 일정 시)
+
+## 발견된 이슈 — T8 .sqlx prepare 불필요 (현 시점)
+
+**관찰**:
+- 현재 코드에 `sqlx::query!()` / `sqlx::query_as!()` 매크로 사용 0건 (Sprint 1 전체가 동적 `sqlx::query() + bind()` 패턴)
+- `SQLX_OFFLINE=true cargo build` 가 매크로 없이도 이미 통과
+- `.sqlx/` 디렉토리는 매크로 사용 시점에만 의미 있음
+
+**결정**: T9 IPC 도 Sprint 1 패턴(동적 `sqlx::query()` + `bind()`) 유지. T8 sqlx prepare 는 매크로 도입 시점(후속 sprint 또는 backlog)으로 이연.
+
+**근거**:
+- `bind()` 패턴이 raw concat 금지 + SQL injection 안전 보장 (backend.md 핵심 정책 충족)
+- 매크로 도입은 컴파일 타임 schema 검증 추가 이점이 있지만 sprint 시간 비용 큼 (`.env` + DATABASE_URL + sqlx-cli + prepare 워크플로 설정)
+- Sprint 1 의 동적 query 패턴과 일관성 유지
+
+**적용**: T8 task 를 "공식 보류 — 매크로 도입 시 함께 진행"으로 표시. cargo test 의 in_memory_pool_runs_migrations 가 마이그레이션 적용 검증을 대체.
 
 ## 발견된 이슈 — T2 명세 chicken-and-egg
 
