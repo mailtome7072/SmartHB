@@ -9,6 +9,7 @@
 
 import { Sidebar } from './sidebar'
 import { TopBar } from './top-bar'
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 
 export function AppShell({
   children,
@@ -18,6 +19,8 @@ export function AppShell({
   /** 글로벌 검색바 등 상단바 중앙 슬롯 — T6 이후 채워진다 */
   topBarSlot?: React.ReactNode
 }) {
+  useKeyboardShortcuts()
+
   return (
     <div className="flex h-screen">
       <Sidebar />
