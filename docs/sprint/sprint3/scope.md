@@ -34,14 +34,33 @@ Sprint 3 진입 + Day 1 (T1 Pretendard self-host + T2 R13 PII 마스킹) 완료.
 
 ## 완료 기준 (이번 세션)
 
-- ⬜ `sprint3` 브랜치 생성 (develop 기반) + planning artifacts 커밋 (sprint3.md, risk-register, sprint-planner MEMORY 갱신, CLAUDE.md cipher feature 추가, ROADMAP 갱신)
-- ⬜ T1 Pretendard self-host 완료 — `pnpm build` 통과 + 본문 18px / 헤더 24px+ / 행간 1.5 기본값 확립
-- ⬜ T2 R13 PII 마스킹 완료 — `cargo test` 통과 + audit_logs.details에 원생 이름 미저장 단위 테스트 추가
-- ⬜ 세션 종료 시 다음 세션 진입점(T3 페이지네이션)을 본 scope.md에 명시
+- ✅ `sprint3` 브랜치 생성 (develop 기반) + planning artifacts 커밋 (`2905663`)
+- ✅ T1 Pretendard self-host 완료 (`7d8af2c`) — Regular/SemiBold/Bold subset 806KB / 본문 18px / 헤더 24px+ / 행간 1.5 / `pnpm build` 통과
+- ✅ T2 R13 PII 마스킹 완료 (`6766693`) — `audit::try_record` 3곳 `details=None` / `cargo test` 97 passed 회귀 0 / clippy 통과
+- ✅ 다음 세션 진입점 (아래 “다음 세션 진입점” 섹션) 명시
+
+## 다음 세션 진입점 — T3 (R14 페이지네이션)
+
+- **대상**: `src-tauri/src/commands/students.rs`, `src-tauri/src/commands/codes.rs`, `src/lib/tauri/index.ts`, `src/types/student.ts`
+- **변경 요지**:
+  - `StudentFilter`에 `limit: Option<u32>` / `offset: Option<u32>` 추가
+  - `list_students` SQL에 `LIMIT ? OFFSET ?` 적용 (기본 limit=100, 상한 1000)
+  - `count_students(filter)` 신규 IPC (총 건수 반환 — 동일 필터 재사용)
+  - `list_codes` / `count_codes` 동일 적용
+  - 프론트 IPC 래퍼: `src/lib/tauri/index.ts` 의 `listStudents`/`listCodes` 시그니처 갱신 + `countStudents`/`countCodes` 추가
+- **단위 테스트 신규**: limit/offset 경계값 + count 정확성 (in-memory pool)
+- **세션 시작 시 확인**: `git log develop..HEAD --oneline` 으로 T1/T2 커밋 존재 확인 + `scope.md` 세션 번호 +1 (#2)
 
 ## 발견된 이슈
 
-(없음 — 발견 시 본 섹션에 기록 후 사용자 보고)
+(없음)
+
+## 세션 #1 simplify 적용 사항
+
+- 코드 리뷰 3개 에이전트 병렬 실행 → 채택 2건:
+  - `tailwind.config.ts`의 `fontFamily.sans` 제거 (Tailwind 4 CSS-first `@theme` 중복)
+  - `globals.css`의 미사용 변수 `--font-size-heading`, `--tap-target-min` 제거 (YAGNI)
+- 기각 1건: audit::try_record 헬퍼 추출 (premature abstraction — 3줄 호출에 indirection 추가 불요)
 
 ## Re-planning 트리거 추적
 
