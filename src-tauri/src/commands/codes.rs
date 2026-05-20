@@ -22,6 +22,7 @@
 //! schools 는 단일 `name` 컬럼이라 `code` = `label` = `name`. UI 가 동일 텍스트를 보여줘도 무방.
 
 use crate::commands::db;
+use crate::commands::pagination::clamp_list_limit;
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -45,20 +46,30 @@ impl CodeTable {
         }
     }
 
+    /// 페이지네이션 적용 list SQL — `LIMIT ? OFFSET ?` 가 ORDER BY 뒤에 자동 부착.
     fn list_sql(self) -> &'static str {
         match self {
             Self::Schools => {
                 "SELECT id, name AS code, name AS label, sort_order, is_active \
-                 FROM schools ORDER BY sort_order ASC, name ASC"
+                 FROM schools ORDER BY sort_order ASC, name ASC LIMIT ? OFFSET ?"
             }
             Self::PaymentMethods => {
                 "SELECT id, code, label, display_order AS sort_order, is_active \
-                 FROM payment_methods ORDER BY display_order ASC, label ASC"
+                 FROM payment_methods ORDER BY display_order ASC, label ASC LIMIT ? OFFSET ?"
             }
             Self::CardCompanies => {
                 "SELECT id, code, label, display_order AS sort_order, is_active \
-                 FROM card_companies ORDER BY display_order ASC, label ASC"
+                 FROM card_companies ORDER BY display_order ASC, label ASC LIMIT ? OFFSET ?"
             }
+        }
+    }
+
+    /// 동일 필터(테이블)에 대한 COUNT 쿼리.
+    fn count_sql(self) -> &'static str {
+        match self {
+            Self::Schools => "SELECT COUNT(*) AS cnt FROM schools",
+            Self::PaymentMethods => "SELECT COUNT(*) AS cnt FROM payment_methods",
+            Self::CardCompanies => "SELECT COUNT(*) AS cnt FROM card_companies",
         }
     }
 
@@ -168,10 +179,19 @@ fn map_code_unique(code: &str, table: CodeTable, err: sqlx::Error) -> AppError {
     AppError::Db(err)
 }
 
+/// R14 페이지네이션 — 정책은 [`clamp_list_limit`] 참조.
 #[tauri::command]
-pub async fn list_codes(table: CodeTable) -> Result<Vec<CodeEntry>, String> {
+pub async fn list_codes(
+    table: CodeTable,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<Vec<CodeEntry>, String> {
     let pool = db::pool().map_err(String::from)?;
+    let limit = clamp_list_limit(limit);
+    let offset = offset.unwrap_or(0);
     let rows = sqlx::query(table.list_sql())
+        .bind(limit)
+        .bind(offset)
         .fetch_all(pool)
         .await
         .map_err(AppError::Db)
@@ -179,6 +199,20 @@ pub async fn list_codes(table: CodeTable) -> Result<Vec<CodeEntry>, String> {
     rows.iter()
         .map(CodeEntry::from_row)
         .collect::<Result<Vec<_>, _>>()
+        .map_err(String::from)
+}
+
+/// 코드 테이블의 총 항목 수 (R14 페이지네이션 UI 보조).
+#[tauri::command]
+pub async fn count_codes(table: CodeTable) -> Result<i64, String> {
+    let pool = db::pool().map_err(String::from)?;
+    let row = sqlx::query(table.count_sql())
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    row.try_get::<i64, _>("cnt")
+        .map_err(AppError::Db)
         .map_err(String::from)
 }
 
@@ -264,6 +298,7 @@ pub async fn reorder_codes(table: CodeTable, orders: Vec<(i64, i64)>) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::pagination::{DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT};
 
     #[test]
     fn code_table_enum_round_trip() {
@@ -287,6 +322,8 @@ mod tests {
     async fn list_payment_methods_returns_v001_seed() {
         let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
         let rows = sqlx::query(CodeTable::PaymentMethods.list_sql())
+            .bind(DEFAULT_LIST_LIMIT)
+            .bind(0u32)
             .fetch_all(&pool)
             .await
             .unwrap();
@@ -301,6 +338,8 @@ mod tests {
     async fn list_card_companies_returns_v001_seed() {
         let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
         let rows = sqlx::query(CodeTable::CardCompanies.list_sql())
+            .bind(DEFAULT_LIST_LIMIT)
+            .bind(0u32)
             .fetch_all(&pool)
             .await
             .unwrap();
@@ -319,6 +358,8 @@ mod tests {
         .await
         .unwrap();
         let rows = sqlx::query(CodeTable::Schools.list_sql())
+            .bind(DEFAULT_LIST_LIMIT)
+            .bind(0u32)
             .fetch_all(&pool)
             .await
             .unwrap();
@@ -326,6 +367,63 @@ mod tests {
         assert_eq!(entry.code, "테스트초");
         assert_eq!(entry.sort_order, 5);
         assert!(entry.is_active);
+    }
+
+    // ------------------------------------------------------------------------
+    // R14 페이지네이션
+    // ------------------------------------------------------------------------
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn list_codes_limit_offset_respected() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        // V001 시드: card_companies 10건 이상. 첫 페이지 3건 vs 두 번째 페이지 3건이 disjoint.
+        let page1 = sqlx::query(CodeTable::CardCompanies.list_sql())
+            .bind(3u32)
+            .bind(0u32)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let page2 = sqlx::query(CodeTable::CardCompanies.list_sql())
+            .bind(3u32)
+            .bind(3u32)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(page1.len(), 3);
+        assert_eq!(page2.len(), 3);
+        let p1_codes: Vec<String> = page1
+            .iter()
+            .map(|r| CodeEntry::from_row(r).unwrap().code)
+            .collect();
+        let p2_codes: Vec<String> = page2
+            .iter()
+            .map(|r| CodeEntry::from_row(r).unwrap().code)
+            .collect();
+        for c in &p1_codes {
+            assert!(!p2_codes.contains(c), "페이지 1·2 disjoint 보장: {}", c);
+        }
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn count_codes_matches_seed_total() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let total: (i64,) = sqlx::query_as(CodeTable::CardCompanies.count_sql())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let rows = sqlx::query(CodeTable::CardCompanies.list_sql())
+            .bind(MAX_LIST_LIMIT)
+            .bind(0u32)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            total.0 as usize,
+            rows.len(),
+            "COUNT(*) 가 실제 행 수와 일치"
+        );
     }
 
     #[cfg(not(feature = "cipher"))]

@@ -379,10 +379,29 @@ export async function withdrawStudent(id: number, withdrawDate: string): Promise
   await inv('withdraw_student', { id, withdrawDate })
 }
 
+/**
+ * 원생 목록을 다중 필터·정렬·페이지네이션으로 조회한다.
+ *
+ * R14: `filter.limit` 미지정 시 백엔드 기본 100 (상한 1000), `filter.offset` 기본 0.
+ * 페이지 UI 는 `countStudents(filter)` 로 총 건수를 별도 조회.
+ * 개발 모드(Tauri 미동작)에서는 빈 배열을 반환한다.
+ */
 export async function listStudents(filter: StudentFilter = {}): Promise<Student[]> {
   const inv = await getInvoke()
   if (!inv) return []
   return inv('list_students', { filter }) as Promise<Student[]>
+}
+
+/**
+ * 동일 필터에 매칭되는 총 원생 수를 반환한다 (R14 페이지네이션 UI 보조).
+ *
+ * `filter.limit` / `filter.offset` 은 백엔드에서 무시된다 — 필터 조합 자체의 총 건수.
+ * 개발 모드에서는 0 을 반환.
+ */
+export async function countStudents(filter: StudentFilter = {}): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_students', { filter }) as Promise<number>
 }
 
 // ----------------------------------------------------------------------------
@@ -475,10 +494,33 @@ export async function matchFeeByHours(weeklyHours: number): Promise<StandardFee 
 // Sprint 2 — 코드 테이블
 // ----------------------------------------------------------------------------
 
-export async function listCodes(table: CodeTable): Promise<CodeEntry[]> {
+/**
+ * 코드 항목 목록을 페이지네이션으로 조회한다 (R14).
+ *
+ * `limit` 미지정 시 백엔드 기본 100 (상한 1000), `offset` 기본 0.
+ * 개발 모드에서는 빈 배열을 반환한다.
+ */
+export async function listCodes(
+  table: CodeTable,
+  limit?: number,
+  offset?: number,
+): Promise<CodeEntry[]> {
   const inv = await getInvoke()
   if (!inv) return []
-  return inv('list_codes', { table }) as Promise<CodeEntry[]>
+  return inv('list_codes', {
+    table,
+    limit: limit ?? null,
+    offset: offset ?? null,
+  }) as Promise<CodeEntry[]>
+}
+
+/**
+ * 코드 테이블 총 항목 수 (R14 페이지네이션 UI 보조).
+ */
+export async function countCodes(table: CodeTable): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_codes', { table }) as Promise<number>
 }
 
 export async function createCode(table: CodeTable, payload: NewCode): Promise<CodeEntry> {
