@@ -835,6 +835,10 @@ PRD §4.15에 명시된 Post-MVP 항목:
 - ✅ **PI-05** (Medium): 일련번호 자동 채번 규칙 → **확정**: `MAX+1` + `BEGIN IMMEDIATE` + override 허용 (2026-05-20)
 - ⬜ **PI-07** (High): 복구 코드 발급/검증 Feature → Sprint 1 착수 전 결정 필요
 
+### Sprint 3 이연 항목 (Sprint 4 또는 hotfix sweep)
+- ⬜ **R12: salt 이전 + paths 동적화** — `paths::data_root()`가 현재 정적 경로 반환. `app_config_dir/config.json`의 cloud_folder_path를 읽어 동적 반환하도록 변경 필요. Sprint 4 착수 전 또는 별도 hotfix sweep으로 처리.
+- ⬜ **query!() 매크로 전환** — 동적 `query() + bind()` 패턴 유지 중. V101~V105 스키마 안정화 후 일괄 전환 예정. 별도 backlog 추적.
+
 ---
 
 ## 📋 품질 검증 체크리스트
