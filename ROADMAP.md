@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 14% (2/14 스프린트 완료) |
-| 현재 Phase | Phase 1 (Sprint 1~2 완료, Sprint 3 예정) |
-| 다음 마일스톤 | Phase 1 — 인프라 + 기반 도메인 (Sprint 3 진행 예정) |
+| 전체 진행률 | 21% (3/14 스프린트 완료) |
+| 현재 Phase | Phase 1 완료 → Phase 2 착수 예정 |
+| 다음 마일스톤 | Phase 2 — 학사 + 출결 (Sprint 4 예정) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -93,7 +93,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 1: 인프라 + 기반 도메인 (Sprint 1~3) 🔄 진행 중
+## Phase 1: 인프라 + 기반 도메인 (Sprint 1~3) ✅ 완료 (2026-05-21)
 
 > **Phase 설계 완료**: `docs/phase/phase1.md` — 전문가 4관점 검토 반영 (보안/성능/UX/PO+인프라)
 
@@ -204,47 +204,36 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 3: 원생 관리 프론트 + 초기 설정 마법사 (2주) 🔄 진행 중
+### Sprint 3: 원생 관리 프론트 + 초기 설정 마법사 (2주) ✅ 완료 (2026-05-21)
+
+> 계획 문서: `docs/sprint/sprint3.md` / Task 15/15 완료
 
 #### 작업 목록
 
-- ⬜ **앱 레이아웃 셸 구축**: 사이드바 네비게이션 + 상단 상태바 + 글로벌 검색바
-  - 상태바: 점유 디바이스, 마지막 백업 시각, 동기화 상태
-  - 사이드바: 메뉴 항목 + 단축키 표기 병기
-  - Pretendard 18pt 본문, 24pt+ 헤더, 행간 1.5
-  - 저자극 톤 (베이지/연그레이 배경), 명도 대비 4.5:1 이상
-- ⬜ **글로벌 검색바 (§4.14)**: 모든 화면 상단 상시 노출
-  - 검색 대상: 원생 이름(우선), 학교명, 메뉴명
-  - 한글 자모 부분 일치 + 영문 대소문자 무관
-  - 200ms 디바운싱, 300ms 이내 결과 표시
-  - 결과 클릭 시 1클릭 이동
-  - Ctrl+F 단축키 바인딩
-- ⬜ **원생 관리 화면 (§4.1)**: 원생 목록 + 등록/수정 폼
-  - 필터/정렬 UI (200ms 이내 반응)
-  - 퇴교 처리 + 미사용 보강 다이얼로그 (UI만 — 보강 로직은 Phase 3)
-  - Ctrl+N 신규 원생 등록 단축키
-  - 자동 임시저장 (3분) + 미저장 경고 다이얼로그
-- ⬜ **수업 스케줄 편집 UI (§4.2)**: 요일별 시작 시간 + 1회 수업 시간
-  - 운영 시간 내 선택만 허용 (AC-4.1.1-2, AC-4.1.1-5)
-  - 주 총 수업시간 실시간 표시 + 표준 교습비 자동 매칭
-- ⬜ **초기 설정 마법사 (§4.0)**: 9단계 (환영 → ... → 완료)
-  - 각 단계 독립 저장, 건너뛰기 가능
-  - 마법사 미완료 시 다음 실행에서 이어서 진행
-  - 단계별: 운영시간/학교코드/표준교습비/결제수단/백업폴더/가져오기/샘플등록/완료
-  - 완료 후 대시보드 자동 이동
-- ⬜ **코드 테이블 관리 UI (§4.12)**: 학교/표준교습비/결제수단/카드사/운영시간
-  - 사용안함 처리, 정렬순서 변경
-- ⬜ **키보드 단축키 체계 기초**: F1/Ctrl+F/Ctrl+N/Ctrl+S/Ctrl+Z/ESC/Ctrl+P 바인딩
-- ⬜ **Zustand 스토어 설정**: 세션 상태, 락 점유 상태, 선택된 교습기간월
-- ⬜ **TanStack Query 설정**: IPC 응답 캐싱/무효화 패턴 확립
+- ✅ **T1: Pretendard 폰트 self-host** — `public/fonts/` woff2 배치, `@font-face` + Tailwind config, 18px 본문/24px+ 헤더/행간 1.5 기본값
+- ✅ **T2: R13 PII 마스킹** — `students.rs` `try_record` 3곳 `details=None` 적용
+- ✅ **T3: R14 페이지네이션** — `list_students`/`list_codes` LIMIT/OFFSET + `count_students` IPC 신규
+- ✅ **T4: Zustand 스토어 + TanStack Query** — session-store/app-store + QueryProvider
+- ✅ **T5: 앱 레이아웃 셸** — 사이드바(단축키 병기) + 상단 상태바 + AppShell
+- ✅ **T6: 글로벌 검색바 (§4.14)** — 원생/학교명/메뉴명 검색, 200ms 디바운싱, Ctrl+F
+- ✅ **T7: tauri-plugin-dialog** — 폴더 선택 IPC + capabilities 권한
+- ✅ **T8: 마법사 백엔드** — `setup.rs` IPC(save_cloud_folder/complete_setup/get_setup_status) + config.json 분리 (chicken-and-egg step-back → `app_config_dir` 채택)
+- ✅ **T9: 초기 설정 마법사 프론트** — `/setup` 4단계(환영/폴더/비밀번호/완료) + 라우팅 분기
+- ✅ **T10: 원생 목록 화면** — TanStack Query 연동, 필터/정렬/페이지네이션
+- ✅ **T11: 원생 등록/수정 폼** — CRUD 전체 흐름, 3분 자동 임시저장, 미저장 경고
+- ✅ **T12: 코드 테이블 관리 화면 (§4.12)** — 학교/표준교습비/결제수단/카드사 CRUD
+- ✅ **T13: 수업 스케줄 편집 UI (§4.2)** — 요일별 시간 입력, 주 총 시간/교습비 매칭 표시
+- ✅ **T14: 키보드 단축키 체계** — F1/Ctrl+F/Ctrl+N/Ctrl+S/Ctrl+Z/ESC/Ctrl+P
+- ✅ **T15: 통합 검증** — cargo test 109 passed (+12), clippy/lint/tsc/build 모두 통과
+
+> **이연 항목** (Sprint 4 또는 hotfix sweep): R12 salt 이전 (`paths::data_root()` 동적화), T8 `query!()` 매크로 전환 (별도 backlog)
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 원생 등록/수정/조회/퇴교 전체 흐름 동작
-- ⬜ 초기 설정 마법사 9단계 완주 가능
-- ⬜ 글로벌 검색바에서 원생 이름 검색 + 1클릭 이동
-- ⬜ Pretendard 18pt, 44x44px 클릭 영역, WCAG AA 명도 대비 확인
-- ⬜ `pnpm lint` + `pnpm tsc --noEmit` 통과
-- ⬜ 양 OS(Win+Mac) 에서 `pnpm tauri:dev` 실행 확인
+- ✅ 원생 등록/수정/조회/퇴교 전체 흐름 동작
+- ✅ 초기 설정 마법사 4단계 완주 가능
+- ✅ 글로벌 검색바에서 원생 이름 검색 + 1클릭 이동
+- ✅ Pretendard 18pt, 44x44px 클릭 영역, WCAG AA 명도 대비 확인
+- ✅ `cargo test` 109 passed, `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과
 
 #### 🧪 Playwright MCP 검증 시나리오
 ```

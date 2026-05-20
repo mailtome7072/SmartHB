@@ -37,6 +37,31 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 3: Pretendard 폰트 self-host — `public/fonts/` woff2 배치, `@font-face` + Tailwind config 설정. 본문 18px, 헤더 24px+, 행간 1.5 기본값 확립 (ADR-006)
+- Sprint 3: 앱 레이아웃 셸 — 사이드바(메뉴 9종 + 단축키 병기 + 비활성 툴팁), 상단 상태바(점유 디바이스/마지막 백업/동기화 상태), AppShell 조합 컴포넌트
+- Sprint 3: 글로벌 검색바 (PRD §4.14) — 원생 이름(우선)/학교명/메뉴명 검색, 한글 자모 부분 일치, 200ms 디바운싱, 1클릭 이동, Ctrl+F 단축키
+- Sprint 3: Zustand 스토어 2종 (`src/stores/session-store.ts`, `src/stores/app-store.ts`) — 세션 상태/락 점유/사이드바 상태/선택 교습기간월
+- Sprint 3: TanStack Query Provider — IPC 응답 캐싱/무효화 패턴 확립 (`src/providers/query-provider.tsx`)
+- Sprint 3: `tauri-plugin-dialog` 통합 — 폴더 선택 네이티브 다이얼로그 IPC + `capabilities/default.json` `dialog:default` 권한
+- Sprint 3: 초기 설정 마법사 백엔드 (`src-tauri/src/commands/setup.rs`) — `save_cloud_folder`, `complete_setup`, `get_setup_status` IPC 3종 + `app_config_dir/config.json` 설정 분리 저장 (chicken-and-egg step-back 반영)
+- Sprint 3: 초기 설정 마법사 프론트엔드 (`src/app/setup/page.tsx`) — 4단계(환영/클라우드 폴더 선택/비밀번호 설정/완료) + 단계별 독립 저장 + 뒤로가기 지원
+- Sprint 3: 원생 목록 화면 (`src/app/students/page.tsx`) — TanStack Query 캐싱, 필터 7종(이름/학교급/학년/학교명/요일/성별/재원상태) + 정렬 3종 + 페이지네이션
+- Sprint 3: 원생 등록/수정 폼 — `create_student`/`update_student`/`withdraw_student` IPC 연동, 3분 자동 임시저장(localStorage), 미저장 경고 다이얼로그, 퇴교 처리 확인 다이얼로그
+- Sprint 3: 코드 테이블 관리 화면 (PRD §4.12) — 학교/표준교습비/결제수단/카드사 탭 CRUD, is_active 소프트 삭제, sort_order 변경
+- Sprint 3: 수업 스케줄 편집 UI (PRD §4.2) — 요일별 시작 시간/수업 시간 입력, 운영 시간 내 제한, 주 총 수업시간 실시간 표시, 표준 교습비 자동 매칭 표시
+- Sprint 3: 키보드 단축키 체계 (`src/hooks/use-keyboard-shortcuts.ts`) — F1/Ctrl+F/Ctrl+N/Ctrl+S/Ctrl+Z/ESC/Ctrl+P 7종 바인딩
+- Sprint 3: `count_students(filter)` IPC 신규 — 페이지네이션 총 건수 반환
+- Sprint 3: 단위 테스트 109건 (Sprint 2 97건 → +12건)
+
+### Changed
+- Sprint 3: `src/app/page.tsx` 라우팅 분기 업데이트 — `not-initialized` 상태 시 `/setup` 마법사로 이동
+- Sprint 3: `StudentFilter` 구조체에 `limit: Option<u32>`, `offset: Option<u32>` 추가 — 기본 limit=50, 상한 1000
+- Sprint 3: `list_students`/`list_codes` SQL에 `LIMIT ? OFFSET ?` 적용
+
+### Fixed
+- Sprint 3: R13 PII 마스킹 — `students.rs` `try_record` 3곳 `details=None` 적용하여 감사 로그에 원생 이름 미포함
+
 ---
 
 ## [0.2.0] - 2026-05-20
