@@ -584,3 +584,33 @@ export async function reorderCodes(
   if (!inv) return
   await inv('reorder_codes', { table, orders })
 }
+
+// ----------------------------------------------------------------------------
+// Sprint 3 — 초기 설정 마법사 (T8/T9, PRD §4.0)
+// ----------------------------------------------------------------------------
+
+export interface SetupStatus {
+  cloud_folder_path: string
+  setup_completed: boolean
+}
+
+/** 마법사 진행 상태 — 미진입 시 빈 경로 + setup_completed=false. */
+export async function getSetupStatus(): Promise<SetupStatus> {
+  const inv = await getInvoke()
+  if (!inv) return { cloud_folder_path: '', setup_completed: false }
+  return inv('get_setup_status') as Promise<SetupStatus>
+}
+
+/** 클라우드 동기화 폴더 경로를 저장 — 폴더 안에 smarthb/ 디렉토리 생성. */
+export async function saveCloudFolder(path: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_cloud_folder', { path })
+}
+
+/** 마법사 완료 표시 — 모든 단계 완료 후 호출. */
+export async function completeSetup(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('complete_setup')
+}

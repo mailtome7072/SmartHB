@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { checkAuthStatus } from '@/lib/tauri'
+import { checkAuthStatus, getSetupStatus } from '@/lib/tauri'
 import { useSessionStore } from '@/stores/session-store'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -33,10 +33,16 @@ export default function Home() {
       return
     }
     let cancelled = false
-    checkAuthStatus()
-      .then((status) => {
+    // 마법사 우선 분기: setup_completed=false 면 /setup 으로. 완료 후 잠금 화면 또는
+    // (잠금 해제 완료 시) 본 페이지.
+    Promise.all([getSetupStatus(), checkAuthStatus()])
+      .then(([setupStatus, authStatus]) => {
         if (cancelled) return
-        const target = status === 'not-initialized' ? '/lock?mode=setup' : '/lock'
+        if (!setupStatus.setup_completed) {
+          router.replace('/setup')
+          return
+        }
+        const target = authStatus === 'not-initialized' ? '/lock?mode=setup' : '/lock'
         router.replace(target)
       })
       .catch((e: unknown) => {
