@@ -31,6 +31,10 @@ pub fn run() {
             commands::students::get_student,
             commands::students::withdraw_student,
             commands::students::list_students,
+            commands::schedules::set_schedule,
+            commands::schedules::get_schedules,
+            commands::schedules::get_schedule_history,
+            commands::schedules::get_weekly_hours,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())

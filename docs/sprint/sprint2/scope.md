@@ -146,6 +146,14 @@ PRD §5.6 인수 기준 "최초 실행 시 비밀번호 설정 화면 자동 진
 - ⬜ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과
 - ⬜ 첫 진입 / 재시작 / 인증 성공 후 흐름 모두 로컬에서 시연 가능 (수동 검증은 사용자 일정 시)
 
+## 발견된 이슈 — V001 standard_fees schema 불일치 (T11 진입 시 발견)
+
+**이슈**: V001 의 `standard_fees` 는 `(grade_code, grade_label, monthly_fee)` 학년별 모델이고 시드 12건 등록. 그러나 data-model §5.1 SSOT 는 `(weekly_hours, amount, sort_order, is_active)` 주 수업시간별 모델. sprint2.md T11 `match_fee_by_hours` 도 주 수업시간 매칭 의도.
+
+**조치**: V104 마이그레이션 추가 — `DROP TABLE standard_fees` 후 SSOT schema 로 재생성 + 새 시드. `db::tests::in_memory_pool_runs_migrations` 테스트의 standard_fees 검증 부분도 새 schema 에 맞춰 갱신.
+
+**향후 검토**: Sprint 3 청구 도메인에서 학년별 교습비도 필요한 경우 별도 테이블 (`grade_fees`) 신설.
+
 ## 발견된 이슈 — T8 .sqlx prepare 불필요 (현 시점)
 
 **관찰**:

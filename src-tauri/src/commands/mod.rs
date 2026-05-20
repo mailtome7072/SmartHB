@@ -7,6 +7,7 @@ pub mod lock;
 pub mod paths;
 pub mod recovery;
 pub mod runtime;
+pub mod schedules;
 pub mod students;
 pub mod sync;
 
