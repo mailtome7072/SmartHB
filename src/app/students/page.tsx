@@ -16,7 +16,8 @@ import { useDeferredValue, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { countStudents, listStudents } from '@/lib/tauri'
+import { countStudents, listCodes, listStudents } from '@/lib/tauri'
+import type { CodeEntry } from '@/types/code'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import type {
@@ -47,12 +48,19 @@ export default function StudentsPage() {
   const [activeOnly, setActiveOnly] = useState(true)
   const [sort, setSort] = useState<StudentSort>('name-asc')
   const [page, setPage] = useState(0)
+  // T4 (이슈 #3): 학교명 필터
+  const [schoolId, setSchoolId] = useState<string>('')
+  const { data: schools = [] } = useQuery<CodeEntry[]>({
+    queryKey: ['codes', 'schools'],
+    queryFn: () => listCodes('schools'),
+  })
 
   const baseFilter: StudentFilter = {
     name_query: nameQuery.length > 0 ? nameQuery : undefined,
     school_level: schoolLevel === '' ? undefined : schoolLevel,
     grade: grade === '' ? undefined : Number(grade),
     gender: gender === '' ? undefined : gender,
+    school_id: schoolId === '' ? undefined : Number(schoolId),
     active_only: activeOnly,
     sort,
   }
@@ -136,6 +144,22 @@ export default function StudentsPage() {
             <option value="">성별 (전체)</option>
             <option value="male">남</option>
             <option value="female">여</option>
+          </select>
+          <select
+            value={schoolId}
+            onChange={(e) => {
+              setSchoolId(e.target.value)
+              setPage(0)
+            }}
+            aria-label="학교"
+            className="h-11 rounded-md border border-[var(--border)] px-3"
+          >
+            <option value="">학교 (전체)</option>
+            {schools.filter((s) => s.is_active).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
           </select>
           <select
             value={sort}
