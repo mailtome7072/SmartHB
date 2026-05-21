@@ -33,10 +33,35 @@ const PAGE_SIZE = 50
 const GENDER_LABEL: Record<Gender, string> = { male: '남', female: '여' }
 const LEVEL_LABEL: Record<SchoolLevel, string> = { elementary: '초', middle: '중' }
 const SORT_OPTIONS: { value: StudentSort; label: string }[] = [
+  { value: 'serial-asc', label: '번호순' },
+  { value: 'serial-desc', label: '번호 역순' },
   { value: 'name-asc', label: '이름순' },
-  { value: 'enroll-date-desc', label: '최근 입교순' },
+  { value: 'name-desc', label: '이름 역순' },
   { value: 'grade-asc', label: '학년순' },
+  { value: 'grade-desc', label: '학년 역순' },
+  { value: 'enroll-date-asc', label: '오래된 입교순' },
+  { value: 'enroll-date-desc', label: '최근 입교순' },
 ]
+
+/** 헤더 클릭으로 정렬 가능한 컬럼 매핑 (T11 사용자 요청 #3). */
+const SORTABLE_COLUMNS: Record<string, { asc: StudentSort; desc: StudentSort }> = {
+  serial: { asc: 'serial-asc', desc: 'serial-desc' },
+  name: { asc: 'name-asc', desc: 'name-desc' },
+  grade: { asc: 'grade-asc', desc: 'grade-desc' },
+  enroll: { asc: 'enroll-date-asc', desc: 'enroll-date-desc' },
+}
+
+function sortIndicator(sort: StudentSort, col: keyof typeof SORTABLE_COLUMNS): string {
+  const map = SORTABLE_COLUMNS[col]
+  if (sort === map.asc) return ' ▲'
+  if (sort === map.desc) return ' ▼'
+  return ''
+}
+
+function toggleSort(current: StudentSort, col: keyof typeof SORTABLE_COLUMNS): StudentSort {
+  const map = SORTABLE_COLUMNS[col]
+  return current === map.asc ? map.desc : map.asc
+}
 
 export default function StudentsPage() {
   const router = useRouter()
@@ -46,7 +71,7 @@ export default function StudentsPage() {
   const [grade, setGrade] = useState<string>('')
   const [gender, setGender] = useState<Gender | ''>('')
   const [activeOnly, setActiveOnly] = useState(true)
-  const [sort, setSort] = useState<StudentSort>('name-asc')
+  const [sort, setSort] = useState<StudentSort>('serial-asc')
   const [page, setPage] = useState(0)
   // T4 (이슈 #3): 학교명 필터
   const [schoolId, setSchoolId] = useState<string>('')
@@ -191,12 +216,48 @@ export default function StudentsPage() {
           <table className="w-full">
             <thead className="bg-[var(--background)]">
               <tr className="text-left">
-                <th className="px-3 py-3 text-sm font-bold">번호</th>
-                <th className="px-3 py-3 text-sm font-bold">이름</th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'serial'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="번호 정렬 토글"
+                  >
+                    번호{sortIndicator(sort, 'serial')}
+                  </button>
+                </th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'name'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="이름 정렬 토글"
+                  >
+                    이름{sortIndicator(sort, 'name')}
+                  </button>
+                </th>
                 <th className="px-3 py-3 text-sm font-bold">학교급</th>
-                <th className="px-3 py-3 text-sm font-bold">학년</th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'grade'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="학년 정렬 토글"
+                  >
+                    학년{sortIndicator(sort, 'grade')}
+                  </button>
+                </th>
                 <th className="px-3 py-3 text-sm font-bold">성별</th>
-                <th className="px-3 py-3 text-sm font-bold">입교일</th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'enroll'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="입교일 정렬 토글"
+                  >
+                    입교일{sortIndicator(sort, 'enroll')}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>

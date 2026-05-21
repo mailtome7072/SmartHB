@@ -91,18 +91,36 @@ impl SchoolLevel {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum StudentSort {
+    /// PI-05 자동 채번 일련번호 오름차순 — T11 사용자 요청 디폴트
     #[default]
+    SerialAsc,
+    SerialDesc,
     NameAsc,
-    EnrollDateDesc,
+    NameDesc,
     GradeAsc,
+    GradeDesc,
+    EnrollDateAsc,
+    EnrollDateDesc,
 }
 
 impl StudentSort {
     fn order_by_sql(self) -> &'static str {
         match self {
+            // serial_no 는 TEXT 컬럼이라 CAST 후 정렬 (숫자 채번 정합성). 비숫자 serial 은 뒤로.
+            Self::SerialAsc => {
+                "ORDER BY CASE WHEN serial_no GLOB '[0-9]*' THEN 0 ELSE 1 END, \
+                 CAST(serial_no AS INTEGER) ASC, serial_no ASC"
+            }
+            Self::SerialDesc => {
+                "ORDER BY CASE WHEN serial_no GLOB '[0-9]*' THEN 0 ELSE 1 END, \
+                 CAST(serial_no AS INTEGER) DESC, serial_no DESC"
+            }
             Self::NameAsc => "ORDER BY name ASC",
-            Self::EnrollDateDesc => "ORDER BY enroll_date DESC, id DESC",
+            Self::NameDesc => "ORDER BY name DESC",
             Self::GradeAsc => "ORDER BY school_level ASC, grade ASC, name ASC",
+            Self::GradeDesc => "ORDER BY school_level DESC, grade DESC, name ASC",
+            Self::EnrollDateAsc => "ORDER BY enroll_date ASC, id ASC",
+            Self::EnrollDateDesc => "ORDER BY enroll_date DESC, id DESC",
         }
     }
 }
@@ -597,8 +615,17 @@ mod tests {
     }
 
     #[test]
-    fn student_sort_default_is_name_asc() {
-        assert_eq!(StudentSort::default(), StudentSort::NameAsc);
+    fn student_sort_default_is_serial_asc() {
+        // T11 사용자 요청: 원생 목록 디폴트 정렬은 번호순.
+        assert_eq!(StudentSort::default(), StudentSort::SerialAsc);
+    }
+
+    #[test]
+    fn serial_asc_sql_uses_cast_integer() {
+        // PI-05 자동 채번이 숫자 문자열이라 TEXT 정렬이 아닌 CAST INTEGER 필수.
+        let sql = StudentSort::SerialAsc.order_by_sql();
+        assert!(sql.contains("CAST(serial_no AS INTEGER)"));
+        assert!(sql.contains("ASC"));
     }
 
     #[cfg(not(feature = "cipher"))]

@@ -27,7 +27,7 @@ pub struct DayHours {
     pub close_time: Option<String>,
 }
 
-/// PRD §4.0 마법사 디폴트: 월~금 13:00~19:00, 토/일 미운영.
+/// PRD §4.0 마법사 디폴트: 월~금 13:00~20:00, 토/일 미운영. (T11 사용자 요청)
 fn default_operating_hours() -> Vec<DayHours> {
     (1u8..=7)
         .map(|d| {
@@ -35,7 +35,7 @@ fn default_operating_hours() -> Vec<DayHours> {
                 DayHours {
                     day_of_week: d,
                     open_time: Some("13:00".to_string()),
-                    close_time: Some("19:00".to_string()),
+                    close_time: Some("20:00".to_string()),
                 }
             } else {
                 DayHours {
@@ -141,11 +141,11 @@ mod tests {
     }
 
     #[test]
-    fn default_weekdays_open_13_to_19() {
+    fn default_weekdays_open_13_to_20() {
         let h = default_operating_hours();
         for d in &h[..5] {
             assert_eq!(d.open_time.as_deref(), Some("13:00"));
-            assert_eq!(d.close_time.as_deref(), Some("19:00"));
+            assert_eq!(d.close_time.as_deref(), Some("20:00"));
         }
     }
 

@@ -33,6 +33,8 @@ interface DraftRow {
 }
 
 const EMPTY_ROW: DraftRow = { day_of_week: 1, start_time: '16:00', duration_hours: '1' }
+/** 1회 수업 시간 — 1시간 단위만 지원 (T11 사용자 요청). */
+const DURATION_OPTIONS = ['1', '2', '3', '4']
 
 export function ScheduleEditor({ studentId }: { studentId: number }) {
   const qc = useQueryClient()
@@ -131,69 +133,13 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         </p>
       </header>
 
-      <table className="mb-4 w-full overflow-hidden rounded-md border border-[var(--border)] bg-white">
-        <thead className="bg-[var(--background)]">
-          <tr className="text-left">
-            <th className="px-3 py-2 text-sm font-bold">요일</th>
-            <th className="px-3 py-2 text-sm font-bold">시작 시간</th>
-            <th className="px-3 py-2 text-sm font-bold">수업 시간</th>
-            <th className="px-3 py-2 text-sm font-bold">적용 시작</th>
-            <th className="px-3 py-2 text-sm font-bold">동작</th>
-          </tr>
-        </thead>
-        <tbody>
-          {schedules.length === 0 && (
-            <tr>
-              <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
-                등록된 스케줄이 없습니다. 아래에서 추가해주세요.
-              </td>
-            </tr>
-          )}
-          {schedules.map((s) => (
-            <tr key={s.id} className="border-t border-[var(--border)]">
-              <td className="px-3 py-2">{DAY_LABELS[s.day_of_week]}</td>
-              <td className="px-3 py-2">{s.start_time.slice(0, 5)}</td>
-              <td className="px-3 py-2">{s.duration_hours} 시간</td>
-              <td className="px-3 py-2 text-sm text-gray-600">{s.effective_from}</td>
-              <td className="px-3 py-2">
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(s)}
-                    className="h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-gray-50"
-                    aria-label={`${DAY_LABELS[s.day_of_week]}요일 스케줄 수정`}
-                  >
-                    수정
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (remove.isPending) return
-                      // 단순 confirm 대신 AlertDialog 사용은 폼 컴포넌트 추출 후 별도 — 현재는
-                      // 즉시 삭제하지 않고 변경 통계를 폼에 prefill 한 뒤 사용자가 다시 입력.
-                      // 명시적 삭제는 행 단위 confirm 으로 분리: window.confirm 차단(T1) 으로
-                      // shadcn dialog 도입 필요 — 본 sprint 에서는 즉시 실행 후 상단 메시지.
-                      remove.mutate(s.day_of_week)
-                    }}
-                    disabled={remove.isPending}
-                    className="h-9 rounded-md border border-[var(--danger)] px-3 text-sm text-[var(--danger)] hover:bg-red-50 disabled:opacity-50"
-                    aria-label={`${DAY_LABELS[s.day_of_week]}요일 스케줄 삭제`}
-                  >
-                    삭제
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
+      {/* T11: 폼이 그리드 위 — 사용자 시선 흐름 자연스럽게. */}
       <form
         onSubmit={(e) => {
           e.preventDefault()
           upsert.mutate(draft)
         }}
-        className="flex flex-wrap items-end gap-2"
+        className="mb-4 flex flex-wrap items-end gap-2"
         aria-label="스케줄 추가/변경"
       >
         <label className="flex flex-col gap-1 text-sm">
@@ -235,15 +181,17 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           시간(시)
-          <input
-            type="number"
+          <select
             value={draft.duration_hours}
             onChange={(e) => setDraft({ ...draft, duration_hours: e.target.value })}
-            step="0.5"
-            min="0.5"
-            max="4"
             className="h-11 w-24 rounded-md border border-[var(--border)] px-3"
-          />
+          >
+            {DURATION_OPTIONS.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
         </label>
         <button
           type="submit"
@@ -256,10 +204,63 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
       </form>
 
       {error !== null && (
-        <p role="alert" className="mt-2 text-sm text-[var(--danger)]">
+        <p role="alert" className="mb-2 text-sm text-[var(--danger)]">
           {error}
         </p>
       )}
+
+      <table className="w-full overflow-hidden rounded-md border border-[var(--border)] bg-white">
+        <thead className="bg-[var(--background)]">
+          <tr className="text-left">
+            <th className="px-3 py-2 text-sm font-bold">요일</th>
+            <th className="px-3 py-2 text-sm font-bold">시작 시간</th>
+            <th className="px-3 py-2 text-sm font-bold">수업 시간</th>
+            <th className="px-3 py-2 text-sm font-bold">적용 시작</th>
+            <th className="px-3 py-2 text-sm font-bold">동작</th>
+          </tr>
+        </thead>
+        <tbody>
+          {schedules.length === 0 && (
+            <tr>
+              <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
+                등록된 스케줄이 없습니다. 위 폼에서 추가해주세요.
+              </td>
+            </tr>
+          )}
+          {schedules.map((s) => (
+            <tr key={s.id} className="border-t border-[var(--border)]">
+              <td className="px-3 py-2">{DAY_LABELS[s.day_of_week]}</td>
+              <td className="px-3 py-2">{s.start_time.slice(0, 5)}</td>
+              <td className="px-3 py-2">{s.duration_hours} 시간</td>
+              <td className="px-3 py-2 text-sm text-gray-600">{s.effective_from}</td>
+              <td className="px-3 py-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(s)}
+                    className="h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-gray-50"
+                    aria-label={`${DAY_LABELS[s.day_of_week]}요일 스케줄 수정`}
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (remove.isPending) return
+                      remove.mutate(s.day_of_week)
+                    }}
+                    disabled={remove.isPending}
+                    className="h-9 rounded-md border border-[var(--danger)] px-3 text-sm text-[var(--danger)] hover:bg-red-50 disabled:opacity-50"
+                    aria-label={`${DAY_LABELS[s.day_of_week]}요일 스케줄 삭제`}
+                  >
+                    삭제
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   )
 }

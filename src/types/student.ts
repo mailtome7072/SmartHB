@@ -6,7 +6,15 @@
 
 export type Gender = 'male' | 'female'
 export type SchoolLevel = 'elementary' | 'middle'
-export type StudentSort = 'name-asc' | 'enroll-date-desc' | 'grade-asc'
+export type StudentSort =
+  | 'serial-asc'
+  | 'serial-desc'
+  | 'name-asc'
+  | 'name-desc'
+  | 'grade-asc'
+  | 'grade-desc'
+  | 'enroll-date-asc'
+  | 'enroll-date-desc'
 
 export interface Student {
   id: number
