@@ -6,8 +6,8 @@
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 3 (2026-05-21)
-- 다음 스프린트 번호: 4 (Phase 1.5 품질 안정화 — 진행 중)
+- 마지막 완료 스프린트: Sprint 4 (2026-05-21, Phase 1.5 품질 안정화 완료 — 사용자 보고 14건 + post-T11 4건 모두 해소, develop merge `b7e9ca6`)
+- 다음 스프린트 번호: 5 (Phase 2 — 학사 스케줄)
 - Sprint 4 계획 수립: 2026-05-21 (Phase 1 스테이징 검증 14개 이슈 해소 + 교습소 설정)
 - Sprint 3 계획 수립: 2026-05-21 (마법사 + R12/R13/R14 해소 + 원생 관리 프론트 + 앱 셸)
 - Sprint 2 계획 수립: 2026-05-20 (sprint1 잔여 + 기반 도메인 백엔드 통합)
@@ -26,14 +26,22 @@ Sprint 4가 "Phase 1.5 품질 안정화"로 삽입됨에 따라:
 - **핵심 참조 문서**: PRD.md (v1.5.1), ROADMAP.md (SSOT), docs/phase/phase1.md (Phase 설계)
 - **데이터 모델**: docs/data-model.md v1.5 (V001~V008 마이그레이션 가이드)
 
-## Sprint 4 핵심 사항
+## Sprint 4 완료 결과 (2026-05-21)
 
-- 마이그레이션 번호: V201 (students.withdrawn_at 추가)
-- 신규 의존성 후보: @dnd-kit/core + @dnd-kit/sortable (사용자 허가 필요)
-- shadcn/ui AlertDialog 도입 (src/components/ui/ 현재 비어있음 — shadcn init 필요)
-- R22 해소: window.confirm -> shadcn AlertDialog
-- 교습소 운영 시간 설정 (app_settings key/value 방식)
-- 원래 ROADMAP Sprint 4 범위(학사 스케줄)는 Sprint 5로 이연
+- **마이그레이션 V201 불필요 확정**: withdraw_date 컬럼 V101 부터 존재 — 사전 검토에서 발견. 사용자 보고 이슈 #7은 백엔드 OK, 프론트 입력/표시만 누락이었음
+- **신규 의존성 (허가 완료, 모두 사용 중)**: @base-ui/react + class-variance-authority + clsx + lucide-react + tailwind-merge + tw-animate-css (shadcn init 부산물) + @dnd-kit/core + @dnd-kit/sortable + @dnd-kit/utilities
+- **shadcn 트랩 (R23)**: init 이 globals.css CSS 변수를 안 넣어 AlertDialog 가 투명 렌더링. 13개 토큰(popover/muted/primary/secondary/destructive/input/ring/card/radius/foreground 변형) 을 globals.css `:root` + `@theme` 에 수동 추가하여 해소
+- **shadcn add 누락**: `src/lib/utils.ts` 의 cn 헬퍼를 init/add 가 생성 안 함 → 수동 작성 필요 (clsx + tailwind-merge)
+- **R24 검증 통과**: @dnd-kit × React 19 peer dep 경고 없음
+- **post-T11 4건 추가 fix**: 사용자 시각 검증에서 발견 — 스케줄 폼 위치/시간 단위, 운영시간 디폴트 20:00, 컬럼 헤더 정렬 + SerialAsc 디폴트, 원생 목록 주총/요일 컬럼 (correlated subquery)
+- **알려진 flaky (Sprint 5 carry-over)**: `paths::tests::init_from_config_ignores_empty_path` — 병렬 실행 시 OnceLock 격리 부족. `--test-threads=1` 직렬 OK
+
+## Sprint 5 진입 시 카드
+
+- **원래 ROADMAP Sprint 4 (학사 스케줄)** 이 Sprint 5로 이연 — 3개월 학사 캘린더 + 코드 3속성 + 교습기간
+- **별도 hotfix 후보**: Next.js 15.3.2 **CVE-2025-66478** — release 전 업그레이드 필수 (Sprint 5 또는 별도 hotfix 결정)
+- **테스트 격리 강화**: paths::OnceLock flaky 해소 (Sprint 5 T0 후보)
+- **회고 carry-over (Sprint 3 A6/A12)**: cipher on 환경 실측 (v0.3.0 인스톨러 배포 후)
 
 ## 미결정 항목 (PI)
 

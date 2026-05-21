@@ -42,24 +42,24 @@
 - Sprint 4: 수업 스케줄 시작시간 콤보박스 + 수정/삭제 기능 — 운영 시간 내 1시간 단위 선택, 운영시간 디폴트 자동 적용, 스케줄 카드 수정/삭제 UI
 - Sprint 4: 코드 테이블 DnD 순서 변경 (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`) + 활성 상태 필터 + 신규 항목 sort_order 자동 부여
 - Sprint 4: 원생 목록 화면 — 주총 수업시간 + 수업 요일 컬럼 추가
-- Sprint 4: 원생 등록/수정 폼 — 학교명 Select 연동(학교 코드 테이블), 연락처 자동 하이픈(`formatPhone`), 금액 천단위 콤마(`formatAmount`), 일련번호 readonly 보호, 퇴교일 필드 + 퇴교 번복 기능
+- Sprint 4: 원생 등록/수정 폼 — 학교명 Select 연동(학교 코드 테이블), 연락처 자동 하이픈(`formatPhone`), 금액 천단위 콤마(`formatCurrency`), 일련번호(`serial_no`) readonly 보호, 퇴교일 필드 + 퇴교 번복 기능
 - Sprint 4: 원생 등록 완료 후 수업 스케줄 등록 안내 UX (등록 직후 알림 + 스케줄 편집 페이지 이동 버튼)
-- Sprint 4: `format.ts` 유틸 신규 (`src/lib/format.ts`) — `formatPhone`, `formatAmount` 2종
+- Sprint 4: `format.ts` 유틸 신규 (`src/lib/format.ts`) — `formatPhone`, `formatCurrency` 2종
 - Sprint 4: `reinstate_student` IPC 커맨드 신규 — 퇴교 번복 기능 백엔드
 - Sprint 4: shadcn/ui AlertDialog 컴포넌트 도입 — `window.confirm`/`window.alert` 전면 교체 (Tauri 2 CSP 차단 해소)
 - Sprint 4: 단위 테스트 130건 (Sprint 3 109건 → +7건, post-sprint3 23건 포함 기준 +7)
 - Sprint 4: 신규 의존성 — `@base-ui/react`, `class-variance-authority`, `clsx`, `lucide-react`, `tailwind-merge`, `tw-animate-css` (shadcn/ui init), `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`
 
 ### Changed
-- Sprint 4: 상태바 — 점유 디바이스/마지막 백업/동기화 상태/시작 시간 IPC 실연결 (`get_lock_status`, `get_last_backup_time`, `get_sync_status`, `get_startup_time`)
-- Sprint 4: 수업 스케줄 폼 위치 — 원생 상세 하단에서 수업 스케줄 전용 탭/섹션으로 이동
-- Sprint 4: 스케줄 번호 정렬 — 요일순(월~일) 고정 정렬
+- Sprint 4: 상태바 — 점유/백업/동기화/시작시간 IPC 실연결 (AppShell 에서 `checkLockStatus`/`listBackups`/`checkSyncStatus` 60초 polling 호출, 시작시간은 `useSessionStore.lastStartup.elapsed_ms` 사용)
+- Sprint 4: 수업 스케줄 편집 UI — 추가/변경 폼을 등록된 스케줄 그리드 **위**로 이동 (`ScheduleEditor` 내 영역 재배치), 1회 수업 시간 select 옵션을 1시간 단위(1/2/3/4)로 제한
+- Sprint 4: 원생 목록 디폴트 정렬 — 번호순(`StudentSort::SerialAsc`) 으로 변경. 컬럼 헤더 클릭으로 번호/이름/학년/입교일 asc↔desc 토글
 
 ### Fixed
 - Sprint 4: `window.confirm`/`window.alert` 차단 — Tauri 2 `dialog:allow-confirm` 미허용으로 퇴교 확인 다이얼로그가 작동하지 않던 Critical Runtime Error 해소 (shadcn AlertDialog로 교체)
 - Sprint 4: 상태바 IPC 미연결 — 점유/백업/동기화/시작시간 표시가 항상 초기값으로 표시되던 이슈 해소
 - Sprint 4: 퇴교일 필드 미표시 — 원생 등록/수정 폼에서 `withdraw_date`를 입력할 수 없던 이슈 해소
-- Sprint 4: 일련번호 수정 허용 — `student_number` 필드가 편집 가능하여 UNIQUE 오류가 발생하던 이슈 해소 (readonly 처리)
+- Sprint 4: 일련번호 수정 허용 — `serial_no` 필드가 편집 가능하여 PI-05 자동 채번 정합성 위험. 프론트 readonly + 백엔드 `update_student` SQL 에서 `serial_no` 컬럼 제외 (defense in depth)
 - Sprint 4: 학교명 텍스트 자유입력 — 코드 테이블과 연동 없이 자유입력만 가능하던 이슈 해소 (Select 컴포넌트로 교체)
 - Sprint 4: 스케줄 시작시간 자유입력 — 운영 시간 범위 외 시간 입력이 가능하던 이슈 해소 (콤보박스 + 운영 시간 검증)
 - Sprint 4: 코드 테이블 정렬 변경 불가 — sort_order 변경 UX가 없어 순서를 조정할 수 없던 이슈 해소 (DnD)
