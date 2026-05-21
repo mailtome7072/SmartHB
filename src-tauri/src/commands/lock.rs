@@ -5,8 +5,9 @@
 //!
 //! ## 흐름
 //!
-//! 1. `acquire_lock(force=false)`: 락 파일 없음 또는 우리 점유면 성공 — heartbeat 갱신.
-//!    다른 디바이스 점유 중이면 실패 (5분 stale 시 force=true 로 강제 점유 가능).
+//! 1. `acquire_lock(force=false)`: 락 파일 없음 / 본 디바이스 점유 / **stale 락(5분 미갱신)
+//!    자동 점유** 시 성공. 다른 디바이스가 fresh 락 점유 중이면 실패.
+//!    `force=true` 는 fresh 락도 강제 점유 (사용자가 의식적으로 다른 PC 사용 차단할 때).
 //! 2. `check_lock_status()`: 현재 락 상태 (Free / OwnedBySelf / OwnedByOther{stale}) 반환.
 //! 3. `release_lock()`: 우리 점유일 때만 파일 삭제 (다른 디바이스 락 보호).
 //!
@@ -209,7 +210,24 @@ pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
     match current {
         None => {}
         Some(info) if info.is_self() => {}
-        Some(info) if force && info.is_stale() => {}
+        // stale 락(5분 미갱신)은 항상 자동 점유 — 점유한 프로세스가 비정상 종료된 신호.
+        // 단일 사용자 모델(PRD §1)에서 stale 락이 잔존하면 사용자가 의식적으로 강제 점유
+        // 옵션을 매번 확인하는 것보다 자동 정리가 UX 친화적이고 안전.
+        // `force` 옵션은 이제 *fresh* 락(다른 PC 정상 사용 중) 도 강제 점유할 때만 의미.
+        Some(info) if info.is_stale() => {
+            eprintln!(
+                "[lock] stale lock 자동 점유 ({}초 미갱신, 이전 device_id={})",
+                info.seconds_since_heartbeat(),
+                info.device_id
+            );
+        }
+        Some(info) if force => {
+            eprintln!(
+                "[lock] force=true 로 fresh lock 강제 점유 ({}초 전, 이전 device_id={})",
+                info.seconds_since_heartbeat(),
+                info.device_id
+            );
+        }
         Some(info) => {
             return Err(AppError::Lock(format!(
                 "다른 컴퓨터에서 사용 중입니다. (마지막 활동: {}초 전)",
@@ -253,9 +271,12 @@ pub async fn check_lock_status() -> Result<LockStatus, String> {
 
 /// 락을 획득한다.
 ///
-/// `force=false`: 락 파일 없음 또는 본 디바이스 점유면 성공. 다른 디바이스 점유 중이면 실패.
-/// `force=true`: stale(5분 미갱신) 락만 강제 점유 가능 — 정상 동작 중인 다른 디바이스 락은
-/// 보호한다. UI 가 사전에 stale 여부를 사용자에게 확인 후 force=true 호출.
+/// `force=false`: 락 없음 / 본 디바이스 점유 / stale 락(자동 점유) 시 성공. fresh 락이면 실패.
+/// `force=true`: fresh 락도 강제 점유 — 사용자가 의식적으로 다른 PC 정상 사용 차단할 때.
+///
+/// **stale 자동 점유 정책 (2026-05-21)**: PRD §5.3 의 "강제 점유 옵션 제공" 은 fresh 락에만
+/// 적용. stale 락은 점유 프로세스가 비정상 종료된 신호이므로 자동 정리한다 — 단일 사용자
+/// 모델에서 매번 사용자 확인은 UX 마찰만 유발.
 ///
 /// `acquire_lock_atomic` 가 fs2 advisory lock 보유 중 read→판정→write 를 수행하므로
 /// 동시 acquire race 가 직렬화된다.
