@@ -20,6 +20,7 @@
 
 import { useEffect, useState } from 'react'
 import { appStartupSequence, checkAuthStatus, setPassword } from '@/lib/tauri'
+import { SplashScreen } from '@/components/splash-screen'
 import type { AuthStatus, StartupResult } from '@/types'
 
 const MIN_PASSWORD_LENGTH = 8
@@ -39,7 +40,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
   }, [])
 
   if (status === null) {
-    return <div className="flex min-h-screen items-center justify-center">불러오는 중...</div>
+    return <SplashScreen message="잠금 상태를 확인하는 중입니다..." />
   }
 
   const isInitialSetup = status === 'not-initialized'

@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { SplashScreen } from '@/components/splash-screen'
 import { StudentForm } from '@/components/students/student-form'
 import { ScheduleEditor } from '@/components/students/schedule-editor'
 import {
@@ -23,7 +24,7 @@ import type { NewStudent, Student } from '@/types/student'
 
 export default function StudentDetailPage() {
   return (
-    <Suspense fallback={<div className="p-8">불러오는 중...</div>}>
+    <Suspense fallback={<SplashScreen message="원생 정보 페이지를 여는 중입니다..." />}>
       <StudentDetailContent />
     </Suspense>
   )

@@ -19,6 +19,7 @@ import { checkAuthStatus, getSetupStatus } from '@/lib/tauri'
 import { useSessionStore } from '@/stores/session-store'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { SplashScreen } from '@/components/splash-screen'
 
 export default function Home() {
   const router = useRouter()
@@ -68,11 +69,7 @@ export default function Home() {
   }
 
   if (!ready) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-lg text-gray-600">불러오는 중...</p>
-      </main>
-    )
+    return <SplashScreen message="시작 상태를 확인하는 중입니다..." />
   }
 
   return (
