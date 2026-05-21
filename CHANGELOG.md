@@ -61,6 +61,7 @@
 
 ### Fixed
 - Sprint 3: R13 PII 마스킹 — `students.rs` `try_record` 3곳 `details=None` 적용하여 감사 로그에 원생 이름 미포함
+- post-sprint3: `config.json` 손상 자동 복구 (`setup.rs`) — PC 강제 종료로 인한 NTFS power-loss 시 발생하는 NULL-바이트 파일/파싱 실패를 감지하여 `config.json.corrupted-{ts}` 로 백업 후 기본값 fallback. 사용자는 마법사를 다시 진행하면 자동 복구됨. 단위 테스트 6건 추가 (총 115건)
 
 ---
 

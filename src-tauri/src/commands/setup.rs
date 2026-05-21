@@ -21,7 +21,8 @@ use crate::commands::paths;
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 /// 마법사 진행 상태 — config.json 의 직렬화 표현.
@@ -49,14 +50,66 @@ fn config_path(app: &AppHandle) -> Result<PathBuf, AppError> {
     Ok(dir.join("config.json"))
 }
 
-/// config.json 을 읽어 SetupStatus 를 반환. 파일이 없으면 기본값(`Default::default()`).
+/// config.json 을 읽어 SetupStatus 를 반환. 파일이 없거나 손상돼 있으면 기본값.
+///
+/// **손상 복구 정책 (2026-05-21 사고 대응)**: PC 강제 종료 시 NTFS power-loss 패턴으로
+/// `fs::write` + `fs::rename` 도중 메타데이터만 커밋되고 데이터 페이지가 NULL 로 남는 경우가
+/// 있다 (실측: 90 바이트 전체 0x00). 이 상태를 그대로 두면 사용자는 "설정 정보를 불러오는 중
+/// 오류" 만 보고 앱을 사용할 수 없게 된다. 본 함수는 손상을 감지하면 손상본을
+/// `config.json.corrupted-{unix_ts}` 로 백업한 뒤 기본값으로 fallback 한다 — 마법사가 처음부터
+/// 다시 진행되어 자동 복구된다. 백업 실패는 fatal 이 아니다 (best-effort).
 fn read_status(app: &AppHandle) -> Result<SetupStatus, AppError> {
     let path = config_path(app)?;
-    match fs::read_to_string(&path) {
-        Ok(s) => serde_json::from_str(&s)
-            .map_err(|e| AppError::Config(format!("config.json 파싱 실패: {}", e))),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SetupStatus::default()),
-        Err(e) => Err(AppError::Config(format!("config.json 읽기 실패: {}", e))),
+    Ok(read_status_from_path(&path))
+}
+
+/// 테스트 가능한 핵심 로직. AppHandle 없이 경로만으로 동작한다.
+fn read_status_from_path(path: &Path) -> SetupStatus {
+    let bytes = match fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return SetupStatus::default(),
+        Err(e) => {
+            eprintln!("[setup] config.json 읽기 실패 (default 로 fallback): {}", e);
+            return SetupStatus::default();
+        }
+    };
+    if is_corrupted(&bytes) {
+        eprintln!(
+            "[setup] config.json 손상 감지 ({} 바이트, all-zero 또는 빈 파일). 백업 후 default 로 fallback.",
+            bytes.len()
+        );
+        backup_corrupted(path);
+        return SetupStatus::default();
+    }
+    match serde_json::from_slice::<SetupStatus>(&bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "[setup] config.json 파싱 실패 (손상 의심, 백업 후 default 로 fallback): {}",
+                e
+            );
+            backup_corrupted(path);
+            SetupStatus::default()
+        }
+    }
+}
+
+/// 빈 파일 또는 NULL 바이트만 있는 파일을 손상으로 간주한다. JSON 파싱 단계 전 빠른 컷.
+fn is_corrupted(bytes: &[u8]) -> bool {
+    bytes.is_empty() || bytes.iter().all(|&b| b == 0)
+}
+
+/// 손상본을 `config.json.corrupted-{unix_ts}` 로 rename. 실패는 무시 (best-effort).
+fn backup_corrupted(path: &Path) {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let backup = path.with_extension(format!("json.corrupted-{}", ts));
+    if let Err(e) = fs::rename(path, &backup) {
+        eprintln!("[setup] 손상본 백업 실패 ({}): {}", backup.display(), e);
+    } else {
+        eprintln!("[setup] 손상본 백업 완료: {}", backup.display());
     }
 }
 
@@ -70,8 +123,7 @@ fn write_status(app: &AppHandle, status: &SetupStatus) -> Result<(), AppError> {
     let tmp = path.with_extension("json.tmp");
     let json = serde_json::to_string_pretty(status)
         .map_err(|e| AppError::Config(format!("config.json 직렬화 실패: {}", e)))?;
-    fs::write(&tmp, json)
-        .map_err(|e| AppError::Config(format!("config.json 쓰기 실패: {}", e)))?;
+    fs::write(&tmp, json).map_err(|e| AppError::Config(format!("config.json 쓰기 실패: {}", e)))?;
     fs::rename(&tmp, &path)
         .map_err(|e| AppError::Config(format!("config.json rename 실패: {}", e)))?;
     Ok(())
@@ -159,5 +211,106 @@ mod tests {
         let s: SetupStatus = serde_json::from_str(json).unwrap();
         assert_eq!(s.cloud_folder_path, "/x");
         assert!(!s.setup_completed, "기본값 false 적용");
+    }
+
+    // ------------------------------------------------------------------------
+    // 손상 복구 (2026-05-21 사고 대응) — read_status_from_path fallback 검증.
+    // ------------------------------------------------------------------------
+
+    /// 테스트 간 격리를 위한 고유 임시 디렉토리. tempfile crate 도입 회피 — std 만 사용.
+    fn unique_tmp_dir(label: &str) -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("smarthb-setup-test-{}-{}", label, ts));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn read_status_returns_default_when_file_missing() {
+        let dir = unique_tmp_dir("missing");
+        let path = dir.join("config.json");
+        let s = read_status_from_path(&path);
+        assert_eq!(s.cloud_folder_path, "");
+        assert!(!s.setup_completed);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_status_returns_default_when_file_is_all_null_bytes() {
+        // 실제 사고 재현: 90 바이트 전체 0x00 (PC 다운으로 rename 직후 데이터 페이지 손실).
+        let dir = unique_tmp_dir("null");
+        let path = dir.join("config.json");
+        fs::write(&path, [0u8; 90]).unwrap();
+        let s = read_status_from_path(&path);
+        assert_eq!(s.cloud_folder_path, "", "손상 fallback default 반환");
+        assert!(!s.setup_completed);
+        assert!(
+            !path.exists(),
+            "손상본은 백업으로 rename 되어 원본 경로엔 없어야 함"
+        );
+        let backed_up = fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).any(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("config.json.corrupted-")
+        });
+        assert!(
+            backed_up,
+            "config.json.corrupted-* 백업 파일이 생성되어야 함"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_status_returns_default_when_file_is_empty() {
+        let dir = unique_tmp_dir("empty");
+        let path = dir.join("config.json");
+        fs::write(&path, b"").unwrap();
+        let s = read_status_from_path(&path);
+        assert_eq!(s.cloud_folder_path, "");
+        assert!(!s.setup_completed);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_status_returns_default_when_json_is_malformed() {
+        let dir = unique_tmp_dir("malformed");
+        let path = dir.join("config.json");
+        fs::write(&path, b"{not valid json").unwrap();
+        let s = read_status_from_path(&path);
+        assert_eq!(s.cloud_folder_path, "");
+        assert!(!s.setup_completed);
+        assert!(!path.exists(), "파싱 실패도 백업 후 fallback");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_status_returns_parsed_when_valid_json() {
+        let dir = unique_tmp_dir("valid");
+        let path = dir.join("config.json");
+        fs::write(
+            &path,
+            br#"{"cloud_folder_path":"/cloud/smarthb","setup_completed":true}"#,
+        )
+        .unwrap();
+        let s = read_status_from_path(&path);
+        assert_eq!(s.cloud_folder_path, "/cloud/smarthb");
+        assert!(s.setup_completed);
+        assert!(path.exists(), "정상 파일은 그대로 유지");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn is_corrupted_detects_all_zero_and_empty() {
+        assert!(is_corrupted(&[]));
+        assert!(is_corrupted(&[0u8; 1]));
+        assert!(is_corrupted(&[0u8; 90]));
+        assert!(!is_corrupted(b"{}"));
+        assert!(
+            !is_corrupted(b"\0valid"),
+            "선두 NULL 만 있으면 손상 아님 (파싱 단계에 위임)"
+        );
     }
 }
