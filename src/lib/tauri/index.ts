@@ -614,3 +614,41 @@ export async function completeSetup(): Promise<void> {
   if (!inv) return
   await inv('complete_setup')
 }
+
+// ============================================================================
+// 영구 설정 (Sprint 4 T2, PRD §4.0/§4.12) — 교습소 운영 시간
+// ============================================================================
+
+/**
+ * 요일별 운영 시간. open/close 가 모두 null 이면 미운영.
+ *
+ * `src-tauri/src/commands/settings.rs::DayHours` 와 정합.
+ * day_of_week: 1=월, 2=화, 3=수, 4=목, 5=금, 6=토, 7=일 (ISO 8601, schedules.rs 와 일관)
+ */
+export interface DayHours {
+  day_of_week: number
+  open_time: string | null
+  close_time: string | null
+}
+
+/** 운영 시간 조회 — 저장값 없으면 디폴트 (월~금 13:00~19:00, 토/일 미운영). */
+export async function getOperatingHours(): Promise<DayHours[]> {
+  const inv = await getInvoke()
+  if (!inv) {
+    // dev fallback — 디폴트 7일 반환
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = i + 1
+      return day <= 5
+        ? { day_of_week: day, open_time: '13:00', close_time: '19:00' }
+        : { day_of_week: day, open_time: null, close_time: null }
+    })
+  }
+  return inv('get_operating_hours') as Promise<DayHours[]>
+}
+
+/** 운영 시간 저장 — 7개 요일 모두 포함 필수, 백엔드가 검증. */
+export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_operating_hours', { hours })
+}

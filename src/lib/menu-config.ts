@@ -21,7 +21,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: '단원 평가', href: '/exams', disabledHint: 'Phase 5 에서 제공' },
   { label: '학습 보고서', href: '/reports', disabledHint: 'Phase 5 에서 제공' },
   { label: '공지문', href: '/notices', disabledHint: 'Phase 4 에서 제공' },
-  { label: '설정', href: '/settings/codes' },
+  { label: '설정', href: '/settings' },
 ]
 
 /** 글로벌 검색이 결과로 노출 가능한 활성 메뉴 (disabled 제외). */

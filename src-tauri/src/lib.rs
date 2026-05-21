@@ -60,6 +60,8 @@ pub fn run() {
             commands::setup::save_cloud_folder,
             commands::setup::complete_setup,
             commands::setup::get_setup_status,
+            commands::settings::get_operating_hours,
+            commands::settings::save_operating_hours,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())
