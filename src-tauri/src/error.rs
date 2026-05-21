@@ -90,10 +90,13 @@ impl AppError {
 
 /// Tauri IPC 직렬화 — 사용자 친화 한국어 메시지만 노출.
 ///
-/// 기술 상세(원본 에러, 스택)는 본 변환 시점에 폐기되며, 향후 tracing crate 통합 시
-/// `Debug` trait 으로 별도 로그에 기록한다.
+/// 기술 상세(원본 에러, 스택)는 사용자 화면에는 노출되지 않지만, **dev 콘솔/stderr 에는
+/// `Display` trait 으로 보존된다** (2026-05-21 진단 인프라 추가). PRD §6.4 "사용자 화면에는
+/// 친화 메시지, 콘솔/로그에는 기술 상세" 정책 준수. tracing crate 통합 시 본 stderr 호출을
+/// `tracing::error!` 로 교체한다.
 impl From<AppError> for String {
     fn from(err: AppError) -> Self {
+        eprintln!("[error] {}", err);
         err.user_message()
     }
 }

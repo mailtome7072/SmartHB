@@ -257,10 +257,20 @@ pub async fn set_password(password: String) -> Result<(), String> {
     if password.is_empty() {
         return Err(AppError::Auth("비밀번호가 비어있습니다.".to_string()).into());
     }
+    eprintln!("[auth] set_password 진입 (password.len={})", password.len());
     let salt = generate_salt();
+    eprintln!(
+        "[auth] set_password: salt 생성 (첫 8byte hex={})",
+        hex::encode(&salt[..8])
+    );
     let key = derive_key_async(password, salt).await.map_err(String::from)?;
+    eprintln!(
+        "[auth] set_password: key 유도 OK (첫 8byte hex={})",
+        &key.to_hex()[..16]
+    );
     store_salt_in_keyring(&salt).map_err(String::from)?;
     store_key_in_keyring(&key).map_err(String::from)?;
+    eprintln!("[auth] set_password: keyring 저장 완료");
     // 최초 설정 시점은 pool 미초기화 — try_record 가 silent skip. 비밀번호 변경 IPC(추후)는 unlock 후 호출되어 정상 기록.
     audit::try_record(AuditEventType::PasswordChange, None, None).await;
     Ok(())
@@ -272,14 +282,35 @@ pub async fn set_password(password: String) -> Result<(), String> {
 /// `unlock_db` IPC 와 T10 `app_startup_sequence` 양쪽이 공유.
 pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), AppError> {
     if password.is_empty() {
+        eprintln!("[auth] verify_password: 빈 비밀번호");
         return Err(AppError::Auth("비밀번호를 입력해주세요.".to_string()));
     }
+    eprintln!(
+        "[auth] verify_password 진입 (password.len={})",
+        password.len()
+    );
     let salt = retrieve_salt_from_keyring()?;
+    eprintln!(
+        "[auth] verify_password: salt 조회 OK (첫 8byte hex={})",
+        hex::encode(&salt[..8])
+    );
     let candidate = derive_key_async(password.clone(), salt).await?;
+    eprintln!(
+        "[auth] verify_password: candidate key 유도 OK (첫 8byte hex={})",
+        &candidate.to_hex()[..16]
+    );
     let stored = retrieve_key_from_keyring()?;
+    eprintln!(
+        "[auth] verify_password: stored key 조회 OK (첫 8byte hex={})",
+        &stored.to_hex()[..16]
+    );
     if !candidate.matches(&stored) {
+        eprintln!(
+            "[auth] verify_password: 키 매치 실패 (candidate≠stored — set/verify 사이 salt 또는 key 불일치 의심)"
+        );
         return Err(AppError::Auth("비밀번호가 일치하지 않습니다.".to_string()));
     }
+    eprintln!("[auth] verify_password: 인증 통과");
     Ok(())
 }
 
