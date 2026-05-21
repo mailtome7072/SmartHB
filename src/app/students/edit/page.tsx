@@ -3,8 +3,9 @@
 /**
  * 원생 상세/수정 화면 (Sprint 3 T11, PRD §4.1).
  *
- * 수정 + 퇴교 처리. 퇴교 확인 다이얼로그는 window.confirm 으로 1단계 가드 (PRD §5.7
- * "위험 동작은 명시적 확인 대화상자").
+ * 수정 + 퇴교 처리. 퇴교 확인 다이얼로그는 shadcn/ui AlertDialog 사용 (Sprint 4 T1, A11).
+ * Tauri 2.x 가 보안 정책으로 `window.confirm()` 을 차단 (`dialog.confirm not allowed.
+ * Command not found`) 하므로 native 다이얼로그 대신 컴포넌트 기반 모달로 교체.
  */
 
 import { Suspense, useState } from 'react'
@@ -15,6 +16,17 @@ import { GlobalSearch } from '@/components/layout/global-search'
 import { SplashScreen } from '@/components/splash-screen'
 import { StudentForm } from '@/components/students/student-form'
 import { ScheduleEditor } from '@/components/students/schedule-editor'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import {
   getStudent,
   updateStudent,
@@ -59,13 +71,9 @@ function StudentDetailContent() {
     router.push('/students')
   }
 
-  const handleWithdraw = async () => {
+  const handleWithdrawConfirmed = async () => {
     if (!student) return
     if (student.withdraw_date !== null) return
-    const ok = window.confirm(
-      `${student.name} 원생을 퇴교 처리하시겠습니까?\n취소 시 보강 잔여 처리는 Phase 3 에서 별도 제공됩니다.`,
-    )
-    if (!ok) return
     setWithdrawing(true)
     try {
       const today = new Date().toISOString().slice(0, 10)
@@ -99,14 +107,34 @@ function StudentDetailContent() {
               onSubmit={handleUpdate}
               extraActions={
                 student.withdraw_date === null ? (
-                  <button
-                    type="button"
-                    onClick={handleWithdraw}
-                    disabled={withdrawing}
-                    className="h-11 rounded-md border border-[var(--danger)] px-4 text-[var(--danger)] hover:bg-red-50 disabled:opacity-50"
-                  >
-                    퇴교 처리
-                  </button>
+                  <AlertDialog>
+                    <AlertDialogTrigger
+                      type="button"
+                      disabled={withdrawing}
+                      className="h-11 rounded-md border border-[var(--danger)] px-4 text-[var(--danger)] hover:bg-red-50 disabled:opacity-50"
+                    >
+                      퇴교 처리
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>원생 퇴교 처리</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          <strong>{student.name}</strong> 원생을 퇴교 처리하시겠습니까?
+                          <br />
+                          취소 시 보강 잔여 처리는 Phase 3 에서 별도 제공됩니다.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>취소</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleWithdrawConfirmed}
+                          disabled={withdrawing}
+                        >
+                          퇴교 처리
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 ) : (
                   <span className="text-sm text-gray-600">퇴교일: {student.withdraw_date}</span>
                 )

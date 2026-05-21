@@ -42,6 +42,27 @@
   --danger: #DC2626;
   --border: #D1D5DB;
 
+  /* shadcn/ui 토큰 (Sprint 4 T1 — AlertDialog 가시성 보장)
+   * - popover: 흰색 → 베이지 배경과 확실히 구분되어 다이얼로그 가독성 보장
+   * - muted: 옅은 회색 → footer 배경
+   * - muted-foreground: WCAG AA 4.5:1 확보 (베이지 위 #525252)
+   * - primary / destructive 는 기존 --accent / --danger 와 alias */
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1A1A;
+  --card: #FFFFFF;
+  --card-foreground: #1A1A1A;
+  --muted: #F4F2EE;
+  --muted-foreground: #525252;
+  --primary: #2563EB;
+  --primary-foreground: #FFFFFF;
+  --secondary: #E5E5E5;
+  --secondary-foreground: #1A1A1A;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  --input: #D1D5DB;
+  --ring: #2563EB;
+  --radius: 0.625rem;
+
   /* PRD §5.7 접근성 토큰 — 모든 컴포넌트의 SSOT */
   --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI",
     "Malgun Gothic", "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif;
@@ -56,6 +77,23 @@
   --color-accent-hover: var(--accent-hover);
   --color-danger: var(--danger);
   --color-border: var(--border);
+
+  /* shadcn/ui 토큰 — Tailwind 4 가 자동으로 bg-popover / text-muted-foreground 등 utility 생성 */
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
   --font-sans: var(--font-sans);
 }
 
