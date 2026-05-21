@@ -38,6 +38,36 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 4: 교습소 설정 메뉴 화면 신설 (PRD §4.12) — 운영 시간(요일별 시작/종료/수업 길이) 편집, `save_operating_hours`/`get_operating_hours` IPC
+- Sprint 4: 수업 스케줄 시작시간 콤보박스 + 수정/삭제 기능 — 운영 시간 내 1시간 단위 선택, 운영시간 디폴트 자동 적용, 스케줄 카드 수정/삭제 UI
+- Sprint 4: 코드 테이블 DnD 순서 변경 (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`) + 활성 상태 필터 + 신규 항목 sort_order 자동 부여
+- Sprint 4: 원생 목록 화면 — 주총 수업시간 + 수업 요일 컬럼 추가
+- Sprint 4: 원생 등록/수정 폼 — 학교명 Select 연동(학교 코드 테이블), 연락처 자동 하이픈(`formatPhone`), 금액 천단위 콤마(`formatAmount`), 일련번호 readonly 보호, 퇴교일 필드 + 퇴교 번복 기능
+- Sprint 4: 원생 등록 완료 후 수업 스케줄 등록 안내 UX (등록 직후 알림 + 스케줄 편집 페이지 이동 버튼)
+- Sprint 4: `format.ts` 유틸 신규 (`src/lib/format.ts`) — `formatPhone`, `formatAmount` 2종
+- Sprint 4: `reinstate_student` IPC 커맨드 신규 — 퇴교 번복 기능 백엔드
+- Sprint 4: shadcn/ui AlertDialog 컴포넌트 도입 — `window.confirm`/`window.alert` 전면 교체 (Tauri 2 CSP 차단 해소)
+- Sprint 4: 단위 테스트 130건 (Sprint 3 109건 → +7건, post-sprint3 23건 포함 기준 +7)
+- Sprint 4: 신규 의존성 — `@base-ui/react`, `class-variance-authority`, `clsx`, `lucide-react`, `tailwind-merge`, `tw-animate-css` (shadcn/ui init), `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`
+
+### Changed
+- Sprint 4: 상태바 — 점유 디바이스/마지막 백업/동기화 상태/시작 시간 IPC 실연결 (`get_lock_status`, `get_last_backup_time`, `get_sync_status`, `get_startup_time`)
+- Sprint 4: 수업 스케줄 폼 위치 — 원생 상세 하단에서 수업 스케줄 전용 탭/섹션으로 이동
+- Sprint 4: 스케줄 번호 정렬 — 요일순(월~일) 고정 정렬
+
+### Fixed
+- Sprint 4: `window.confirm`/`window.alert` 차단 — Tauri 2 `dialog:allow-confirm` 미허용으로 퇴교 확인 다이얼로그가 작동하지 않던 Critical Runtime Error 해소 (shadcn AlertDialog로 교체)
+- Sprint 4: 상태바 IPC 미연결 — 점유/백업/동기화/시작시간 표시가 항상 초기값으로 표시되던 이슈 해소
+- Sprint 4: 퇴교일 필드 미표시 — 원생 등록/수정 폼에서 `withdraw_date`를 입력할 수 없던 이슈 해소
+- Sprint 4: 일련번호 수정 허용 — `student_number` 필드가 편집 가능하여 UNIQUE 오류가 발생하던 이슈 해소 (readonly 처리)
+- Sprint 4: 학교명 텍스트 자유입력 — 코드 테이블과 연동 없이 자유입력만 가능하던 이슈 해소 (Select 컴포넌트로 교체)
+- Sprint 4: 스케줄 시작시간 자유입력 — 운영 시간 범위 외 시간 입력이 가능하던 이슈 해소 (콤보박스 + 운영 시간 검증)
+- Sprint 4: 코드 테이블 정렬 변경 불가 — sort_order 변경 UX가 없어 순서를 조정할 수 없던 이슈 해소 (DnD)
+
+### Security
+- Sprint 4: Next.js 15.3.2 CVE-2025-66478 — 현재 미적용, release 전 업그레이드 필수 (Sprint 5 또는 별도 hotfix)
+
+### Added
 - Sprint 3: Pretendard 폰트 self-host — `public/fonts/` woff2 배치, `@font-face` + Tailwind config 설정. 본문 18px, 헤더 24px+, 행간 1.5 기본값 확립 (ADR-006)
 - Sprint 3: 앱 레이아웃 셸 — 사이드바(메뉴 9종 + 단축키 병기 + 비활성 툴팁), 상단 상태바(점유 디바이스/마지막 백업/동기화 상태), AppShell 조합 컴포넌트
 - Sprint 3: 글로벌 검색바 (PRD §4.14) — 원생 이름(우선)/학교명/메뉴명 검색, 한글 자모 부분 일치, 200ms 디바운싱, 1클릭 이동, Ctrl+F 단축키
