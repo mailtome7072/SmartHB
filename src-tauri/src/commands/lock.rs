@@ -26,8 +26,9 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 /// 락 파일명.
@@ -81,9 +82,7 @@ pub enum LockStatus {
     /// 락 파일 없음 또는 비어있음.
     Free,
     /// 본 디바이스가 점유 중.
-    OwnedBySelf {
-        last_heartbeat_seconds_ago: i64,
-    },
+    OwnedBySelf { last_heartbeat_seconds_ago: i64 },
     /// 다른 디바이스가 점유 중.
     ///
     /// `stale=true` 면 5분 이상 heartbeat 미갱신 — 사용자에게 강제 점유 옵션 제공.
@@ -106,14 +105,53 @@ fn ensure_lock_dir() -> Result<(), AppError> {
     Ok(())
 }
 
-/// 락 파일 내용을 파싱한다. 빈 문자열이면 `None`.
+/// 락 파일 내용을 파싱한다.
+///
+/// **손상 복구 정책 (2026-05-21 사고 대응)**: NTFS power-loss 패턴으로 락 파일이 NULL
+/// 바이트 전체로 손상되는 사고가 setup.rs 와 동일하게 발생한다 (실측: 111 바이트 0x00).
+/// `String::trim()` 은 NULL(`\0`) 을 공백으로 인식하지 않아 빈 문자열 분기를 통과시키고,
+/// 파싱 실패가 `AppError::Lock` 으로 wrap 되어 사용자에게는 "다른 컴퓨터에서 사용 중" 메시지가
+/// 잘못 표시된다. 본 함수는 손상 패턴을 감지하면 `Ok(None)` 을 반환한다 — 호출자
+/// `acquire_lock_atomic` 가 truncate + write 로 즉시 새 락을 작성하므로 자동 복구된다.
 fn parse_lock_info(content: &str) -> Result<Option<LockInfo>, AppError> {
-    if content.trim().is_empty() {
+    if is_lock_corrupted(content) {
+        eprintln!("[lock] app.lock 손상 감지 (빈 파일 또는 all-zero). free 로 fallback.");
         return Ok(None);
     }
-    serde_json::from_str(content)
-        .map(Some)
-        .map_err(|e| app_err!(Lock, "락 파일 파싱 실패", e))
+    match serde_json::from_str(content) {
+        Ok(info) => Ok(Some(info)),
+        Err(e) => {
+            eprintln!(
+                "[lock] app.lock 파싱 실패 (손상 의심, free 로 fallback): {}",
+                e
+            );
+            Ok(None)
+        }
+    }
+}
+
+/// 빈 문자열 또는 NULL 바이트만 있는 락 파일을 손상으로 간주한다.
+///
+/// `String::trim()` 은 NULL 을 공백으로 보지 않으므로 별도 검사가 필요. JSON 파싱 단계 전 빠른 컷.
+fn is_lock_corrupted(content: &str) -> bool {
+    content.is_empty() || content.bytes().all(|b| b == 0)
+}
+
+/// 손상된 락 파일을 `app.lock.corrupted-{unix_ts}` 로 rename. best-effort — 실패는 무시.
+///
+/// `read_lock_info` (read-only 조회) 에서만 호출된다. `acquire_lock_atomic` 은 어차피 곧
+/// truncate + write 로 덮어쓰므로 백업하지 않는다 (fs2 advisory lock 보유 중 rename 시 race).
+fn backup_corrupted_lock(path: &Path) {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let backup = path.with_extension(format!("lock.corrupted-{}", ts));
+    if let Err(e) = std::fs::rename(path, &backup) {
+        eprintln!("[lock] 손상본 백업 실패 ({}): {}", backup.display(), e);
+    } else {
+        eprintln!("[lock] 손상본 백업 완료: {}", backup.display());
+    }
 }
 
 /// 락 파일을 (열고 → 읽고) 한 번에 수행하는 read-only 헬퍼.
@@ -126,8 +164,17 @@ fn read_lock_info() -> Result<Option<LockInfo>, AppError> {
     }
     let mut file = File::open(&path).map_err(|e| app_err!(Lock, "락 파일 열기 실패", e))?;
     let mut content = String::new();
-    file.read_to_string(&mut content).map_err(|e| app_err!(Lock, "락 파일 읽기 실패", e))?;
-    parse_lock_info(&content)
+    // read_to_string 은 UTF-8 invalid 시 실패하지만 NULL 바이트는 valid UTF-8 이라 통과한다.
+    // 손상은 parse_lock_info 가 감지한다.
+    file.read_to_string(&mut content)
+        .map_err(|e| app_err!(Lock, "락 파일 읽기 실패", e))?;
+    let parsed = parse_lock_info(&content)?;
+    // 손상 감지 시 (parsed=None 이면서 content 가 비어있지 않음) 분석용 백업.
+    // acquire_lock_atomic 은 fs2 락 보유 race 회피로 백업 안 함 — 본 read-only 경로에서만 백업.
+    if parsed.is_none() && !content.is_empty() {
+        backup_corrupted_lock(&path);
+    }
+    Ok(parsed)
 }
 
 /// **atomic acquire** — fs2 advisory lock 을 보유한 채 read → 판정 → write 를 단일 파일
@@ -155,7 +202,8 @@ pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
         .map_err(|e| app_err!(Lock, "락 획득 실패 — 다른 프로세스가 락 파일 점유 중", e))?;
 
     let mut content = String::new();
-    file.read_to_string(&mut content).map_err(|e| app_err!(Lock, "락 파일 읽기 실패", e))?;
+    file.read_to_string(&mut content)
+        .map_err(|e| app_err!(Lock, "락 파일 읽기 실패", e))?;
     let current = parse_lock_info(&content)?;
 
     match current {
@@ -173,9 +221,12 @@ pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
     let new_info = LockInfo::new_for_self();
     let json = serde_json::to_string_pretty(&new_info)
         .map_err(|e| app_err!(Lock, "락 JSON 직렬화 실패", e))?;
-    file.set_len(0).map_err(|e| app_err!(Lock, "락 파일 truncate 실패", e))?;
-    file.seek(SeekFrom::Start(0)).map_err(|e| app_err!(Lock, "락 파일 seek 실패", e))?;
-    file.write_all(json.as_bytes()).map_err(|e| app_err!(Lock, "락 파일 쓰기 실패", e))?;
+    file.set_len(0)
+        .map_err(|e| app_err!(Lock, "락 파일 truncate 실패", e))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| app_err!(Lock, "락 파일 seek 실패", e))?;
+    file.write_all(json.as_bytes())
+        .map_err(|e| app_err!(Lock, "락 파일 쓰기 실패", e))?;
     Ok(())
 }
 
@@ -297,7 +348,10 @@ mod tests {
             device_id: Uuid::new_v4(),
             last_heartbeat: Utc::now(),
         };
-        assert!(!info.is_self(), "랜덤 UUID 는 본 디바이스 ID 와 충돌 확률 거의 0");
+        assert!(
+            !info.is_self(),
+            "랜덤 UUID 는 본 디바이스 ID 와 충돌 확률 거의 0"
+        );
     }
 
     #[test]
@@ -356,7 +410,61 @@ mod tests {
             return; // 외부 점유 — 본 테스트 skip
         }
         let result = release_lock_atomic();
-        assert!(result.is_ok(), "본 디바이스 점유 락 release 성공: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "본 디바이스 점유 락 release 성공: {:?}",
+            result
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // 손상 복구 (2026-05-21 사고 대응) — parse_lock_info / is_lock_corrupted 검증.
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn is_lock_corrupted_detects_empty_and_all_null() {
+        assert!(is_lock_corrupted(""));
+        // NULL 바이트 1개 또는 다수 — String::trim 이 잡지 못하는 케이스.
+        let null_string = String::from_utf8(vec![0u8; 111]).unwrap();
+        assert!(is_lock_corrupted(&null_string));
+        // 정상 JSON 은 손상 아님.
+        assert!(!is_lock_corrupted(
+            r#"{"device_id":"x","last_heartbeat":"2026-05-21T00:00:00Z"}"#
+        ));
+        // 부분 NULL (앞에만) 은 손상 아님 — 파싱 단계에 위임.
+        let partial_null = String::from_utf8(vec![0u8, b'{', b'}']).unwrap();
+        assert!(!is_lock_corrupted(&partial_null));
+    }
+
+    #[test]
+    fn parse_lock_info_returns_none_for_empty_content() {
+        let result = parse_lock_info("").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_lock_info_returns_none_for_all_null_bytes() {
+        // 실제 사고 재현 — 111 바이트 전체 0x00.
+        let null_string = String::from_utf8(vec![0u8; 111]).unwrap();
+        let result = parse_lock_info(&null_string).unwrap();
+        assert!(result.is_none(), "손상 fallback None 반환");
+    }
+
+    #[test]
+    fn parse_lock_info_returns_none_for_malformed_json() {
+        // 파싱 실패도 손상으로 간주 — AppError::Lock 으로 wrap 되어 "다른 컴퓨터 사용 중" 으로
+        // 잘못 표시되는 회귀 방지.
+        let result = parse_lock_info("{not valid json").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_lock_info_returns_some_for_valid_json() {
+        let info = LockInfo::new_for_self();
+        let json = serde_json::to_string(&info).unwrap();
+        let result = parse_lock_info(&json).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().is_self());
     }
 
     #[tokio::test]

@@ -62,6 +62,7 @@
 ### Fixed
 - Sprint 3: R13 PII 마스킹 — `students.rs` `try_record` 3곳 `details=None` 적용하여 감사 로그에 원생 이름 미포함
 - post-sprint3: `config.json` 손상 자동 복구 (`setup.rs`) — PC 강제 종료로 인한 NTFS power-loss 시 발생하는 NULL-바이트 파일/파싱 실패를 감지하여 `config.json.corrupted-{ts}` 로 백업 후 기본값 fallback. 사용자는 마법사를 다시 진행하면 자동 복구됨. 단위 테스트 6건 추가 (총 115건)
+- post-sprint3: `app.lock` 손상 자동 복구 (`lock.rs`) — 동일한 NTFS power-loss 패턴이 락 파일에도 발생. `String::trim()` 이 NULL 을 공백으로 인식하지 않아 파싱 실패가 `AppError::Lock` 으로 wrap 되어 사용자에게 "다른 컴퓨터에서 사용 중" 으로 잘못 표시되던 회귀 해소. `parse_lock_info` 가 손상 감지 시 `Ok(None)` 반환 → `acquire_lock_atomic` 이 새 락 즉시 작성. 단위 테스트 5건 추가 (총 123건)
 
 ---
 
