@@ -58,9 +58,10 @@ function StudentDetailContent() {
 
   const handleUpdate = async (payload: NewStudent) => {
     if (!student) return
+    // T6: serial_no 는 백엔드가 변경 거부 — payload 값은 무시되지만 명시적으로 기존 값 전달.
     await updateStudent(student.id, {
       ...payload,
-      serial_no: payload.serial_no ?? student.serial_no,
+      serial_no: student.serial_no,
       school_id: payload.school_id ?? null,
       phone_student: payload.phone_student ?? null,
       phone_mother: payload.phone_mother ?? null,

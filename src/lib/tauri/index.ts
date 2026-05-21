@@ -400,6 +400,17 @@ export async function withdrawStudent(id: number, withdrawDate: string): Promise
 }
 
 /**
+ * 퇴교 처리를 번복한다 (Sprint 4 T8 / 사용자 이슈 #8) — withdraw_date NULL 처리.
+ *
+ * 보강 잔여 처리 등 부수 효과는 본 IPC 범위 외 (Phase 3).
+ */
+export async function reinstateStudent(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('reinstate_student', { id })
+}
+
+/**
  * 원생 목록을 다중 필터·정렬·페이지네이션으로 조회한다.
  *
  * R14: `filter.limit` 미지정 시 백엔드 기본 100 (상한 1000), `filter.offset` 기본 0.

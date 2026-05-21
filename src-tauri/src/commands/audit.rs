@@ -43,6 +43,8 @@ pub enum AuditEventType {
     StudentCreated,
     StudentUpdated,
     StudentWithdrawn,
+    // Sprint 4 T8 — 퇴교 번복
+    StudentReinstated,
 }
 
 impl AuditEventType {
@@ -58,6 +60,7 @@ impl AuditEventType {
             Self::StudentCreated => "student-created",
             Self::StudentUpdated => "student-updated",
             Self::StudentWithdrawn => "student-withdrawn",
+            Self::StudentReinstated => "student-reinstated",
         }
     }
 }

@@ -302,12 +302,16 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
 }
 
 /// 원생 정보를 PUT-like 로 갱신한다.
+///
+/// **T6 (사용자 이슈 #5)**: serial_no 는 PI-05 자동 채번/사용자 override 로 등록 시점에만
+/// 결정되며 수정 불가능 — 본 UPDATE SQL 에서 serial_no 컬럼을 제외하여 payload 의 값을
+/// 무시한다. 프론트는 readonly 표시하지만 백엔드도 가드(defense in depth).
 #[tauri::command]
 pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, String> {
     let pool = db::pool().map_err(String::from)?;
     let row = sqlx::query(
         "UPDATE students SET \
-            serial_no = ?, name = ?, gender = ?, school_level = ?, grade = ?, \
+            name = ?, gender = ?, school_level = ?, grade = ?, \
             school_id = ?, phone_student = ?, phone_mother = ?, phone_father = ?, \
             enroll_date = ?, withdraw_date = ?, \
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
@@ -316,7 +320,6 @@ pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, 
                    phone_student, phone_mother, phone_father, enroll_date, withdraw_date, \
                    created_at, updated_at",
     )
-    .bind(&payload.serial_no)
     .bind(&payload.name)
     .bind(payload.gender.as_db_code())
     .bind(payload.school_level.as_db_code())
@@ -386,6 +389,39 @@ pub async fn withdraw_student(id: i64, withdraw_date: String) -> Result<(), Stri
     }
     // R13 PII 마스킹: 퇴교 일자도 민감 정보로 분류 — event_subject(student id) 만 기록.
     audit::try_record(AuditEventType::StudentWithdrawn, Some(&id.to_string()), None).await;
+    Ok(())
+}
+
+/// 퇴교 처리를 번복한다 — withdraw_date 를 NULL 로 되돌린다.
+///
+/// **T8 (사용자 이슈 #8)**: 퇴교 처리는 사용자 실수 또는 학부모 변심으로 번복될 수 있다.
+/// 보강 잔여 처리 등 부수 효과는 본 IPC 범위 외 (Phase 3 에서 별도 처리).
+#[tauri::command]
+pub async fn reinstate_student(id: i64) -> Result<(), String> {
+    let pool = db::pool().map_err(String::from)?;
+    let result = sqlx::query(
+        "UPDATE students SET \
+            withdraw_date = NULL, \
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(AppError::Db)
+    .map_err(String::from)?;
+    if result.rows_affected() == 0 {
+        return Err(String::from(AppError::UserFacing(format!(
+            "원생을 찾을 수 없습니다 (id={}).",
+            id
+        ))));
+    }
+    audit::try_record(
+        AuditEventType::StudentReinstated,
+        Some(&id.to_string()),
+        None,
+    )
+    .await;
     Ok(())
 }
 

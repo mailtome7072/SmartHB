@@ -13,6 +13,10 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { listCodes } from '@/lib/tauri'
+import { formatPhone } from '@/lib/format'
+import type { CodeEntry } from '@/types/code'
 import type { Gender, NewStudent, SchoolLevel, Student } from '@/types/student'
 
 const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000
@@ -24,6 +28,7 @@ interface FormState {
   gender: Gender
   school_level: SchoolLevel
   grade: number
+  school_id: number | null
   phone_student: string
   phone_mother: string
   phone_father: string
@@ -37,6 +42,7 @@ function emptyForm(): FormState {
     gender: 'male',
     school_level: 'elementary',
     grade: 1,
+    school_id: null,
     phone_student: '',
     phone_mother: '',
     phone_father: '',
@@ -51,6 +57,7 @@ function studentToForm(s: Student): FormState {
     gender: s.gender,
     school_level: s.school_level,
     grade: s.grade,
+    school_id: s.school_id ?? null,
     phone_student: s.phone_student ?? '',
     phone_mother: s.phone_mother ?? '',
     phone_father: s.phone_father ?? '',
@@ -65,7 +72,7 @@ function formToPayload(f: FormState): NewStudent {
     gender: f.gender,
     school_level: f.school_level,
     grade: f.grade,
-    school_id: null,
+    school_id: f.school_id,
     phone_student: f.phone_student.trim() || null,
     phone_mother: f.phone_mother.trim() || null,
     phone_father: f.phone_father.trim() || null,
@@ -91,6 +98,11 @@ export function StudentForm({
   extraActions?: React.ReactNode
 }) {
   const storageKey = `${STORAGE_PREFIX}${draftKey}`
+  const isEdit = initial !== undefined
+  const { data: schools = [] } = useQuery<CodeEntry[]>({
+    queryKey: ['codes', 'schools'],
+    queryFn: () => listCodes('schools'),
+  })
   const [form, setForm] = useState<FormState>(() => {
     if (typeof window === 'undefined') return initial ? studentToForm(initial) : emptyForm()
     const draft = localStorage.getItem(storageKey)
@@ -154,11 +166,21 @@ export function StudentForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="일련번호 (비우면 자동)">
+        <Field
+          label={
+            isEdit
+              ? '일련번호 (수정 불가 — PI-05)'
+              : '일련번호 (비우면 자동 채번)'
+          }
+        >
           <input
             value={form.serial_no}
-            onChange={(e) => update('serial_no', e.target.value)}
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            onChange={(e) => !isEdit && update('serial_no', e.target.value)}
+            readOnly={isEdit}
+            aria-readonly={isEdit}
+            className={`h-11 w-full rounded-md border border-[var(--border)] px-3 ${
+              isEdit ? 'cursor-not-allowed bg-gray-100 text-gray-500' : ''
+            }`}
           />
         </Field>
         <Field label="이름 *">
@@ -199,6 +221,22 @@ export function StudentForm({
             className="h-11 w-full rounded-md border border-[var(--border)] px-3"
           />
         </Field>
+        <Field label="학교">
+          <select
+            value={form.school_id ?? ''}
+            onChange={(e) =>
+              update('school_id', e.target.value === '' ? null : Number(e.target.value))
+            }
+            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+          >
+            <option value="">(미지정)</option>
+            {schools.filter((s) => s.is_active).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="입교일">
           <input
             type="date"
@@ -210,24 +248,27 @@ export function StudentForm({
         <Field label="원생 연락처">
           <input
             value={form.phone_student}
-            onChange={(e) => update('phone_student', e.target.value)}
+            onChange={(e) => update('phone_student', formatPhone(e.target.value))}
             placeholder="010-1234-5678"
+            inputMode="tel"
             className="h-11 w-full rounded-md border border-[var(--border)] px-3"
           />
         </Field>
         <Field label="모 연락처">
           <input
             value={form.phone_mother}
-            onChange={(e) => update('phone_mother', e.target.value)}
+            onChange={(e) => update('phone_mother', formatPhone(e.target.value))}
             placeholder="010-1234-5678"
+            inputMode="tel"
             className="h-11 w-full rounded-md border border-[var(--border)] px-3"
           />
         </Field>
         <Field label="부 연락처">
           <input
             value={form.phone_father}
-            onChange={(e) => update('phone_father', e.target.value)}
+            onChange={(e) => update('phone_father', formatPhone(e.target.value))}
             placeholder="010-1234-5678"
+            inputMode="tel"
             className="h-11 w-full rounded-md border border-[var(--border)] px-3"
           />
         </Field>

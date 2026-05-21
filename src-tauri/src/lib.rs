@@ -42,6 +42,7 @@ pub fn run() {
             commands::students::update_student,
             commands::students::get_student,
             commands::students::withdraw_student,
+            commands::students::reinstate_student,
             commands::students::list_students,
             commands::students::count_students,
             commands::schedules::set_schedule,
