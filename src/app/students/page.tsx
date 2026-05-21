@@ -32,6 +32,18 @@ const PAGE_SIZE = 50
 
 const GENDER_LABEL: Record<Gender, string> = { male: '남', female: '여' }
 const LEVEL_LABEL: Record<SchoolLevel, string> = { elementary: '초', middle: '중' }
+
+const DAY_LABEL_SHORT = ['', '월', '화', '수', '목', '금', '토', '일']
+
+/** "1,3,5" → "월/수/금". null/빈 = "-". 중복 요일은 dedupe (스케줄 표시 안정성). */
+function formatScheduleDays(csv: string | null | undefined): string {
+  if (!csv) return '-'
+  const uniq = Array.from(new Set(csv.split(',').map((d) => Number(d.trim()))))
+    .filter((d) => d >= 1 && d <= 7)
+    .sort((a, b) => a - b)
+  if (uniq.length === 0) return '-'
+  return uniq.map((d) => DAY_LABEL_SHORT[d]).join('/')
+}
 const SORT_OPTIONS: { value: StudentSort; label: string }[] = [
   { value: 'serial-asc', label: '번호순' },
   { value: 'serial-desc', label: '번호 역순' },
@@ -248,6 +260,7 @@ export default function StudentsPage() {
                   </button>
                 </th>
                 <th className="px-3 py-3 text-sm font-bold">성별</th>
+                <th className="px-3 py-3 text-sm font-bold">수업 시간/요일</th>
                 <th className="px-3 py-3 text-sm font-bold">
                   <button
                     type="button"
@@ -263,7 +276,7 @@ export default function StudentsPage() {
             <tbody>
               {students.length === 0 && !isFetching && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-500">
                     {total === 0 ? '등록된 원생이 없습니다.' : '필터에 맞는 원생이 없습니다.'}
                   </td>
                 </tr>
@@ -284,6 +297,11 @@ export default function StudentsPage() {
                   <td className="px-3 py-3 text-base">{LEVEL_LABEL[s.school_level]}</td>
                   <td className="px-3 py-3 text-base">{s.grade}</td>
                   <td className="px-3 py-3 text-base">{GENDER_LABEL[s.gender]}</td>
+                  <td className="px-3 py-3 text-base text-gray-700">
+                    {s.weekly_hours !== null && s.weekly_hours !== undefined && s.weekly_hours > 0
+                      ? `주 ${s.weekly_hours}시간 · ${formatScheduleDays(s.schedule_days_csv)}`
+                      : '-'}
+                  </td>
                   <td className="px-3 py-3 text-base">{s.enroll_date}</td>
                 </tr>
               ))}

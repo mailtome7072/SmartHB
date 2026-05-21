@@ -126,6 +126,9 @@ impl StudentSort {
 }
 
 /// 원생 — IPC 응답.
+///
+/// `weekly_hours`/`schedule_days_csv` 는 list_students 만 제공 (correlated subquery).
+/// get_student / create_student / update_student RETURNING 절에는 없으며 None 으로 채워진다.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub struct Student {
     pub id: i64,
@@ -142,6 +145,10 @@ pub struct Student {
     pub withdraw_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// T11 이슈 #4: 원생 목록에 주총 수업시간/요일 표시. list_students 만 제공.
+    pub weekly_hours: Option<i64>,
+    /// 현행 스케줄 요일 콤마 구분 — "1,3,5" (월/수/금). list_students 만 제공.
+    pub schedule_days_csv: Option<String>,
 }
 
 impl Student {
@@ -159,6 +166,9 @@ impl Student {
             phone_father: row.try_get("phone_father")?,
             enroll_date: row.try_get("enroll_date")?,
             withdraw_date: row.try_get("withdraw_date")?,
+            // list_students 외 SELECT 에는 컬럼이 없으므로 try_get().ok() 로 None fallback
+            weekly_hours: row.try_get("weekly_hours").ok(),
+            schedule_days_csv: row.try_get("schedule_days_csv").ok(),
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
         })
@@ -523,10 +533,18 @@ pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String
     let limit = clamp_list_limit(filter.limit);
     let offset = filter.offset.unwrap_or(0);
 
+    // T11 이슈 #4: correlated subquery 로 현행 스케줄 요약 동봉 — N+1 IPC 회피.
+    // SQLite 가 자동 최적화 (사용자 ~100명 규모에서 PRAGMA cache_size 만으로 충분).
     let mut sql = String::from(
         "SELECT s.id, s.serial_no, s.name, s.gender, s.school_level, s.grade, s.school_id, \
                 s.phone_student, s.phone_mother, s.phone_father, s.enroll_date, s.withdraw_date, \
-                s.created_at, s.updated_at \
+                s.created_at, s.updated_at, \
+                (SELECT COALESCE(SUM(duration_hours), 0) FROM student_schedules \
+                 WHERE student_id = s.id AND effective_to IS NULL) AS weekly_hours, \
+                (SELECT GROUP_CONCAT(day_of_week) FROM \
+                 (SELECT day_of_week FROM student_schedules \
+                  WHERE student_id = s.id AND effective_to IS NULL \
+                  ORDER BY day_of_week)) AS schedule_days_csv \
          FROM students s ",
     );
     sql.push_str(&join_sql);
