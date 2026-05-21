@@ -91,23 +91,44 @@ impl SchoolLevel {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum StudentSort {
+    /// PI-05 자동 채번 일련번호 오름차순 — T11 사용자 요청 디폴트
     #[default]
+    SerialAsc,
+    SerialDesc,
     NameAsc,
-    EnrollDateDesc,
+    NameDesc,
     GradeAsc,
+    GradeDesc,
+    EnrollDateAsc,
+    EnrollDateDesc,
 }
 
 impl StudentSort {
     fn order_by_sql(self) -> &'static str {
         match self {
+            // serial_no 는 TEXT 컬럼이라 CAST 후 정렬 (숫자 채번 정합성). 비숫자 serial 은 뒤로.
+            Self::SerialAsc => {
+                "ORDER BY CASE WHEN serial_no GLOB '[0-9]*' THEN 0 ELSE 1 END, \
+                 CAST(serial_no AS INTEGER) ASC, serial_no ASC"
+            }
+            Self::SerialDesc => {
+                "ORDER BY CASE WHEN serial_no GLOB '[0-9]*' THEN 0 ELSE 1 END, \
+                 CAST(serial_no AS INTEGER) DESC, serial_no DESC"
+            }
             Self::NameAsc => "ORDER BY name ASC",
-            Self::EnrollDateDesc => "ORDER BY enroll_date DESC, id DESC",
+            Self::NameDesc => "ORDER BY name DESC",
             Self::GradeAsc => "ORDER BY school_level ASC, grade ASC, name ASC",
+            Self::GradeDesc => "ORDER BY school_level DESC, grade DESC, name ASC",
+            Self::EnrollDateAsc => "ORDER BY enroll_date ASC, id ASC",
+            Self::EnrollDateDesc => "ORDER BY enroll_date DESC, id DESC",
         }
     }
 }
 
 /// 원생 — IPC 응답.
+///
+/// `weekly_hours`/`schedule_days_csv` 는 list_students 만 제공 (correlated subquery).
+/// get_student / create_student / update_student RETURNING 절에는 없으며 None 으로 채워진다.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub struct Student {
     pub id: i64,
@@ -124,6 +145,10 @@ pub struct Student {
     pub withdraw_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// T11 이슈 #4: 원생 목록에 주총 수업시간/요일 표시. list_students 만 제공.
+    pub weekly_hours: Option<i64>,
+    /// 현행 스케줄 요일 콤마 구분 — "1,3,5" (월/수/금). list_students 만 제공.
+    pub schedule_days_csv: Option<String>,
 }
 
 impl Student {
@@ -141,6 +166,9 @@ impl Student {
             phone_father: row.try_get("phone_father")?,
             enroll_date: row.try_get("enroll_date")?,
             withdraw_date: row.try_get("withdraw_date")?,
+            // list_students 외 SELECT 에는 컬럼이 없으므로 try_get().ok() 로 None fallback
+            weekly_hours: row.try_get("weekly_hours").ok(),
+            schedule_days_csv: row.try_get("schedule_days_csv").ok(),
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
         })
@@ -302,12 +330,16 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
 }
 
 /// 원생 정보를 PUT-like 로 갱신한다.
+///
+/// **T6 (사용자 이슈 #5)**: serial_no 는 PI-05 자동 채번/사용자 override 로 등록 시점에만
+/// 결정되며 수정 불가능 — 본 UPDATE SQL 에서 serial_no 컬럼을 제외하여 payload 의 값을
+/// 무시한다. 프론트는 readonly 표시하지만 백엔드도 가드(defense in depth).
 #[tauri::command]
 pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, String> {
     let pool = db::pool().map_err(String::from)?;
     let row = sqlx::query(
         "UPDATE students SET \
-            serial_no = ?, name = ?, gender = ?, school_level = ?, grade = ?, \
+            name = ?, gender = ?, school_level = ?, grade = ?, \
             school_id = ?, phone_student = ?, phone_mother = ?, phone_father = ?, \
             enroll_date = ?, withdraw_date = ?, \
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
@@ -316,7 +348,6 @@ pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, 
                    phone_student, phone_mother, phone_father, enroll_date, withdraw_date, \
                    created_at, updated_at",
     )
-    .bind(&payload.serial_no)
     .bind(&payload.name)
     .bind(payload.gender.as_db_code())
     .bind(payload.school_level.as_db_code())
@@ -386,6 +417,39 @@ pub async fn withdraw_student(id: i64, withdraw_date: String) -> Result<(), Stri
     }
     // R13 PII 마스킹: 퇴교 일자도 민감 정보로 분류 — event_subject(student id) 만 기록.
     audit::try_record(AuditEventType::StudentWithdrawn, Some(&id.to_string()), None).await;
+    Ok(())
+}
+
+/// 퇴교 처리를 번복한다 — withdraw_date 를 NULL 로 되돌린다.
+///
+/// **T8 (사용자 이슈 #8)**: 퇴교 처리는 사용자 실수 또는 학부모 변심으로 번복될 수 있다.
+/// 보강 잔여 처리 등 부수 효과는 본 IPC 범위 외 (Phase 3 에서 별도 처리).
+#[tauri::command]
+pub async fn reinstate_student(id: i64) -> Result<(), String> {
+    let pool = db::pool().map_err(String::from)?;
+    let result = sqlx::query(
+        "UPDATE students SET \
+            withdraw_date = NULL, \
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(AppError::Db)
+    .map_err(String::from)?;
+    if result.rows_affected() == 0 {
+        return Err(String::from(AppError::UserFacing(format!(
+            "원생을 찾을 수 없습니다 (id={}).",
+            id
+        ))));
+    }
+    audit::try_record(
+        AuditEventType::StudentReinstated,
+        Some(&id.to_string()),
+        None,
+    )
+    .await;
     Ok(())
 }
 
@@ -469,10 +533,18 @@ pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String
     let limit = clamp_list_limit(filter.limit);
     let offset = filter.offset.unwrap_or(0);
 
+    // T11 이슈 #4: correlated subquery 로 현행 스케줄 요약 동봉 — N+1 IPC 회피.
+    // SQLite 가 자동 최적화 (사용자 ~100명 규모에서 PRAGMA cache_size 만으로 충분).
     let mut sql = String::from(
         "SELECT s.id, s.serial_no, s.name, s.gender, s.school_level, s.grade, s.school_id, \
                 s.phone_student, s.phone_mother, s.phone_father, s.enroll_date, s.withdraw_date, \
-                s.created_at, s.updated_at \
+                s.created_at, s.updated_at, \
+                (SELECT COALESCE(SUM(duration_hours), 0) FROM student_schedules \
+                 WHERE student_id = s.id AND effective_to IS NULL) AS weekly_hours, \
+                (SELECT GROUP_CONCAT(day_of_week) FROM \
+                 (SELECT day_of_week FROM student_schedules \
+                  WHERE student_id = s.id AND effective_to IS NULL \
+                  ORDER BY day_of_week)) AS schedule_days_csv \
          FROM students s ",
     );
     sql.push_str(&join_sql);
@@ -561,8 +633,17 @@ mod tests {
     }
 
     #[test]
-    fn student_sort_default_is_name_asc() {
-        assert_eq!(StudentSort::default(), StudentSort::NameAsc);
+    fn student_sort_default_is_serial_asc() {
+        // T11 사용자 요청: 원생 목록 디폴트 정렬은 번호순.
+        assert_eq!(StudentSort::default(), StudentSort::SerialAsc);
+    }
+
+    #[test]
+    fn serial_asc_sql_uses_cast_integer() {
+        // PI-05 자동 채번이 숫자 문자열이라 TEXT 정렬이 아닌 CAST INTEGER 필수.
+        let sql = StudentSort::SerialAsc.order_by_sql();
+        assert!(sql.contains("CAST(serial_no AS INTEGER)"));
+        assert!(sql.contains("ASC"));
     }
 
     #[cfg(not(feature = "cipher"))]

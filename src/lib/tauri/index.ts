@@ -400,6 +400,17 @@ export async function withdrawStudent(id: number, withdrawDate: string): Promise
 }
 
 /**
+ * 퇴교 처리를 번복한다 (Sprint 4 T8 / 사용자 이슈 #8) — withdraw_date NULL 처리.
+ *
+ * 보강 잔여 처리 등 부수 효과는 본 IPC 범위 외 (Phase 3).
+ */
+export async function reinstateStudent(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('reinstate_student', { id })
+}
+
+/**
  * 원생 목록을 다중 필터·정렬·페이지네이션으로 조회한다.
  *
  * R14: `filter.limit` 미지정 시 백엔드 기본 100 (상한 1000), `filter.offset` 기본 0.
@@ -444,6 +455,21 @@ export async function setSchedule(payload: ScheduleSet): Promise<StudentSchedule
     }
   }
   return inv('set_schedule', { payload }) as Promise<StudentSchedule>
+}
+
+/**
+ * 원생의 특정 요일 스케줄을 마감한다 (Sprint 4 T9 / 사용자 이슈 #10).
+ *
+ * effective_to=today 로 설정 — 다음날부터 해당 요일에 수업 없음.
+ */
+export async function deleteSchedule(
+  studentId: number,
+  dayOfWeek: number,
+  today: string,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_schedule', { studentId, dayOfWeek, today })
 }
 
 export async function getSchedules(studentId: number): Promise<StudentSchedule[]> {
@@ -613,4 +639,42 @@ export async function completeSetup(): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('complete_setup')
+}
+
+// ============================================================================
+// 영구 설정 (Sprint 4 T2, PRD §4.0/§4.12) — 교습소 운영 시간
+// ============================================================================
+
+/**
+ * 요일별 운영 시간. open/close 가 모두 null 이면 미운영.
+ *
+ * `src-tauri/src/commands/settings.rs::DayHours` 와 정합.
+ * day_of_week: 1=월, 2=화, 3=수, 4=목, 5=금, 6=토, 7=일 (ISO 8601, schedules.rs 와 일관)
+ */
+export interface DayHours {
+  day_of_week: number
+  open_time: string | null
+  close_time: string | null
+}
+
+/** 운영 시간 조회 — 저장값 없으면 디폴트 (월~금 13:00~19:00, 토/일 미운영). */
+export async function getOperatingHours(): Promise<DayHours[]> {
+  const inv = await getInvoke()
+  if (!inv) {
+    // dev fallback — 디폴트 7일 반환
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = i + 1
+      return day <= 5
+        ? { day_of_week: day, open_time: '13:00', close_time: '19:00' }
+        : { day_of_week: day, open_time: null, close_time: null }
+    })
+  }
+  return inv('get_operating_hours') as Promise<DayHours[]>
+}
+
+/** 운영 시간 저장 — 7개 요일 모두 포함 필수, 백엔드가 검증. */
+export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_operating_hours', { hours })
 }

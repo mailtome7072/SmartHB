@@ -16,7 +16,8 @@ import { useDeferredValue, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { countStudents, listStudents } from '@/lib/tauri'
+import { countStudents, listCodes, listStudents } from '@/lib/tauri'
+import type { CodeEntry } from '@/types/code'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import type {
@@ -31,11 +32,48 @@ const PAGE_SIZE = 50
 
 const GENDER_LABEL: Record<Gender, string> = { male: '남', female: '여' }
 const LEVEL_LABEL: Record<SchoolLevel, string> = { elementary: '초', middle: '중' }
+
+const DAY_LABEL_SHORT = ['', '월', '화', '수', '목', '금', '토', '일']
+
+/** "1,3,5" → "월/수/금". null/빈 = "-". 중복 요일은 dedupe (스케줄 표시 안정성). */
+function formatScheduleDays(csv: string | null | undefined): string {
+  if (!csv) return '-'
+  const uniq = Array.from(new Set(csv.split(',').map((d) => Number(d.trim()))))
+    .filter((d) => d >= 1 && d <= 7)
+    .sort((a, b) => a - b)
+  if (uniq.length === 0) return '-'
+  return uniq.map((d) => DAY_LABEL_SHORT[d]).join('/')
+}
 const SORT_OPTIONS: { value: StudentSort; label: string }[] = [
+  { value: 'serial-asc', label: '번호순' },
+  { value: 'serial-desc', label: '번호 역순' },
   { value: 'name-asc', label: '이름순' },
-  { value: 'enroll-date-desc', label: '최근 입교순' },
+  { value: 'name-desc', label: '이름 역순' },
   { value: 'grade-asc', label: '학년순' },
+  { value: 'grade-desc', label: '학년 역순' },
+  { value: 'enroll-date-asc', label: '오래된 입교순' },
+  { value: 'enroll-date-desc', label: '최근 입교순' },
 ]
+
+/** 헤더 클릭으로 정렬 가능한 컬럼 매핑 (T11 사용자 요청 #3). */
+const SORTABLE_COLUMNS: Record<string, { asc: StudentSort; desc: StudentSort }> = {
+  serial: { asc: 'serial-asc', desc: 'serial-desc' },
+  name: { asc: 'name-asc', desc: 'name-desc' },
+  grade: { asc: 'grade-asc', desc: 'grade-desc' },
+  enroll: { asc: 'enroll-date-asc', desc: 'enroll-date-desc' },
+}
+
+function sortIndicator(sort: StudentSort, col: keyof typeof SORTABLE_COLUMNS): string {
+  const map = SORTABLE_COLUMNS[col]
+  if (sort === map.asc) return ' ▲'
+  if (sort === map.desc) return ' ▼'
+  return ''
+}
+
+function toggleSort(current: StudentSort, col: keyof typeof SORTABLE_COLUMNS): StudentSort {
+  const map = SORTABLE_COLUMNS[col]
+  return current === map.asc ? map.desc : map.asc
+}
 
 export default function StudentsPage() {
   const router = useRouter()
@@ -45,14 +83,21 @@ export default function StudentsPage() {
   const [grade, setGrade] = useState<string>('')
   const [gender, setGender] = useState<Gender | ''>('')
   const [activeOnly, setActiveOnly] = useState(true)
-  const [sort, setSort] = useState<StudentSort>('name-asc')
+  const [sort, setSort] = useState<StudentSort>('serial-asc')
   const [page, setPage] = useState(0)
+  // T4 (이슈 #3): 학교명 필터
+  const [schoolId, setSchoolId] = useState<string>('')
+  const { data: schools = [] } = useQuery<CodeEntry[]>({
+    queryKey: ['codes', 'schools'],
+    queryFn: () => listCodes('schools'),
+  })
 
   const baseFilter: StudentFilter = {
     name_query: nameQuery.length > 0 ? nameQuery : undefined,
     school_level: schoolLevel === '' ? undefined : schoolLevel,
     grade: grade === '' ? undefined : Number(grade),
     gender: gender === '' ? undefined : gender,
+    school_id: schoolId === '' ? undefined : Number(schoolId),
     active_only: activeOnly,
     sort,
   }
@@ -138,6 +183,22 @@ export default function StudentsPage() {
             <option value="female">여</option>
           </select>
           <select
+            value={schoolId}
+            onChange={(e) => {
+              setSchoolId(e.target.value)
+              setPage(0)
+            }}
+            aria-label="학교"
+            className="h-11 rounded-md border border-[var(--border)] px-3"
+          >
+            <option value="">학교 (전체)</option>
+            {schools.filter((s) => s.is_active).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <select
             value={sort}
             onChange={(e) => setSort(e.target.value as StudentSort)}
             aria-label="정렬"
@@ -167,18 +228,55 @@ export default function StudentsPage() {
           <table className="w-full">
             <thead className="bg-[var(--background)]">
               <tr className="text-left">
-                <th className="px-3 py-3 text-sm font-bold">번호</th>
-                <th className="px-3 py-3 text-sm font-bold">이름</th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'serial'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="번호 정렬 토글"
+                  >
+                    번호{sortIndicator(sort, 'serial')}
+                  </button>
+                </th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'name'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="이름 정렬 토글"
+                  >
+                    이름{sortIndicator(sort, 'name')}
+                  </button>
+                </th>
                 <th className="px-3 py-3 text-sm font-bold">학교급</th>
-                <th className="px-3 py-3 text-sm font-bold">학년</th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'grade'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="학년 정렬 토글"
+                  >
+                    학년{sortIndicator(sort, 'grade')}
+                  </button>
+                </th>
                 <th className="px-3 py-3 text-sm font-bold">성별</th>
-                <th className="px-3 py-3 text-sm font-bold">입교일</th>
+                <th className="px-3 py-3 text-sm font-bold">수업 시간/요일</th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'enroll'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="입교일 정렬 토글"
+                  >
+                    입교일{sortIndicator(sort, 'enroll')}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
               {students.length === 0 && !isFetching && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-500">
                     {total === 0 ? '등록된 원생이 없습니다.' : '필터에 맞는 원생이 없습니다.'}
                   </td>
                 </tr>
@@ -199,6 +297,11 @@ export default function StudentsPage() {
                   <td className="px-3 py-3 text-base">{LEVEL_LABEL[s.school_level]}</td>
                   <td className="px-3 py-3 text-base">{s.grade}</td>
                   <td className="px-3 py-3 text-base">{GENDER_LABEL[s.gender]}</td>
+                  <td className="px-3 py-3 text-base text-gray-700">
+                    {s.weekly_hours !== null && s.weekly_hours !== undefined && s.weekly_hours > 0
+                      ? `주 ${s.weekly_hours}시간 · ${formatScheduleDays(s.schedule_days_csv)}`
+                      : '-'}
+                  </td>
                   <td className="px-3 py-3 text-base">{s.enroll_date}</td>
                 </tr>
               ))}

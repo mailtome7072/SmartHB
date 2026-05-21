@@ -6,12 +6,24 @@
 
 export type Gender = 'male' | 'female'
 export type SchoolLevel = 'elementary' | 'middle'
-export type StudentSort = 'name-asc' | 'enroll-date-desc' | 'grade-asc'
+export type StudentSort =
+  | 'serial-asc'
+  | 'serial-desc'
+  | 'name-asc'
+  | 'name-desc'
+  | 'grade-asc'
+  | 'grade-desc'
+  | 'enroll-date-asc'
+  | 'enroll-date-desc'
 
 export interface Student {
   id: number
   serial_no: string
   name: string
+  /** T11 이슈 #4: 원생 목록에 표시. list_students 만 제공, 다른 IPC 응답에는 null. */
+  weekly_hours?: number | null
+  /** 현행 스케줄 요일 콤마 구분 (예: "1,3,5" = 월/수/금). null = 미등록. */
+  schedule_days_csv?: string | null
   gender: Gender
   school_level: SchoolLevel
   grade: number

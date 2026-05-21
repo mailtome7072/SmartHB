@@ -116,6 +116,33 @@ pub async fn set_schedule(payload: ScheduleSet) -> Result<StudentSchedule, Strin
     Ok(schedule)
 }
 
+/// 원생의 특정 요일 스케줄을 마감 처리한다 (Sprint 4 T9 / 사용자 이슈 #10).
+///
+/// 현행 행(`effective_to IS NULL`) 의 effective_to 를 `today` 로 설정 — 다음날부터 해당
+/// 요일에 수업 없음. 행 자체는 보존(이력 추적). 호출 시점에 현행 행이 없으면 no-op.
+#[tauri::command]
+pub async fn delete_schedule(
+    student_id: i64,
+    day_of_week: i64,
+    today: String,
+) -> Result<(), String> {
+    let pool = db::pool().map_err(String::from)?;
+    sqlx::query(
+        "UPDATE student_schedules SET \
+            effective_to = ?, \
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE student_id = ? AND day_of_week = ? AND effective_to IS NULL",
+    )
+    .bind(&today)
+    .bind(student_id)
+    .bind(day_of_week)
+    .execute(pool)
+    .await
+    .map_err(AppError::Db)
+    .map_err(String::from)?;
+    Ok(())
+}
+
 /// 원생의 현행 스케줄 목록 — `effective_to IS NULL` 행만, 요일 오름차순.
 #[tauri::command]
 pub async fn get_schedules(student_id: i64) -> Result<Vec<StudentSchedule>, String> {

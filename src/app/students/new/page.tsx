@@ -26,7 +26,8 @@ export default function NewStudentPage() {
           onSubmit={async (payload) => {
             const created = await createStudent(payload)
             qc.invalidateQueries({ queryKey: ['students'] })
-            router.push(`/students/edit?id=${created.id}`)
+            // T7 (사용자 이슈 #6): 등록 직후 상세화면으로 자동 진입 + 안내 배너 트리거
+            router.push(`/students/edit?id=${created.id}&just_created=1`)
           }}
         />
       </div>

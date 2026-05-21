@@ -42,9 +42,11 @@ pub fn run() {
             commands::students::update_student,
             commands::students::get_student,
             commands::students::withdraw_student,
+            commands::students::reinstate_student,
             commands::students::list_students,
             commands::students::count_students,
             commands::schedules::set_schedule,
+            commands::schedules::delete_schedule,
             commands::schedules::get_schedules,
             commands::schedules::get_schedule_history,
             commands::schedules::get_weekly_hours,
@@ -60,6 +62,8 @@ pub fn run() {
             commands::setup::save_cloud_folder,
             commands::setup::complete_setup,
             commands::setup::get_setup_status,
+            commands::settings::get_operating_hours,
+            commands::settings::save_operating_hours,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())
