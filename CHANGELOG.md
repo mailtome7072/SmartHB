@@ -63,6 +63,11 @@
 - Sprint 3: R13 PII 마스킹 — `students.rs` `try_record` 3곳 `details=None` 적용하여 감사 로그에 원생 이름 미포함
 - post-sprint3: `config.json` 손상 자동 복구 (`setup.rs`) — PC 강제 종료로 인한 NTFS power-loss 시 발생하는 NULL-바이트 파일/파싱 실패를 감지하여 `config.json.corrupted-{ts}` 로 백업 후 기본값 fallback. 사용자는 마법사를 다시 진행하면 자동 복구됨. 단위 테스트 6건 추가 (총 115건)
 - post-sprint3: `app.lock` 손상 자동 복구 (`lock.rs`) — 동일한 NTFS power-loss 패턴이 락 파일에도 발생. `String::trim()` 이 NULL 을 공백으로 인식하지 않아 파싱 실패가 `AppError::Lock` 으로 wrap 되어 사용자에게 "다른 컴퓨터에서 사용 중" 으로 잘못 표시되던 회귀 해소. `parse_lock_info` 가 손상 감지 시 `Ok(None)` 반환 → `acquire_lock_atomic` 이 새 락 즉시 작성. 단위 테스트 5건 추가 (총 123건)
+- post-sprint3: keyring v3 OS native backend 활성화 (`Cargo.toml`) — `keyring = "3"` default-features 만 켜진 상태에서 backend 미연결로 `set_password` 가 silent OK 반환 후 `get_password` 가 항상 `NoEntry` 반환하던 critical 회귀 해소. `features = ["apple-native", "windows-native"]` 명시. 마법사 비밀번호 설정 흐름 전체가 차단되던 증상 해결
+- post-sprint3: stale 락 자동 점유 (`lock.rs`) — 이전 세션 비정상 종료로 잔존한 stale 락(5분 미갱신)을 `force` 옵션과 무관하게 자동 정리. PRD §5.3 "강제 점유 옵션" 은 fresh 락에만 적용 (단일 사용자 UX). 마법사 LockScreen 의 `force=false` 하드코딩이 stale 락에 막히던 회귀 해소
+
+### Added
+- post-sprint3: 에러 진단 인프라 (`error.rs`, `auth.rs`) — `From<AppError> for String` 변환 시점에 raw `Display` 메시지를 stderr 에 `[error] ...` 로 보존 (PRD §6.4 "사용자 화면엔 친화 메시지, 콘솔엔 기술 상세" 정책 준수). `set_password` / `verify_password` 단계별 진단 로그 (hex 첫 8byte 만 — 키 노출 방지). tracing crate 통합 시 `tracing::error!` 로 교체 예정
 
 ---
 
