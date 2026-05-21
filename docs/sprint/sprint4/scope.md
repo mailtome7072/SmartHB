@@ -76,3 +76,42 @@ T4/T7 일반 implementation. T6/T8 백엔드 변경 — backend.md 규칙 자동
 
 T4~T8 완료 → **T9 (스케줄 시작시간 콤보 + 수정/삭제)** — T2 운영시간 의존, 이미 가능.
 이후 T11 통합 검증.
+
+---
+
+## Sprint 4 종료 — 최종 결과 (2026-05-21)
+
+### Task 완료
+- ✅ T1 (`a06dbd6`) — dialog 차단 해소 + shadcn AlertDialog
+- ✅ T2 (`04131a9`) — 교습소 설정 메뉴 + 운영 시간
+- ✅ T3 (`d725747`) — 상태바 IPC 연결
+- ✅ T4/T5/T6 (`150bfd4`) — 학생 폼 학교/하이픈/일련번호 + reinstate IPC
+- ✅ T5 utils (`7374392`) — formatPhone/formatCurrency
+- ✅ T7/T8/T4 필터 (`76abb3d`) — 등록후 안내·퇴교날짜·번복·가드·학교필터
+- ✅ T9 (`37fb823`) — 스케줄 시작시간 콤보 + 수정/삭제
+- ✅ T10 (`5e8e58a`) — 코드 테이블 DnD + 활성 필터
+- ✅ T11 — 통합 검증 (사용자 시각 검증 통과, 14 매트릭스 + 4 추가)
+
+### T11 통합 검증 중 사용자 추가 보고 (4건, 모두 처리)
+- ✅ `61d97fa` — #1 스케줄 폼 위치 + 1시간 단위, #2 운영시간 디폴트 19→20, #3 컬럼 헤더 정렬 + 번호 디폴트
+- ✅ `49cfd15` — #4 원생 목록 주총 수업시간 + 요일 컬럼
+
+### 자동 검증 결과
+- cargo test 130 (Sprint 3 종료 시 123 → +7건: settings 6 + serial sort 1)
+- cargo clippy -D warnings 0건
+- tsc --noEmit EXIT 0
+- next lint --max-warnings 0 OK
+
+### 알려진 flaky (회고 carry-over)
+- `paths::tests::init_from_config_ignores_empty_path` — 병렬 실행 시 OnceLock 격리 부족.
+  --test-threads=1 직렬 실행 시 OK. 기존 테스트 결함이며 우리 변경 무관 — Sprint 5
+  carry-over (테스트 격리 강화).
+
+### 신규 의존성
+- `@base-ui/react`, `class-variance-authority`, `clsx`, `lucide-react`, `tailwind-merge`,
+  `tw-animate-css` (shadcn init 부산물, 모두 사용 중)
+- `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` (T10 DnD)
+- (devDependencies) `shadcn`
+
+### Sprint DoD 달성
+14개 사용자 보고 이슈 + 4개 post-T11 fix 모두 해소. sprint-close 진입 준비.
