@@ -44,7 +44,11 @@ thiserror = "2"
 
 # T3 키 관리 (ADR-004) — OS Keychain 통합 + PBKDF2 키 유도 + zeroize 메모리 폐기.
 # PBKDF2-HMAC-SHA256 600,000 iter (OWASP 2024) 로 비밀번호에서 AES-256 키 유도.
-keyring = "3"
+# keyring v3 부터 OS native backend 가 features 로 분리됨 — default-features 만 쓰면 backend
+# 미연결로 set_password 가 silent OK 반환 후 get_password 가 NoEntry 반환하는 silent fail 발생.
+# Sprint 1 T3 도입 후 첫 통합 검증(2026-05-21)에서 마법사 흐름 실패로 표면화.
+# 본 프로젝트는 Windows + macOS 만 지원하므로 두 native backend 만 활성화.
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 pbkdf2 = "0.12"
 sha2 = "0.10"
 hmac = "0.12"
