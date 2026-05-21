@@ -47,7 +47,7 @@ jobs:
       - name: cargo test
         if: steps.check-rust.outputs.exists == 'true'
         env:
-          DATABASE_URL: sqlite::memory:
+          DATABASE_URL: "sqlite::memory:"
           SQLX_OFFLINE: "true"
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
