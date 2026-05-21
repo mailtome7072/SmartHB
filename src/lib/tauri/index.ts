@@ -457,6 +457,21 @@ export async function setSchedule(payload: ScheduleSet): Promise<StudentSchedule
   return inv('set_schedule', { payload }) as Promise<StudentSchedule>
 }
 
+/**
+ * 원생의 특정 요일 스케줄을 마감한다 (Sprint 4 T9 / 사용자 이슈 #10).
+ *
+ * effective_to=today 로 설정 — 다음날부터 해당 요일에 수업 없음.
+ */
+export async function deleteSchedule(
+  studentId: number,
+  dayOfWeek: number,
+  today: string,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_schedule', { studentId, dayOfWeek, today })
+}
+
 export async function getSchedules(studentId: number): Promise<StudentSchedule[]> {
   const inv = await getInvoke()
   if (!inv) return []

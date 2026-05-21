@@ -46,6 +46,7 @@ pub fn run() {
             commands::students::list_students,
             commands::students::count_students,
             commands::schedules::set_schedule,
+            commands::schedules::delete_schedule,
             commands::schedules::get_schedules,
             commands::schedules::get_schedule_history,
             commands::schedules::get_weekly_hours,

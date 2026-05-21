@@ -11,13 +11,16 @@
  *   — 현 단계는 09:00 ~ 22:00 하드코딩 가드만 적용
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  deleteSchedule,
+  getOperatingHours,
   getSchedules,
   getWeeklyHours,
   matchFeeByHours,
   setSchedule,
+  type DayHours,
 } from '@/lib/tauri'
 import type { StudentSchedule } from '@/types/schedule'
 
@@ -50,15 +53,38 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
     queryFn: () => matchFeeByHours(weeklyHours),
     enabled: weeklyHours > 0,
   })
+  // T9 (이슈 #9): 운영시간 fetch — 요일별 open/close 기반으로 시작시간 콤보 옵션 생성
+  const { data: operatingHours = [] } = useQuery<DayHours[]>({
+    queryKey: ['operating-hours'],
+    queryFn: () => getOperatingHours(),
+  })
 
   const [draft, setDraft] = useState<DraftRow>(EMPTY_ROW)
   const [error, setError] = useState<string | null>(null)
 
+  // 선택된 요일의 운영 시간 → 1시간 단위 시작 옵션 (close 1시간 전까지)
+  const startTimeOptions = useMemo(() => {
+    const day = operatingHours.find((h) => h.day_of_week === draft.day_of_week)
+    if (!day || day.open_time === null || day.close_time === null) {
+      // 미운영 요일은 옵션 없음 — UI 가 안내
+      return [] as string[]
+    }
+    const openH = Number(day.open_time.slice(0, 2))
+    const closeH = Number(day.close_time.slice(0, 2))
+    const opts: string[] = []
+    for (let h = openH; h < closeH; h += 1) {
+      opts.push(`${h.toString().padStart(2, '0')}:00`)
+    }
+    return opts
+  }, [operatingHours, draft.day_of_week])
+
   const upsert = useMutation({
     mutationFn: async (row: DraftRow) => {
       const [hh, mm] = row.start_time.split(':').map(Number)
-      if (hh < 9 || hh > 22) throw new Error('운영시간 09:00 ~ 22:00 내로 입력해주세요.')
-      if (Number.isNaN(mm) || mm < 0 || mm > 59) throw new Error('시작 시간이 올바르지 않습니다.')
+      if (Number.isNaN(hh) || hh < 0 || hh > 23)
+        throw new Error('시작 시간이 올바르지 않습니다.')
+      if (Number.isNaN(mm) || mm < 0 || mm > 59)
+        throw new Error('시작 시간이 올바르지 않습니다.')
       await setSchedule({
         student_id: studentId,
         day_of_week: row.day_of_week,
@@ -75,6 +101,25 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
+
+  const remove = useMutation({
+    mutationFn: (dayOfWeek: number) => deleteSchedule(studentId, dayOfWeek, today),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schedules', studentId] })
+      qc.invalidateQueries({ queryKey: ['weekly-hours', studentId] })
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  // T9 (이슈 #10): 기존 행 "수정" — 폼에 값 prefill, 사용자가 변경 후 "추가/변경" 클릭하면
+  // set_schedule 의 upsert 패턴(같은 요일 자동 close+insert)으로 처리.
+  const handleEdit = (s: StudentSchedule) => {
+    setDraft({
+      day_of_week: s.day_of_week,
+      start_time: s.start_time.slice(0, 5),
+      duration_hours: String(s.duration_hours),
+    })
+  }
 
   return (
     <section className="mt-8 border-t border-[var(--border)] pt-6">
@@ -93,12 +138,13 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
             <th className="px-3 py-2 text-sm font-bold">시작 시간</th>
             <th className="px-3 py-2 text-sm font-bold">수업 시간</th>
             <th className="px-3 py-2 text-sm font-bold">적용 시작</th>
+            <th className="px-3 py-2 text-sm font-bold">동작</th>
           </tr>
         </thead>
         <tbody>
           {schedules.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-3 py-6 text-center text-sm text-gray-500">
+              <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
                 등록된 스케줄이 없습니다. 아래에서 추가해주세요.
               </td>
             </tr>
@@ -109,6 +155,34 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
               <td className="px-3 py-2">{s.start_time.slice(0, 5)}</td>
               <td className="px-3 py-2">{s.duration_hours} 시간</td>
               <td className="px-3 py-2 text-sm text-gray-600">{s.effective_from}</td>
+              <td className="px-3 py-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(s)}
+                    className="h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-gray-50"
+                    aria-label={`${DAY_LABELS[s.day_of_week]}요일 스케줄 수정`}
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (remove.isPending) return
+                      // 단순 confirm 대신 AlertDialog 사용은 폼 컴포넌트 추출 후 별도 — 현재는
+                      // 즉시 삭제하지 않고 변경 통계를 폼에 prefill 한 뒤 사용자가 다시 입력.
+                      // 명시적 삭제는 행 단위 confirm 으로 분리: window.confirm 차단(T1) 으로
+                      // shadcn dialog 도입 필요 — 본 sprint 에서는 즉시 실행 후 상단 메시지.
+                      remove.mutate(s.day_of_week)
+                    }}
+                    disabled={remove.isPending}
+                    className="h-9 rounded-md border border-[var(--danger)] px-3 text-sm text-[var(--danger)] hover:bg-red-50 disabled:opacity-50"
+                    aria-label={`${DAY_LABELS[s.day_of_week]}요일 스케줄 삭제`}
+                  >
+                    삭제
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -138,12 +212,26 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           시작
-          <input
-            type="time"
-            value={draft.start_time}
-            onChange={(e) => setDraft({ ...draft, start_time: e.target.value })}
-            className="h-11 rounded-md border border-[var(--border)] px-3"
-          />
+          {startTimeOptions.length === 0 ? (
+            <span className="flex h-11 items-center rounded-md border border-[var(--border)] bg-gray-100 px-3 text-gray-500">
+              미운영 요일
+            </span>
+          ) : (
+            <select
+              value={draft.start_time}
+              onChange={(e) => setDraft({ ...draft, start_time: e.target.value })}
+              className="h-11 rounded-md border border-[var(--border)] px-3"
+            >
+              {!startTimeOptions.includes(draft.start_time) && (
+                <option value={draft.start_time}>{draft.start_time} (운영시간 외)</option>
+              )}
+              {startTimeOptions.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
         <label className="flex flex-col gap-1 text-sm">
           시간(시)
@@ -159,7 +247,8 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         </label>
         <button
           type="submit"
-          disabled={upsert.isPending}
+          disabled={upsert.isPending || startTimeOptions.length === 0}
+          title={startTimeOptions.length === 0 ? '미운영 요일 — 운영시간 설정에서 활성화 후 추가 가능' : undefined}
           className="h-11 rounded-md bg-[var(--accent)] px-4 font-bold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
         >
           {upsert.isPending ? '저장 중...' : '추가/변경'}
