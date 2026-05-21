@@ -26,7 +26,6 @@ export default function Home() {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const unlocked = useSessionStore((s) => s.unlocked)
-  const lastStartup = useSessionStore((s) => s.lastStartup)
 
   useEffect(() => {
     if (unlocked) {
@@ -77,13 +76,7 @@ export default function Home() {
       <div className="flex flex-col items-center justify-center pt-12">
         <h1 className="mb-4 text-4xl font-bold">스마트해법수학</h1>
         <p className="mb-8 text-lg text-gray-600">정쌤의 교습소 관리 시스템</p>
-        {lastStartup !== null && (
-          <p className="text-sm text-gray-500">
-            시작 시간: {lastStartup.elapsed_ms} ms
-            {lastStartup.elapsed_ms > 3000 && ' (PRD §5.6 < 3000 ms 초과 — 환경 점검 권장)'}
-          </p>
-        )}
-        <p className="mt-8 text-sm text-gray-500">대시보드는 Phase 6 에서 구축됩니다. 사이드바의 ‘원생 관리’ 또는 ‘설정’으로 이동.</p>
+        <p className="mt-8 text-sm text-gray-500">대시보드는 Phase 6 에서 구축됩니다. 사이드바의 ‘원생 관리’ 또는 ‘설정’으로 이동. 시작 시간/점유/백업/동기화 상태는 상단바를 참조.</p>
       </div>
     </AppShell>
   )

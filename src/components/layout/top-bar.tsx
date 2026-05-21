@@ -1,36 +1,64 @@
 'use client'
 
 /**
- * 상단바 (Sprint 3 T5, PRD §5.1·§5.3).
+ * 상단바 (Sprint 3 T5 + Sprint 4 T3 / 사용자 이슈 #1, #2).
  *
- * 좌측: 사이드바 토글 버튼.
- * 우측: 점유 디바이스 (app-store.lockStatus), 마지막 동기화/백업 시각.
- * 글로벌 검색바는 T6 에서 본 상단바 중앙에 삽입된다.
- *
- * 락 상태는 백엔드 IPC(`checkLockStatus`)를 호출한 컴포넌트가 `useAppStore.setLockStatus` 로
- * 갱신한 값을 그대로 표시한다. 본 컴포넌트가 IPC 를 호출하지 않는다 — store 가 SSOT.
+ * 우측 영역: 점유 디바이스 / 마지막 백업 / 동기화 상태 / 시작 시간(ms).
+ * IPC 호출은 AppShell 이 담당하고 본 컴포넌트는 표시만 한다 (store + props SSOT).
+ * 사이드바 토글 + 글로벌 검색바 슬롯도 유지.
  */
 
 import { useAppStore } from '@/stores/app-store'
-import type { LockStatus } from '@/types'
+import { useSessionStore } from '@/stores/session-store'
+import type { LockStatus, SyncStatus } from '@/types'
 
 function formatLockStatus(status: LockStatus | null): string {
-  if (status === null) return '확인 중...'
+  if (status === null) return '점유: 확인 중...'
   switch (status.kind) {
     case 'free':
-      return '점유 없음'
+      return '점유: 없음'
     case 'owned-by-self':
-      return `본 디바이스 점유 중 (${status.last_heartbeat_seconds_ago}s 전)`
+      return `점유: 본 디바이스 (${status.last_heartbeat_seconds_ago}s 전)`
     case 'owned-by-other':
       return status.stale
-        ? '다른 디바이스 점유 (응답 없음 — 강제 점유 가능)'
-        : '다른 디바이스에서 사용 중'
+        ? '점유: 다른 PC (응답 없음 — stale)'
+        : '점유: 다른 PC 사용 중'
   }
 }
 
-export function TopBar({ children }: { children?: React.ReactNode }) {
+function formatBackupAt(iso: string | null): string {
+  if (iso === null) return '백업: 없음'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '백업: ?'
+  return `백업: ${d.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })}`
+}
+
+function formatSyncStatus(status: SyncStatus | null): string {
+  if (status === null) return '동기화: 확인 중...'
+  switch (status.kind) {
+    case 'ready':
+      return '동기화: 준비됨'
+    case 'waiting':
+      return `동기화: 대기 중 (${status.seconds_since_change}s)`
+  }
+}
+
+export function TopBar({
+  children,
+  latestBackupAt,
+  syncStatus,
+}: {
+  children?: React.ReactNode
+  latestBackupAt?: string | null
+  syncStatus?: SyncStatus | null
+}) {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const lockStatus = useAppStore((s) => s.lockStatus)
+  const lastStartup = useSessionStore((s) => s.lastStartup)
+
+  const startupLabel =
+    lastStartup === null ? null : `시작 ${lastStartup.elapsed_ms}ms`
+  const startupWarn = lastStartup !== null && lastStartup.elapsed_ms > 3000
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-[var(--border)] bg-white px-4">
@@ -43,11 +71,32 @@ export function TopBar({ children }: { children?: React.ReactNode }) {
         <span aria-hidden="true" className="text-xl">≡</span>
       </button>
 
-      {/* 글로벌 검색바 슬롯 — T6 에서 채워진다 */}
+      {/* 글로벌 검색바 슬롯 */}
       <div className="flex-1 px-4">{children}</div>
 
-      <div className="flex items-center gap-3 text-sm text-gray-600">
-        <span>{formatLockStatus(lockStatus)}</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
+        <span title="현재 클라우드 폴더 락 점유 상태">{formatLockStatus(lockStatus)}</span>
+        <span aria-hidden="true" className="text-gray-300">|</span>
+        <span title="마지막 백업 생성 시각">{formatBackupAt(latestBackupAt ?? null)}</span>
+        <span aria-hidden="true" className="text-gray-300">|</span>
+        <span title="클라우드 동기화 폴더 mtime 안정 여부">
+          {formatSyncStatus(syncStatus ?? null)}
+        </span>
+        {startupLabel !== null && (
+          <>
+            <span aria-hidden="true" className="text-gray-300">|</span>
+            <span
+              title={
+                startupWarn
+                  ? 'PRD §5.6 < 3000ms 초과 — 환경 점검 권장'
+                  : 'app_startup_sequence 총 소요'
+              }
+              className={startupWarn ? 'font-semibold text-[var(--danger)]' : undefined}
+            >
+              {startupLabel}
+            </span>
+          </>
+        )}
       </div>
     </header>
   )
