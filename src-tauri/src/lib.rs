@@ -2,11 +2,22 @@ mod commands;
 mod error;
 mod startup;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // R20 (Sprint 3 sprint-review): 앱 시작 시 config.json 의 cloud_folder_path 를 읽어
+            // paths::data_root() 가 동적 경로를 반환하도록 초기화. 마법사가 폴더를 다시 지정하면
+            // setup::save_cloud_folder 가 paths::update_data_root 를 호출해 즉시 갱신한다.
+            if let Ok(dir) = app.path().app_config_dir() {
+                commands::paths::init_data_root_from_config(&dir.join("config.json"));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::greet,
             commands::diagnose_sqlcipher,

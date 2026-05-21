@@ -17,6 +17,7 @@
 //! backup/integrity 모듈에 광범위한 영향을 미치므로 마법사 UI 구현과 동시 진행 시 변경량
 //! 폭증 위험이 높다.
 
+use crate::commands::paths;
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -103,6 +104,8 @@ pub async fn save_cloud_folder(app: AppHandle, path: String) -> Result<(), Strin
     let mut status = read_status(&app).map_err(String::from)?;
     status.cloud_folder_path = trimmed.to_string();
     write_status(&app, &status).map_err(String::from)?;
+    // R20: paths 모듈에 즉시 반영 — 다음 단계(비밀번호 설정 + DB pool 초기화)부터 새 경로 사용.
+    paths::update_data_root(smarthb_dir);
     Ok(())
 }
 
