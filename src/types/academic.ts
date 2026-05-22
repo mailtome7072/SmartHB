@@ -75,11 +75,31 @@ export interface ScheduleEvent {
   updated_at: string
 }
 
-/** 캘린더 렌더링용 평탄 응답 — schedule_codes JOIN 결과. */
+/** 교습기간 cascade 삭제 미리보기 (Sprint 7 T8, Issue 6).
+ *
+ * 사용자가 "삭제" 버튼 클릭 시 AlertDialog 표시 전에 호출하여 영향 건수 + 가능 여부 사전 확인.
+ */
+export interface CascadeDeletePreview {
+  /** 삭제될 schedule_events 건수 (공휴일 제외). */
+  affected_count: number
+  /** 보존되는 공휴일 시드 건수. */
+  holiday_count: number
+  /** 삭제 가능 여부 (확정 교습기간 + 지난 달 아님). */
+  deletable: boolean
+  /** 불가 사유 (한국어, `deletable=false` 일 때만). */
+  reason: string | null
+}
+
+/** 캘린더 렌더링용 평탄 응답 — schedule_codes JOIN 결과.
+ *
+ * Sprint 7 T4: `is_system_reserved` 추가 — 프론트엔드가 시스템 코드명 한국어 리터럴을
+ * 하드코딩하지 않고 백엔드 플래그로 배지 색상·드래그 가능 여부 분기.
+ */
 export interface ScheduleEventListItem {
   id: number
   code_id: number
   code_name: string
+  is_system_reserved: boolean
   is_duplicate_blocked: boolean
   is_period_type: boolean
   event_date: string

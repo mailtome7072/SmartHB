@@ -68,6 +68,9 @@ interface EventBadgeProps {
 }
 
 function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
+  // Sprint 7 T9 (Issue 7): 공휴일 배지는 삭제 클릭 차단 — 백엔드 가드와 동일 조건.
+  const isHoliday = event.is_system_reserved && event.code_name === '공휴일'
+  const clickable = !disabled && !isHoliday && onClick !== undefined
   const { setNodeRef, listeners, attributes, transform, isDragging } = useDraggable({
     id: eventDraggableId(event.id),
     disabled: disabled || !draggable,
@@ -83,22 +86,24 @@ function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
       data-event-id={event.id}
       onClick={(ev) => {
         ev.stopPropagation()
-        if (!disabled) onClick?.(event)
+        if (clickable) onClick?.(event)
       }}
-      disabled={disabled || onClick === undefined}
+      disabled={!clickable}
       title={
         disabled
           ? '지난 달 일정은 수정할 수 없습니다'
-          : (event.display_name ?? event.code_name) +
-            (draggable ? ' · 드래그로 이동' : '')
+          : isHoliday
+            ? '공휴일은 삭제할 수 없습니다'
+            : (event.display_name ?? event.code_name) +
+              (draggable ? ' · 드래그로 이동' : '')
       }
       style={style}
       {...(draggable && !disabled ? listeners : {})}
       {...(draggable && !disabled ? attributes : {})}
       className={[
         'truncate rounded px-1 text-left text-xs',
-        codeBadgeClass(event.code_name),
-        onClick !== undefined && !disabled ? 'hover:opacity-80 cursor-pointer' : 'cursor-default',
+        codeBadgeClass(event.code_name, event.is_system_reserved),
+        clickable ? 'hover:opacity-80 cursor-pointer' : 'cursor-default',
         isDragging ? 'opacity-50' : '',
       ].join(' ')}
     >
@@ -107,24 +112,30 @@ function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
   )
 }
 
-/** 코드명 → 배지 색상 매핑. 시스템 6종 + 사용자 코드(기본). */
-function codeBadgeClass(codeName: string): string {
-  switch (codeName) {
-    case '공휴일':
-      return 'bg-red-100 text-red-800'
-    case '보강데이':
-      return 'bg-teal-100 text-teal-800'
-    case '공휴수업일':
-      return 'bg-pink-100 text-pink-800'
-    case '방학':
-      return 'bg-purple-100 text-purple-800'
-    case '휴원일':
-      return 'bg-gray-200 text-gray-700'
-    case '단원평가 응시일':
-      return 'bg-blue-100 text-blue-800'
-    default:
-      return 'bg-amber-100 text-amber-800'
-  }
+/** 시스템 예약 코드의 코드명 → 배지 색상 매핑 (데이터 정의).
+ *
+ * V102 시드된 시스템 6종. 분기 로직이 아닌 lookup 테이블 — 신규 시스템 코드 추가 시
+ * 본 객체에 한 줄만 추가하면 됨 (분기 코드 변경 없음). 매핑 누락 시 USER_BADGE_CLASS 로 폴백.
+ */
+const SYSTEM_BADGE_CLASS: Record<string, string> = {
+  '공휴일': 'bg-red-100 text-red-800',
+  '보강데이': 'bg-teal-100 text-teal-800',
+  '공휴수업일': 'bg-pink-100 text-pink-800',
+  '방학': 'bg-purple-100 text-purple-800',
+  '휴원일': 'bg-gray-200 text-gray-700',
+  '단원평가 응시일': 'bg-blue-100 text-blue-800',
+}
+
+const USER_BADGE_CLASS = 'bg-amber-100 text-amber-800'
+
+/** 코드명 → 배지 색상 매핑.
+ *
+ * Sprint 7 T4 (R33): `isSystemReserved` 플래그 기반 분기 — 사용자 코드는 amber 고정.
+ * 시스템 코드는 [[SYSTEM_BADGE_CLASS]] lookup, 누락 시 사용자 코드 색상으로 폴백.
+ */
+function codeBadgeClass(codeName: string, isSystemReserved: boolean): string {
+  if (!isSystemReserved) return USER_BADGE_CLASS
+  return SYSTEM_BADGE_CLASS[codeName] ?? USER_BADGE_CLASS
 }
 
 export function CalendarCell({

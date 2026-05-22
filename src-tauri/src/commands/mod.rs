@@ -24,6 +24,18 @@ pub fn greet(name: &str) -> String {
     format!("안녕하세요, {}! SmartHB에 오신 것을 환영합니다.", name)
 }
 
+/// 앱 종료 IPC (Sprint 6 후속 hotfix 보강 + Sprint 7 발견).
+///
+/// 사이드바 "종료" 버튼이 호출. `AppHandle::exit(0)` → `RunEvent::ExitRequested` 트리거 →
+/// `startup::exit_hook` 의 release_lock + exit 백업 정상 수행.
+///
+/// `@tauri-apps/api/window::close()` 는 capabilities 권한(`core:window:allow-close`) 필요 +
+/// macOS 에서 마지막 창 닫혀도 앱이 메뉴바에 남는 케이스가 있어, 백엔드 IPC 로 처리.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// SQLCipher 통합 진단 — ADR-001 PoC 검증용.
 ///
 /// `cipher` feature 가 켜진 빌드에서는 `libsqlite3-sys` + `bundled-sqlcipher-vendored-openssl`

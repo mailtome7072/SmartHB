@@ -21,13 +21,19 @@ pub fn run() {
             // R20 (Sprint 3 sprint-review): 앱 시작 시 config.json 의 cloud_folder_path 를 읽어
             // paths::data_root() 가 동적 경로를 반환하도록 초기화. 마법사가 폴더를 다시 지정하면
             // setup::save_cloud_folder 가 paths::update_data_root 를 호출해 즉시 갱신한다.
+            //
+            // Sprint 7 T3 (R37): device.id 는 양 PC 구분용이므로 클라우드 동기화 폴더가 아닌 OS
+            // 로컬 `app_config_dir/device.id` 에 영속화. 양 PC 가 각자 다른 UUID 보유하여
+            // stale lock 자동 점유가 "본 디바이스" 락을 올바르게 식별.
             if let Ok(dir) = app.path().app_config_dir() {
                 commands::paths::init_data_root_from_config(&dir.join("config.json"));
+                commands::lock::init_device_id_path(dir.join("device.id"));
             }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::greet,
+            commands::quit_app,
             commands::diagnose_sqlcipher,
             commands::auth::check_auth_status,
             commands::auth::set_password,
@@ -78,6 +84,8 @@ pub fn run() {
             commands::academic::get_study_period,
             commands::academic::confirm_study_period,
             commands::academic::delete_study_period,
+            commands::academic::get_cascade_delete_preview,
+            commands::academic::delete_study_period_cascade,
             commands::academic::list_schedule_codes,
             commands::academic::create_schedule_code,
             commands::academic::update_schedule_code,

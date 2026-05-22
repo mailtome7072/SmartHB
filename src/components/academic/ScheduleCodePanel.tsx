@@ -34,9 +34,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
+/**
+ * Sprint 7 T5: selection props 가 옵셔널로 변경.
+ * - `/academic` 에서는 [[ScheduleCodeSelector]] 를 사용하므로 본 패널은 더 이상 마운트 안 함.
+ * - `/settings/schedule-codes` 페이지에서는 CRUD 만 — props 생략 시 카드 클릭은 무동작.
+ */
 interface ScheduleCodePanelProps {
-  selectedCodeId: number | null
-  onSelect: (code: ScheduleCode | null) => void
+  selectedCodeId?: number | null
+  onSelect?: (code: ScheduleCode | null) => void
 }
 
 interface CodeFormState {
@@ -138,8 +143,8 @@ export function ScheduleCodePanel({ selectedCodeId, onSelect }: ScheduleCodePane
   const userCodes = codes.filter((c) => !c.is_system_reserved)
 
   function renderCodeRow(code: ScheduleCode) {
-    const isSelected = code.id === selectedCodeId
-    const selectable = code.is_active
+    const isSelected = onSelect !== undefined && code.id === selectedCodeId
+    const selectable = code.is_active && onSelect !== undefined
     return (
       <li
         key={code.id}
@@ -151,7 +156,7 @@ export function ScheduleCodePanel({ selectedCodeId, onSelect }: ScheduleCodePane
       >
         <button
           type="button"
-          onClick={() => onSelect(selectable ? code : null)}
+          onClick={() => onSelect?.(selectable ? code : null)}
           disabled={!selectable}
           aria-pressed={isSelected}
           className="flex flex-1 flex-col items-start text-left disabled:cursor-not-allowed"

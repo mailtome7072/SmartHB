@@ -30,6 +30,11 @@ const CARDS: SettingCard[] = [
     description: '학교 / 표준 교습비 / 결제 수단 / 카드사 — CRUD 및 정렬',
   },
   {
+    href: '/settings/schedule-codes',
+    title: '학사 일정 코드 관리',
+    description: '공휴일·보강데이 등 시스템 코드 + 사용자 추가 코드의 활성 토글 및 CRUD',
+  },
+  {
     href: '/settings/info',
     title: '교습소 정보',
     description: '교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 (예정)',

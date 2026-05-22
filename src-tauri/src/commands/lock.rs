@@ -38,15 +38,103 @@ const LOCK_FILENAME: &str = "app.lock";
 /// 5분 미갱신 시 strale 판정 (PRD §5.3).
 const STALE_THRESHOLD_SECONDS: i64 = 300;
 
-/// 본 디바이스의 고유 ID — 앱 프로세스 시작 시 1회 OsRng UUIDv4 생성.
+/// device.id 파일 경로 — `lib.rs::setup` 에서 OS `app_config_dir/device.id` 로 1회 초기화.
 ///
-/// MAC 주소나 하드웨어 시리얼 사용 금지 (PRD §5.3 보안 정책). 프로세스 재시작 시 새 ID 가
-/// 생성되므로, 동일 PC 의 두 SmartHB 인스턴스는 서로 다른 디바이스로 인식된다 (단일 사용자
-/// 모델이라 발생하지 않을 시나리오).
+/// Sprint 7 T3 (R37): 클라우드 동기화 폴더가 아닌 OS 로컬 경로 — 양 PC 가 각자 다른 device.id 를
+/// 보유해야 stale lock 자동 점유가 "본 디바이스" 락을 올바르게 식별한다. 클라우드 폴더에 두면
+/// 양 PC 가 동일 UUID 로 sync 되어 식별 불가.
+static DEVICE_ID_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// `lib.rs::setup` 에서 1회 호출 — `{app_config_dir}/device.id` 경로를 모듈에 전달.
+///
+/// 미설정 상태에서 `device_id()` 가 호출되면 메모리-only fallback (임시 UUID v4). 테스트 환경에서
+/// 발생할 수 있는 분기로, production 에서는 setup 이 정상 실행되어 항상 set 된다.
+pub fn init_device_id_path(path: PathBuf) {
+    let _ = DEVICE_ID_PATH.set(path);
+}
+
+/// 본 디바이스의 고유 ID — 앱 프로세스 시작 시 파일에서 로드 또는 신규 생성 후 영속화.
+///
+/// Sprint 7 T3 (Issue 8): 매 프로세스 새 UUID 생성 → 파일 영속화로 변경. 정상 종료 → 재시작
+/// 시 동일 ID 유지, 비정상 종료 후 stale lock 자동 점유가 "본 디바이스" 락으로 올바르게 판정.
+///
+/// MAC 주소/하드웨어 시리얼 사용 금지 (PRD §5.3 보안 정책). 파일 손상 (UUID 파싱 실패) 시 새
+/// UUID 재생성 + 파일 재기록 (graceful fallback). 부재 시 새 UUID 생성 후 atomic write.
 fn device_id() -> Uuid {
     static DEVICE_ID: OnceLock<Uuid> = OnceLock::new();
-    *DEVICE_ID.get_or_init(Uuid::new_v4)
+    *DEVICE_ID.get_or_init(load_or_create_device_id)
 }
+
+fn load_or_create_device_id() -> Uuid {
+    let Some(path) = DEVICE_ID_PATH.get() else {
+        // setup 진입 전 호출 (테스트 환경 등) — 메모리-only fallback.
+        return Uuid::new_v4();
+    };
+    load_or_create_device_id_at(path)
+}
+
+fn load_or_create_device_id_at(path: &Path) -> Uuid {
+    match std::fs::read_to_string(path) {
+        Ok(content) => match Uuid::parse_str(content.trim()) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                eprintln!(
+                    "[lock] device.id 손상 감지 ({} 바이트). 새 UUID 재생성.",
+                    content.len()
+                );
+                regenerate_device_id(path)
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => regenerate_device_id(path),
+        Err(e) => {
+            eprintln!("[lock] device.id 읽기 실패 ({}): {} — 메모리-only fallback", path.display(), e);
+            Uuid::new_v4()
+        }
+    }
+}
+
+/// 새 UUID 를 생성하여 파일에 atomic 저장 — 실패 시에도 메모리 UUID 반환 (graceful).
+///
+/// T2 `store_salt_to` 패턴 답습: tmp → rename + sync_all + 부모 디렉토리 best-effort fsync.
+fn regenerate_device_id(path: &Path) -> Uuid {
+    let new_id = Uuid::new_v4();
+    if let Err(e) = write_device_id_atomic(path, &new_id) {
+        eprintln!(
+            "[lock] device.id 파일 저장 실패 ({}): {} — 본 프로세스는 메모리 UUID 사용",
+            path.display(),
+            e
+        );
+    }
+    new_id
+}
+
+fn write_device_id_atomic(path: &Path, uuid: &Uuid) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("id.tmp");
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&tmp)?;
+        use std::io::Write as _;
+        f.write_all(uuid.to_string().as_bytes())?;
+        f.sync_all()?;
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
+}
+
 
 /// 락 파일 본문 — JSON 직렬화.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -412,6 +500,92 @@ mod tests {
         let id1 = device_id();
         let id2 = device_id();
         assert_eq!(id1, id2, "OnceLock 으로 1회 생성된 ID 가 stable 해야 함");
+    }
+
+    // ─── Sprint 7 T3: device.id 영속화 단위 테스트 ───
+    //
+    // `load_or_create_device_id_at` 을 직접 호출하여 path 별 동작 검증 — process-wide OnceLock
+    // (`DEVICE_ID` / `DEVICE_ID_PATH`) 영향 받지 않음. AC-T3-1/2/4/5 보장.
+
+    fn unique_device_id_path(label: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("smarthb-device-id-test-{}-{}", label, nanos));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("device.id")
+    }
+
+    /// AC-T3-1, AC-T3-2: 재시작 후 동일 device_id 유지 — 파일 1회 생성 후 두 번째 로드가 같은 UUID 반환.
+    #[test]
+    fn device_id_persists_across_load_calls() {
+        let path = unique_device_id_path("persists");
+        let first = load_or_create_device_id_at(&path);
+        assert!(path.exists(), "device.id 파일이 생성되어야 함 (AC-T3-2)");
+        let second = load_or_create_device_id_at(&path);
+        assert_eq!(first, second, "재시작 시 동일 UUID 유지 (AC-T3-1)");
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    /// AC-T3-2: 저장된 파일 내용이 UUID 문자열로 파싱 가능.
+    #[test]
+    fn device_id_file_contains_parseable_uuid() {
+        let path = unique_device_id_path("parseable");
+        let uuid = load_or_create_device_id_at(&path);
+        let content = std::fs::read_to_string(&path).unwrap();
+        let parsed = Uuid::parse_str(content.trim()).expect("저장된 파일은 valid UUID");
+        assert_eq!(parsed, uuid);
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    /// AC-T3-4: 두 개의 다른 경로 (PC-A vs PC-B 시뮬레이션) 가 각자 다른 UUID 보유.
+    #[test]
+    fn device_id_differs_across_app_config_dirs() {
+        let path_a = unique_device_id_path("pc-a");
+        let path_b = unique_device_id_path("pc-b");
+        let id_a = load_or_create_device_id_at(&path_a);
+        let id_b = load_or_create_device_id_at(&path_b);
+        assert_ne!(id_a, id_b, "다른 app_config_dir 는 다른 device.id 보유");
+        std::fs::remove_dir_all(path_a.parent().unwrap()).ok();
+        std::fs::remove_dir_all(path_b.parent().unwrap()).ok();
+    }
+
+    /// AC-T3-5: 파일이 손상 (UUID 파싱 실패) 되면 새 UUID 생성 + 파일 재기록.
+    #[test]
+    fn device_id_regenerates_on_corruption() {
+        let path = unique_device_id_path("corrupted");
+        // 손상 파일: UUID 형식 아님
+        std::fs::write(&path, "not-a-uuid-at-all").unwrap();
+        let recovered = load_or_create_device_id_at(&path);
+        // 재기록 — 파일에 유효 UUID 가 다시 저장됨
+        let content = std::fs::read_to_string(&path).unwrap();
+        let parsed = Uuid::parse_str(content.trim()).expect("재생성 후 valid UUID");
+        assert_eq!(parsed, recovered);
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    /// 부재 파일 시 새 UUID 생성 + atomic write — tmp 파일 잔존하지 않음.
+    #[test]
+    fn device_id_atomic_write_no_tmp_leak() {
+        let path = unique_device_id_path("no-tmp");
+        let _uuid = load_or_create_device_id_at(&path);
+        let tmp = path.with_extension("id.tmp");
+        assert!(path.exists());
+        assert!(!tmp.exists(), "tmp 파일이 rename 후 잔존하면 안 됨");
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    /// 빈 파일 (NULL/empty) 도 손상으로 처리하여 재생성 — NTFS power-loss 패턴 방어.
+    #[test]
+    fn device_id_regenerates_on_empty_file() {
+        let path = unique_device_id_path("empty");
+        std::fs::write(&path, "").unwrap();
+        let _uuid = load_or_create_device_id_at(&path);
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(!content.trim().is_empty(), "재생성 후 비어있지 않아야 함");
+        Uuid::parse_str(content.trim()).expect("재생성 후 valid UUID");
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 
     #[test]

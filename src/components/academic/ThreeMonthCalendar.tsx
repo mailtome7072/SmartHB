@@ -342,18 +342,12 @@ export function ThreeMonthCalendar({
 
   // 드래그 가능 일정 id 집합 — 단일 일자(`is_period_type=0`) + 시스템 예약 아닌 코드.
   // 공휴일·단원평가 등 시스템 코드 이동은 의도 외 동작 위험 → UI 차단.
+  // Sprint 7 T4 (R33): 시스템 코드명 한국어 리터럴 6종 Set → 백엔드 `is_system_reserved`
+  // 플래그 기반으로 전환. 향후 시스템 코드 추가/변경 시 프론트 수정 불필요.
   const draggableEventIds = useMemo(() => {
     const ids = new Set<number>()
-    const systemNames = new Set([
-      '공휴일',
-      '단원평가 응시일',
-      '보강데이',
-      '공휴수업일',
-      '방학',
-      '휴원일',
-    ])
     for (const e of eventsQuery.data ?? []) {
-      if (!e.is_period_type && !systemNames.has(e.code_name)) ids.add(e.id)
+      if (!e.is_period_type && !e.is_system_reserved) ids.add(e.id)
     }
     return ids
   }, [eventsQuery.data])
