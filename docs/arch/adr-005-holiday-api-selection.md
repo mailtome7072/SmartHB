@@ -1,8 +1,8 @@
 # ADR-005: 공휴일 데이터 — API 소스 + 저장 테이블 + 갱신 주기
 
-- **상태**: Proposed
-- **날짜**: 2026-05-22
-- **결정자**: SmartHB 개발팀 (Sprint 6 T2-c)
+- **상태**: Proposed (Session #6 T2-a/b 시점에 외부 데이터 한계 발견 — 결정 자체는 유효, 데이터 범위만 축소)
+- **날짜**: 2026-05-22 (초안) / 2026-05-22 (Session #6 갱신)
+- **결정자**: SmartHB 개발팀 (Sprint 6 T2-c / T2-b)
 
 ## Context (배경)
 
@@ -169,17 +169,23 @@ PRD §4.4 학사 스케줄 캘린더는 한국 법정 공휴일을 셀에 표시
 
 **핵심 Trade-off**: V102 코드 시드 수정 + V301 마이그레이션 작업량 증가를 감수하고 캘린더 렌더 단일성·도메인 일관성 확보. V302 별도 테이블 신설은 Sprint 7 이후 다른 외부 데이터(예: 시·도 교육청 일정) 통합 필요성이 입증될 때 재검토.
 
-### 결정 3: 갱신 주기 + 갱신 절차
+### 결정 3: 갱신 주기 + 갱신 절차 (Session #6 실측 후 갱신)
 
-- **유효기간**: 2024~2030 (7년치). 2030년 만료.
-- **갱신 트리거**: **2029-12-31 이전** 에 다음 7년치 (2031~2037) 갱신 필요.
+> **Session #6 발견**: data.go.kr 특일 정보 API 는 한국천문연구원 발표 시점에 따라 **1~2년치 미래 데이터만 사전 등록** 한다. 2026-05 시점 실측 결과 2028년 이후는 totalCount=0 (미발표). ADR 초안의 "7년치(2024~2030)" 가정이 외부 데이터 한계로 깨졌으나, 본 결정(API 소스 + 저장 위치)은 영향 없음 — **데이터 범위만 축소**.
+
+- **초기 시드 범위 (V301)**: 2025~2027 (3년치, 64건) — 2024 는 과거이므로 제외 (캘린더 활용도 낮음, 사용자 결정 2026-05-22)
+- **갱신 트리거 (좁힘)**: **매년 1월** (또는 천문연구원 신년 공휴일 발표 직후) `pnpm holidays:fetch -- --years YYYY-YYYY` 재실행
+  - 2026-12 이전: 2028 데이터 발표 확인 후 V401 추가 권장
+  - 매년: N년치 신규 데이터 발표 시 즉시 갱신
 - **갱신 절차** (사용자 1인 운영자 기준):
   1. data.go.kr 인증키 유효성 재확인 (보통 자동 연장, 만료 시 재발급)
-  2. `scripts/fetch-holidays.ts` 의 연도 범위 상수를 `[2031, 2037]` 로 수정
-  3. `pnpm holidays:fetch` 실행 → 신규 SQL INSERT 문 생성
-  4. `src-tauri/migrations/V401__seed_holidays_2031_2037.sql` (또는 다음 사용 가능 번호) 신규 마이그레이션 파일에 INSERT 박제
-  5. `sqlx prepare` + `sqlx migrate run` + 단위 테스트 추가 (2031~2037 주요 공휴일 검증)
-- **트리거 메모**: ROADMAP.md 의 "Phase 2 메모" 섹션 또는 Sprint 6 회고 (`docs/sprint-retrospectives/sprint6-retrospective.md`) 에 "**2029-12 공휴일 시드 갱신 필요**" 명시 — sprint-close 에이전트가 회고 작성 시 반영.
+  2. `pnpm holidays:fetch -- --years <시작>-<종료>` 실행 → stdout SQL INSERT 문 → `scripts/holidays.generated.sql` 저장
+  3. 다음 사용 가능 마이그레이션 번호로 신규 파일 생성 (예: V401, V402…)
+  4. 생성된 SQL을 V301 의 "3단계" 패턴 (CROSS JOIN VALUES + `WHERE c.code_name='공휴일' AND c.is_system_reserved=1`) 형식으로 박제
+  5. academic.rs 에 신규 연도 주요 공휴일 검증 테스트 추가 + `cargo test`
+  6. `git commit` (사용자 1인 직접 머지)
+- **트리거 메모**: ROADMAP.md 에 "공휴일 시드 갱신: 매년 1월" 메모 (sprint-close 에이전트가 Sprint 6 회고에 반영)
+- **갱신 누락 영향**: 미갱신 연도는 캘린더에 공휴일 표시 안 됨 — 사용자가 시각적으로 즉시 인지 가능 (12월 25일에 배지 없음 등). 운영 사고 위험 낮음.
 
 ---
 
@@ -192,15 +198,16 @@ PRD §4.4 학사 스케줄 캘린더는 한국 법정 공휴일을 셀에 표시
 - 빌드 타임 수집 + 시드 박제로 PRD §5.5 외부 네트워크 호출 금지 원칙 준수
 
 **부정적 영향 / 주의사항**:
-- 사용자가 data.go.kr 인증키를 발급해야 함 — `.env.example` 에 `KOREA_HOLIDAY_API_KEY` 변수 추가 + 발급 절차 README 또는 SETUP.md 에 명시 (Session #6 T2-a 에서 처리)
-- V301 마이그레이션 단일 트랜잭션 작업량 증가: ① schedule_codes 시드 보정 (보강데이/공휴수업일/단원평가 3건 UPDATE) + ② "공휴일" 시스템 코드 INSERT + ③ schedule_events 7년치 INSERT (~150건) — Session #6 T2-b 에서 모두 다룸
-- 2029-12 갱신 누락 시 2030년 이후 공휴일 표시 누락 — ROADMAP/회고 메모 외 추가 알람 메커니즘 없음 (사용자 1인 시스템의 한계)
+- 사용자가 data.go.kr 인증키를 발급해야 함 — `.env.example` 에 `KOREA_HOLIDAY_API_KEY` 변수 + 발급 절차 주석 추가 완료 (Session #6 T2-a)
+- V301 단일 마이그레이션 작업량: ① schedule_codes 시드 보정 3건 + ② "공휴일" 시스템 코드 INSERT + ③ schedule_events **64건** (2025~2027) INSERT — Session #6 T2-b 에서 완료
+- **외부 데이터 한계** (Session #6 발견): API 미발표 연도(2028+)는 시드 불가 → 매년 1월 갱신 의무 발생. 미갱신 시 캘린더에 공휴일 표시 누락 (사용자가 시각적 인지 가능, 운영 사고 위험은 낮음)
+- 인증키 입력 후 fetch — `URL.searchParams.set` 이 base64 padding(`+`, `/`, `=`) 을 재인코딩하여 HTTP 403 유발 → 스크립트는 raw string concat 방식 사용 (Session #6 T2-a 수정 완료)
 
-**후속 액션 (Session #6 이후)**:
-- [ ] (T2-a) `scripts/fetch-holidays.ts` 작성 — data.go.kr 특일 정보 API 호출, XML→JSON 파싱, SQL INSERT 문 stdout 출력
-- [ ] (T2-a) `pnpm holidays:fetch` 스크립트 등록 (package.json)
-- [ ] (T2-a) `.env.example` 에 `KOREA_HOLIDAY_API_KEY` 변수 추가
-- [ ] (T2-b) V301 마이그레이션: ① 시드 보정 (보강데이 is_duplicate_blocked 0→1, 공휴수업일 allows_makeup_class 0→1, 단원평가 is_duplicate_blocked 1→0 + is_period_type 0→1) + ② "공휴일" 시스템 코드 INSERT (allows_regular_class=0, allows_makeup_class=0, is_duplicate_blocked=1, is_period_type=0) + ③ 7년치 공휴일 INSERT
-- [ ] (T2-b) 단위 테스트: V301 적용 후 주요 공휴일 (신정/3·1절/어린이날/광복절/한글날/성탄절 + 대체공휴일 5건 이상) 존재 검증
-- [ ] (T2-b) `sqlx prepare` 캐시 갱신 + 커밋
-- [ ] (Sprint 6 회고) ROADMAP.md / sprint6-retrospective.md 에 "2029-12 공휴일 시드 갱신 필요" 메모 (sprint-close 에이전트 반영)
+**후속 액션 (Session #6 완료 기준)**:
+- ✅ (T2-a) `scripts/fetch-holidays.ts` 작성 — data.go.kr 특일 정보 API 호출, JSON 파싱, SQL INSERT 문 stdout 출력
+- ✅ (T2-a) `pnpm holidays:fetch` 스크립트 등록 (`node --env-file=.env --import tsx`) + `tsx` devDep 추가
+- ✅ (T2-a) `.env.example` 에 `KOREA_HOLIDAY_API_KEY` 변수 + 발급 절차 주석 추가 (posttooluse hook 정규식 좁힘으로 .env.example 허용)
+- ✅ (T2-b) V301 마이그레이션: ① 시드 보정 3건 + ② "공휴일" 시스템 코드 INSERT (1,0,0,1,0) + ③ 2025~2027 공휴일 64건 INSERT (CROSS JOIN VALUES + WHERE 방어 패턴)
+- ✅ (T2-b) academic.rs V301 검증 단위 테스트 5건 추가 (보정/공휴일 코드/주요 공휴일 6건/대체공휴일 5건/동일 일자 다중 공휴일)
+- ✅ (T2-b) `cargo sqlx prepare` 시도 — `.sqlx/` 미생성 (academic.rs 는 런타임 query() 사용, query!/query_as! 매크로 없음 → 캐시 불필요)
+- ⬜ (Sprint 6 회고) ROADMAP.md / sprint6-retrospective.md 에 "공휴일 시드 매년 1월 갱신 (2028 발표 확인 후 V401 추가)" 메모 (sprint-close 에이전트 반영)
