@@ -38,6 +38,34 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 6: Phase 2 학사 스케줄 관리 첫 기능 진입 — `/academic` 라우트 신설, 사이드바 "학사 스케줄" 메뉴 활성화
+- Sprint 6: 3개월 학사 캘린더 컴포넌트 — Tailwind grid-cols-7 직접 구현 (shadcn/ui Calendar 미사용), 공휴일/교습기간/일정 배지 표시, 교습기간 셀 selection 통합
+- Sprint 6: 교습기간 설정 UI (PRD §4.4.2) — 시작일/종료일 셀 클릭 → StudyPeriodEditor, 교습기간 확정/해제, 지난 달 읽기 전용 (AC-4.4-1)
+- Sprint 6: 학사 일정 코드 + 배치 UI (PRD §4.4.3~4.4.6) — 시스템 예약 5종 활성 토글, 사용자 코드 CRUD, 날짜 셀 클릭 등록, @dnd-kit 드래그 이동 (단일 일자, 시스템 코드 제외)
+- Sprint 6: 단원평가 응시일 자동 배치 (PRD §4.4.7) — 2주차/4주차 월~금 자동 배치 IPC (`auto_place_assessment_dates`)
+- Sprint 6: 백엔드 IPC 15개 (`src-tauri/src/commands/academic.rs` 신규) — study_periods 6종 + schedule_codes 4종 + schedule_events 5종
+- Sprint 6: TypeScript IPC 래퍼 15개 + 도메인 타입 10개 (`src/types/academic.ts`)
+- Sprint 6: V301 마이그레이션 — schedule_codes 시드 3속성 보정 (보강데이/공휴수업일/단원평가 속성, PRD §4.4.4 정합) + 한국 법정 공휴일 2025~2027 64건
+- Sprint 6: `pnpm holidays:fetch` 빌드 스크립트 (`scripts/fetch-holidays.ts`, tsx 기반) — 공공데이터포털 API 호출 + V301 SQL 생성 자동화
+- Sprint 6: ADR-005 (`docs/arch/adr-005-holiday-api-selection.md`) — 공휴일 API 소스/저장 위치/갱신 주기 결정 (매년 1월 V401+ 마이그레이션)
+- Sprint 6: 신규 devDependency — `tsx 4.22` (빌드 타임 TypeScript 실행)
+- Sprint 6: 신규 환경변수 — `KOREA_HOLIDAY_API_KEY` (`.env.example` 추가)
+- Sprint 6: A20 해소 — lock/page.tsx 에러 화면 재시도 버튼 + lockStatus 초기화
+- Sprint 6: A21 해소 — paths.rs OnceLock 병렬 테스트 격리 (테스트 146건 안정화)
+- Sprint 6: A22 해소 — 코드 DnD 필터링 sort_order 충돌 (방법 B 적용)
+
+### Changed
+- Sprint 6: V301 — V102 schedule_codes 시드 3속성 보정 (보강데이 `is_duplicate_blocked` false → true 외 PRD §4.4.4 정합 2건)
+- Sprint 6: `.claude/hooks/posttooluse-code-validator.sh` — `.env` 차단 정규식 좁힘 (`.env.example` 허용, `.env.local`/`.env.*.local` 패턴으로 실제 시크릿 파일만 차단)
+
+### Fixed
+- Sprint 6: A20 — lock/page.tsx 에러 화면에서 재시도 버튼 누락으로 앱 재시작 없이 락 재점유가 불가능하던 문제 해소
+- Sprint 6: A21 — paths.rs OnceLock 테스트 격리 부족으로 병렬 실행 시 flaky 발생하던 문제 해소
+- Sprint 6: A22 — 코드 DnD 드래그 후 필터 변경 시 sort_order가 충돌하여 순서가 뒤섞이던 문제 해소
+
+---
+
+### Added
 - Sprint 5: `tauri-plugin-single-instance` 2.4.2 도입 — 동일 PC 다중 인스턴스 원천 차단. 두 번째 인스턴스 기동 시 기존 창 포커스 + 새 프로세스 즉시 종료 (PRD §5.3)
 - Sprint 5: `cross-env` devDependency 추가 — `pnpm dev` 스크립트에 `NODE_OPTIONS=--no-experimental-webstorage` 적용 (Node 25/20 cross-OS 호환)
 - Sprint 5: V201 마이그레이션 (`201__update_seed_data.sql`) — 표준교습비 시드 (3/4/5/6h: 16만/20만/23만/26만원) + 결제수단 시드 (현금 비활성 + 계좌이체/카드/결제선생/성남사랑 활성 5종) 운영 값으로 보정. 멱등성 보장 (V001/V104 baseline 일치 행만 변경, 사용자 수정 데이터 보존)
