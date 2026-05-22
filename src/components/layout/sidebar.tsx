@@ -10,24 +10,17 @@
  * - 클릭 영역 44×44px 이상 (Tailwind py-3 = 12px × 2 + 본문 18px line-height ≈ 51px)
  * - WCAG AA 명도 대비 보장 (foreground/border 토큰 사용)
  *
- * Sprint 6 시각 검증 후속 (Issue 2): 사이드바 하단 "종료" 버튼.
- * `getCurrentWindow().close()` 호출 → Tauri `RunEvent::ExitRequested` 트리거 →
- * `startup::exit_hook` 이 release_lock + exit 백업 수행 (R15 보장).
+ * Sprint 7 보강: 사이드바 하단 "종료" 항목.
+ * `quitApp()` IPC → `AppHandle::exit(0)` → `RunEvent::ExitRequested` →
+ * `startup::exit_hook` 의 release_lock + exit 백업 (R15 보장).
+ * 기존 `getCurrentWindow().close()` 는 capabilities `core:window:allow-close` 권한 부재로
+ * 거부됐었음. 백엔드 IPC 경유로 권한 + macOS 닥 잔존 이슈 동시 회피.
  */
 
 import Link from 'next/link'
 import { useAppStore } from '@/stores/app-store'
 import { MENU_ITEMS } from '@/lib/menu-config'
-
-async function exitApp() {
-  if (typeof window === 'undefined') return
-  try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    await getCurrentWindow().close()
-  } catch {
-    // 브라우저 개발 모드 (Tauri 없이) — no-op
-  }
-}
+import { quitApp } from '@/lib/tauri'
 
 export function Sidebar() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
@@ -71,16 +64,17 @@ export function Sidebar() {
           </li>
         ))}
       </ul>
-      <div className="border-t border-[var(--border)] p-2">
-        <button
-          type="button"
-          onClick={exitApp}
-          className="flex min-h-[44px] w-full items-center justify-between rounded-md px-4 py-3 text-[var(--foreground)] hover:bg-red-50"
-        >
-          <span>종료</span>
-          <span className="text-sm text-gray-500">⏻</span>
-        </button>
-      </div>
+      <ul className="border-t border-[var(--border)] py-2">
+        <li>
+          <button
+            type="button"
+            onClick={() => void quitApp()}
+            className="flex min-h-[44px] w-full items-center justify-between px-4 py-3 text-left text-[var(--foreground)] hover:bg-[var(--background)]"
+          >
+            <span>종료</span>
+          </button>
+        </li>
+      </ul>
     </nav>
   )
 }

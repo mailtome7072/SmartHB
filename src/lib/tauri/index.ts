@@ -92,6 +92,17 @@ export async function greet(name: string): Promise<string> {
 }
 
 /**
+ * 앱 종료 — AppHandle::exit(0) → RunEvent::ExitRequested → release_lock + exit 백업.
+ *
+ * 사이드바 "종료" 메뉴가 호출. capabilities 권한 우회 + macOS 닥 메뉴바 잔존 회피를 위해 백엔드 IPC 경유.
+ */
+export async function quitApp(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('quit_app')
+}
+
+/**
  * 현재 인증 상태를 조회한다.
  *
  * - `'not-initialized'`: 비밀번호 미설정 — 최초 설정 모드 진입

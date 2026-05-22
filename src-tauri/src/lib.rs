@@ -28,6 +28,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::greet,
+            commands::quit_app,
             commands::diagnose_sqlcipher,
             commands::auth::check_auth_status,
             commands::auth::set_password,
