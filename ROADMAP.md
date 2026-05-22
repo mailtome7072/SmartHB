@@ -2,7 +2,7 @@
 
 ## 개요
 - **프로젝트 목표**: 50대 교습소 원장 1인을 위한 원생/출결/보강/청구/단원평가 통합 데스크톱 관리 앱 (Windows + macOS)
-- **전체 예상 기간**: 약 28주 (14 스프린트, 7 Phase) + UAT 2주 = 총 30주
+- **전체 예상 기간**: 약 32주 (17 스프린트, 7 Phase) + UAT 2주 = 총 34주
 - **현재 진행 단계**: Phase 0 준비 완료, Phase 1 착수 예정
 - **PRD 버전**: v1.5 (2026-05-15)
 
@@ -22,8 +22,8 @@
 | 항목 | 내용 |
 |------|------|
 | 전체 진행률 | 43% (6/14 스프린트 완료) |
-| 현재 Phase | Phase 2 진입 — Sprint 6 완료, Sprint 7 (출결 관리) 예정 |
-| 다음 마일스톤 | Phase 2 출결 관리 (Sprint 7 예정) |
+| 현재 Phase | Phase 2 진행 중 — Sprint 6 완료, Sprint 7 (carry-over 해소) 진행 중, Sprint 8 (출결 관리) 예정 |
+| 다음 마일스톤 | Phase 2 carry-over 해소 (Sprint 7) → 출결 관리 (Sprint 8) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -60,26 +60,27 @@ Phase 1.5b (추가 안정화)  ← Phase 1.5 완료 필수
 
 Phase 2 (학사+출결)  ← Phase 1.5b 완료 필수
   ├── Sprint 6: 학사 스케줄 (3개월 캘린더 + 코드 3속성 + 교습기간)
-  └── Sprint 7: 출결 생성 + 출결표 UI + 상태 토글 (캘린더 ADR)
+  ├── Sprint 7: carry-over 해소 (Keychain 최적화 + 교습기간 UX + 배치 제약 + salt 이전)
+  └── Sprint 8: 출결 생성 + 출결표 UI + 상태 토글 (캘린더 ADR)
 
 Phase 3 (보강+소멸)  ← Phase 2 완료 필수
-  ├── Sprint 8: 보강 등록(개별) + 보강데이 일괄 + 매칭 로직
-  └── Sprint 9: 소멸 자동 전이 + 퇴교 보강 처리 + 캘린더 뷰
+  ├── Sprint 9: 보강 등록(개별) + 보강데이 일괄 + 매칭 로직
+  └── Sprint 10: 소멸 자동 전이 + 퇴교 보강 처리 + 캘린더 뷰
 
 Phase 4 (청구·수납)  ← Phase 2 완료 필수 (Phase 3과 병행 불가 — 출결 의존)
-  ├── Sprint 10: 청구 생성 + 3단계 마감 + 수납 관리
-  └── Sprint 11: 공지문 이미지 일괄 생성 (HTML5 Canvas)
+  ├── Sprint 11: 청구 생성 + 3단계 마감 + 수납 관리
+  └── Sprint 12: 공지문 이미지 일괄 생성 (HTML5 Canvas)
 
 Phase 5 (단원평가+보고서)  ← Phase 2 완료 필수
-  ├── Sprint 12: 단원평가 점수 입력 + 추이 조회
-  └── Sprint 13: 분기 학습보고서 + A4 4분할 인쇄/PDF
+  ├── Sprint 13: 단원평가 점수 입력 + 추이 조회
+  └── Sprint 14: 분기 학습보고서 + A4 4분할 인쇄/PDF
 
 Phase 6 (대시보드+유틸)  ← Phase 3~5 모두 완료 필수
-  └── Sprint 14: 대시보드 5개 위젯 + 알림 + 가져오기/내보내기 + 자가 진단
+  └── Sprint 15: 대시보드 5개 위젯 + 알림 + 가져오기/내보내기 + 자가 진단
 
 Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
-  ├── Sprint 15: 양 OS 빌드 검증 + 성능 최적화 + 접근성 감사
-  └── Sprint 16: UAT(원장 2주 파일럿) + 피드백 반영 + v1.0 릴리즈
+  ├── Sprint 16: 양 OS 빌드 검증 + 성능 최적화 + 접근성 감사
+  └── Sprint 17: UAT(원장 2주 파일럿) + 피드백 반영 + v1.0 릴리즈
 ```
 
 ---
@@ -318,9 +319,10 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 2: 학사 + 출결 (Sprint 6~7) 🔄 진행 중
+## Phase 2: 학사 + 출결 (Sprint 6~8) 🔄 진행 중
 
-> **스프린트 번호 이동**: Sprint 4(Phase 1.5 안정화) + Sprint 5(Phase 1.5b 안정화) 삽입으로 원래 Sprint 5(학사 스케줄) → **Sprint 6**, 원래 Sprint 6(출결 관리) → **Sprint 7**로 이연됨.
+> **스프린트 번호 이동**: Sprint 4(Phase 1.5 안정화) + Sprint 5(Phase 1.5b 안정화) 삽입으로 원래 Sprint 5(학사 스케줄) → **Sprint 6**, 원래 Sprint 6(출결 관리) → **Sprint 7 → Sprint 8**로 이연됨.
+> **Sprint 7 삽입**: Sprint 6 시각 검증에서 발견된 carry-over 8건(Keychain/교습기간 UX/배치 제약/salt 이전/device_id 등) 해소를 위해 Sprint 7이 carry-over 전담 스프린트로 삽입됨. 출결 관리는 Sprint 8로 이연.
 
 > **Phase 2 메모 (Sprint 6 발견)**: 공휴일 시드는 data.go.kr API 2028+ 미발표 제약으로 2025~2027 (64건)으로 범위 제한. 이후 매년 1월 신규 발표분을 V401(+) 마이그레이션으로 추가하는 갱신 정책 채택 (ADR-005).
 
@@ -364,7 +366,42 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 7: 출결 관리 (2주) 📋 예정
+### Sprint 7: Phase 2 carry-over 해소 + 인프라 안정화 (2주) 🔄 진행 중
+
+> 계획 문서: `docs/sprint/sprint7.md`
+> Sprint 6 시각 검증에서 발견된 carry-over 8건 전수 해소. 출결 도메인은 Sprint 8로 이연.
+
+#### 작업 목록
+
+- ⬜ **T1**: macOS Keychain 반복 다이얼로그 해소 — keyring 호출 통합 캐싱 (Critical UX, Issue 1) · skill: systematic-debugging
+- ⬜ **T2**: salt.bin 이전 (Keychain → cloud/smarthb/salt.bin) — A17/A27 3회 이월 최종 해소
+- ⬜ **T3**: device_id 영속화 — stale lock 정확한 디바이스 식별 (Issue 8, PRD §5.3)
+- ⬜ **T4**: is_system_reserved JOIN 추가 + 프론트 하드코딩 제거 (A23, R33)
+- ⬜ **T5**: 학사 일정 코드 관리 → `/settings/schedule-codes` 이동 (Issue 3) · skill: frontend-design
+- ⬜ **T6**: 교습기간 설정 UX 재설계 — 토글 제거, 기본 선택 모드 (Issue 5) · skill: frontend-design
+- ⬜ **T7**: 학사 일정 배치 제약 강화 — 중복불가 상호 차단 + 교습기간 내만 (Issue 4, R34)
+- ⬜ **T8**: 교습기간 삭제 + cascade 삭제 (공휴일 보존) (Issue 6)
+- ⬜ **T9**: 확정 교습기간 내 공휴일 삭제 차단 (Issue 7)
+- ⬜ **T10**: 통합 검증
+
+#### 완료 기준 (Definition of Done)
+- ⬜ Keychain 다이얼로그 최대 1회 + startup < 3초 (Issue 1)
+- ⬜ salt.bin 클라우드 폴더 이전 완료 (A17/A27)
+- ⬜ device_id 영속화 + stale lock 정확한 식별 (Issue 8)
+- ⬜ 교습기간 UX 재설계 + 배치 제약 + cascade 삭제 + 공휴일 보호 (Issue 3~7)
+- ⬜ is_system_reserved JOIN + 프론트 하드코딩 제거 (R33)
+- ⬜ `cargo test` 전체 통과 + clippy/lint/tsc/build 무오류
+
+#### 기술 고려사항
+- Keychain 캐싱: ZeroizeOnDrop + Mutex<Option<>> 패턴, 앱 프로세스 종료 시 자동 폐기
+- salt.bin 마이그레이션: Keychain → 파일 자동 1회 전환, 기존 Keychain 항목 정리
+- device_id 저장 경로: OS 로컬(app_config_dir) vs 클라우드 폴더 결정 필요 (R37)
+
+---
+
+### Sprint 8: 출결 관리 (2주) 📋 예정
+
+> 원래 Sprint 7 (출결 관리)이 Sprint 8로 이연됨 — Sprint 7에서 carry-over 해소 선행.
 
 #### 작업 목록
 
@@ -385,7 +422,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
   - 영향 분석 다이얼로그 (삭제/신규 건수, 보강 연결 경고)
   - 원장 컨펌 시에만 실행
 - ⬜ **캘린더 라이브러리 ADR**: FullCalendar vs React Big Calendar 비교
-  - ADR 문서: `docs/arch/adr-002-calendar-library.md`
+  - ADR 문서: `docs/arch/adr-006-calendar-library.md`
 - ⬜ **수업 관리 캘린더 뷰 기초 (§4.6.1)**: 일/주/월 뷰 (Outlook 스타일)
   - 시간대별 총 수업 인원수, 원생 이름 + 수업 시간 표시
 
@@ -410,16 +447,16 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 #### 기술 고려사항
 - 출결표 대량 셀 렌더링: 가상화(virtualization) 적용 검토
 - TanStack Query로 출결 데이터 캐싱 + 토글 시 낙관적 업데이트
-- 캘린더 뷰 라이브러리는 ADR 결과에 따라 Sprint 5 후반 또는 Sprint 7에서 완성
+- 캘린더 뷰 라이브러리는 ADR 결과에 따라 Sprint 8 후반에서 완성
 
 ---
 
-## Phase 3: 보강 + 소멸 (Sprint 8~9) 📋 예정
+## Phase 3: 보강 + 소멸 (Sprint 9~10) 📋 예정
 
 ### 목표
 출결/보강의 가장 복잡한 도메인(보강 매칭, 소멸 자동 전이, 퇴교 처리)을 완성하여 UC-4를 달성한다.
 
-### Sprint 8: 보강 등록 + 매칭 (2주) 📋 예정
+### Sprint 9: 보강 등록 + 매칭 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -462,7 +499,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 9: 소멸 자동 전이 + 캘린더 뷰 완성 (2주) 📋 예정
+### Sprint 10: 소멸 자동 전이 + 캘린더 뷰 완성 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -503,12 +540,12 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 4: 청구 + 수납 + 공지문 (Sprint 10~11) 📋 예정
+## Phase 4: 청구 + 수납 + 공지문 (Sprint 11~12) 📋 예정
 
 ### 목표
 교습비 청구/수납 전체 흐름(UC-5)과 카카오톡 공지문 이미지 생성을 완성한다.
 
-### Sprint 10: 청구 + 수납 관리 (2주) 📋 예정
+### Sprint 11: 청구 + 수납 관리 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -555,7 +592,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 11: 공지문 이미지 생성 (2주) 📋 예정
+### Sprint 12: 공지문 이미지 생성 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -598,12 +635,12 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 5: 단원평가 + 학습보고서 (Sprint 12~13) 📋 예정
+## Phase 5: 단원평가 + 학습보고서 (Sprint 13~14) 📋 예정
 
 ### 목표
 단원평가 점수 관리와 분기 학습보고서 작성/출력(UC-6)을 완성한다.
 
-### Sprint 12: 단원평가 점수 입력 (2주) 📋 예정
+### Sprint 13: 단원평가 점수 입력 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -644,7 +681,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 13: 분기 학습보고서 (2주) 📋 예정
+### Sprint 14: 분기 학습보고서 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -691,12 +728,12 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 6: 대시보드 + 유틸리티 (Sprint 14) 📋 예정
+## Phase 6: 대시보드 + 유틸리티 (Sprint 15) 📋 예정
 
 ### 목표
 모든 도메인 데이터를 대시보드에 집계하고, 자가 진단/가져오기-내보내기 등 유틸리티를 완성한다.
 
-### Sprint 14: 대시보드 + 자가 진단 + 내보내기 (2주) 📋 예정
+### Sprint 15: 대시보드 + 자가 진단 + 내보내기 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -746,12 +783,12 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 7: 안정화 + UAT (Sprint 15~16) 📋 예정
+## Phase 7: 안정화 + UAT (Sprint 16~17) 📋 예정
 
 ### 목표
 양 OS 빌드 검증, 성능 최적화, 접근성 감사를 완료하고, 원장 2주 UAT를 통해 v1.0을 릴리즈한다.
 
-### Sprint 15: 양 OS 빌드 검증 + 최적화 (2주) 📋 예정
+### Sprint 16: 양 OS 빌드 검증 + 최적화 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -809,7 +846,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 16: UAT + v1.0 릴리즈 (2주) 📋 예정
+### Sprint 17: UAT + v1.0 릴리즈 (2주) 📋 예정
 
 #### 작업 목록
 
@@ -837,14 +874,14 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 #### 🧪 Playwright MCP 검증 시나리오
 ```
-(UAT는 원장 수동 테스트 — 자동 검증은 Sprint 13에서 완료)
+(UAT는 원장 수동 테스트 — 자동 검증은 Sprint 16에서 완료)
 1. 배포 후 양 OS 인스톨러로 설치 확인
 2. 앱 시작 → 잠금 해제 → 대시보드 진입 확인
 3. 양 PC 전환 (Windows → Mac) 데이터 동기화 확인
 ```
 
 #### 기술 고려사항
-- UAT 중 심각한 이슈 발견 시 Sprint 14 연장 가능 (최대 1주)
+- UAT 중 심각한 이슈 발견 시 Sprint 16 연장 가능 (최대 1주)
 - GitHub Release: `deploy.yml` 워크플로우 자동 실행
 
 ---
@@ -855,12 +892,12 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 |----------|-------|--------|----------|------------|
 | M1: 인프라 확립 | Phase 1 | Sprint 1 | +2주 | SQLCipher + app.lock + 4계층 백업 동작 |
 | M2: 원생 관리 가능 | Phase 1 | Sprint 3 | +6주 | 원생 등록/조회 + 마법사 + 글로벌 검색 |
-| M3: 학사+출결 동작 | Phase 2 | Sprint 7 | +12주 | 학사 일정 수립 + 출결 생성/관리 |
-| M4: 보강 완성 | Phase 3 | Sprint 9 | +16주 | 보강 매칭 + 소멸 + 캘린더 뷰 |
-| M5: 청구 완성 | Phase 4 | Sprint 11 | +20주 | 청구/수납/공지문 |
-| M6: 평가+보고서 | Phase 5 | Sprint 13 | +24주 | 단원평가 + 분기 학습보고서 |
-| M7: 대시보드 | Phase 6 | Sprint 14 | +26주 | 대시보드 + 자가 진단 + 내보내기 |
-| M8: v1.0 릴리즈 | Phase 7 | Sprint 16 | +30주 | 양 OS 빌드 + UAT + v1.0.0 |
+| M3: 학사+출결 동작 | Phase 2 | Sprint 8 | +14주 | 학사 일정 수립 + 출결 생성/관리 |
+| M4: 보강 완성 | Phase 3 | Sprint 10 | +18주 | 보강 매칭 + 소멸 + 캘린더 뷰 |
+| M5: 청구 완성 | Phase 4 | Sprint 12 | +22주 | 청구/수납/공지문 |
+| M6: 평가+보고서 | Phase 5 | Sprint 14 | +26주 | 단원평가 + 분기 학습보고서 |
+| M7: 대시보드 | Phase 6 | Sprint 15 | +28주 | 대시보드 + 자가 진단 + 내보내기 |
+| M8: v1.0 릴리즈 | Phase 7 | Sprint 17 | +32주 | 양 OS 빌드 + UAT + v1.0.0 |
 
 ---
 
@@ -885,8 +922,8 @@ PRD §4.15에 명시된 Post-MVP 항목:
 - ⬜ 출결 재생성 시 변경분만 반영 — Q9
 
 ### PRD 미해결 항목 (스프린트 진행 중 결정 필요)
-- ⬜ **PI-01** (High): 소멸 자동 전이 트리거 시점 → Sprint 9에서 구현
-- ⬜ **PI-02** (High): 보강-결석 시간값 매칭 규칙 → Sprint 8 착수 전 결정 필요
+- ⬜ **PI-01** (High): 소멸 자동 전이 트리거 시점 → Sprint 10에서 구현
+- ⬜ **PI-02** (High): 보강-결석 시간값 매칭 규칙 → Sprint 9 착수 전 결정 필요
 - ✅ **PI-05** (Medium): 일련번호 자동 채번 규칙 → **확정**: `MAX+1` + `BEGIN IMMEDIATE` + override 허용 (2026-05-20)
 - ⬜ **PI-07** (High): 복구 코드 발급/검증 Feature → Sprint 1 착수 전 결정 필요
 
