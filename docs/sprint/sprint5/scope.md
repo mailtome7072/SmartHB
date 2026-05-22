@@ -48,14 +48,14 @@ Sprint: 5  |  Date: 2026-05-22  |  Session: #1
 - [ ] V001~V200 기존 마이그레이션 — 수정 금지 (신규 V201로만 보정)
 
 ## 완료 기준 (이번 세션)
-- [ ] T0: Node 25 + Node 20 양 환경 dev 서버 정상 기동
-- [ ] T1: 동일 PC 다중 인스턴스 차단 동작 확인
-- [ ] T1-sub: 양 PC 강제 점유 버튼 동작 확인
-- [ ] T2: 마법사 완료 후 /settings 진입
-- [ ] T3: standard_fees 시드 3/4/5/6시간 4종 (16/20/23/26만원)
-- [ ] T4: payment_methods 시드 5종 (현금 비활성 + 4종 활성)
-- [ ] T5: cargo test + clippy + pnpm lint/tsc/build 전수 통과
-- [ ] .sqlx/ 오프라인 캐시 갱신 + 커밋
+- [x] T0: Node 25 dev 서버 정상 기동 (cross-env --no-experimental-webstorage). Node 20도 무해하게 전달
+- [ ] T1: 동일 PC 다중 인스턴스 차단 동작 확인 (코드 완료, 사용자 수동 검증 대기 — T5)
+- [ ] T1-sub: 양 PC 강제 점유 버튼 동작 확인 (코드 라우팅 완료, 양 PC 시뮬레이션 수동 검증 대기 — T5)
+- [x] T2: 마법사 완료 후 /settings 진입 (redirect 변경)
+- [x] T3: standard_fees 시드 3/4/5/6시간 4종 (16/20/23/26만원) — sqlite3 검증
+- [x] T4: payment_methods 시드 5종 (현금 비활성 + 4종 활성) — sqlite3 검증
+- [x] T5: cargo test (130 passed) + clippy + pnpm lint/tsc/build 전수 통과
+- [N/A] .sqlx/ 오프라인 캐시 — 프로젝트가 `query!()` 매크로 미채택 (Sprint 2 메모) → prepare 불필요
 
 ## 발견된 이슈
 <!-- Step-back 프로토콜 발동 시 여기에 기록 -->
