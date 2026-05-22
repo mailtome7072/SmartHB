@@ -14,7 +14,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { checkAuthStatus, deleteScheduleEvent } from '@/lib/tauri'
+import {
+  checkAuthStatus,
+  deleteScheduleEvent,
+  updateScheduleEvent,
+} from '@/lib/tauri'
 import { useSessionStore } from '@/stores/session-store'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -96,6 +100,22 @@ export default function AcademicPage() {
     },
     onError: (err) => {
       setEventToDelete(null)
+      setEventErrorMessage(err instanceof Error ? err.message : String(err))
+    },
+  })
+
+  // 일정 드래그 이동 mutation — 단일 일자만 (period_end_date=null 보존)
+  const dragMoveMutation = useMutation({
+    mutationFn: ({ id, newDate, displayName }: { id: number; newDate: string; displayName: string | null }) =>
+      updateScheduleEvent(id, {
+        event_date: newDate,
+        period_end_date: null,
+        display_name: displayName,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['schedule-events'] })
+    },
+    onError: (err) => {
       setEventErrorMessage(err instanceof Error ? err.message : String(err))
     },
   })
@@ -214,6 +234,13 @@ export default function AcademicPage() {
           onCellClick={calendarCellHandler}
           onEventClick={calendarEventClick}
           onCenterChange={setCenterYearMonth}
+          onEventDrop={(event, newDate) =>
+            dragMoveMutation.mutate({
+              id: event.id,
+              newDate,
+              displayName: event.display_name,
+            })
+          }
         />
 
         {/* 일정 삭제 확인 다이얼로그 */}

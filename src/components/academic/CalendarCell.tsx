@@ -6,21 +6,24 @@
  * 시각 요소 (위에서 아래):
  * - 단원평가 응시일: 셀 상단 띠 배지 (PRD §4.4.7)
  * - 날짜 숫자 + 공휴일/일요일 빨강, 토요일 파랑
- * - 일정 배지 (button 으로 분리 — 클릭 시 삭제 또는 드래그)
+ * - 일정 배지 EventBadge — 클릭 시 삭제 + 드래그 가능(단일 일자)
  *
  * 배경:
  * - 교습기간 안: bg-amber-50
  * - 선택 모드 활성 + 범위 안: bg-blue-100 (우선)
+ * - 드래그 호버: bg-green-100
  * - 시작/종료일: ring-2 ring-blue-500
  * - 지난 달 (isPastMonth): opacity-60 + 클릭 차단 (AC-T9-5)
  * - 그리드 외 일자 (isOutsideMonth): opacity-40
  *
  * T11 변경:
  * - 외부 button → div (HTML button 중첩 금지) + role="button" + tabIndex
- * - 일정 배지를 <button> 으로 분리, e.stopPropagation 으로 셀 onClick 차단
- * - onEventClick prop 추가 — T11 일정 삭제 흐름
+ * - 일정 배지를 EventBadge 컴포넌트로 분리, useDraggable hook 적용
+ * - onEventClick prop — 삭제 흐름
+ * - droppableProps — 부모(DroppableCell wrapper)가 useDroppable hook 결과 전달
  */
 
+import { useDraggable } from '@dnd-kit/core'
 import type { ScheduleEventListItem } from '@/types/academic'
 
 interface CalendarCellProps {
@@ -45,6 +48,63 @@ interface CalendarCellProps {
     setNodeRef: (node: HTMLElement | null) => void
     isOver?: boolean
   }
+}
+
+/** @dnd-kit draggable ID 변환 — 숫자 추출은 부모 onDragEnd 에서 동일 패턴으로. */
+export function eventDraggableId(eventId: number): string {
+  return `event-${eventId}`
+}
+
+export function cellDroppableId(date: string): string {
+  return `cell-${date}`
+}
+
+/** 드래그 가능한 일정 배지 — useDraggable hook 호출은 각 컴포넌트 인스턴스에서 1회. */
+interface EventBadgeProps {
+  event: ScheduleEventListItem
+  draggable: boolean
+  disabled: boolean        // 지난 달/그리드 외 — 클릭+드래그 모두 차단
+  onClick?: (event: ScheduleEventListItem) => void
+}
+
+function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
+  const { setNodeRef, listeners, attributes, transform, isDragging } = useDraggable({
+    id: eventDraggableId(event.id),
+    disabled: disabled || !draggable,
+    data: { eventId: event.id, codeName: event.code_name },
+  })
+  const style = transform
+    ? { transform: `translate(${transform.x}px, ${transform.y}px)`, zIndex: 50 }
+    : undefined
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      data-event-id={event.id}
+      onClick={(ev) => {
+        ev.stopPropagation()
+        if (!disabled) onClick?.(event)
+      }}
+      disabled={disabled || onClick === undefined}
+      title={
+        disabled
+          ? '지난 달 일정은 수정할 수 없습니다'
+          : (event.display_name ?? event.code_name) +
+            (draggable ? ' · 드래그로 이동' : '')
+      }
+      style={style}
+      {...(draggable && !disabled ? listeners : {})}
+      {...(draggable && !disabled ? attributes : {})}
+      className={[
+        'truncate rounded px-1 text-left text-xs',
+        codeBadgeClass(event.code_name),
+        onClick !== undefined && !disabled ? 'hover:opacity-80 cursor-pointer' : 'cursor-default',
+        isDragging ? 'opacity-50' : '',
+      ].join(' ')}
+    >
+      {event.display_name ?? event.code_name}
+    </button>
+  )
 }
 
 /** 코드명 → 배지 색상 매핑. 시스템 6종 + 사용자 코드(기본). */
@@ -114,11 +174,6 @@ export function CalendarCell({
     }
   }
 
-  function handleEventBadgeClick(e: React.MouseEvent, event: ScheduleEventListItem) {
-    e.stopPropagation()
-    onEventClick?.(event)
-  }
-
   return (
     <div
       ref={droppableProps?.setNodeRef}
@@ -155,34 +210,15 @@ export function CalendarCell({
         {dayOfMonth}
       </span>
       <span className="mt-0.5 flex flex-col gap-0.5">
-        {nonAssessmentEvents.slice(0, 3).map((e) => {
-          const isDraggable = draggableEventIds?.has(e.id) ?? false
-          return (
-            <button
-              key={e.id}
-              type="button"
-              data-event-id={e.id}
-              data-draggable={isDraggable}
-              onClick={(ev) => handleEventBadgeClick(ev, e)}
-              disabled={isPastMonth || isOutsideMonth || onEventClick === undefined}
-              title={
-                isPastMonth
-                  ? '지난 달 일정은 수정할 수 없습니다'
-                  : (e.display_name ?? e.code_name) +
-                    (isDraggable ? ' · 드래그로 이동' : '')
-              }
-              className={[
-                'truncate rounded px-1 text-left text-xs',
-                codeBadgeClass(e.code_name),
-                onEventClick !== undefined && !isPastMonth && !isOutsideMonth
-                  ? 'hover:opacity-80 cursor-pointer'
-                  : 'cursor-default',
-              ].join(' ')}
-            >
-              {e.display_name ?? e.code_name}
-            </button>
-          )
-        })}
+        {nonAssessmentEvents.slice(0, 3).map((e) => (
+          <EventBadge
+            key={e.id}
+            event={e}
+            draggable={draggableEventIds?.has(e.id) ?? false}
+            disabled={isPastMonth || isOutsideMonth}
+            onClick={onEventClick}
+          />
+        ))}
         {nonAssessmentEvents.length > 3 && (
           <span className="text-xs text-gray-500">+{nonAssessmentEvents.length - 3}</span>
         )}

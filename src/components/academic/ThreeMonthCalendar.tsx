@@ -20,9 +20,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  DndContext,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
 import { listScheduleEvents, listStudyPeriods } from '@/lib/tauri'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
-import { CalendarCell } from './CalendarCell'
+import { CalendarCell, cellDroppableId } from './CalendarCell'
 
 // ─── 날짜 유틸 (라이브러리 무의존) ─────────────────────────────────────────
 
@@ -134,6 +142,25 @@ interface SelectionRange {
   end: string | null
 }
 
+// ─── DroppableCell — useDroppable hook 을 CalendarCell 외부 wrapper 에서 호출 ────
+
+interface DroppableCellProps extends React.ComponentProps<typeof CalendarCell> {
+  isDropDisabled: boolean
+}
+
+function DroppableCell({ isDropDisabled, ...cellProps }: DroppableCellProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: cellDroppableId(cellProps.date),
+    disabled: isDropDisabled,
+  })
+  return (
+    <CalendarCell
+      {...cellProps}
+      droppableProps={{ setNodeRef, isOver }}
+    />
+  )
+}
+
 interface MonthGridProps {
   year: number
   month: number
@@ -142,6 +169,8 @@ interface MonthGridProps {
   studyPeriod: StudyPeriod | null
   today: string
   selection?: SelectionRange
+  /** 드래그 가능한 일정 id 집합 (단일 일자 + 시스템 코드 제외 등 부모가 계산). */
+  draggableEventIds?: Set<number>
   onCellClick?: (date: string) => void
   onEventClick?: (event: ScheduleEventListItem) => void
 }
@@ -154,6 +183,7 @@ function MonthGrid({
   studyPeriod,
   today,
   selection,
+  draggableEventIds,
   onCellClick,
   onEventClick,
 }: MonthGridProps) {
@@ -202,7 +232,7 @@ function MonthGrid({
       </div>
       <div className="grid grid-cols-7 gap-px">
         {cells.map((c) => (
-          <CalendarCell
+          <DroppableCell
             key={c.date}
             date={c.date}
             dayOfMonth={c.dayOfMonth}
@@ -216,6 +246,8 @@ function MonthGrid({
             isInSelection={!c.isOutsideMonth && inSelectionRange(c.date)}
             isSelectionStart={selection?.start === c.date}
             isSelectionEnd={selection?.end === c.date}
+            draggableEventIds={draggableEventIds}
+            isDropDisabled={isPastMonth || c.isOutsideMonth}
             onClick={onCellClick}
             onEventClick={onEventClick}
           />
@@ -236,6 +268,8 @@ interface ThreeMonthCalendarProps {
   onEventClick?: (event: ScheduleEventListItem) => void
   /** 중앙 month 변경 콜백 — 부모가 자동 배치 등 month 기반 액션에 사용. */
   onCenterChange?: (yearMonth: string) => void
+  /** 일정 드래그 이동 완료 (Sprint 6 T11) — 부모가 updateScheduleEvent 호출. */
+  onEventDrop?: (event: ScheduleEventListItem, newDate: string) => void
 }
 
 export function ThreeMonthCalendar({
@@ -243,6 +277,7 @@ export function ThreeMonthCalendar({
   selection,
   onEventClick,
   onCenterChange,
+  onEventDrop,
 }: ThreeMonthCalendarProps) {
   // 중앙 = 기본 다음 달 (PRD §4.4.1).
   const [center, setCenter] = useState<{ year: number; month: number }>(() => {
@@ -305,7 +340,42 @@ export function ThreeMonthCalendar({
     onCenterChange?.(`${center.year}-${pad2(center.month)}`)
   }, [center, onCenterChange])
 
+  // 드래그 가능 일정 id 집합 — 단일 일자(`is_period_type=0`) + 시스템 예약 아닌 코드.
+  // 공휴일·단원평가 등 시스템 코드 이동은 의도 외 동작 위험 → UI 차단.
+  const draggableEventIds = useMemo(() => {
+    const ids = new Set<number>()
+    const systemNames = new Set([
+      '공휴일',
+      '단원평가 응시일',
+      '보강데이',
+      '공휴수업일',
+      '방학',
+      '휴원일',
+    ])
+    for (const e of eventsQuery.data ?? []) {
+      if (!e.is_period_type && !systemNames.has(e.code_name)) ids.add(e.id)
+    }
+    return ids
+  }, [eventsQuery.data])
+
+  // 드래그 센서 — pointer 8px 이동 후 활성화 (배지 클릭과 구분).
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
+  function handleDragEnd(e: DragEndEvent) {
+    if (!onEventDrop) return
+    const overId = e.over?.id
+    if (typeof overId !== 'string' || !overId.startsWith('cell-')) return
+    const newDate = overId.slice(5)
+    const eventId = Number((e.active.data.current as { eventId?: number })?.eventId)
+    if (!Number.isFinite(eventId)) return
+    const event = (eventsQuery.data ?? []).find((x) => x.id === eventId)
+    if (!event) return
+    if (event.event_date === newDate) return
+    onEventDrop(event, newDate)
+  }
+
   return (
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
     <div className="flex flex-col gap-3">
       <nav className="flex items-center justify-center gap-4">
         <button
@@ -346,11 +416,13 @@ export function ThreeMonthCalendar({
             studyPeriod={periodByYm.get(`${m.year}-${pad2(m.month)}`) ?? null}
             today={today}
             selection={selection ?? undefined}
+            draggableEventIds={draggableEventIds}
             onCellClick={onCellClick}
             onEventClick={onEventClick}
           />
         ))}
       </div>
     </div>
+    </DndContext>
   )
 }
