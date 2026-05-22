@@ -699,35 +699,39 @@ where
     Ok(row.try_get("id")?)
 }
 
-/// 배치 제약 가드 (Sprint 7 T7, Issue 4/R34):
+/// 배치 제약 가드 (Sprint 7 T7, Issue 4/R34, V9 post-review):
 ///
 /// 1. **중복불가 상호 차단**: 새 코드가 `is_duplicate_blocked=1` 이면 해당 일자에 다른 일정이
 ///    있어도 차단. 역방향: 해당 일자에 이미 `is_duplicate_blocked=1` 일정이 있으면 새 배치 차단.
 /// 2. **교습기간 내만 배치**: `event_date` (기간성 코드는 `period_end_date` 포함) 가 어떤 확정된
 ///    교습기간 `[start_date, end_date]` 안에 있어야 함.
+/// 3. **공휴수업일 특별 룰 (V9)**: "공휴일이지만 수업 있는 날" 의미. 공휴일이 이미 있는 일자에만
+///    추가 배치 허용. 공휴일 외 다른 코드와 중복 차단. 공휴일 없는 일자에는 배치 불가.
 ///
+/// `code_name` 은 공휴수업일/공휴일 특별 처리 분기에 사용.
 /// `exclude_event_id` 는 update 시 자기 자신 row 를 검증 대상에서 제외 (id != ?).
-/// create 시 None 으로 호출.
 async fn check_placement_constraints(
     pool: &sqlx::SqlitePool,
     code_id: i64,
+    code_name: &str,
     is_dup_blocked: bool,
     event_date: &str,
     period_end_date: Option<&str>,
     exclude_event_id: Option<i64>,
 ) -> Result<(), String> {
-    // 제약 1: 중복불가 상호 차단.
-    let existing_on_date: Vec<(i64, i64)> = {
+    // V9: 동일 일자의 기존 일정을 (id, is_duplicate_blocked, code_name) 형태로 조회 — 공휴수업일/
+    // 공휴일 특별 처리에 코드명 검사 필요.
+    let existing_on_date: Vec<(i64, i64, String)> = {
         let q = match exclude_event_id {
-            Some(_) => sqlx::query_as::<_, (i64, i64)>(
-                "SELECT e.id, c.is_duplicate_blocked \
+            Some(_) => sqlx::query_as::<_, (i64, i64, String)>(
+                "SELECT e.id, c.is_duplicate_blocked, c.code_name \
                  FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
                  WHERE e.event_date = ? AND e.id != ?",
             )
             .bind(event_date)
             .bind(exclude_event_id.unwrap()),
-            None => sqlx::query_as::<_, (i64, i64)>(
-                "SELECT e.id, c.is_duplicate_blocked \
+            None => sqlx::query_as::<_, (i64, i64, String)>(
+                "SELECT e.id, c.is_duplicate_blocked, c.code_name \
                  FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
                  WHERE e.event_date = ?",
             )
@@ -736,13 +740,37 @@ async fn check_placement_constraints(
         q.fetch_all(pool).await.map_err(AppError::Db).map_err(String::from)?
     };
 
-    if !existing_on_date.is_empty() {
-        if is_dup_blocked {
+    // V9 분기: 공휴수업일은 공휴일 위에만 배치 가능, 다른 코드와는 중복 불가.
+    if code_name == "공휴수업일" {
+        let has_holiday = existing_on_date.iter().any(|(_, _, n)| n == "공휴일");
+        if !has_holiday {
             return Err(
-                "중복불가 코드는 다른 일정이 있는 날짜에 배치할 수 없습니다.".to_string(),
+                "공휴수업일은 공휴일이 지정된 날에만 배치할 수 있습니다.".to_string(),
             );
         }
-        if existing_on_date.iter().any(|(_, dup)| *dup != 0) {
+        let has_other = existing_on_date.iter().any(|(_, _, n)| n != "공휴일");
+        if has_other {
+            return Err(
+                "공휴수업일은 공휴일 외 다른 일정과 중복될 수 없습니다.".to_string(),
+            );
+        }
+        // 공휴일만 있으면 일반 중복불가 가드를 건너뛰고 교습기간 가드만 검증.
+    } else if !existing_on_date.is_empty() {
+        // 일반 중복불가 가드 — 공휴수업일이 이미 있는 일자에 공휴일을 추가하는 케이스도 허용해야 함.
+        let only_holiday_class = existing_on_date.iter().all(|(_, _, n)| n == "공휴수업일");
+        let is_holiday_target = code_name == "공휴일";
+
+        if is_dup_blocked {
+            // 새 코드가 중복불가 — 단, 공휴일이 공휴수업일만 있는 일자에 배치되는 경우 허용.
+            let allowed_by_holiday_pair = is_holiday_target && only_holiday_class;
+            if !allowed_by_holiday_pair {
+                return Err(
+                    "중복불가 코드는 다른 일정이 있는 날짜에 배치할 수 없습니다.".to_string(),
+                );
+            }
+        } else if existing_on_date.iter().any(|(_, dup, _)| *dup != 0) {
+            // 역방향 — 단, 기존이 공휴수업일뿐이고 새 코드가 공휴일이면 허용 (위 분기에서 처리).
+            // 그 외에는 차단.
             return Err(
                 "해당 일자에 중복불가 일정이 있어 배치할 수 없습니다.".to_string(),
             );
@@ -805,7 +833,7 @@ pub async fn create_schedule_event(
     let pool = db::pool().map_err(String::from)?;
 
     let code = sqlx::query(
-        "SELECT is_duplicate_blocked, is_period_type FROM schedule_codes WHERE id = ?",
+        "SELECT code_name, is_duplicate_blocked, is_period_type FROM schedule_codes WHERE id = ?",
     )
     .bind(payload.code_id)
     .fetch_optional(pool)
@@ -813,6 +841,7 @@ pub async fn create_schedule_event(
     .map_err(AppError::Db)
     .map_err(String::from)?
     .ok_or_else(|| "해당 학사 일정 코드를 찾을 수 없습니다.".to_string())?;
+    let code_name: String = code.try_get("code_name").map_err(AppError::Db).map_err(String::from)?;
     let is_dup_blocked: i64 = code
         .try_get("is_duplicate_blocked")
         .map_err(AppError::Db)
@@ -836,6 +865,7 @@ pub async fn create_schedule_event(
     check_placement_constraints(
         pool,
         payload.code_id,
+        &code_name,
         is_dup_blocked != 0,
         &payload.event_date,
         payload.period_end_date.as_deref(),
@@ -867,7 +897,7 @@ pub async fn update_schedule_event(
 ) -> Result<ScheduleEvent, String> {
     let pool = db::pool().map_err(String::from)?;
     let target = sqlx::query(
-        "SELECT e.event_date, e.code_id, c.is_duplicate_blocked \
+        "SELECT e.event_date, e.code_id, c.code_name, c.is_duplicate_blocked \
          FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
          WHERE e.id = ?",
     )
@@ -882,6 +912,7 @@ pub async fn update_schedule_event(
         .map_err(AppError::Db)
         .map_err(String::from)?;
     let code_id: i64 = target.try_get("code_id").map_err(AppError::Db).map_err(String::from)?;
+    let code_name: String = target.try_get("code_name").map_err(AppError::Db).map_err(String::from)?;
     let is_dup_blocked: i64 = target
         .try_get("is_duplicate_blocked")
         .map_err(AppError::Db)
@@ -896,6 +927,7 @@ pub async fn update_schedule_event(
     check_placement_constraints(
         pool,
         code_id,
+        &code_name,
         is_dup_blocked != 0,
         &payload.event_date,
         payload.period_end_date.as_deref(),
@@ -1484,7 +1516,7 @@ mod tests {
                 .await
                 .unwrap();
         // 교습기간 미확정 또는 부재 — 가드 차단 예상.
-        let err = check_placement_constraints(&pool, code_id, false, "2099-03-15", None, None)
+        let err = check_placement_constraints(&pool, code_id, "휴원일", false, "2099-03-15", None, None)
             .await
             .unwrap_err();
         assert!(
@@ -1513,7 +1545,7 @@ mod tests {
                 .await
                 .unwrap();
         let result =
-            check_placement_constraints(&pool, code_id, true, "2099-03-15", None, None).await;
+            check_placement_constraints(&pool, code_id, "휴원일", true, "2099-03-15", None, None).await;
         assert!(result.is_ok(), "확정 교습기간 내 빈 일자 허용: {:?}", result);
     }
 
@@ -1549,7 +1581,7 @@ mod tests {
                 .await
                 .unwrap();
         let err =
-            check_placement_constraints(&pool, hyuwon_id, true, "2099-04-10", None, None)
+            check_placement_constraints(&pool, hyuwon_id, "휴원일", true, "2099-04-10", None, None)
                 .await
                 .unwrap_err();
         assert!(
@@ -1590,7 +1622,7 @@ mod tests {
                 .await
                 .unwrap();
         let err =
-            check_placement_constraints(&pool, bangak_id, false, "2099-05-15", None, None)
+            check_placement_constraints(&pool, bangak_id, "방학", false, "2099-05-15", None, None)
                 .await
                 .unwrap_err();
         assert!(
@@ -1629,6 +1661,7 @@ mod tests {
         let result = check_placement_constraints(
             &pool,
             hyuwon_id,
+            "휴원일",
             true,
             "2099-06-15",
             None,
@@ -1826,5 +1859,153 @@ mod tests {
         .unwrap();
         assert_eq!(non_holiday_count, 3, "본 테스트에서 삽입한 휴원일 3건만 카운트");
         assert!(holiday_in_range >= 0, "공휴일 카운트는 0 이상 (시드 환경 의존)");
+    }
+
+    // ─── V9 (Sprint 7 post-review): 공휴수업일 특별 룰 단위 테스트 ───
+
+    /// 공휴수업일은 공휴일이 없는 일자에 배치 불가.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_blocks_holiday_class_without_holiday() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-07', '2099-07-01', '2099-07-31', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let holiday_class_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '공휴수업일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // 공휴일 없는 빈 일자에 공휴수업일 배치 시도.
+        let err = check_placement_constraints(
+            &pool,
+            holiday_class_id,
+            "공휴수업일",
+            true,
+            "2099-07-15",
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("공휴일이 지정된 날에만"),
+            "공휴일 없는 일자 차단 에러: {}",
+            err
+        );
+    }
+
+    /// 공휴수업일은 공휴일이 있는 일자에 배치 가능 (다른 코드 없을 때).
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_allows_holiday_class_with_holiday_only() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-08', '2099-08-01', '2099-08-31', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let holiday_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '공휴일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2099-08-15')")
+            .bind(holiday_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let holiday_class_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '공휴수업일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let result = check_placement_constraints(
+            &pool,
+            holiday_class_id,
+            "공휴수업일",
+            true,
+            "2099-08-15",
+            None,
+            None,
+        )
+        .await;
+        assert!(result.is_ok(), "공휴일 위 공휴수업일 허용: {:?}", result);
+    }
+
+    /// 공휴수업일은 공휴일 외 다른 코드와 중복 차단.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_blocks_holiday_class_with_other_event() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-09', '2099-09-01', '2099-09-30', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 공휴일 + 보강데이 둘 다 같은 날에 배치 (보강데이는 is_duplicate_blocked=1 이지만 시뮬용 직접 삽입).
+        let holiday_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '공휴일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2099-09-10')")
+            .bind(holiday_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let bogang_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '보강데이' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2099-09-10')")
+            .bind(bogang_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let holiday_class_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '공휴수업일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let err = check_placement_constraints(
+            &pool,
+            holiday_class_id,
+            "공휴수업일",
+            true,
+            "2099-09-10",
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("공휴일 외 다른 일정"),
+            "공휴수업일 + 다른 코드 차단 에러: {}",
+            err
+        );
     }
 }

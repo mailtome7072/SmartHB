@@ -66,6 +66,13 @@ function currentYearMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+/** "2026-06" → "2026년 6월" (V8, Sprint 7 post-review). */
+function formatYearMonthLabel(ym: string): string {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return ym
+  const [y, m] = ym.split('-')
+  return `${y}년 ${parseInt(m, 10)}월`
+}
+
 export function StudyPeriodEditor({
   centerYearMonth,
   eventPlaceMode,
@@ -154,20 +161,21 @@ export function StudyPeriodEditor({
     return `${normalized!.start} ~ ${normalized!.end} 선택됨`
   }
 
+  // V11 (Sprint 7 post-review): 외곽 box 제거 — 부모 컨테이너가 통합 box 제공.
+  // V8: 헤더 "교습기간" → "교습기간(YYYY년 M월)" 형식.
   return (
-    <section
-      aria-label="교습기간 설정"
-      className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-white p-3"
-    >
+    <div aria-label="교습기간 설정" className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-bold text-[var(--foreground)]">교습기간</h2>
+        <h2 className="text-base font-bold text-[var(--foreground)]">
+          교습기간({formatYearMonthLabel(centerYearMonth)})
+        </h2>
         {isSelectionActive && canConfirm && (
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleCancel}
               disabled={mutation.isPending}
-              className="min-h-[44px] rounded-md border border-gray-400 bg-white px-4 py-2 text-base text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="min-h-[44px] rounded-md border border-gray-400 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               취소
             </button>
@@ -175,35 +183,36 @@ export function StudyPeriodEditor({
               type="button"
               onClick={() => setConfirmOpen(true)}
               disabled={mutation.isPending}
-              className="min-h-[44px] rounded-md border border-amber-500 bg-amber-500 px-4 py-2 text-base font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+              className="min-h-[44px] rounded-md border border-amber-500 bg-amber-500 px-3 py-1 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
             >
               확정
             </button>
           </div>
         )}
-      </div>
-
-      {periodQuery.isLoading && (
-        <p className="text-sm text-gray-500">교습기간 정보 불러오는 중...</p>
-      )}
-
-      {confirmedPeriod !== null && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-[var(--foreground)]">
-            <strong>{confirmedPeriod.start_date} ~ {confirmedPeriod.end_date}</strong> 확정됨
-          </p>
-          {/* Sprint 7 T8: 지난 달이 아닐 때만 삭제 버튼 노출 — 백엔드 가드와 동일 조건. */}
-          {confirmedPeriod.year_month >= currentYearMonth() && (
+        {confirmedPeriod !== null &&
+          confirmedPeriod.year_month >= currentYearMonth() && (
             <button
               type="button"
               onClick={handleRequestDelete}
               disabled={cascadeDeleteMutation.isPending}
-              className="min-h-[44px] rounded-md border border-red-500 bg-white px-4 py-2 text-base text-red-700 hover:bg-red-50 disabled:opacity-50"
+              className="min-h-[44px] rounded-md border border-red-500 bg-white px-3 py-1 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
             >
-              교습기간 삭제
+              삭제
             </button>
           )}
-        </div>
+      </div>
+
+      {periodQuery.isLoading && (
+        <p className="text-xs text-gray-500">교습기간 정보 불러오는 중...</p>
+      )}
+
+      {confirmedPeriod !== null && (
+        <p className="text-sm text-[var(--foreground)]">
+          <strong>
+            {confirmedPeriod.start_date} ~ {confirmedPeriod.end_date}
+          </strong>{' '}
+          확정됨
+        </p>
       )}
 
       {isSelectionActive && (
@@ -211,7 +220,7 @@ export function StudyPeriodEditor({
       )}
 
       {isUnconfirmed && eventPlaceMode && (
-        <p className="text-sm text-gray-500">
+        <p className="text-xs text-gray-500">
           일정 배치 모드 중에는 교습기간을 선택할 수 없습니다. 코드 선택을 해제하세요.
         </p>
       )}
@@ -315,6 +324,6 @@ export function StudyPeriodEditor({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </section>
+    </div>
   )
 }

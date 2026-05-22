@@ -166,7 +166,10 @@ interface MonthGridProps {
   month: number
   isPastMonth: boolean
   eventsByDate: Map<string, ScheduleEventListItem[]>
+  /** 현재 month 와 year_month 가 일치하는 교습기간 — 헤더에 표시. */
   studyPeriod: StudyPeriod | null
+  /** 전체 교습기간 리스트 — 셀의 `inStudyPeriod` 색 판정에 사용 (cross-month 포함, V7). */
+  allStudyPeriods: StudyPeriod[]
   today: string
   selection?: SelectionRange
   /** 드래그 가능한 일정 id 집합 (단일 일자 + 시스템 코드 제외 등 부모가 계산). */
@@ -181,6 +184,7 @@ function MonthGrid({
   isPastMonth,
   eventsByDate,
   studyPeriod,
+  allStudyPeriods,
   today,
   selection,
   draggableEventIds,
@@ -189,9 +193,11 @@ function MonthGrid({
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthGrid(year, month, today), [year, month, today])
 
+  // V7 (Sprint 7 post-review): 교습기간이 month 경계를 넘어가는 경우(예: 6월 교습기간 = 5/29~6/30)
+  // 5월 그리드에도 5/29~5/31 부분이 인-스터디 셀로 표시되어야 함. 단일 studyPeriod 대신 전체
+  // 리스트를 순회하여 date 포함 여부 판정.
   function inStudyPeriod(date: string): boolean {
-    if (!studyPeriod) return false
-    return date >= studyPeriod.start_date && date <= studyPeriod.end_date
+    return allStudyPeriods.some((p) => date >= p.start_date && date <= p.end_date)
   }
 
   /** 선택 범위 내 — start <= date <= end (둘 다 있을 때) 또는 start === date (start 만 있을 때). */
@@ -408,6 +414,7 @@ export function ThreeMonthCalendar({
             isPastMonth={isMonthPast(m.year, m.month)}
             eventsByDate={eventsByDate}
             studyPeriod={periodByYm.get(`${m.year}-${pad2(m.month)}`) ?? null}
+            allStudyPeriods={periodsQuery.data ?? []}
             today={today}
             selection={selection ?? undefined}
             draggableEventIds={draggableEventIds}

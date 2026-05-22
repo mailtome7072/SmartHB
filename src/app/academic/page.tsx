@@ -204,35 +204,39 @@ export default function AcademicPage() {
           </p>
         </header>
 
-        {/* V3 (Sprint 7 post-review): 상단 박스를 3-col grid 로 — ThreeMonthCalendar 의
-            3개 달력 컬럼과 정렬. 교습기간 박스 = 1열(첫 달력 너비), 일정배치코드 = 2~3열. */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="flex flex-col gap-4">
+        {/* V11 (Sprint 7 post-review): 교습기간 + 일정 배치 코드를 단일 컨트롤 바로 통합.
+            높이 최소화하여 캘린더 영역이 상단으로 더 노출되도록. 좌(1) 교습기간 / 우(2) 코드 선택.
+            EventPlacer 는 코드 선택 시에만 컨트롤 바 아래 별도 박스로 노출. */}
+        <section
+          aria-label="학사 컨트롤"
+          className="rounded-lg border border-[var(--border)] bg-white p-2"
+        >
+          <div className="grid gap-2 lg:grid-cols-3 lg:items-start">
             <StudyPeriodEditor
               centerYearMonth={centerYearMonth}
               eventPlaceMode={selectedCode !== null}
               selection={studyPeriodSelection}
               setSelection={setStudyPeriodSelection}
             />
-            {selectedCode !== null && (
-              <EventPlacer
-                selectedCode={selectedCode}
-                selectionStart={eventSelectionStart}
-                selectionEnd={eventSelectionEnd}
-                setSelectionStart={setEventSelectionStart}
-                setSelectionEnd={setEventSelectionEnd}
-                centerYearMonth={centerYearMonth}
-                onClose={handleCloseEventMode}
+            <div className="lg:col-span-2 lg:border-l lg:border-[var(--border)] lg:pl-3">
+              <ScheduleCodeSelector
+                selectedCodeId={selectedCode?.id ?? null}
+                onSelect={handleSelectCode}
               />
-            )}
+            </div>
           </div>
-          <div className="lg:col-span-2">
-            <ScheduleCodeSelector
-              selectedCodeId={selectedCode?.id ?? null}
-              onSelect={handleSelectCode}
-            />
-          </div>
-        </div>
+        </section>
+        {selectedCode !== null && (
+          <EventPlacer
+            selectedCode={selectedCode}
+            selectionStart={eventSelectionStart}
+            selectionEnd={eventSelectionEnd}
+            setSelectionStart={setEventSelectionStart}
+            setSelectionEnd={setEventSelectionEnd}
+            centerYearMonth={centerYearMonth}
+            onClose={handleCloseEventMode}
+          />
+        )}
 
         <ThreeMonthCalendar
           selection={calendarSelection}
