@@ -1,10 +1,10 @@
 ---
-Sprint: 6  |  Date: 2026-05-22  |  Session: #3
+Sprint: 6  |  Date: 2026-05-22  |  Session: #4
 ---
 
-> Sprint 6 (Phase 2 학사 스케줄 관리) — 백엔드 IPC 마지막 세션.
-> T7(학사 일정 배치 5 IPC) — academic.rs 확장.
-> 예상 5h. T8 IPC 래퍼·T9 캘린더 진입 직전 마지막 백엔드 단계.
+> Sprint 6 (Phase 2 학사 스케줄 관리) — 프론트엔드 첫 진입 세션.
+> T8(프론트엔드 IPC 래퍼 + 도메인 타입) — 백엔드 14 커맨드(T5/T6/T7)의 TypeScript 1:1 매핑.
+> 예상 2h. T9 캘린더 컴포넌트 진입 직전 마지막 인프라 단계.
 
 ## 이전 세션 결과 (참고 — 모두 완료)
 
@@ -14,14 +14,15 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #3
 | #1 | T3 (A21 paths.rs OnceLock 분리) | `c2be584` |
 | #1 | T4 (A22 DnD 방법 B) | `83f19d1` |
 | #2 | T5+T6 (academic.rs 신규 — study_periods 6 + schedule_codes 4) | `c8dc3c8` |
+| #3 | T7 (academic.rs 확장 — schedule_events 5) | `a4c380e` |
 
 ## 이번 세션의 Task 선정
 
 | Task | 작업 | 예상 소요 |
 |------|------|---------|
-| **T7** | schedule_events IPC 5개 — create/update/delete/list + auto_place_assessment_dates | 5h |
+| **T8** | 신규 `src/types/academic.ts` 11 타입 + `src/lib/tauri/index.ts` 14 래퍼 | 2h |
 
-> academic.rs 기존 파일 확장(신규 모듈 아님). schedule_events 테이블은 V103(Sprint 2) — 스키마 변경 없음. lib.rs에 5 커맨드 추가 등록.
+> TypeScript 파일 2개만 작업. 신규 의존성·마이그레이션 없음. 백엔드 시그니처는 변경하지 않음.
 
 ## 이번 세션에서 수정할 파일
 
@@ -29,51 +30,67 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #3
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/commands/academic.rs | [3회 ⚠️] | T7 — schedule_events 섹션 + ScheduleEvent struct + ScheduleEventListItem(평탄화) + 5 IPC + 단위 테스트 |
-| src-tauri/src/lib.rs | [1회] | invoke_handler 에 5 커맨드 추가 |
+| src/types/academic.ts | [1회] | 신규 — StudyPeriod/ScheduleCode/ScheduleEvent + 평탄화 List + Create/Update payload |
+| src/lib/tauri/index.ts | [2회] | Sprint 6 섹션 추가 — 14 IPC 래퍼 (dev mode fallback 포함) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
 - [ ] `.github/workflows/` — CI/CD 파이프라인 (hook이 차단)
 - [ ] `SETUP.sh` — 초기화 스크립트 (hook이 차단)
 - [ ] `docs/harness-engineering/` — Harness 정책 (경고)
-- [ ] `src-tauri/migrations/` — 본 세션 마이그레이션 변경 없음
+- [ ] `src-tauri/` — 본 세션 백엔드 변경 없음 (T5/T6/T7 시그니처 그대로 매핑)
 - [ ] `package.json` / `Cargo.toml` — 신규 의존성 없음
-- [ ] `src/` 프론트엔드 — 래퍼는 T8(다른 세션)
-- [ ] `src-tauri/src/commands/academic.rs` 기존 T5/T6 코드 — 추가만, 기존 부분 수정 금지
+- [ ] `src-tauri/migrations/` — 본 세션 마이그레이션 없음
+- [ ] 기존 `src/types/*` 파일들 — 새 파일만 추가, 기존 타입 수정 금지
 
 ## 완료 기준 (이번 세션)
 
-### T7 — schedule_events (PRD §4.4.4, §4.4.6, §4.4.7)
-- [ ] AC-T7-1: 중복불가 코드(`is_duplicate_blocked=1`) 동일 일자 배치 시도 차단 + 한국어 에러
-- [ ] AC-T7-2: 기간성(`is_period_type=1`) 코드는 `period_end_date` 필수, 단일 일자 코드는 `period_end_date=NULL` 강제
-- [ ] AC-T7-3: 지난 달 일정 수정/삭제 차단 (event_date year-month < 현재 월)
-- [ ] AC-T7-4: `auto_place_assessment_dates(year_month)` 가 study_period 안에서 **2주차 월~금 + 4주차 월~금** 정확히 INSERT
-- [ ] AC-T7-5: 이미 해당 month 에 단원평가 1건 이상 존재 시 자동 배치 No-op (AC-4.4-6)
-- [ ] AC-T7-6: 단위 테스트 — 중복불가 / 기간성 / 지난 달 차단 / 자동 배치 / 재실행 No-op
+### T8 — IPC 래퍼 + 타입 (PRD §4.4, sprint6.md L236-251)
+- ✅ AC-T8-1: 모든 IPC 래퍼가 dev mode fallback 포함 (`if (!inv) return ...`)
+- ✅ AC-T8-2: TypeScript strict 모드 통과 — `pnpm tsc --noEmit` 클린
+- ✅ AC-T8-3: **15** 래퍼가 백엔드 `src-tauri/src/commands/academic.rs` 15 커맨드와 1:1 대응 (lib.rs L75-89 등록 검증)
+
+> 주: 기존 메모리에 "14 래퍼"로 적혀 있었으나 실제 백엔드는 15 커맨드(study_periods 6 + schedule_codes 4 + schedule_events 5 — 마지막 5에 `auto_place_assessment_dates` 포함). 메모리 표기 오류였으며 본 구현은 15 매핑이 정합.
 
 ### 세션 종료 조건
-- ✅ T7 단일 커밋 `a4c380e` (academic.rs +446줄 + lib.rs 5 커맨드 등록)
-- ✅ Self-verify: `cargo test` **141 passed** (136 → +5 T7), `cargo clippy -- -D warnings` clean
-- ✅ simplify 스킬 1회 실행 (변경 없음 — T5/T6 패턴 일관성. 헬퍼 `assessment_dates_for/year_month_of/find_assessment_code_id` 는 책임 분리·테스트 가능성으로 정당화)
+- ✅ T8 단일 커밋 `5941d24` (`src/types/academic.ts` 신규 90줄 + `src/lib/tauri/index.ts` Sprint 6 섹션 232줄 추가)
+- ✅ Self-verify: `pnpm tsc --noEmit` exit 0 + `pnpm lint` "No ESLint warnings or errors"
+- ✅ simplify(code-review) 1회 실행 — `[]` 반환 (5각도 분석, 1:1 매핑 + 타입 정합 + 등록 확인 후 신규 결함 없음)
 
 ## 설계 결정 (메모리 가이드 따름)
 
-- **list_schedule_events 응답**: 평탄화 `ScheduleEventListItem { id, code_id, code_name, is_duplicate_blocked, is_period_type, event_date, period_end_date, display_name }` — 프론트 캘린더 셀 JSON 처리 편의
-- **자동 배치 2/4주차 계산**: study_period 의 `start_date` 기준 주차 계산. ISO 주차(월요일 시작) 사용. chrono::NaiveDate 활용.
-- **단원평가 코드 ID 조회**: 시드 `code_name = '단원평가 응시일'` 의 id 를 매번 SELECT. 트랜잭션 내 1회 캐싱.
-- **트랜잭션**: auto_place_assessment_dates 는 study_period 조회 + 단원평가 코드 조회 + 기존 단원평가 카운트 + INSERT 10건(2주차5+4주차5)을 하나의 `tx.begin()` 안에서 처리.
+- **타입 1:1 매핑**: Rust `Option<T>` → TS `T | null` (Tauri serde 직렬화 기본). Rust `i64` → TS `number`. Rust `bool` → TS `boolean`. Rust `String` → TS `string`.
+- **camelCase 인자 변환**: Tauri invoke args는 자동 camelCase ↔ snake_case 변환. 예: Rust `from_month` ↔ TS `fromMonth`.
+- **payload 매개변수 명**: 백엔드가 `payload: CreateStudyPeriodPayload` 형태로 받으므로 TS도 `inv('create_study_period', { payload })` 패턴 사용.
+- **반환 타입 패턴**:
+  - `Result<T, String>` → TS `Promise<T>` (실패 시 throw)
+  - `Result<Option<T>, String>` → TS `Promise<T | null>` (예: `get_study_period`)
+  - `Result<Vec<T>, String>` → TS `Promise<T[]>`
+  - `Result<(), String>` → TS `Promise<void>` (예: `delete_study_period`, `delete_schedule_event`)
+- **dev mode fallback 규칙** (기존 코드 패턴 따름):
+  - `Promise<T[]>` → 빈 배열 `[]`
+  - `Promise<T | null>` → `null`
+  - `Promise<void>` → `return`
+  - `Promise<T>` (단일 객체) → 더미 객체 (payload 값 + 0/false/빈 문자열 채움)
 
-## 코드 패턴 SSOT (메모리에서 발췌, T5/T6 그대로)
+## 코드 패턴 SSOT (기존 src/lib/tauri/index.ts 인용)
 
-- 시그니처: `pub async fn xxx(...) -> Result<T, String>`
-- 풀: `let pool = db::pool().map_err(String::from)?;`
-- 에러: `.map_err(AppError::Db).map_err(String::from)?;`
-- 테스트: `#[cfg(not(feature = "cipher"))] + #[tokio::test]` + `db::test_pool_in_memory()`
-- V103 schedule_events 인덱스 활용: event_date 단일·범위 조회 빠름
+```ts
+export async function listStudents(filter: StudentFilter = {}): Promise<Student[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_students', { filter }) as Promise<Student[]>
+}
+
+export async function createStudent(payload: NewStudent): Promise<Student> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { id: 0, /* payload + 디폴트 */ ... }
+  }
+  return inv('create_student', { payload }) as Promise<Student>
+}
+```
 
 ## 발견된 이슈
 
 > 코드 수정 중 예상 외 충돌·구조 발견 시 여기에 기록 후 사용자에게 보고 (step-back 프로토콜).
-
-- 1차 컴파일에서 `chrono::Datelike` trait import 누락(weekday()/num_days_from_monday() trait method) → 단일 라인 `use chrono::Datelike;` 추가로 즉시 통과. 동일 오류 반복 없음 → 3-retry / loop-detection 미적용.
