@@ -3,21 +3,22 @@
 /**
  * 학사 스케줄 관리 페이지 — Sprint 6 T9 + T10 + T11 (PRD §4.4).
  *
- * Mode 분기 (state lift up):
- * - 'view'         : 셀 클릭 무동작 (배지 클릭만 활성 — 삭제 모드)
- * - 'study-period' : T10 교습기간 설정 (StudyPeriodEditor 가 셀 클릭 → selection)
- * - 'event-place'  : T11 일정 배치 (EventPlacer + 선택 코드 → 셀 클릭 = INSERT 또는 selection)
+ * Sprint 7 T5: 코드 CRUD 는 `/settings/schedule-codes` 로 이동, 본 페이지는 Selector 만 사용
+ * Sprint 7 T6 (Issue 5): 교습기간 토글 모드 제거 — 셀 클릭 분기를 데이터 상태로 자동 결정.
  *
- * ScheduleCodeSelector 의 코드 선택 = mode 자동 활성. 코드 해제 = mode='view' 복귀.
- * (Sprint 7 T5: 코드 CRUD 는 `/settings/schedule-codes` 페이지로 이동, 본 페이지는 selector 만 사용)
+ * 셀 클릭 분기 (Sprint 7 T6 이후):
+ * - `selectedCode !== null` → 일정 배치 모드 (EventPlacer 가 mutation 담당)
+ * - `selectedCode === null` + 중앙 월 교습기간 미확정 → 교습기간 selection 모드 자동 활성
+ * - 위 둘 다 아님 (확정 월 + 코드 미선택) → 셀 클릭 무동작 (배지 클릭만 활성 — 삭제)
  */
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkAuthStatus,
   deleteScheduleEvent,
+  getStudyPeriod,
   updateScheduleEvent,
 } from '@/lib/tauri'
 import { useSessionStore } from '@/stores/session-store'
@@ -27,7 +28,6 @@ import { SplashScreen } from '@/components/splash-screen'
 import { ThreeMonthCalendar } from '@/components/academic/ThreeMonthCalendar'
 import {
   StudyPeriodEditor,
-  type EditorMode,
   type SelectionRange,
 } from '@/components/academic/StudyPeriodEditor'
 import { ScheduleCodeSelector } from '@/components/academic/ScheduleCodeSelector'
@@ -53,8 +53,7 @@ export default function AcademicPage() {
   const [ready, setReady] = useState(false)
   const unlocked = useSessionStore((s) => s.unlocked)
 
-  // T10 교습기간 모드 (study-period)
-  const [studyPeriodMode, setStudyPeriodMode] = useState<EditorMode>('view')
+  // T10 교습기간 selection (Sprint 7 T6: mode state 제거 — 중앙 월 확정 여부로 자동 분기)
   const [studyPeriodSelection, setStudyPeriodSelection] = useState<SelectionRange>({
     start: null,
     end: null,
@@ -130,20 +129,31 @@ export default function AcademicPage() {
     onError: setEventErrorMessage,
   })
 
-  // 통합 셀 클릭 핸들러 — mode 분기
+  // 중앙 월 교습기간 확정 여부 조회 — null 이면 미확정 (자동 selection 모드 활성).
+  const centerPeriodQuery = useQuery({
+    queryKey: ['study-period', centerYearMonth],
+    queryFn: () => getStudyPeriod(centerYearMonth),
+    staleTime: 30_000,
+    enabled: centerYearMonth.length > 0,
+  })
+  const isCenterUnconfirmed =
+    centerYearMonth.length > 0 &&
+    !centerPeriodQuery.isLoading &&
+    centerPeriodQuery.data === null
+  const studyPeriodMode = isCenterUnconfirmed && selectedCode === null
+
+  // 통합 셀 클릭 핸들러 — 활성 모드 자동 분기 (Sprint 7 T6).
   function handleCellClick(date: string) {
-    if (studyPeriodMode === 'editing') {
-      // T10 교습기간 모드 — selection 갱신
+    if (selectedCode !== null) {
+      handleEventPlaceCellClick(date)
+      return
+    }
+    if (studyPeriodMode) {
       if (!studyPeriodSelection.start || studyPeriodSelection.end) {
         setStudyPeriodSelection({ start: date, end: null })
       } else {
         setStudyPeriodSelection({ start: studyPeriodSelection.start, end: date })
       }
-      return
-    }
-    if (selectedCode !== null) {
-      // T11 일정 배치 모드
-      handleEventPlaceCellClick(date)
     }
   }
 
@@ -151,9 +161,8 @@ export default function AcademicPage() {
     setSelectedCode(code)
     setEventSelectionStart(null)
     setEventSelectionEnd(null)
-    // 교습기간 모드와 충돌 방지: 코드 선택 시 교습기간 모드 종료.
+    // 코드 선택 시 교습기간 selection 초기화 — 모드 충돌 회피.
     if (code) {
-      setStudyPeriodMode('view')
       setStudyPeriodSelection({ start: null, end: null })
     }
   }
@@ -164,18 +173,9 @@ export default function AcademicPage() {
     setEventSelectionEnd(null)
   }
 
-  // 교습기간 모드 진입 시 일정 배치 모드 종료 (StudyPeriodEditor 내부 setMode 호출 시 동기화 위해 effect)
-  useEffect(() => {
-    if (studyPeriodMode === 'editing' && selectedCode !== null) {
-      setSelectedCode(null)
-      setEventSelectionStart(null)
-      setEventSelectionEnd(null)
-    }
-  }, [studyPeriodMode, selectedCode])
-
   // 캘린더에 전달할 selection — 활성 모드에 따라 분기.
   const calendarSelection: SelectionRange | null = (() => {
-    if (studyPeriodMode === 'editing') return studyPeriodSelection
+    if (studyPeriodMode) return studyPeriodSelection
     if (selectedCode?.is_period_type) {
       return { start: eventSelectionStart, end: eventSelectionEnd }
     }
@@ -184,11 +184,11 @@ export default function AcademicPage() {
 
   // onCellClick 콜백 — 활성 모드 없으면 undefined (셀 클릭 무동작).
   const calendarCellHandler =
-    studyPeriodMode === 'editing' || selectedCode !== null ? handleCellClick : undefined
+    studyPeriodMode || selectedCode !== null ? handleCellClick : undefined
 
-  // 일정 배지 클릭 = 삭제 (view 모드에서만, 다른 모드에서는 셀 클릭 우선).
+  // 일정 배지 클릭 = 삭제 (활성 모드 없을 때만, 모드 활성 시 셀 클릭 우선).
   const calendarEventClick =
-    studyPeriodMode === 'editing' || selectedCode !== null
+    studyPeriodMode || selectedCode !== null
       ? undefined
       : (event: ScheduleEventListItem) => setEventToDelete(event)
 
@@ -207,8 +207,8 @@ export default function AcademicPage() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
           <div className="flex flex-col gap-4">
             <StudyPeriodEditor
-              mode={studyPeriodMode}
-              setMode={setStudyPeriodMode}
+              centerYearMonth={centerYearMonth}
+              eventPlaceMode={selectedCode !== null}
               selection={studyPeriodSelection}
               setSelection={setStudyPeriodSelection}
             />
