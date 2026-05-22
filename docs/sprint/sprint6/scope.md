@@ -1,10 +1,10 @@
 ---
-Sprint: 6  |  Date: 2026-05-22  |  Session: #4
+Sprint: 6  |  Date: 2026-05-22  |  Session: #5
 ---
 
-> Sprint 6 (Phase 2 학사 스케줄 관리) — 프론트엔드 첫 진입 세션.
-> T8(프론트엔드 IPC 래퍼 + 도메인 타입) — 백엔드 14 커맨드(T5/T6/T7)의 TypeScript 1:1 매핑.
-> 예상 2h. T9 캘린더 컴포넌트 진입 직전 마지막 인프라 단계.
+> Sprint 6 (Phase 2 학사 스케줄 관리) — T2-c ADR 단독 세션.
+> 공휴일 API 소스 + 저장 테이블 의사결정. brainstorming 스킬(Weighted Matrix + SWOT + ADR).
+> 예상 1.5h. T2-a/T2-b(스크립트 + V301)는 다음 Session #6 에서 ADR 결정 산출물 기반으로 구현.
 
 ## 이전 세션 결과 (참고 — 모두 완료)
 
@@ -15,14 +15,15 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #4
 | #1 | T4 (A22 DnD 방법 B) | `83f19d1` |
 | #2 | T5+T6 (academic.rs 신규 — study_periods 6 + schedule_codes 4) | `c8dc3c8` |
 | #3 | T7 (academic.rs 확장 — schedule_events 5) | `a4c380e` |
+| #4 | T8 (TS IPC 래퍼 15 + 도메인 타입 10) | `5941d24` |
 
 ## 이번 세션의 Task 선정
 
 | Task | 작업 | 예상 소요 |
 |------|------|---------|
-| **T8** | 신규 `src/types/academic.ts` 11 타입 + `src/lib/tauri/index.ts` 14 래퍼 | 2h |
+| **T2-c** | brainstorming 스킬 적용 — 공휴일 API + 저장 테이블 결정 → ADR-005 작성 | 1.5h |
 
-> TypeScript 파일 2개만 작업. 신규 의존성·마이그레이션 없음. 백엔드 시그니처는 변경하지 않음.
+> 사용자 의사결정(2026-05-22): T2 세션 분할 = T2-c 단독 먼저 → T2-a/b 다음 세션. 스크립트 언어 = TypeScript(tsx). API 사전 선호 = 없음 (brainstorming 결정).
 
 ## 이번 세션에서 수정할 파일
 
@@ -30,67 +31,66 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #4
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src/types/academic.ts | [1회] | 신규 — StudyPeriod/ScheduleCode/ScheduleEvent + 평탄화 List + Create/Update payload |
-| src/lib/tauri/index.ts | [2회] | Sprint 6 섹션 추가 — 14 IPC 래퍼 (dev mode fallback 포함) |
+| docs/arch/adr-005-holiday-api-selection.md | [1회] | 신규 ADR — 공휴일 API 소스 + 저장 테이블 결정 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
 - [ ] `.github/workflows/` — CI/CD 파이프라인 (hook이 차단)
 - [ ] `SETUP.sh` — 초기화 스크립트 (hook이 차단)
 - [ ] `docs/harness-engineering/` — Harness 정책 (경고)
-- [ ] `src-tauri/` — 본 세션 백엔드 변경 없음 (T5/T6/T7 시그니처 그대로 매핑)
-- [ ] `package.json` / `Cargo.toml` — 신규 의존성 없음
-- [ ] `src-tauri/migrations/` — 본 세션 마이그레이션 없음
-- [ ] 기존 `src/types/*` 파일들 — 새 파일만 추가, 기존 타입 수정 금지
+- [ ] `src-tauri/` — 본 세션 코드 변경 없음
+- [ ] `src/` — 본 세션 코드 변경 없음
+- [ ] `package.json` / `Cargo.toml` — 본 세션 의존성 추가 없음 (tsx 는 Session #6 에서)
+- [ ] `src-tauri/migrations/` — V301 은 Session #6 에서
 
 ## 완료 기준 (이번 세션)
 
-### T8 — IPC 래퍼 + 타입 (PRD §4.4, sprint6.md L236-251)
-- ✅ AC-T8-1: 모든 IPC 래퍼가 dev mode fallback 포함 (`if (!inv) return ...`)
-- ✅ AC-T8-2: TypeScript strict 모드 통과 — `pnpm tsc --noEmit` 클린
-- ✅ AC-T8-3: **15** 래퍼가 백엔드 `src-tauri/src/commands/academic.rs` 15 커맨드와 1:1 대응 (lib.rs L75-89 등록 검증)
+### T2-c — ADR-005 (PRD §4.4, sprint6.md L98-106)
+- ✅ AC-T2-7: ADR-005 문서 작성 완료 — API 소스 + 저장 테이블 + 갱신 주기 결정 모두 포함
+- ✅ brainstorming 스킬 3단계 모두 충실 적용:
+  - 1단계: Weighted Matrix 2개 (API 6기준×2후보 / 저장 6기준×2후보, 가중치 합 1.0)
+  - 2단계: SWOT 4선택지 + Trade-off 4행 + Risk 5건
+  - 3단계: ADR (Context 8항목 / Decision 3 / Consequences / 후속 액션 6건)
+- ✅ 비교 선택지 최소 2개씩 충족 (API: 공공데이터포털 vs date.nager.at, 저장: schedule_events vs 별도 holidays)
+- ✅ 갱신 주기 명시 — 2029-12 이전 재실행, V401(+) 마이그레이션 패턴
+- ✅ Session #6 후속 액션 6건 명확화 (T2-a 3건 + T2-b 3건)
 
-> 주: 기존 메모리에 "14 래퍼"로 적혀 있었으나 실제 백엔드는 15 커맨드(study_periods 6 + schedule_codes 4 + schedule_events 5 — 마지막 5에 `auto_place_assessment_dates` 포함). 메모리 표기 오류였으며 본 구현은 15 매핑이 정합.
+### 결정 요약
+
+| 항목 | 결정 | 총점 |
+|------|------|-----|
+| API 소스 | **공공데이터포털** (data.go.kr 특일 정보 API) | 4.10 vs date.nager.at 3.80 |
+| 저장 위치 | **schedule_events** 통합 (공휴일 시스템 코드 추가) | 4.65 vs 별도 holidays 3.10 |
+| 갱신 트리거 | **2029-12 이전** 재실행 + V401(+) 마이그레이션 | - |
 
 ### 세션 종료 조건
-- ✅ T8 단일 커밋 `5941d24` (`src/types/academic.ts` 신규 90줄 + `src/lib/tauri/index.ts` Sprint 6 섹션 232줄 추가)
-- ✅ Self-verify: `pnpm tsc --noEmit` exit 0 + `pnpm lint` "No ESLint warnings or errors"
-- ✅ simplify(code-review) 1회 실행 — `[]` 반환 (5각도 분석, 1:1 매핑 + 타입 정합 + 등록 확인 후 신규 결함 없음)
+- ✅ ADR-005 단일 커밋 `10a92d4` (docs/arch/adr-005-holiday-api-selection.md +206줄)
+- ✅ scope.md 완료 마킹 (별도 커밋, 본 작업)
+- ✅ simplify 스킬 — 적용 대상 외 (코드 변경 없음, 문서만)
+- ✅ Session #6 진입 안내 — T2-a (scripts/fetch-holidays.ts + tsx devDep + .env.example) + T2-b (V301 마이그레이션)
 
-## 설계 결정 (메모리 가이드 따름)
+## 비교 대상 사전 정리
 
-- **타입 1:1 매핑**: Rust `Option<T>` → TS `T | null` (Tauri serde 직렬화 기본). Rust `i64` → TS `number`. Rust `bool` → TS `boolean`. Rust `String` → TS `string`.
-- **camelCase 인자 변환**: Tauri invoke args는 자동 camelCase ↔ snake_case 변환. 예: Rust `from_month` ↔ TS `fromMonth`.
-- **payload 매개변수 명**: 백엔드가 `payload: CreateStudyPeriodPayload` 형태로 받으므로 TS도 `inv('create_study_period', { payload })` 패턴 사용.
-- **반환 타입 패턴**:
-  - `Result<T, String>` → TS `Promise<T>` (실패 시 throw)
-  - `Result<Option<T>, String>` → TS `Promise<T | null>` (예: `get_study_period`)
-  - `Result<Vec<T>, String>` → TS `Promise<T[]>`
-  - `Result<(), String>` → TS `Promise<void>` (예: `delete_study_period`, `delete_schedule_event`)
-- **dev mode fallback 규칙** (기존 코드 패턴 따름):
-  - `Promise<T[]>` → 빈 배열 `[]`
-  - `Promise<T | null>` → `null`
-  - `Promise<void>` → `return`
-  - `Promise<T>` (단일 객체) → 더미 객체 (payload 값 + 0/false/빈 문자열 채움)
+### API 후보
 
-## 코드 패턴 SSOT (기존 src/lib/tauri/index.ts 인용)
+| 후보 | 인증 | 한국 공휴일 정확도 | 대체공휴일 | 라이선스 |
+|------|------|----------------|----------|--------|
+| 공공데이터포털 (data.go.kr 특일 정보 API) | 인증키 필요 (data.go.kr 회원가입 → 활용신청 → 발급) | 한국 공식 데이터 (천문연구원) | 정확 (대체공휴일법 반영) | 공공누리 제1유형 (무료, 재배포 가능) |
+| date.nager.at API | 무인증 (REST GET) | 미검증 — 대체공휴일 누락 가능 보고됨 | 부분 지원 (한국 데이터는 GitHub PR 기반) | MIT (오픈소스) |
 
-```ts
-export async function listStudents(filter: StudentFilter = {}): Promise<Student[]> {
-  const inv = await getInvoke()
-  if (!inv) return []
-  return inv('list_students', { filter }) as Promise<Student[]>
-}
+### 저장 위치 후보
 
-export async function createStudent(payload: NewStudent): Promise<Student> {
-  const inv = await getInvoke()
-  if (!inv) {
-    return { id: 0, /* payload + 디폴트 */ ... }
-  }
-  return inv('create_student', { payload }) as Promise<Student>
-}
-```
+| 후보 | 스키마 영향 | 코드 모델 일관성 | 쿼리 복잡도 |
+|------|----------|--------------|----------|
+| schedule_events 테이블에 INSERT (공휴일 code_id 참조) | V102 schedule_codes 시드에 "공휴일" 코드 추가 필요. V301 시드에서 7년치 INSERT | 학사 일정 코드 3속성 모델과 동일 흐름 (캘린더 동일 쿼리로 표시) | 단순 — list_schedule_events 가 이미 코드 JOIN |
+| 별도 `holidays` 전용 테이블 신설 (V302) | V302 마이그레이션 신규 필요 (holiday_date, name) | 학사 일정 코드 모델과 분리 — 캘린더 컴포넌트가 두 소스 병합 필요 | 복잡 — list_schedule_events + list_holidays 별도 IPC 필요 |
+
+### 갱신 주기 결정 항목
+
+- 빌드 타임 1회 수집 후 V301 시드 SQL 에 박제
+- 만료 (2030 이후) 대응: `pnpm holidays:fetch` 재실행 → V401 (또는 V302 단위) 새 마이그레이션 추가 패턴
+- 트리거: ROADMAP.md 또는 Sprint 회고에 "2029-12 까지 갱신 검토" 메모
 
 ## 발견된 이슈
 
-> 코드 수정 중 예상 외 충돌·구조 발견 시 여기에 기록 후 사용자에게 보고 (step-back 프로토콜).
+> ADR 작성 중 새 제약 발견 시 여기에 기록.
