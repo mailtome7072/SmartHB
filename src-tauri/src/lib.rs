@@ -82,6 +82,11 @@ pub fn run() {
             commands::academic::create_schedule_code,
             commands::academic::update_schedule_code,
             commands::academic::toggle_schedule_code_active,
+            commands::academic::create_schedule_event,
+            commands::academic::update_schedule_event,
+            commands::academic::delete_schedule_event,
+            commands::academic::list_schedule_events,
+            commands::academic::auto_place_assessment_dates,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())
