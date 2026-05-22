@@ -75,11 +75,16 @@ export interface ScheduleEvent {
   updated_at: string
 }
 
-/** 캘린더 렌더링용 평탄 응답 — schedule_codes JOIN 결과. */
+/** 캘린더 렌더링용 평탄 응답 — schedule_codes JOIN 결과.
+ *
+ * Sprint 7 T4: `is_system_reserved` 추가 — 프론트엔드가 시스템 코드명 한국어 리터럴을
+ * 하드코딩하지 않고 백엔드 플래그로 배지 색상·드래그 가능 여부 분기.
+ */
 export interface ScheduleEventListItem {
   id: number
   code_id: number
   code_name: string
+  is_system_reserved: boolean
   is_duplicate_blocked: boolean
   is_period_type: boolean
   event_date: string

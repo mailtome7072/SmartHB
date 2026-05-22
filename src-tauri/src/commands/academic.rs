@@ -471,12 +471,17 @@ impl ScheduleEvent {
 }
 
 /// 캘린더 셀 렌더링용 평탄 응답 — schedule_codes JOIN 결과.
-/// 프론트가 별도 코드 조회 없이 코드명·중복불가·기간성을 셀에 표시 가능.
+/// 프론트가 별도 코드 조회 없이 코드명·중복불가·기간성·시스템예약 여부를 셀에 표시 가능.
+///
+/// Sprint 7 T4 (A23/R33): `is_system_reserved` 추가 — 프론트엔드가 시스템 코드명 6종을
+/// 한국어 리터럴로 하드코딩하던 패턴 (CalendarCell.codeBadgeClass / ThreeMonthCalendar.
+/// draggableEventIds) 을 플래그 기반으로 전환하기 위함.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub struct ScheduleEventListItem {
     pub id: i64,
     pub code_id: i64,
     pub code_name: String,
+    pub is_system_reserved: bool,
     pub is_duplicate_blocked: bool,
     pub is_period_type: bool,
     pub event_date: String,
@@ -490,6 +495,7 @@ impl ScheduleEventListItem {
             id: row.try_get("id")?,
             code_id: row.try_get("code_id")?,
             code_name: row.try_get("code_name")?,
+            is_system_reserved: row.try_get::<i64, _>("is_system_reserved")? != 0,
             is_duplicate_blocked: row.try_get::<i64, _>("is_duplicate_blocked")? != 0,
             is_period_type: row.try_get::<i64, _>("is_period_type")? != 0,
             event_date: row.try_get("event_date")?,
@@ -703,7 +709,8 @@ pub async fn list_schedule_events(
 ) -> Result<Vec<ScheduleEventListItem>, String> {
     let pool = db::pool().map_err(String::from)?;
     let rows = sqlx::query(
-        "SELECT e.id, e.code_id, c.code_name, c.is_duplicate_blocked, c.is_period_type, \
+        "SELECT e.id, e.code_id, c.code_name, c.is_system_reserved, \
+                c.is_duplicate_blocked, c.is_period_type, \
                 e.event_date, e.period_end_date, e.display_name \
          FROM schedule_events e \
          JOIN schedule_codes c ON c.id = e.code_id \
