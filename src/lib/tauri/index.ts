@@ -27,6 +27,18 @@ import type {
   StandardFee,
 } from '@/types/fee'
 import type {
+  CreateScheduleCodePayload,
+  CreateScheduleEventPayload,
+  CreateStudyPeriodPayload,
+  ScheduleCode,
+  ScheduleEvent,
+  ScheduleEventListItem,
+  StudyPeriod,
+  UpdateScheduleCodePayload,
+  UpdateScheduleEventPayload,
+  UpdateStudyPeriodPayload,
+} from '@/types/academic'
+import type {
   ScheduleSet,
   StudentSchedule,
 } from '@/types/schedule'
@@ -677,4 +689,230 @@ export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('save_operating_hours', { hours })
+}
+
+// ============================================================================
+// Sprint 6 — 학사 스케줄 도메인 (T8, PRD §4.4)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/academic.rs (T5/T6/T7).
+// Tauri invoke args 는 자동 camelCase ↔ snake_case 변환 (예: Rust from_month ↔ TS fromMonth).
+
+// ─── 교습기간 study_periods (T5) ─────────────────────────────────────
+
+export async function createStudyPeriod(
+  payload: CreateStudyPeriodPayload,
+): Promise<StudyPeriod> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      year_month: payload.year_month,
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+      is_confirmed: false,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_study_period', { payload }) as Promise<StudyPeriod>
+}
+
+export async function updateStudyPeriod(
+  id: number,
+  payload: UpdateStudyPeriodPayload,
+): Promise<StudyPeriod> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      year_month: payload.start_date.slice(0, 7),
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+      is_confirmed: false,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_study_period', { id, payload }) as Promise<StudyPeriod>
+}
+
+/** 교습기간 목록 — "YYYY-MM" 범위(포함). */
+export async function listStudyPeriods(
+  fromMonth: string,
+  toMonth: string,
+): Promise<StudyPeriod[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_study_periods', { fromMonth, toMonth }) as Promise<StudyPeriod[]>
+}
+
+/** 특정 월의 교습기간 조회 — 없으면 null. */
+export async function getStudyPeriod(yearMonth: string): Promise<StudyPeriod | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_study_period', { yearMonth }) as Promise<StudyPeriod | null>
+}
+
+export async function confirmStudyPeriod(id: number): Promise<StudyPeriod> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      year_month: '',
+      start_date: '',
+      end_date: '',
+      is_confirmed: true,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('confirm_study_period', { id }) as Promise<StudyPeriod>
+}
+
+/** 미확정 교습기간 삭제 — 확정/마감 시 백엔드가 throw. */
+export async function deleteStudyPeriod(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_study_period', { id })
+}
+
+// ─── 학사 일정 코드 schedule_codes (T6) ──────────────────────────────
+
+export async function listScheduleCodes(): Promise<ScheduleCode[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_schedule_codes') as Promise<ScheduleCode[]>
+}
+
+export async function createScheduleCode(
+  payload: CreateScheduleCodePayload,
+): Promise<ScheduleCode> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      code_name: payload.code_name,
+      is_system_reserved: false,
+      allows_regular_class: payload.allows_regular_class,
+      allows_makeup_class: payload.allows_makeup_class,
+      is_duplicate_blocked: payload.is_duplicate_blocked,
+      is_period_type: payload.is_period_type,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_schedule_code', { payload }) as Promise<ScheduleCode>
+}
+
+export async function updateScheduleCode(
+  id: number,
+  payload: UpdateScheduleCodePayload,
+): Promise<ScheduleCode> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      code_name: '',
+      is_system_reserved: false,
+      allows_regular_class: payload.allows_regular_class,
+      allows_makeup_class: payload.allows_makeup_class,
+      is_duplicate_blocked: payload.is_duplicate_blocked,
+      is_period_type: payload.is_period_type,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_schedule_code', { id, payload }) as Promise<ScheduleCode>
+}
+
+/** 활성/비활성 토글 — 시스템 예약 코드도 허용 (AC-T6-2). */
+export async function toggleScheduleCodeActive(id: number): Promise<ScheduleCode> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      code_name: '',
+      is_system_reserved: false,
+      allows_regular_class: false,
+      allows_makeup_class: false,
+      is_duplicate_blocked: true,
+      is_period_type: false,
+      is_active: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('toggle_schedule_code_active', { id }) as Promise<ScheduleCode>
+}
+
+// ─── 학사 일정 schedule_events (T7) ──────────────────────────────────
+
+export async function createScheduleEvent(
+  payload: CreateScheduleEventPayload,
+): Promise<ScheduleEvent> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      code_id: payload.code_id,
+      event_date: payload.event_date,
+      period_end_date: payload.period_end_date,
+      display_name: payload.display_name,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_schedule_event', { payload }) as Promise<ScheduleEvent>
+}
+
+export async function updateScheduleEvent(
+  id: number,
+  payload: UpdateScheduleEventPayload,
+): Promise<ScheduleEvent> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      code_id: 0,
+      event_date: payload.event_date,
+      period_end_date: payload.period_end_date,
+      display_name: payload.display_name,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_schedule_event', { id, payload }) as Promise<ScheduleEvent>
+}
+
+/** 학사 일정 삭제 — 지난 달이면 백엔드가 throw (AC-T7-3). */
+export async function deleteScheduleEvent(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_schedule_event', { id })
+}
+
+/** 기간 내 학사 일정 목록 (코드명 JOIN 평탄 응답) — "YYYY-MM-DD" 범위. */
+export async function listScheduleEvents(
+  fromDate: string,
+  toDate: string,
+): Promise<ScheduleEventListItem[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_schedule_events', { fromDate, toDate }) as Promise<ScheduleEventListItem[]>
+}
+
+/**
+ * 단원평가 응시일 자동 배치 (§4.4.7).
+ *
+ * 해당 month 2주차 월~금 + 4주차 월~금 10건 INSERT. 이미 단원평가 1건 이상 존재 시 빈 배열 반환(No-op, AC-4.4-6).
+ */
+export async function autoPlaceAssessmentDates(yearMonth: string): Promise<ScheduleEvent[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('auto_place_assessment_dates', { yearMonth }) as Promise<ScheduleEvent[]>
 }

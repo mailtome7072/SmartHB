@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 36% (5/14 스프린트 완료) |
-| 현재 Phase | Phase 1.5b 완료 — Phase 2 학사 + 출결 진입 대기 (Sprint 6 예정) |
-| 다음 마일스톤 | Phase 2 학사 + 출결 (Sprint 6 예정) |
+| 전체 진행률 | 43% (6/14 스프린트 완료) |
+| 현재 Phase | Phase 2 진입 — Sprint 6 완료, Sprint 7 (출결 관리) 예정 |
+| 다음 마일스톤 | Phase 2 출결 관리 (Sprint 7 예정) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -318,58 +318,49 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 2: 학사 + 출결 (Sprint 6~7) 📋 예정
+## Phase 2: 학사 + 출결 (Sprint 6~7) 🔄 진행 중
 
 > **스프린트 번호 이동**: Sprint 4(Phase 1.5 안정화) + Sprint 5(Phase 1.5b 안정화) 삽입으로 원래 Sprint 5(학사 스케줄) → **Sprint 6**, 원래 Sprint 6(출결 관리) → **Sprint 7**로 이연됨.
+
+> **Phase 2 메모 (Sprint 6 발견)**: 공휴일 시드는 data.go.kr API 2028+ 미발표 제약으로 2025~2027 (64건)으로 범위 제한. 이후 매년 1월 신규 발표분을 V401(+) 마이그레이션으로 추가하는 갱신 정책 채택 (ADR-005).
 
 ### 목표
 교습기간/학사일정 수립과 출결 생성/관리를 완성하여, 원장이 매월 학사 운영의 핵심 흐름(UC-2, UC-3)을 수행할 수 있게 한다.
 
-### Sprint 6: 학사 스케줄 관리 (2주) 📋 예정
+### Sprint 6: 학사 스케줄 관리 (2주) ✅ 완료 (2026-05-22)
+
+> 계획 문서: `docs/sprint/sprint6.md` / Task 12/12 완료 / 9 세션
+> develop 머지: `sprint6 → develop` (--no-ff, 2026-05-22)
 
 #### 작업 목록
 
-- ⬜ **3개월 캘린더 뷰 (§4.4.1)**: 좌/중앙/우 가로 배치
-  - 법정 공휴일/대체휴일 자동 표시
-  - 중앙 년월 좌/우 화살표 이동
-- ⬜ **교습기간 설정 (§4.4.2)**: 시작일/종료일 셀 클릭 → 확정
-  - 제약: 시작일 <= 종료일, 이전 교습기간과 중첩 불가
-  - 확정 셀 파스텔 배경
-  - 지난 달 읽기 전용 (AC-4.4-1)
-- ⬜ **학사 일정 코드 3속성 모델 (§4.4.3~4.4.5)**
-  - 시스템 예약 5종: 속성 잠금, 활성/비활성만 토글
-  - 사용자 추가 코드: 3속성 자유 편집, 보수적 디폴트
-  - IPC 커맨드: `list_schedule_codes`, `create_schedule_code`, `update_schedule_code`
-- ⬜ **학사 일정 배치 (§4.4.6)**: 단일 일자/기간성 코드 배치
-  - 셀 클릭 등록, 드래그 이동 (단일 일자)
-  - 중복불가 코드 검증 (AC-4.4-4)
-- ⬜ **단원평가 응시일 자동 배치 (§4.4.7)**: 2주차/4주차 월~금 자동 배치
-  - 원장 수정/이동/삭제 가능, 재실행 안됨 (AC-4.4-6)
-  - 셀 상단 띠 배지 표기
-- ⬜ **보강데이/공휴수업일 특수 처리 (§4.4.8~4.4.9)**
-- ⬜ **DB 마이그레이션**: schedule_events 테이블이 Sprint 2에서 생성 완료 — 이 스프린트는 프론트 + IPC 중심
+- ✅ **T1 (A20)**: lock/page.tsx 에러 화면 재시도 버튼 추가 + lockStatus 초기화
+- ✅ **T2**: V301 마이그레이션 — schedule_codes 시드 3속성 보정 + 한국 법정 공휴일 2025~2027 64건
+- ✅ **T2-a**: `pnpm holidays:fetch` 빌드 스크립트 (`scripts/fetch-holidays.ts`) + tsx devDependency + KOREA_HOLIDAY_API_KEY 환경변수
+- ✅ **T2-c**: ADR-005 공휴일 API 소스 + 저장 정책 결정 (`docs/arch/adr-005-holiday-api-selection.md`)
+- ✅ **T3 (A21)**: paths.rs OnceLock 테스트 격리 리팩토링 — 병렬 실행 안정화
+- ✅ **T4 (A22)**: 코드 DnD 필터링 시 sort_order 충돌 해소 (방법 B)
+- ✅ **T5**: 교습기간 IPC 6종 (`academic.rs` 신규 — create/update/list/get/confirm/delete_study_period)
+- ✅ **T6**: 학사 일정 코드 IPC 4종 (list/create/update_schedule_code, toggle_schedule_code_active)
+- ✅ **T7**: 학사 일정 배치 IPC 5종 (create/update/delete/list_schedule_events, auto_place_assessment_dates)
+- ✅ **T8**: TypeScript IPC 래퍼 15개 + 도메인 타입 10개 (`src/types/academic.ts`)
+- ✅ **T9**: 3개월 학사 캘린더 컴포넌트 + `/academic` 라우트 (Tailwind grid-cols-7 직접 구현, R30 완화)
+- ✅ **T10**: 교습기간 설정 UI — StudyPeriodEditor + 캘린더 selection 통합
+- ✅ **T11**: 학사 일정 코드 + 배치 UI + @dnd-kit 드래그 이동 (단일 일자)
+- ✅ **T12**: 통합 검증 — cargo test 146 passed, clippy/tsc/lint/build 모두 통과
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 3개월 캘린더에서 교습기간 설정/확정/읽기전용 동작
-- ⬜ 학사 일정 코드 5종 + 사용자 추가 코드 배치 동작
-- ⬜ 단원평가 응시일 자동 배치 + 수동 조정 동작
-- ⬜ 지난 달 데이터 수정 차단 확인
-
-#### 🧪 Playwright MCP 검증 시나리오
-```
-1. browser_navigate → http://localhost:1420/academic
-2. browser_snapshot → 3개월 캘린더 렌더링 확인
-3. browser_click → 시작일 셀 클릭 → 종료일 셀 클릭 → "확정" 버튼
-4. browser_snapshot → 교습기간 파스텔 배경 확인
-5. browser_click → "보강데이" 코드 선택 → 셀 클릭
-6. browser_snapshot → 보강데이 일정 등록 확인
-7. browser_console_messages(level: "error") → 콘솔 에러 없음
-```
+- ✅ 3개월 캘린더에서 교습기간 설정/확정/읽기전용 동작
+- ✅ 학사 일정 코드 5종 + 사용자 추가 코드 배치 동작
+- ✅ 단원평가 응시일 자동 배치 + 수동 조정 동작
+- ✅ 지난 달 데이터 수정 차단 확인
+- ✅ `cargo test` 146 passed + clippy/lint/tsc/build 무오류
 
 #### 기술 고려사항
-- 3개월 캘린더는 커스텀 컴포넌트 (shadcn/ui 기반)
-- 법정 공휴일 데이터: 한국 공휴일 JSON 내장 (외부 API 호출 없음)
-- 기간성 일정의 시작/종료 선택 UX 설계 주의
+- 3개월 캘린더: shadcn/ui Calendar 대신 Tailwind grid-cols-7 직접 구현 (R30 복잡도 회피)
+- 법정 공휴일 데이터: schedule_events 테이블 통합 저장 + 매년 1월 갱신 마이그레이션 (ADR-005)
+- HTML button 중첩 회피: CalendarCell 외부 button → div + role/tabIndex (배지 button 분리)
+- SQLite VALUES...AS alias 미지원: column1/column2 자동 명명 우회 (V301 syntax)
 
 ---
 

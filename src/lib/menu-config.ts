@@ -15,6 +15,7 @@ export interface MenuItem {
 export const MENU_ITEMS: MenuItem[] = [
   { label: '대시보드', href: '/', disabledHint: 'Phase 6 에서 제공' },
   { label: '원생 관리', href: '/students', shortcut: 'Ctrl+N' },
+  { label: '학사 스케줄', href: '/academic' },
   { label: '수업 관리', href: '/schedules', disabledHint: 'Phase 2 에서 제공' },
   { label: '출결 관리', href: '/attendance', disabledHint: 'Phase 2 에서 제공' },
   { label: '청구 관리', href: '/billing', disabledHint: 'Phase 4 에서 제공' },

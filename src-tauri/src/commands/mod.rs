@@ -1,3 +1,4 @@
+pub mod academic;
 pub mod audit;
 pub mod auth;
 pub mod backup;

@@ -24,7 +24,8 @@
       "Bash(DATABASE_URL=sqlite:../SmartHB-dev.db sqlx database create)",
       "Bash(DATABASE_URL=sqlite:./SmartHB-dev.db sqlx database create)",
       "Bash(DATABASE_URL=sqlite:./SmartHB-dev.db sqlx migrate run --source src-tauri/migrations)",
-      "Bash(DATABASE_URL=sqlite:./SmartHB-dev.db sqlx migrate run --source ./src-tauri/migrations)"
+      "Bash(DATABASE_URL=sqlite:./SmartHB-dev.db sqlx migrate run --source ./src-tauri/migrations)",
+      "Bash(DATABASE_URL=sqlite:../SmartHB-dev.db cargo sqlx prepare)"
     ]
   },
   "enableAllProjectMcpServers": true,

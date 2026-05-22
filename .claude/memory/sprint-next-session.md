@@ -1,47 +1,186 @@
 ---
 name: sprint-next-session
-description: "Sprint 5 완료(close+review) + Sprint 6 계획 수립까지 완료 (2026-05-22). 다음 액션: (선택) deploy-prod → 사용자가 /sprint-dev 6 입력"
+description: "Sprint 6 Session #3 완료(T7 schedule_events IPC, 6/12=50%, 2026-05-22). 다음: /sprint-dev 6 재진입 → Session #4 (T8 프론트엔드 IPC 래퍼·타입)"
 metadata: 
   node_type: memory
   type: project
   originSessionId: ec4dbd04-fb9a-48c2-82eb-4dab55bbfa1a
 ---
 
-Sprint 5(Phase 1.5b 안정화) **sprint-close + sprint-review 완료**, Sprint 6(Phase 2 학사 스케줄) **계획 수립까지 완료**. 마지막 develop 머지: `e717a78`, sprint-close 커밋: `c51c22d`, sprint-review 커밋: `e5b7480`. ROADMAP/CHANGELOG/DEPLOY 갱신 완료, develop = origin/develop 동기화 상태. Sprint 5 코드 리뷰: Critical 0 / High 0 / Medium 1 / Low 1.
+Sprint 6 Session #3 종료. **브랜치 `sprint6` 가 origin 동기화 완료** (https://github.com/mailtome7072/SmartHB/tree/sprint6). 새 대화에서 `/sprint-dev 6` 재입력하면 깨끗한 컨텍스트로 Session #4 진입.
 
-**다음 액션 (두 가지)**
-1. **(선택) deploy-prod 에이전트** — 누적 변경 배포. Sprint 3 종료 시점 `0.3.0` 미배포 상태였음. 현재 `package.json` 0.2.1 → 배포 시 버전 결정(v0.3.0 또는 v0.4.0) 필요.
-2. **`/sprint-dev 6`** — **사용자가 직접 입력**해야 한다 (CLAUDE.md 정책: `/sprint-dev`는 에이전트 호출 금지). 입력 시 `sprint6` 브랜치 자동 생성 후 12개 Task 구현 진입.
+## Sprint 6 진행률: 6/12 (50%) — 백엔드 IPC 14개 모두 완성
 
-**Why:** sprint-review까지 끝났고 sprint6.md (469줄, 12 Task) 도 sprint-planner agent가 이미 산출. 즉 계획 단계는 전부 종료 — 이제 배포 또는 구현 진입만 남았다.
+| Session | Task | 커밋 |
+|---------|------|------|
+| #1 | T1 (A20 lock 재시도) | `2c5b8a1` |
+| #1 | T3 (A21 paths.rs OnceLock 분리) | `c2be584` |
+| #1 | T4 (A22 DnD 방법 B) | `83f19d1` |
+| #2 | T5+T6 (academic.rs 신규: study_periods 6 + schedule_codes 4) | `c8dc3c8` |
+| #3 | **T7** (academic.rs 확장: schedule_events 5) | `a4c380e` |
 
-**How to apply:** "다음 뭐하지?" 류 질문에는 1번(배포 의향 확인) → 2번(`/sprint-dev 6` 안내) 순서로 응대. 사용자가 sprint-planner 다시 실행하려 하면 막고 sprint6.md가 이미 있음을 알린다.
+검증 현황: `cargo test` **141 passed**, `cargo clippy -- -D warnings` clean.
 
-## Sprint 5 완료 산출물 (검증됨)
+## Session #4 진입 시 우선 액션
 
-- `docs/sprint/sprint5.md` — DoD 전수 통과 기록
-- `docs/sprint-retrospectives/sprint5-retrospective.md` — 회고 (이전 액션 아이템 A14~A18 이행 결과 포함)
-- `docs/test-reports/sprint5-test-report.md` — 자동 검증 보고서
-- `CHANGELOG.md` `[0.2.1]` 항목 — 환경 호환 + 다중 인스턴스 차단 + 시드 보정
+1. `/sprint-dev 6` 재진입 (사용자 직접 입력)
+2. `docs/sprint/sprint6/scope.md` 읽고 **Session 번호 +1 (#4)**, 수정 횟수 [0회] 리셋
+3. **T8 작업** — 프론트엔드 IPC 래퍼 + 도메인 타입 (2h, 짧음)
 
-## Sprint 6 계획 산출물 (sprint-planner 완료)
+## T8 구체 작업 안내 (다음 세션 가이드)
 
-- `docs/sprint/sprint6.md` (469줄, 12 Task) — T1(A20 lock 재시도) / T2(V301 시드 보정 + 공휴일 시드) / T3(A21 flaky 테스트) / T4(A22 DnD) / T5~T7(교습기간/일정코드/배치 IPC) / T8(래퍼·타입) / T9~T11(캘린더·교습기간·배치 UI) / T12(통합검증)
-- `docs/risk-register/2026-05-22.md` — R30(캘린더 복잡도) / R31(공휴일 API) / R32(OnceLock 리팩토링 부작용) 추가
-- `.claude/agents/agent-memory/sprint-planner/MEMORY.md` — "다음 스프린트 번호: 7" 갱신
-- `.claude/agents/agent-memory/sprint-planner/v102-seed-mismatch.md` — V102 시드와 PRD §4.4.4 불일치 발견 메모 (T2에서 V301로 보정)
+### 신규/수정 파일
+- 신규: `src/types/academic.ts` — 11개 타입 정의
+- 확장: `src/lib/tauri/index.ts` — 14개 IPC 래퍼 추가
 
-## Sprint 5 결과 요약 (참고)
+### TypeScript 타입 정의 (`src/types/academic.ts`)
 
-- **명명**: Phase 1.5b 안정화 (원래 Sprint 5 학사 스케줄 → Sprint 6 이연)
-- **Task**: T0~T5 (6개) — 전수 통과
-- **마이그레이션**: V201 (students.withdrawn_at + 시드 보정)
-- **신규 의존성**: `tauri-plugin-single-instance`
-- **핵심 변경**: Node 25/20 cross-OS 환경 호환 (T0), 다중 인스턴스 차단 (T1), LockPage 락 사전 체크 (T1-sub), 마법사 redirect `/` → `/settings` (T2), V201 시드 보정 (T3+T4), 검증 통과 (T5)
+```ts
+// === study_periods ===
+export interface StudyPeriod {
+  id: number
+  year_month: string         // "YYYY-MM"
+  start_date: string         // "YYYY-MM-DD"
+  end_date: string
+  is_confirmed: boolean
+  is_closed: boolean
+  created_at: string
+  updated_at: string
+}
+export interface CreateStudyPeriodPayload {
+  year_month: string
+  start_date: string
+  end_date: string
+}
+export interface UpdateStudyPeriodPayload {
+  start_date: string
+  end_date: string
+}
 
-## Sprint 7 미리보기 (ROADMAP 기준)
+// === schedule_codes ===
+export interface ScheduleCode {
+  id: number
+  code_name: string
+  is_system_reserved: boolean
+  allows_regular_class: boolean
+  allows_makeup_class: boolean
+  is_duplicate_blocked: boolean
+  is_period_type: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+export interface CreateScheduleCodePayload {
+  code_name: string
+  allows_regular_class: boolean
+  allows_makeup_class: boolean
+  is_duplicate_blocked: boolean
+  is_period_type: boolean
+}
+export interface UpdateScheduleCodePayload {
+  allows_regular_class: boolean
+  allows_makeup_class: boolean
+  is_duplicate_blocked: boolean
+  is_period_type: boolean
+}
 
-- **출결 생성 + 출결표 UI + 상태 토글** — Sprint 6의 학사 스케줄 도메인에 의존
+// === schedule_events ===
+export interface ScheduleEvent {
+  id: number
+  code_id: number
+  event_date: string
+  period_end_date: string | null
+  display_name: string | null
+  created_at: string
+  updated_at: string
+}
+export interface ScheduleEventListItem {
+  id: number
+  code_id: number
+  code_name: string
+  is_duplicate_blocked: boolean
+  is_period_type: boolean
+  event_date: string
+  period_end_date: string | null
+  display_name: string | null
+}
+export interface CreateScheduleEventPayload {
+  code_id: number
+  event_date: string
+  period_end_date: string | null
+  display_name: string | null
+}
+export interface UpdateScheduleEventPayload {
+  event_date: string
+  period_end_date: string | null
+  display_name: string | null
+}
+```
+
+> Rust `Option<T>` → TS `T | null` (Tauri serde 기본 직렬화), Rust `i64` → TS `number`, Rust `bool` → TS `boolean`.
+
+### IPC 래퍼 (`src/lib/tauri/index.ts`)
+
+Tauri invoke args 는 camelCase ↔ snake_case 자동 변환됨. Rust `from_month` → TS `fromMonth`. 기존 패턴 그대로 따라:
+
+```ts
+export async function createStudyPeriod(
+  payload: CreateStudyPeriodPayload,
+): Promise<StudyPeriod> {
+  const inv = await getInvoke()
+  if (!inv) return /* dev mode fallback — { id: 0, year_month: payload.year_month, ... } */
+  return inv('create_study_period', { payload }) as Promise<StudyPeriod>
+}
+```
+
+**14 래퍼 시그니처**:
+
+| 래퍼 | Rust 커맨드 | Args |
+|------|-----------|------|
+| createStudyPeriod(payload) | create_study_period | { payload } |
+| updateStudyPeriod(id, payload) | update_study_period | { id, payload } |
+| listStudyPeriods(fromMonth, toMonth) | list_study_periods | { fromMonth, toMonth } |
+| getStudyPeriod(yearMonth) | get_study_period | { yearMonth } |
+| confirmStudyPeriod(id) | confirm_study_period | { id } |
+| deleteStudyPeriod(id) | delete_study_period | { id } |
+| listScheduleCodes() | list_schedule_codes | (no args) |
+| createScheduleCode(payload) | create_schedule_code | { payload } |
+| updateScheduleCode(id, payload) | update_schedule_code | { id, payload } |
+| toggleScheduleCodeActive(id) | toggle_schedule_code_active | { id } |
+| createScheduleEvent(payload) | create_schedule_event | { payload } |
+| updateScheduleEvent(id, payload) | update_schedule_event | { id, payload } |
+| deleteScheduleEvent(id) | delete_schedule_event | { id } |
+| listScheduleEvents(fromDate, toDate) | list_schedule_events | { fromDate, toDate } |
+| autoPlaceAssessmentDates(yearMonth) | auto_place_assessment_dates | { yearMonth } |
+
+### Dev mode fallback (AC-T8-1)
+- 빈 리스트 IPC: 빈 배열 `[]`
+- 단일 객체 반환: 더미 객체 (예: `{ id: 0, year_month: '2026-05', start_date: '2026-05-01', end_date: '2026-05-31', is_confirmed: false, is_closed: false, created_at: '', updated_at: '' }`)
+- void 반환: 그냥 `return`
+
+### 검증 (AC-T8-2/3)
+- `pnpm tsc --noEmit` — strict 모드 통과
+- `pnpm lint` — clean
+- 백엔드 (`src-tauri/src/commands/academic.rs`) 의 14 커맨드 시그니처와 1:1 대응 확인
+
+### 마이그레이션 / 신규 의존성
+- 둘 다 없음. 본 세션은 TypeScript 파일 2개만 작업.
+
+## Sprint 6 남은 작업 (T8 이후)
+
+| Task | 작업 | 의존성 | 권장 세션 묶음 |
+|------|------|--------|---------------|
+| T8 | IPC 래퍼 + 도메인 타입 (프론트) | T5+T6+T7 (충족) | **Session #4 단독 (다음)** |
+| T2 | V301 시드 + 공휴일 + ADR | 없음 | Session #5 (brainstorming skill) |
+| T9 | 3개월 캘린더 컴포넌트 | T2+T8 | Session #6 (frontend-design skill) |
+| T10 | 교습기간 설정 UI | T9 | Session #7 |
+| T11 | 일정 코드 + 배치 UI | T9+T10 | Session #8 (frontend-design skill) |
+| T12 | 통합 검증 | 전부 | Session #9 (마지막) |
+
+## Sprint 5 완료 산출물 (참고)
+
+- `docs/sprint/sprint5.md` + `docs/sprint-retrospectives/sprint5-retrospective.md` + `docs/test-reports/sprint5-test-report.md`
+- CHANGELOG.md `[0.2.1]`
 
 ## 정책 (재확인)
 
@@ -50,4 +189,4 @@ Sprint 5(Phase 1.5b 안정화) **sprint-close + sprint-review 완료**, Sprint 6
 - **Forbidden Area**: `.github/workflows/`, `SETUP.sh`, `docs/harness-engineering/`
 - **새 의존성 추가 시 사용자 허가 필수**
 
-본 메모리는 Sprint 6 sprint-close 시점에 다음 sprint-next-session으로 슬러그 갱신.
+본 메모리는 Sprint 6 모든 Task 종료 후 sprint-close 시점에 다음 sprint-next-session으로 슬러그 갱신.
