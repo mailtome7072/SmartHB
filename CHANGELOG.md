@@ -37,6 +37,9 @@
 
 ## [Unreleased]
 
+### Security
+- **CVE-2025-66478**: Next.js 15.3.2 → 15.3.6 업그레이드 (App Router + React Server Components RCE 취약점 패치). 본 앱은 `output: 'export'` 정적 빌드로 실 익스플로잇 노출은 없으나 예방적 차원으로 적용. `eslint-config-next`도 동반 업그레이드.
+
 ---
 
 ## [0.2.0] - 2026-05-20
