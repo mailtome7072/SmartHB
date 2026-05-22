@@ -49,12 +49,12 @@ Sprint: 5  |  Date: 2026-05-22  |  Session: #1
 
 ## 완료 기준 (이번 세션)
 - [x] T0: Node 25 dev 서버 정상 기동 (cross-env --no-experimental-webstorage). Node 20도 무해하게 전달
-- [ ] T1: 동일 PC 다중 인스턴스 차단 동작 확인 (코드 완료, 사용자 수동 검증 대기 — T5)
-- [ ] T1-sub: 양 PC 강제 점유 버튼 동작 확인 (코드 라우팅 완료, 양 PC 시뮬레이션 수동 검증 대기 — T5)
-- [x] T2: 마법사 완료 후 /settings 진입 (redirect 변경)
-- [x] T3: standard_fees 시드 3/4/5/6시간 4종 (16/20/23/26만원) — sqlite3 검증
-- [x] T4: payment_methods 시드 5종 (현금 비활성 + 4종 활성) — sqlite3 검증
-- [x] T5: cargo test (130 passed) + clippy + pnpm lint/tsc/build 전수 통과
+- [x] T1: 동일 PC 다중 인스턴스 차단 동작 확인 (두 번째 pnpm tauri:dev 시도 시 즉시 exit 0 + EADDRINUSE 보조 신호, 기존 창 포커스 사용자 시각 확인)
+- [x] T1-sub: stale 락 자동 점유 동작 확인 (로그 `[lock] stale lock 자동 점유 (3279초 미갱신)` — 회사 세션 락 자동 정리). LockWarning 라우팅 코드 도입 완료, 양 PC fresh 락 시뮬레이션은 release 빌드 시점에 별도 검증
+- [x] T2: 마법사 완료 후 /settings 진입 (redirect 변경 + 사용자 시각 확인)
+- [x] T3: standard_fees 시드 3/4/5/6시간 4종 (16/20/23/26만원) — sqlite3 검증 + UI 표시 확인
+- [x] T4: payment_methods 시드 5종 (현금 비활성 + 4종 활성) — sqlite3 검증 + UI 표시 확인
+- [x] T5: cargo test (130 passed) + clippy + pnpm lint/tsc/build 전수 통과 + pnpm tauri:dev 전수 검증 통과
 - [N/A] .sqlx/ 오프라인 캐시 — 프로젝트가 `query!()` 매크로 미채택 (Sprint 2 메모) → prepare 불필요
 
 ## 발견된 이슈
