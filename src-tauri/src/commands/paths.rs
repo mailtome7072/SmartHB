@@ -13,7 +13,6 @@
 //! - cloud_folder_path 가 비어 있으면 fallback `./SmartHB-data` (개발 편의).
 
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 
 #[cfg(not(feature = "cipher"))]
 #[allow(dead_code)]
@@ -23,18 +22,57 @@ const FALLBACK_DEV_ROOT: &str = "./SmartHB-data";
 const SMARTHB_SUBDIR: &str = "smarthb";
 const DB_FILENAME: &str = "app.db";
 
-static DATA_ROOT: OnceLock<Mutex<PathBuf>> = OnceLock::new();
+// 프로덕션: 프로세스 전역 OnceLock<Mutex<PathBuf>>. setup::save_cloud_folder 와
+// lib.rs::setup 두 곳에서만 update_data_root 를 호출하며, 모두 unlock 이전 단일 thread.
+//
+// 테스트: thread_local RefCell. cargo test 가 테스트별로 별도 thread 를 띄우므로 각 테스트가
+// 독립된 DATA_ROOT 를 보유 → reset 헬퍼 없이 병렬 실행 안전 (A21 해소).
+#[cfg(not(test))]
+mod storage {
+    use super::{FALLBACK_DEV_ROOT, PathBuf};
+    use std::sync::{Mutex, OnceLock};
 
-fn root_cell() -> &'static Mutex<PathBuf> {
-    DATA_ROOT.get_or_init(|| Mutex::new(PathBuf::from(FALLBACK_DEV_ROOT)))
+    static DATA_ROOT: OnceLock<Mutex<PathBuf>> = OnceLock::new();
+
+    fn cell() -> &'static Mutex<PathBuf> {
+        DATA_ROOT.get_or_init(|| Mutex::new(PathBuf::from(FALLBACK_DEV_ROOT)))
+    }
+
+    pub(super) fn read() -> PathBuf {
+        cell()
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| PathBuf::from(FALLBACK_DEV_ROOT))
+    }
+
+    pub(super) fn write(new_path: PathBuf) {
+        if let Ok(mut guard) = cell().lock() {
+            *guard = new_path;
+        }
+    }
+}
+
+#[cfg(test)]
+mod storage {
+    use super::{FALLBACK_DEV_ROOT, PathBuf};
+    use std::cell::RefCell;
+
+    thread_local! {
+        static DATA_ROOT: RefCell<PathBuf> = RefCell::new(PathBuf::from(FALLBACK_DEV_ROOT));
+    }
+
+    pub(super) fn read() -> PathBuf {
+        DATA_ROOT.with(|c| c.borrow().clone())
+    }
+
+    pub(super) fn write(new_path: PathBuf) {
+        DATA_ROOT.with(|c| *c.borrow_mut() = new_path);
+    }
 }
 
 /// 앱 데이터 루트 디렉토리 — backup·integrity·lock·sync·startup 모듈 공유 단일 진입점.
 pub(crate) fn data_root() -> PathBuf {
-    root_cell()
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_else(|_| PathBuf::from(FALLBACK_DEV_ROOT))
+    storage::read()
 }
 
 /// 소스 DB 파일 경로 — startup·integrity·sync 가 검증·복원·mtime 감시에 공유.
@@ -47,9 +85,7 @@ pub(crate) fn db_path() -> PathBuf {
 /// SQLite pool 이 이미 초기화된 후에 호출하면 pool 은 옛 경로를 계속 사용한다 — 마법사
 /// 흐름에서만 호출되어 unlock 이전임이 보장된다.
 pub(crate) fn update_data_root(new_path: PathBuf) {
-    if let Ok(mut guard) = root_cell().lock() {
-        *guard = new_path;
-    }
+    storage::write(new_path);
 }
 
 /// 앱 시작 시 1회 호출 — config.json 의 cloud_folder_path 가 있으면 그 하위 `smarthb/` 로
@@ -84,14 +120,11 @@ pub(crate) fn pragma_key_sql(hex_key: &str) -> String {
 mod tests {
     use super::*;
 
-    /// 각 테스트 후 default 로 복원 — OnceLock 은 동일 프로세스 전역이라 테스트 간 격리 필요.
-    fn reset() {
-        update_data_root(PathBuf::from(FALLBACK_DEV_ROOT));
-    }
+    // DATA_ROOT 가 thread_local 이라 각 #[test] 는 독립된 fallback 값으로 시작.
+    // 따라서 reset 헬퍼·reset 호출 불필요 (A21 — 병렬 실행 안전성 확보).
 
     #[test]
     fn data_root_default_is_fallback() {
-        reset();
         assert_eq!(data_root(), PathBuf::from(FALLBACK_DEV_ROOT));
     }
 
@@ -101,7 +134,6 @@ mod tests {
         assert_eq!(data_root(), PathBuf::from("/tmp/test-root"));
         assert!(db_path().starts_with("/tmp/test-root"));
         assert!(db_path().ends_with(DB_FILENAME));
-        reset();
     }
 
     #[test]
@@ -115,12 +147,10 @@ mod tests {
         init_data_root_from_config(&tmp);
         assert_eq!(data_root(), PathBuf::from("/tmp/my-cloud").join(SMARTHB_SUBDIR));
         std::fs::remove_file(&tmp).ok();
-        reset();
     }
 
     #[test]
     fn init_from_config_ignores_empty_path() {
-        reset();
         let tmp = std::env::temp_dir().join("smarthb-paths-test-empty.json");
         std::fs::write(&tmp, r#"{"cloud_folder_path":"","setup_completed":false}"#).unwrap();
         init_data_root_from_config(&tmp);
@@ -130,7 +160,6 @@ mod tests {
 
     #[test]
     fn init_from_config_ignores_missing_file() {
-        reset();
         let missing = std::env::temp_dir().join("does-not-exist-smarthb-config.json");
         init_data_root_from_config(&missing);
         assert_eq!(data_root(), PathBuf::from(FALLBACK_DEV_ROOT));
