@@ -1,31 +1,29 @@
 ---
-Sprint: 6  |  Date: 2026-05-22  |  Session: #6
+Sprint: 6  |  Date: 2026-05-22  |  Session: #7
 ---
 
-> Sprint 6 (Phase 2 학사 스케줄 관리) — T2-a 빌드 스크립트 + T2-b V301 마이그레이션.
-> ADR-005 결정 적용: 공공데이터포털 API + schedule_events 통합 + "공휴일" 시스템 코드 추가.
-> 예상 5.5h (T2-a 3h + T2-b 2.5h).
+> Sprint 6 (Phase 2 학사 스케줄 관리) — T9 3개월 캘린더 + 데이터 통합.
+> 사용자 결정(2026-05-22): T9 일괄 (구조+데이터) / Tailwind grid 직접 구현 (shadcn Calendar 미사용).
+> 예상 6h. R30 리스크: 직접 구현 선택으로 완화 (props.modifiers 복잡도 회피).
 
 ## 이전 세션 결과 (참고 — 모두 완료)
 
 | Session | Task | 커밋 |
 |---------|------|------|
-| #1 | T1 (A20 lock 재시도) | `2c5b8a1` |
-| #1 | T3 (A21 paths.rs OnceLock 분리) | `c2be584` |
-| #1 | T4 (A22 DnD 방법 B) | `83f19d1` |
-| #2 | T5+T6 (academic.rs 신규 — study_periods 6 + schedule_codes 4) | `c8dc3c8` |
-| #3 | T7 (academic.rs 확장 — schedule_events 5) | `a4c380e` |
+| #1 | T1 / T3 / T4 (Sprint 5 부채) | `2c5b8a1` `c2be584` `83f19d1` |
+| #2 | T5+T6 (academic.rs study_periods 6 + schedule_codes 4) | `c8dc3c8` |
+| #3 | T7 (academic.rs schedule_events 5) | `a4c380e` |
 | #4 | T8 (TS IPC 래퍼 15 + 도메인 타입 10) | `5941d24` |
-| #5 | T2-c (ADR-005 공휴일 API + 저장 결정) | `10a92d4` |
+| #5 | T2-c (ADR-005) | `10a92d4` |
+| #6 | T2-a / T2-b (스크립트 + V301 + 64건 공휴일) | `1d0ebe1` `f534706` |
 
 ## 이번 세션의 Task 선정
 
 | Task | 작업 | 예상 소요 |
 |------|------|---------|
-| **T2-a** | scripts/fetch-holidays.ts + tsx devDep + package.json scripts + .env.example | 3h |
-| **T2-b** | V301 마이그레이션 (시드 보정 3 + "공휴일" 코드 INSERT + 7년치 INSERT) + 테스트 + sqlx prepare | 2.5h |
+| **T9** | 3개월 캘린더 + 라우트 + 사이드바 메뉴 + 공휴일/교습기간/일정 IPC 통합 | 6h |
 
-> 사용자 사전 결정(Session #5): tsx devDep 승인 / API 공공데이터포털 / 저장 schedule_events 통합 / 인증키 사용자가 .env 에 직접 추가 (채팅 노출 회피).
+> skill: frontend-design (sprint6.md L275). 다만 .claude/skills/ 에 frontend-design 스킬이 없으므로 디자인 원칙을 .claude/rules/frontend.md (PRD §5.1 + §5.7) 와 PRD 본문(§4.4.1) 에서 직접 참조.
 
 ## 이번 세션에서 수정할 파일
 
@@ -33,83 +31,84 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #6
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| package.json | [1회] | tsx devDep + holidays:fetch 스크립트 등록 |
-| pnpm-lock.yaml | [0회] | tsx 추가 lock 갱신 |
-| scripts/fetch-holidays.ts | [4회 ⚠️] | 신규 — data.go.kr API 호출, XML→JSON, SQL INSERT 출력 |
-| .env.example | [1회] | KOREA_HOLIDAY_API_KEY 변수 추가 |
-| src-tauri/migrations/301__fix_schedule_codes_seed.sql | [3회 ⚠️] | 신규 V301 — 시드 보정 + "공휴일" 코드 + 7년치 |
-| src-tauri/src/commands/academic.rs | [2회] | V301 적용 후 공휴일 데이터 검증 테스트 추가 |
-| src-tauri/.sqlx/ | [0회] | sqlx prepare 캐시 갱신 (커밋 필수) |
+| src/lib/menu-config.ts | [1회] | "학사 스케줄" 활성 메뉴 추가 (Phase 2 disabledHint 제거) |
+| src/app/academic/page.tsx | [1회] | 신규 — 학사 스케줄 페이지 라우트, AppShell 안에 ThreeMonthCalendar 배치 |
+| src/components/academic/ThreeMonthCalendar.tsx | [2회] | 신규 — 3개월 가로 배치 컨테이너, 중앙 년월 화살표 네비, IPC 데이터 조회 (TanStack Query) |
+| src/components/academic/CalendarCell.tsx | [1회] | 신규 — 1일 셀: 날짜 / 공휴일 배지 / 교습기간 배경 / 일정 배지 (단원평가 셀 상단 띠) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
 - [ ] `.github/workflows/` — CI/CD 파이프라인 (hook이 차단)
 - [ ] `SETUP.sh` — 초기화 스크립트 (hook이 차단)
 - [ ] `docs/harness-engineering/` — Harness 정책 (경고)
-- [ ] `.env` — 사용자가 직접 인증키 채움. 본 에이전트는 절대 .env 에 키를 작성하지 않음
-- [ ] `src-tauri/Cargo.toml` — Rust 의존성 변경 없음
-- [ ] `src/` — 프론트엔드 변경 없음 (T9~T11)
-- [ ] 기존 마이그레이션 (V001~V201) — 변경 금지, V301 만 신규 추가
+- [ ] `src-tauri/` — 본 세션 백엔드 변경 없음 (T7 IPC + T2 시드 모두 충족)
+- [ ] `src/lib/tauri/index.ts` — T8 래퍼 그대로 사용
+- [ ] `src/types/academic.ts` — T8 타입 그대로 사용
+- [ ] `package.json` / `Cargo.toml` — 신규 의존성 없음
 
 ## 완료 기준 (이번 세션)
 
-### T2-a — 빌드 스크립트 (PRD §5.5, sprint6.md L75-83)
-- ✅ AC-T2-3: `pnpm holidays:fetch -- --years 2025-2027` → 64건 SQL INSERT 출력 (대체공휴일 7건 포함). 외부 API 한계로 2028+ 0건 — ADR-005 갱신
-- ✅ AC-T2-8: 스크립트가 `scripts/` 디렉토리 (`src-tauri/`/`src/` 본체 외)
-- ✅ `tsx` 4.22 devDependency + `holidays:fetch` 스크립트 등록 (`node --env-file=.env --import tsx`)
-- ✅ `.env.example` 에 `KOREA_HOLIDAY_API_KEY` + data.go.kr 발급 절차 주석
-- ✅ 에러 처리 — 인증키 누락 / HTTP 403 / JSON 파싱 / API resultCode≠00 모두 친화 메시지 + exit 1
+### T9 — 3개월 캘린더 (PRD §4.4.1, sprint6.md L256-283)
+- ✅ AC-T9-1: 3개월 가로 배치 — `grid grid-cols-1 md:grid-cols-3` 반응형
+- ✅ AC-T9-2: 중앙 년월 ← → 화살표 → setCenter → useMemo 로 prev/next 연동 (월 단위)
+- ✅ AC-T9-3: V301 공휴일 64건이 `code_name='공휴일'` 빨강 배지 + 일요일 텍스트 빨강
+- ✅ AC-T9-4: 교습기간 셀 `bg-amber-50` 파스텔, 일정 셀에 코드별 색상 배지
+- ✅ AC-T9-5: `isMonthPast = year_month < current_year_month` → opacity-60 + cursor-not-allowed + onClick disabled (백엔드 AC-4.4-1 가드와 일관)
+- ✅ AC-T9-6: Pretendard 18pt 본문 / `min-h-[72px] min-w-[44px]` / `text-[var(--foreground)]` WCAG AA 토큰
 
-### T2-b — V301 마이그레이션 (PRD §4.4.4, §6.2, sprint6.md L85-96)
-- ✅ AC-T2-1: 시드 보정 검증 — 테스트 `v301_corrects_system_code_attributes`
-- ✅ AC-T2-2: 방어적 UPDATE — WHERE code_name + is_system_reserved=1
-- ✅ AC-T2-4: "공휴일" 시스템 코드(1,0,0,1,0) + 2025~2027 공휴일 64건 — 테스트 `v301_inserts_holiday_system_code` + `v301_seeds_korean_holidays_2025_2027`
-- ✅ AC-T2-5: `cargo sqlx prepare` 시도 — `query()` 런타임 사용으로 매크로 없음 → `.sqlx/` 캐시 미생성 (정상)
-- ✅ AC-T2-6: V301 검증 테스트 5건 동일 커밋(`f534706`) (A19 규칙)
-- ✅ 주요 공휴일: 1월1일/삼일절/어린이날/광복절/한글날/기독탄신일 + 대체공휴일 7건 (요구 5건↑)
+### 추가 (T9 부수)
+- ✅ 사이드바 menu-config "학사 스케줄" 활성 메뉴 (`/academic`)
+- ✅ 단원평가 셀 상단 띠 `border-t-4 border-blue-400` (PRD §4.4.7)
+- ✅ 코드별 배지 7종: 공휴일 red / 보강데이 teal / 공휴수업일 pink / 방학 purple / 휴원일 gray / 단원평가 blue / 사용자 amber
+- ✅ 빈 데이터: `data ?? []` + eventsByDate Map graceful
 
-### 외부 데이터 한계 발견 + ADR-005 갱신
-- API 가 2028+ 미발표 → 초기 범위 2025~2027 (3년치, 64건) 로 축소
-- 갱신 트리거 좁힘: "2029-12 이전 7년치" → "**매년 1월** N년치 신규 발표 시 V401(+) 추가"
-- Sprint 6 회고에 메모 필요 (sprint-close 에이전트 반영)
-
-### Session #6 부수 작업
-- ✅ Hook 정규식 좁힘 — `.env.example` 허용 (CLAUDE.md 환경변수 정책 충돌 해소)
-- ✅ 인증키 발급/거부 디버깅 — `URL.searchParams.set` 이중 인코딩 → raw concat 우회
-- ⚠️ scripts/fetch-holidays.ts [4회] / V301 [3회] — 동일 오류 반복 아닌 단계적 진화 (auth 디버깅 / SQL 호환성 / TypeScript strict). loop-detection 미적용
+### Session #7 발견 + 처리
+- ⚠️ `Object.values(currentYearMonth())` spread 순서 미보장 위험 → useState 초기화 함수로 명시적 cur.year/cur.month 사용 (simplify 검토 시 발견·즉시 수정)
+- ⓘ `frontend-design` 스킬은 `.claude/skills/` 에 미존재 — 디자인 원칙을 `.claude/rules/frontend.md` + PRD §5.7 에서 직접 참조
 
 ### 세션 종료 조건
-- ✅ 커밋 분할 3개: T2-a `1d0ebe1` / T2-b `f534706` / ADR-005 갱신+scope 완료 마킹 (본 커밋)
-- ✅ Self-verify: `cargo test 146 passed` + `cargo clippy -D warnings` clean + `pnpm tsc` clean + `pnpm lint` clean
-- ✅ simplify 검토 — 신규 결함 없음 (단순 빌드 스크립트, V301 SQL, 패턴 일관 테스트)
+- ✅ 단일 커밋 `604027b` (4 신규 + 1 수정, +501줄)
+- ✅ Self-verify: tsc 통과 / lint clean / `pnpm build` 성공 (/academic 3.34kB, First Load 123kB)
+- ✅ simplify 검토 — spread 위험 1건 발견·제거, 나머지 추상화 적절
+- ⬜ 시각 확인 (`pnpm tauri:dev`) — 본 세션 범위 외, 사용자가 자발 검증 권장
 
-## 안전 절차 — API 인증키
+## 설계 결정
 
-- 사용자가 `.env` 에 `KOREA_HOLIDAY_API_KEY=<값>` 직접 추가 (`.gitignore` `.env` 검증 완료)
-- 에이전트는 채팅창에서 받은 키를 메모리에만 보유, 어떤 파일에도 기록하지 않음
-- 스크립트는 `process.env.KOREA_HOLIDAY_API_KEY` 만 읽고, 누락 시 친화 메시지로 종료
-- V301 산출물에는 인증키 흔적 없음 (SQL INSERT 문만)
+### 라이브러리 선택
+- **Tailwind `grid-cols-7` 직접 구현** (사용자 결정 2026-05-22) — shadcn/ui Calendar / react-day-picker 미설치
+- 사유: 3개월 합성 + 교습기간 오버레이 + 다중 배지(공휴일/일정/단원평가)의 커스터마이징 자유. R30 리스크 완화.
 
-## 설계 결정 (ADR-005 적용)
+### 데이터 흐름
+- **TanStack Query** 로 IPC 응답 캐싱
+  - `listScheduleEvents(fromDate, toDate)` — 3개월 범위 (이전월 1일 ~ 다음월 말일) 일정 + 공휴일 통합 조회
+  - `listStudyPeriods(fromMonth, toMonth)` — 3개월 범위 교습기간
+  - 네비게이션 시 queryKey 변경 → 자동 refetch
+- 셀 렌더링: 각 셀이 자신의 날짜에 해당하는 schedule_events / study_period 를 필터링하여 표시
 
-- **저장 위치**: schedule_events 통합 → V102 schedule_codes 시드에 "공휴일" 추가 필요
-- **공휴일 시스템 코드 속성** (PRD §4.4.4 기준):
-  - is_system_reserved = 1 (사용자 3속성 수정 차단)
-  - allows_regular_class = 0 (정규수업 OFF)
-  - allows_makeup_class = 0 (보강 OFF)
-  - is_duplicate_blocked = 1 (중복불가 ON)
-  - is_period_type = 0 (단일 일자)
-- **공휴일 데이터 매핑**:
-  - schedule_events.event_date = 공휴일 일자
-  - schedule_events.period_end_date = NULL (단일 일자)
-  - schedule_events.display_name = "신정" / "어린이날" / "대체공휴일(어린이날)" 등
-- **갱신 방법**: 2029-12 이전 `pnpm holidays:fetch` 재실행 + V401(+) 신규 마이그레이션 추가 (ROADMAP 메모)
+### 시각 디자인 토큰 (PRD §5.7)
+- 본문: Pretendard 18pt (globals.css 기존 설정 유지)
+- 셀 최소: `min-h-[60px] min-w-[44px]` (44×44 권장 + 캘린더 공간 확보)
+- 교습기간 배경: `bg-amber-50` (저자극 파스텔)
+- 단원평가 띠: `border-t-4 border-blue-400`
+- 공휴일 배지: `bg-red-100 text-red-800` (한국 캘린더 관습)
+- 보강데이 / 공휴수업일 / 방학 / 휴원일: 코드 색상 매핑
+
+### 지난 달 셀 처리 (AC-T9-5)
+- 컨테이너 props 로 `isPastMonth` 전달
+- CalendarCell 이 `isPastMonth=true` 일 때 onClick 무시 + opacity-60 + cursor-not-allowed
+- 시각적으로 회색조 처리 (배경 + 텍스트)
+
+### 메뉴 위치
+- 사이드바 `MENU_ITEMS` 에 "학사 스케줄" 항목 — "원생 관리" 다음 (Phase 2 첫 진입)
+- shortcut: 미정 (Ctrl+L 또는 추후 결정, 이번 세션은 보류)
 
 ## 코드 패턴 SSOT
 
-- V200/V201 시드 마이그레이션 패턴 (방어적 INSERT/UPDATE) 답습
-- academic.rs 테스트 패턴 (Session #2/#3 그대로): `#[cfg(not(feature = "cipher"))] + #[tokio::test]` + `db::test_pool_in_memory()`
-- 스크립트는 process.exit(1) 에러 종료 — npm scripts 단순 실패 신호
+- 컴포넌트: `'use client'` 명시 (Tauri IPC 호출 + useQuery 사용)
+- IPC 호출: `@/lib/tauri` 추상화 레이어만 통과 (frontend.md 규칙)
+- TanStack Query: 기존 패턴 (`students` 화면) 답습
+- 키보드 단축키: 이번 세션 범위 외 (T10/T11 또는 후속 sprint)
+- 셀 클릭 핸들러: 본 세션은 기본 onClick (T10 교습기간 설정 모드에서 props.mode 추가 예정)
 
 ## 발견된 이슈
 
