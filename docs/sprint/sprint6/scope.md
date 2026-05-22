@@ -53,10 +53,9 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #3
 - [ ] AC-T7-6: 단위 테스트 — 중복불가 / 기간성 / 지난 달 차단 / 자동 배치 / 재실행 No-op
 
 ### 세션 종료 조건
-- [ ] T7 단일 커밋 (academic.rs 확장 + lib.rs 등록)
-- [ ] Self-verify: `cargo test --manifest-path src-tauri/Cargo.toml` 통과 (136 → +5~6 추가)
-- [ ] `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` clean
-- [ ] simplify 스킬 1회 실행 (T5+T6 패턴과 일관성 우선)
+- ✅ T7 단일 커밋 `a4c380e` (academic.rs +446줄 + lib.rs 5 커맨드 등록)
+- ✅ Self-verify: `cargo test` **141 passed** (136 → +5 T7), `cargo clippy -- -D warnings` clean
+- ✅ simplify 스킬 1회 실행 (변경 없음 — T5/T6 패턴 일관성. 헬퍼 `assessment_dates_for/year_month_of/find_assessment_code_id` 는 책임 분리·테스트 가능성으로 정당화)
 
 ## 설계 결정 (메모리 가이드 따름)
 
@@ -77,4 +76,4 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #3
 
 > 코드 수정 중 예상 외 충돌·구조 발견 시 여기에 기록 후 사용자에게 보고 (step-back 프로토콜).
 
-(없음 — Session #3 시작)
+- 1차 컴파일에서 `chrono::Datelike` trait import 누락(weekday()/num_days_from_monday() trait method) → 단일 라인 `use chrono::Datelike;` 추가로 즉시 통과. 동일 오류 반복 없음 → 3-retry / loop-detection 미적용.
