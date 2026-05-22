@@ -21,6 +21,7 @@ const _CIPHER_MARKER: () = ();
 const FALLBACK_DEV_ROOT: &str = "./SmartHB-data";
 const SMARTHB_SUBDIR: &str = "smarthb";
 const DB_FILENAME: &str = "app.db";
+const SALT_FILENAME: &str = "salt.bin";
 
 // 프로덕션: 프로세스 전역 OnceLock<Mutex<PathBuf>>. setup::save_cloud_folder 와
 // lib.rs::setup 두 곳에서만 update_data_root 를 호출하며, 모두 unlock 이전 단일 thread.
@@ -78,6 +79,14 @@ pub(crate) fn data_root() -> PathBuf {
 /// 소스 DB 파일 경로 — startup·integrity·sync 가 검증·복원·mtime 감시에 공유.
 pub(crate) fn db_path() -> PathBuf {
     data_root().join(DB_FILENAME)
+}
+
+/// PBKDF2 salt 파일 경로 — 클라우드 동기화 폴더에 평문 32바이트 저장 (Sprint 7 T2, A17/A27).
+///
+/// salt 는 비밀이 아니므로 Keychain 대신 cloud sync 폴더에 두어 양 PC 자동 동기화.
+/// 첫 설치 시 `auth::set_password` 가 생성, 기존 Keychain salt 는 1회 마이그레이션.
+pub(crate) fn salt_path() -> PathBuf {
+    data_root().join(SALT_FILENAME)
 }
 
 /// 데이터 루트를 런타임 중 갱신한다. 마법사가 폴더를 새로 지정할 때 호출.
@@ -170,6 +179,12 @@ mod tests {
     fn pragma_key_sql_uses_blob_literal() {
         let sql = pragma_key_sql("deadbeef");
         assert_eq!(sql, "PRAGMA key = \"x'deadbeef'\";");
-        assert!(!sql.contains('\''), "단일 따옴표 SQL 인젝션 통로 차단 (raw 따옴표 없음)");
+        // blob literal `x'...'` 의 마커 작은따옴표 2개 외에는 따옴표가 없어야 한다 —
+        // 사용자 입력은 hex (`[0-9a-f]`) 만 허용되므로 따옴표 삽입 통로가 없음을 보장.
+        assert_eq!(
+            sql.matches('\'').count(),
+            2,
+            "blob literal 마커 외 따옴표가 추가로 삽입되면 SQL injection 위험 — hex 검증 위반",
+        );
     }
 }

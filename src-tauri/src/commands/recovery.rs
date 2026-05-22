@@ -25,8 +25,8 @@
 
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::auth::{
-    cache_credentials, derive_key_async, generate_salt, keyring_entry_for, keyring_get_or_none,
-    store_key_in_keyring, store_salt_in_keyring,
+    cache_credentials, delete_key_from_keyring, derive_key_async, generate_salt, keyring_entry_for,
+    keyring_get_or_none, store_key_in_keyring, store_salt,
 };
 use crate::error::AppError;
 use argon2::{
@@ -178,9 +178,20 @@ pub async fn reset_password_with_code(code: String, new_password: String) -> Res
     let new_key = derive_key_async(new_password, salt)
         .await
         .map_err(String::from)?;
-    store_salt_in_keyring(&salt).map_err(String::from)?;
+    // Sprint 7 T2 보안 패치 #3 (atomic order + rollback):
+    // 기존 salt 파일 → 새 key keyring 순서는 두 매체 사이 partial-failure 시 양 비밀번호 모두 잠금.
+    // 변경: keyring 먼저 (사용자 다이얼로그 가능 단계) → 성공 시 salt 파일 → 실패 시 keyring rollback.
     store_key_in_keyring(&new_key).map_err(String::from)?;
-    // Sprint 7 T1: 새 자격증명을 캐시에 즉시 반영 → 후속 verify_password / cipher key 조회가 keyring 호출 없이 동작.
+    if let Err(e) = store_salt(&salt) {
+        if let Err(rollback) = delete_key_from_keyring() {
+            eprintln!(
+                "[recovery] reset_password_with_code rollback 실패 (keyring key 잔존): {} — 다음 reset 시 덮어씀",
+                rollback
+            );
+        }
+        return Err(String::from(e));
+    }
+    // 새 자격증명을 캐시에 즉시 반영 → 후속 verify_password / cipher key 조회가 keyring 호출 없이 동작 (T1).
     cache_credentials(salt, new_key);
     audit::try_record(AuditEventType::PasswordChange, Some("recovery-reset"), None).await;
     Ok(())
