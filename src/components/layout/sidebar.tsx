@@ -32,9 +32,9 @@ export function Sidebar() {
       aria-label="메인 메뉴"
       className="flex h-full w-56 flex-col border-r border-[var(--border)] bg-white"
     >
-      <div className="border-b border-[var(--border)] px-4 py-4">
-        <p className="text-base font-bold text-[var(--foreground)]">스마트해법수학</p>
-        <p className="text-sm text-gray-600">서현효자점</p>
+      <div className="flex h-16 flex-col justify-center border-b border-[var(--border)] px-4">
+        <p className="text-base font-bold leading-tight text-[var(--foreground)]">스마트해법수학</p>
+        <p className="text-sm leading-tight text-gray-600">서현효자점</p>
       </div>
       <ul className="flex-1 overflow-y-auto py-2">
         {MENU_ITEMS.map((item) => (
