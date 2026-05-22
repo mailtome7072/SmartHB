@@ -16,8 +16,12 @@ globs: ["src-tauri/**/*.rs", "src-tauri/Cargo.toml", "src-tauri/migrations/**/*.
 - DB 스키마 변경(테이블 추가/수정/삭제) 시 `src-tauri/migrations/` 에 마이그레이션 파일 필수 생성
 - 파일명 형식: `V{NNN}__{설명}.sql` — `NNN` 은 **3자리 zero-pad** (V001, V002, ..., V010, V099)
   - 3자리는 향후 V100+ 확장 시 사전순 정렬을 보장 (`sqlx::migrate!` 가 파일명 사전순으로 적용)
-  - 예: `V001__create_students.sql`, `V010__alter_students_add_phone.sql`
-  - Sprint 별 번호 예약 권장: Sprint 1 = V001~V099, Sprint 2 = V100~V199 (자유 운용)
+  - 예: `V001__create_code_tables.sql`, `V101__create_students_and_schedules.sql`
+  - **번호 정책 (실제 운용)**: 기능 영역별 100단위 블록을 끊는다.
+    - `V001~V099` — 코드 테이블·감사 로그·앱 설정 (인프라성)
+    - `V101~V199` — 핵심 도메인 (원생/스케줄/교습기간/수업료/학교)
+    - `V200~V299` — 시드 데이터
+    - 새 도메인 영역 추가 시 다음 100단위(V300~, V400~)에서 시작
 - `sqlx migrate run` 으로 적용, `sqlx prepare` 로 `.sqlx/` 오프라인 캐시 갱신 후 커밋
 
 ### SQLx 쿼리
