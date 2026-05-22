@@ -33,6 +33,7 @@ export default function LockPage() {
 
   const refresh = useCallback(() => {
     setError(null)
+    setLockStatus(null)
     checkLockStatus()
       .then(setLockStatus)
       .catch((e) => setError(typeof e === 'string' ? e : '잠금 상태를 확인할 수 없습니다.'))
@@ -50,11 +51,20 @@ export default function LockPage() {
   if (error !== null) {
     return (
       <main className="flex min-h-screen items-center justify-center p-8">
-        <div
-          role="alert"
-          className="max-w-md rounded-md border-2 border-[var(--danger)] bg-red-50 p-4 text-base text-[var(--danger)]"
-        >
-          {error}
+        <div className="flex w-full max-w-md flex-col gap-4">
+          <div
+            role="alert"
+            className="rounded-md border-2 border-[var(--danger)] bg-red-50 p-4 text-base text-[var(--danger)]"
+          >
+            {error}
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="h-[56px] w-full rounded-lg bg-[var(--accent)] text-lg font-semibold text-white hover:bg-[var(--accent-hover)]"
+          >
+            다시 시도
+          </button>
         </div>
       </main>
     )
