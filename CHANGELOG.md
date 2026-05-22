@@ -38,6 +38,19 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 5: `tauri-plugin-single-instance` 2.4.2 도입 — 동일 PC 다중 인스턴스 원천 차단. 두 번째 인스턴스 기동 시 기존 창 포커스 + 새 프로세스 즉시 종료 (PRD §5.3)
+- Sprint 5: `cross-env` devDependency 추가 — `pnpm dev` 스크립트에 `NODE_OPTIONS=--no-experimental-webstorage` 적용 (Node 25/20 cross-OS 호환)
+- Sprint 5: V201 마이그레이션 (`201__update_seed_data.sql`) — 표준교습비 시드 (3/4/5/6h: 16만/20만/23만/26만원) + 결제수단 시드 (현금 비활성 + 계좌이체/카드/결제선생/성남사랑 활성 5종) 운영 값으로 보정. 멱등성 보장 (V001/V104 baseline 일치 행만 변경, 사용자 수정 데이터 보존)
+
+### Changed
+- Sprint 5: LockPage 진입 시 락 상태 사전 체크 로직 추가 — stale 락(5분 미갱신) 자동 점유 후 LockWarning 라우팅 활성화. 이전에는 LockWarning 화면으로 진입하지 않던 문제 해소
+- Sprint 5: 마법사 완료 redirect 경로 수정 — `/` → `/settings` (마법사 완료 후 교습소 설정 화면으로 직행)
+
+### Fixed
+- Sprint 5: Node 25 환경에서 Next.js Dev Overlay의 `localStorage.getItem` 호출이 SSR에서 실패하여 `/` 페이지 500 에러 발생하던 이슈 해소 (`--no-experimental-webstorage` 플래그)
+- Sprint 5: 동일 PC 다중 인스턴스 기동 시 두 번째 인스턴스가 외부 디바이스로 오인 → "다른 PC 사용 중" 오표시 + 잠금해제 무반응 이슈 해소 (single-instance 플러그인)
+
+### Added
 - Sprint 4: 교습소 설정 메뉴 화면 신설 (PRD §4.12) — 운영 시간(요일별 시작/종료/수업 길이) 편집, `save_operating_hours`/`get_operating_hours` IPC
 - Sprint 4: 수업 스케줄 시작시간 콤보박스 + 수정/삭제 기능 — 운영 시간 내 1시간 단위 선택, 운영시간 디폴트 자동 적용, 스케줄 카드 수정/삭제 UI
 - Sprint 4: 코드 테이블 DnD 순서 변경 (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`) + 활성 상태 필터 + 신규 항목 sort_order 자동 부여
