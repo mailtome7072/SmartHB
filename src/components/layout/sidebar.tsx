@@ -63,8 +63,6 @@ export function Sidebar() {
             )}
           </li>
         ))}
-      </ul>
-      <ul className="border-t border-[var(--border)] py-2">
         <li>
           <button
             type="button"
