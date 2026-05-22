@@ -21,7 +21,14 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createStudyPeriod, confirmStudyPeriod, getStudyPeriod } from '@/lib/tauri'
+import {
+  createStudyPeriod,
+  confirmStudyPeriod,
+  deleteStudyPeriodCascade,
+  getCascadeDeletePreview,
+  getStudyPeriod,
+} from '@/lib/tauri'
+import type { CascadeDeletePreview } from '@/types/academic'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +60,12 @@ function normalizeRange(s: SelectionRange): { start: string; end: string } | nul
   return s.start <= s.end ? { start: s.start, end: s.end } : { start: s.end, end: s.start }
 }
 
+/** 현재 년-월 ("YYYY-MM") — 클라이언트 로컬 시간 기준. 백엔드 가드(`current_year_month`) 와 일관. */
+function currentYearMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 export function StudyPeriodEditor({
   centerYearMonth,
   eventPlaceMode,
@@ -62,6 +75,7 @@ export function StudyPeriodEditor({
   const queryClient = useQueryClient()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [deletePreview, setDeletePreview] = useState<CascadeDeletePreview | null>(null)
 
   // 중앙 월의 교습기간 확정 여부 조회 — null 이면 미확정 (자동 selection 모드).
   const periodQuery = useQuery({
@@ -101,6 +115,31 @@ export function StudyPeriodEditor({
       setErrorMessage(err instanceof Error ? err.message : String(err))
     },
   })
+
+  // Sprint 7 T8: cascade 삭제 mutation — 공휴일 제외 학사 일정 + 교습기간 일괄 삭제.
+  const cascadeDeleteMutation = useMutation({
+    mutationFn: async (id: number) => deleteStudyPeriodCascade(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['study-periods'] })
+      await queryClient.invalidateQueries({ queryKey: ['study-period'] })
+      await queryClient.invalidateQueries({ queryKey: ['schedule-events'] })
+      setDeletePreview(null)
+    },
+    onError: (err) => {
+      setDeletePreview(null)
+      setErrorMessage(err instanceof Error ? err.message : String(err))
+    },
+  })
+
+  async function handleRequestDelete() {
+    if (!confirmedPeriod) return
+    try {
+      const preview = await getCascadeDeletePreview(confirmedPeriod.id)
+      setDeletePreview(preview)
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   function handleCancel() {
     setSelection({ start: null, end: null })
@@ -147,9 +186,22 @@ export function StudyPeriodEditor({
       )}
 
       {confirmedPeriod !== null && (
-        <p className="text-sm text-[var(--foreground)]">
-          <strong>{confirmedPeriod.start_date} ~ {confirmedPeriod.end_date}</strong> 확정됨
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-[var(--foreground)]">
+            <strong>{confirmedPeriod.start_date} ~ {confirmedPeriod.end_date}</strong> 확정됨
+          </p>
+          {/* Sprint 7 T8: 지난 달이 아닐 때만 삭제 버튼 노출 — 백엔드 가드와 동일 조건. */}
+          {confirmedPeriod.year_month >= currentYearMonth() && (
+            <button
+              type="button"
+              onClick={handleRequestDelete}
+              disabled={cascadeDeleteMutation.isPending}
+              className="min-h-[44px] rounded-md border border-red-500 bg-white px-4 py-2 text-base text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              교습기간 삭제
+            </button>
+          )}
+        </div>
       )}
 
       {isSelectionActive && (
@@ -195,6 +247,54 @@ export function StudyPeriodEditor({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Sprint 7 T8: cascade 삭제 확인 다이얼로그 — preview 영향 건수 표시 */}
+      <AlertDialog
+        open={deletePreview !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletePreview(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>교습기간 삭제 — cascade</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletePreview && !deletePreview.deletable && (
+                <span className="text-red-700">{deletePreview.reason}</span>
+              )}
+              {deletePreview && deletePreview.deletable && (
+                <>
+                  교습기간을 삭제하면 공휴일을 제외한{' '}
+                  <strong>{deletePreview.affected_count}건</strong>의 학사 일정이 함께
+                  삭제됩니다.
+                  <br />
+                  보존되는 공휴일: <strong>{deletePreview.holiday_count}건</strong>
+                  <br />
+                  <br />
+                  되돌릴 수 없습니다. 삭제하시겠습니까?
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cascadeDeleteMutation.isPending}>
+              취소
+            </AlertDialogCancel>
+            {deletePreview?.deletable && confirmedPeriod && (
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault()
+                  cascadeDeleteMutation.mutate(confirmedPeriod.id)
+                }}
+                disabled={cascadeDeleteMutation.isPending}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {cascadeDeleteMutation.isPending ? '삭제 중...' : '삭제'}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog
         open={errorMessage !== null}
         onOpenChange={(open) => {
@@ -203,7 +303,7 @@ export function StudyPeriodEditor({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>교습기간 등록 실패</AlertDialogTitle>
+            <AlertDialogTitle>교습기간 처리 실패</AlertDialogTitle>
             <AlertDialogDescription>{errorMessage}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

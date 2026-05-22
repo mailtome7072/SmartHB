@@ -27,6 +27,7 @@ import type {
   StandardFee,
 } from '@/types/fee'
 import type {
+  CascadeDeletePreview,
   CreateScheduleCodePayload,
   CreateScheduleEventPayload,
   CreateStudyPeriodPayload,
@@ -788,6 +789,29 @@ export async function deleteStudyPeriod(id: number): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('delete_study_period', { id })
+}
+
+/** 교습기간 cascade 삭제 미리보기 (Sprint 7 T8) — 영향 건수 + 가능 여부. */
+export async function getCascadeDeletePreview(
+  id: number,
+): Promise<CascadeDeletePreview> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      affected_count: 0,
+      holiday_count: 0,
+      deletable: false,
+      reason: '개발 모드: 백엔드 없이는 cascade 삭제 미리보기 불가',
+    }
+  }
+  return inv('get_cascade_delete_preview', { id }) as Promise<CascadeDeletePreview>
+}
+
+/** 교습기간 cascade 삭제 — 공휴일 제외 학사 일정 + 교습기간 트랜잭션 삭제 (Sprint 7 T8). */
+export async function deleteStudyPeriodCascade(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_study_period_cascade', { id })
 }
 
 // ─── 학사 일정 코드 schedule_codes (T6) ──────────────────────────────

@@ -84,6 +84,8 @@ pub fn run() {
             commands::academic::get_study_period,
             commands::academic::confirm_study_period,
             commands::academic::delete_study_period,
+            commands::academic::get_cascade_delete_preview,
+            commands::academic::delete_study_period_cascade,
             commands::academic::list_schedule_codes,
             commands::academic::create_schedule_code,
             commands::academic::update_schedule_code,

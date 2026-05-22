@@ -1,9 +1,9 @@
 ---
-Sprint: 7  |  Date: 2026-05-22  |  Session: #7
+Sprint: 7  |  Date: 2026-05-22  |  Session: #8
 ---
 
-> Sprint 7 Session #7 — T7 + T9 묶음 (백엔드 가드 일괄 강화).
-> Issue 4/R34 + Issue 7 carry-over 해소. 예상 6h.
+> Sprint 7 Session #8 — T8 단독 (교습기간 삭제 cascade).
+> Issue 6 carry-over 해소. T6 완료로 unblock. 예상 4h.
 
 ## 이전 세션 결과
 
@@ -13,88 +13,98 @@ Sprint: 7  |  Date: 2026-05-22  |  Session: #7
 - Session #4 (`6b5f8de`): T4 — is_system_reserved JOIN
 - Session #5 (`ba7ef09`): T5 — 코드 관리 /settings 이동
 - Session #6 (`2405ca5`): T6 — 교습기간 UX 재설계
+- Session #7 (`84aa86f`): T7+T9 — 배치 제약 + 공휴일 삭제 차단
 
 ## 이번 세션의 Task 선정
 
 | Task | 작업 | 예상 소요 |
 |------|------|---------|
-| **T7** | 학사 일정 배치 제약 강화 — 중복불가 상호 차단 + 교습기간 내만 (Issue 4/R34) | 4h |
-| **T9** | 공휴일 삭제 차단 (Issue 7) | 2h |
+| **T8** | 교습기간 삭제 + cascade 삭제 (공휴일 제외) (Issue 6) | 4h |
 
-> 사용자 결정 (2026-05-22): T7+T9 묶음. 두 Task 모두 academic.rs 백엔드 가드 강화 + 프론트 에러 메시지 — 한 세션으로 통합 효율적.
+> 사용자 결정 (2026-05-22): Session #8 = T8 단독.
 
-## 설계 결정
+## 설계 결정 (T8)
 
-### T7 — 배치 제약 강화 (sprint7.md L203-229)
+### 백엔드 — 신규 IPC 2개 추가 (기존 `delete_study_period` 보존)
 
-`create_schedule_event` + `update_schedule_event` 양쪽 동일 검증 추가:
+기존 `delete_study_period` 는 미확정 전용 — 이름·동작 유지하여 호환성 보장.
+T8 의 cascade 삭제는 별도 IPC 2개로 추가:
 
-**제약 1: 중복불가 상호 차단** (sprint7.md L210-211)
-- **현재** (Sprint 6): `is_duplicate_blocked=1` 코드는 동일 `code_id` + 동일 `event_date` 만 차단
-- **변경**: `is_duplicate_blocked=1` 코드 배치 시, 해당 일자에 **어떤 다른 일정도** 있으면 차단
-- **역방향**: 해당 일자에 이미 `is_duplicate_blocked=1` 일정이 있으면 새 코드(중복불가/허용 무관) 배치도 차단
-- 한국어 에러: "중복불가 코드는 다른 일정이 있는 날짜에 배치할 수 없습니다" / "해당 일자에 중복불가 일정이 있어 배치할 수 없습니다"
+**1. `get_cascade_delete_preview(id) -> CascadeDeletePreview`**
 
-**제약 2: 교습기간 내만 배치** (sprint7.md L212)
-- `event_date` 가 어떤 확정된 교습기간(`is_confirmed=1`) 의 `[start_date, end_date]` 안에 있어야 허용
-- 기간성 코드의 `period_end_date` 도 동일 교습기간 내에 있어야 함
-- 한국어 에러: "학사 일정은 확정된 교습기간 내 일자에만 배치할 수 있습니다"
+```rust
+pub struct CascadeDeletePreview {
+    pub affected_count: i64,    // 삭제될 schedule_events (공휴일 제외) 건수
+    pub holiday_count: i64,     // 보존되는 공휴일 건수
+    pub deletable: bool,        // 삭제 가능 여부 (confirmed + 지난 달 아님)
+    pub reason: Option<String>, // 불가 사유 (한국어)
+}
+```
 
-**예외**: 시스템 시드된 공휴일(V301) 은 교습기간과 무관하게 미리 시드된 데이터 — 본 IPC 가드는 사용자 명시 배치 호출에만 적용. 시드 INSERT 는 마이그레이션 직접 실행이라 영향 없음.
+- 가드: 교습기간이 존재 + `is_confirmed=1` + 시작 월이 현재 월 이상 (지난 달 아님)
+- 영향 건수 계산: `[start_date, end_date]` 범위 내 `schedule_events` 중 `c.code_name != '공휴일'` 카운트
+- 공휴일 보존 건수: `[start_date, end_date]` 범위 내 공휴일 카운트
 
-### T9 — 공휴일 삭제 차단 (sprint7.md L264-286)
+**2. `delete_study_period_cascade(id) -> ()`**
 
-`delete_schedule_event` 가드 추가:
-- 삭제 대상 이벤트의 코드가 `is_system_reserved=1` **AND** `code_name='공휴일'` 이면 차단
-- 단원평가 자동 배치 이벤트는 수동 삭제 허용 (is_system_reserved=1 이지만 공휴일 아님)
-- 한국어 에러: "공휴일은 삭제할 수 없습니다."
+- preview 와 동일 가드 사전 검증
+- 트랜잭션 안에서:
+  1. `DELETE FROM schedule_events WHERE event_date BETWEEN ? AND ? AND code_id IN (SELECT id FROM schedule_codes WHERE code_name != '공휴일')`
+  2. `DELETE FROM study_periods WHERE id = ?`
+- 공휴일은 시스템 시드 — 캘린더에 그대로 표시되어야 하므로 보존
 
-**프론트 가드** (`CalendarCell.tsx`):
-- 공휴일 배지 클릭 시 삭제 다이얼로그 차단 — `event.is_system_reserved && event.code_name === '공휴일'` 조건으로 onEventClick 호출 자체 차단 또는 토스트 안내
+### 프론트엔드
 
-### 기존 단위 테스트
-- `cargo test create_schedule_event_*` 류 다수 존재 — 시그니처 변경 없으므로 신규 가드만 추가 검증
-- 신규 테스트: 중복불가 상호 차단, 교습기간 외 차단, 공휴일 삭제 차단
+**타입** (`src/types/academic.ts`):
+- `CascadeDeletePreview` 인터페이스 추가
+
+**IPC 래퍼** (`src/lib/tauri/index.ts`):
+- `getCascadeDeletePreview(id) -> Promise<CascadeDeletePreview>`
+- `deleteStudyPeriodCascade(id) -> Promise<void>`
+- dev fallback: preview 는 `{ affected_count: 0, holiday_count: 0, deletable: false, reason: '개발 모드' }`
+
+**UI** (`src/components/academic/StudyPeriodEditor.tsx`):
+- 확정 월 표시 영역에 "삭제" 버튼 추가 — 단, `start_date` 가 현재 월 이상일 때만 노출
+- 클릭 시 `getCascadeDeletePreview` 호출 → AlertDialog 영향 건수 표시
+- "교습기간을 삭제하면 공휴일을 제외한 N건의 학사 일정이 함께 삭제됩니다. 보존되는 공휴일 M건. 삭제하시겠습니까?"
+- 확인 시 `deleteStudyPeriodCascade` 호출 → invalidate `['study-period']`, `['study-periods']`, `['schedule-events']`
 
 ### 신규 의존성
 - 없음.
 
-## 이번 세션에서 수정할 파일
+### lib.rs 등록
+- 신규 IPC 2개 `invoke_handler` 에 추가.
 
-<!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행 -->
+## 이번 세션에서 수정할 파일
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/commands/academic.rs | [4회 ⚠️] | T7 가드 + T9 가드 + 단위 테스트 |
-| src/components/academic/CalendarCell.tsx | [1회] | 공휴일 배지 삭제 UI 가드 |
+| src-tauri/src/commands/academic.rs | [2회] | `CascadeDeletePreview` + 2개 IPC + 단위 테스트 |
+| src-tauri/src/lib.rs | [1회] | 신규 IPC 2개 등록 |
+| src/types/academic.ts | [1회] | `CascadeDeletePreview` 인터페이스 |
+| src/lib/tauri/index.ts | [2회] | 래퍼 2개 + dev fallback |
+| src/components/academic/StudyPeriodEditor.tsx | [7회 ⚠️] | 삭제 버튼 + AlertDialog |
 | docs/sprint/sprint7/scope.md | [1회] | 본 세션 추적 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
 - [ ] `.github/workflows/`, `SETUP.sh`, `docs/harness-engineering/` — Forbidden
-- [ ] `src-tauri/migrations/` — 스키마 변경 없음
-- [ ] `src/types/academic.ts`, `src/lib/tauri/index.ts` — 시그니처 변경 없음 (IPC 인터페이스 동일, 에러 메시지만 변경)
+- [ ] `src-tauri/migrations/` — 스키마 변경 없음 (기존 schedule_events 활용)
 
 ## 완료 기준 (이번 세션)
 
-### T7 — 배치 제약 강화 (sprint7.md L223-229)
-- ✅ AC-T7-1: 중복불가 코드 배치 시 다른 일정 존재 일자에서 차단 (`placement_blocks_when_dup_blocked_meets_other_event`)
-- ✅ AC-T7-2: 역방향 차단 (`placement_blocks_when_target_date_has_dup_blocked_event`)
-- ✅ AC-T7-3: 교습기간 외 일자 배치 차단 (`placement_blocks_when_date_outside_study_period`)
-- ✅ AC-T7-4: `update_schedule_event` 도 동일 가드 + 자기 자신 row 제외 (`placement_excludes_self_event_on_update`)
-- ✅ AC-T7-5: 공휴일이 이미 배치된 일자 — V301 공휴일은 `is_duplicate_blocked=1` 시드라 AC-T7-2 로 자동 차단
-- ✅ AC-T7-6: 단위 테스트 4건 신규 (placement_*)
-
-### T9 — 공휴일 삭제 차단 (sprint7.md L282-286)
-- ✅ AC-T9-1: 공휴일 시스템 코드 이벤트 삭제 시 백엔드 가드 차단 (`delete_event_blocks_holiday_system_code`)
-- ✅ AC-T9-2: 공휴일 배지 클릭 차단 + title "공휴일은 삭제할 수 없습니다" (CalendarCell.tsx EventBadge)
-- ✅ AC-T9-3: 비공휴일 시스템 코드(단원평가 등) 삭제 허용 (`delete_event_allows_non_holiday_system_code`)
-- ✅ AC-T9-4: 단위 테스트 2건 신규
+### T8 — 교습기간 삭제 cascade (sprint7.md L254-260)
+- ✅ AC-T8-1: 확정 교습기간 cascade — `code_name != '공휴일'` SQL 분기 (`cascade_delete_preserves_holidays`)
+- ✅ AC-T8-2: 공휴일은 cascade 에서 보존 (테스트로 검증)
+- ✅ AC-T8-3: `getCascadeDeletePreview` 호출 후 AlertDialog 에 affected_count + holiday_count 표시
+- ✅ AC-T8-4: `confirmedPeriod.year_month >= currentYearMonth()` 일 때만 삭제 버튼 노출
+- ✅ AC-T8-5: cascade 후 study_periods row 삭제 → 동일 월 재확정 가능 (기존 흐름)
+- ✅ AC-T8-6: 단위 테스트 4건 신규 (cascade_guard_rejects_unconfirmed_period / rejects_past_month / preserves_holidays / preview_counts_match)
 
 ### 세션 종료 조건
-- ✅ Self-verify: cargo test cipher off 173 / on 127 passed, clippy clean (양쪽), pnpm lint clean, pnpm tsc clean
-- ✅ simplify — `check_placement_constraints` 헬퍼로 중복 로직 분리, create/update 양쪽 공유
-- ⬜ 단일 커밋 (2파일 + scope.md)
+- ✅ Self-verify: cargo test cipher off 177 / on 127, clippy clean (양쪽), pnpm lint clean, pnpm tsc clean
+- ✅ simplify — `check_cascade_delete_guard` 헬퍼로 preview/cascade 양쪽 가드 공유, 트랜잭션은 schedule_events + study_periods 두 DELETE 만
+- ⬜ 단일 커밋 (5파일 + scope.md)
 
 ## 발견된 이슈
 
@@ -102,5 +112,5 @@ Sprint: 7  |  Date: 2026-05-22  |  Session: #7
 
 ## carry-over
 
-- Session #2 발견 9건 (I-S2-2 ~ I-S2-10) — 후속
-- Session #4 발견 1건 (I-S4-1: CalendarCell hasHoliday/hasAssessment) — 후속
+- Session #2 발견 9건 (I-S2-2 ~ I-S2-10) — 후속 hotfix
+- Session #4 발견 1건 (I-S4-1) — 후속
