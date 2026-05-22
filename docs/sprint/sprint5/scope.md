@@ -21,7 +21,7 @@ Sprint: 5  |  Date: 2026-05-22  |  Session: #1
 ### T1-sub — 강제 점유 버튼 검증/수정
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src/app/lock/page.tsx | [0회] | 강제 점유 버튼 onClick 핸들러 검증 |
+| src/app/lock/page.tsx | [1회] | 강제 점유 버튼 onClick 핸들러 검증 |
 | src-tauri/src/commands/(lock 관련) | [0회] | force_acquire_lock IPC 동작 확인 |
 
 ### T2 — 마법사 redirect 수정
