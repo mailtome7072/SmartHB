@@ -1,116 +1,87 @@
 ---
-Sprint: 7  |  Date: 2026-05-22  |  Session: #8
+Sprint: 7  |  Date: 2026-05-22  |  Session: #9
 ---
 
-> Sprint 7 Session #8 — T8 단독 (교습기간 삭제 cascade).
-> Issue 6 carry-over 해소. T6 완료로 unblock. 예상 4h.
+> Sprint 7 Session #9 — T10 단독 (통합 검증).
+> 자동 검증 일괄 실행 + sprint7.md DoD 마킹. 시각 검증은 sprint-close/review 단계에서 사용자.
 
 ## 이전 세션 결과
 
 - Session #1 (`8eb1c92`): T1 — Keychain 통합 캐싱
-- Session #2 (`4178324`): T2 — salt.bin 이전 + 보안 패치 6건
+- Session #2 (`4178324`): T2 — salt.bin 이전 + 보안 패치 6건 + I-S2-1
 - Session #3 (`2fad4fb`): T3 — device_id 영속화
 - Session #4 (`6b5f8de`): T4 — is_system_reserved JOIN
 - Session #5 (`ba7ef09`): T5 — 코드 관리 /settings 이동
 - Session #6 (`2405ca5`): T6 — 교습기간 UX 재설계
 - Session #7 (`84aa86f`): T7+T9 — 배치 제약 + 공휴일 삭제 차단
+- Session #8 (`a521102`): T8 — 교습기간 삭제 cascade
 
 ## 이번 세션의 Task 선정
 
 | Task | 작업 | 예상 소요 |
 |------|------|---------|
-| **T8** | 교습기간 삭제 + cascade 삭제 (공휴일 제외) (Issue 6) | 4h |
+| **T10** | 통합 검증 — 전체 자동 검증 일괄 + sprint7.md DoD 마킹 | 3h |
 
-> 사용자 결정 (2026-05-22): Session #8 = T8 단독.
+## 설계 결정
 
-## 설계 결정 (T8)
+본 세션은 **코드 변경 없음**. T1~T9 의 누적 효과를 다음 두 분류로 최종 확인:
 
-### 백엔드 — 신규 IPC 2개 추가 (기존 `delete_study_period` 보존)
+### 자동 검증 (이번 세션)
+1. `cargo test --manifest-path src-tauri/Cargo.toml --lib` (cipher off)
+2. `cargo test --manifest-path src-tauri/Cargo.toml --features cipher --lib` (cipher on)
+3. `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` (cipher off)
+4. `cargo clippy --manifest-path src-tauri/Cargo.toml --features cipher -- -D warnings` (cipher on)
+5. `pnpm lint`
+6. `pnpm tsc --noEmit`
+7. `pnpm build` (Next.js static export — Tauri 빌드 사전 단계)
 
-기존 `delete_study_period` 는 미확정 전용 — 이름·동작 유지하여 호환성 보장.
-T8 의 cascade 삭제는 별도 IPC 2개로 추가:
-
-**1. `get_cascade_delete_preview(id) -> CascadeDeletePreview`**
-
-```rust
-pub struct CascadeDeletePreview {
-    pub affected_count: i64,    // 삭제될 schedule_events (공휴일 제외) 건수
-    pub holiday_count: i64,     // 보존되는 공휴일 건수
-    pub deletable: bool,        // 삭제 가능 여부 (confirmed + 지난 달 아님)
-    pub reason: Option<String>, // 불가 사유 (한국어)
-}
-```
-
-- 가드: 교습기간이 존재 + `is_confirmed=1` + 시작 월이 현재 월 이상 (지난 달 아님)
-- 영향 건수 계산: `[start_date, end_date]` 범위 내 `schedule_events` 중 `c.code_name != '공휴일'` 카운트
-- 공휴일 보존 건수: `[start_date, end_date]` 범위 내 공휴일 카운트
-
-**2. `delete_study_period_cascade(id) -> ()`**
-
-- preview 와 동일 가드 사전 검증
-- 트랜잭션 안에서:
-  1. `DELETE FROM schedule_events WHERE event_date BETWEEN ? AND ? AND code_id IN (SELECT id FROM schedule_codes WHERE code_name != '공휴일')`
-  2. `DELETE FROM study_periods WHERE id = ?`
-- 공휴일은 시스템 시드 — 캘린더에 그대로 표시되어야 하므로 보존
-
-### 프론트엔드
-
-**타입** (`src/types/academic.ts`):
-- `CascadeDeletePreview` 인터페이스 추가
-
-**IPC 래퍼** (`src/lib/tauri/index.ts`):
-- `getCascadeDeletePreview(id) -> Promise<CascadeDeletePreview>`
-- `deleteStudyPeriodCascade(id) -> Promise<void>`
-- dev fallback: preview 는 `{ affected_count: 0, holiday_count: 0, deletable: false, reason: '개발 모드' }`
-
-**UI** (`src/components/academic/StudyPeriodEditor.tsx`):
-- 확정 월 표시 영역에 "삭제" 버튼 추가 — 단, `start_date` 가 현재 월 이상일 때만 노출
-- 클릭 시 `getCascadeDeletePreview` 호출 → AlertDialog 영향 건수 표시
-- "교습기간을 삭제하면 공휴일을 제외한 N건의 학사 일정이 함께 삭제됩니다. 보존되는 공휴일 M건. 삭제하시겠습니까?"
-- 확인 시 `deleteStudyPeriodCascade` 호출 → invalidate `['study-period']`, `['study-periods']`, `['schedule-events']`
-
-### 신규 의존성
-- 없음.
-
-### lib.rs 등록
-- 신규 IPC 2개 `invoke_handler` 에 추가.
+### 시각 검증 (사용자, 본 세션 외)
+`pnpm tauri:dev` 실행 후 T1~T9 별 동작 확인 — sprint7.md L296-305 체크리스트. 결과는 sprint-review 단계의 `DEPLOY.md ⬜ 시각 검증` 에 기록.
 
 ## 이번 세션에서 수정할 파일
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/commands/academic.rs | [2회] | `CascadeDeletePreview` + 2개 IPC + 단위 테스트 |
-| src-tauri/src/lib.rs | [1회] | 신규 IPC 2개 등록 |
-| src/types/academic.ts | [1회] | `CascadeDeletePreview` 인터페이스 |
-| src/lib/tauri/index.ts | [2회] | 래퍼 2개 + dev fallback |
-| src/components/academic/StudyPeriodEditor.tsx | [7회 ⚠️] | 삭제 버튼 + AlertDialog |
 | docs/sprint/sprint7/scope.md | [1회] | 본 세션 추적 |
+| docs/sprint/sprint7.md | [1회] | DoD 항목 ⬜ → ✅ 전환 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
+- [ ] **모든 소스 코드** — 본 세션은 검증 전용
 - [ ] `.github/workflows/`, `SETUP.sh`, `docs/harness-engineering/` — Forbidden
-- [ ] `src-tauri/migrations/` — 스키마 변경 없음 (기존 schedule_events 활용)
 
 ## 완료 기준 (이번 세션)
 
-### T8 — 교습기간 삭제 cascade (sprint7.md L254-260)
-- ✅ AC-T8-1: 확정 교습기간 cascade — `code_name != '공휴일'` SQL 분기 (`cascade_delete_preserves_holidays`)
-- ✅ AC-T8-2: 공휴일은 cascade 에서 보존 (테스트로 검증)
-- ✅ AC-T8-3: `getCascadeDeletePreview` 호출 후 AlertDialog 에 affected_count + holiday_count 표시
-- ✅ AC-T8-4: `confirmedPeriod.year_month >= currentYearMonth()` 일 때만 삭제 버튼 노출
-- ✅ AC-T8-5: cascade 후 study_periods row 삭제 → 동일 월 재확정 가능 (기존 흐름)
-- ✅ AC-T8-6: 단위 테스트 4건 신규 (cascade_guard_rejects_unconfirmed_period / rejects_past_month / preserves_holidays / preview_counts_match)
+### T10 — 통합 검증 (sprint7.md L290-311)
+- ✅ AC-T10-1: 자동 검증 전수 통과 (cargo test/clippy off+on, pnpm lint/tsc/build 모두 위 표 참조)
+- ✅ AC-T10-2: 콘솔 에러/경고 0건 (lint/clippy 결과)
+- ⬜ AC-T10-3: UC-2 시각 검증 — **sprint-review 단계 `DEPLOY.md ⬜ pnpm tauri:dev 시각 검증` 으로 이연**
 
 ### 세션 종료 조건
-- ✅ Self-verify: cargo test cipher off 177 / on 127, clippy clean (양쪽), pnpm lint clean, pnpm tsc clean
-- ✅ simplify — `check_cascade_delete_guard` 헬퍼로 preview/cascade 양쪽 가드 공유, 트랜잭션은 schedule_events + study_periods 두 DELETE 만
-- ⬜ 단일 커밋 (5파일 + scope.md)
+- ✅ Self-verify: 본 세션이 곧 self-verify (검증 자체가 목적)
+- ✅ simplify — 본 세션은 코드 변경 없음, 적용 대상 외
+- ⬜ 단일 커밋 (scope.md + sprint7.md)
+
+## 자동 검증 결과 (이번 세션 실행)
+
+| 항목 | 결과 |
+|------|------|
+| `cargo test --lib` (cipher off) | ✅ **177 passed** (T1~T9 누적: 단위 T1 11 + T2 6 + T3 6 + T4 0 + T5 0 + T6 0 + T7 5 + T9 2 + T8 4 + 기존 등 외) |
+| `cargo test --lib --features cipher` | ✅ **127 passed** |
+| `cargo clippy -- -D warnings` (cipher off) | ✅ clean (0 warnings) |
+| `cargo clippy --features cipher -- -D warnings` | ✅ clean |
+| `pnpm lint` | ✅ clean (0 warnings/errors) |
+| `pnpm tsc --noEmit` | ✅ clean (no output) |
+| `pnpm build` (Next.js static export) | ✅ 12개 페이지 prerendered — `/settings/schedule-codes` 신규 페이지 4.25kB / 158kB First Load 정상 포함 |
+
+> 1차 실행 시 cipher off 빌드에서 lock 모듈 1건 flaky 실패 (`release_lock_atomic_removes_self_owned_lock`) — 재실행 시 통과. 본 테스트는 lock_path() 를 process-wide 공유하여 병렬 실행 시 race window 가능. 단일 사용자 production 흐름과 무관 — Session #2 발견 잔여 9건과 별도로 후속 검토.
 
 ## 발견된 이슈
 
 (없음 — Step-back 트리거 발생 시 여기에 기록)
 
-## carry-over
+## carry-over (sprint-close 시점에 sprint7-retrospective 로 이전)
 
-- Session #2 발견 9건 (I-S2-2 ~ I-S2-10) — 후속 hotfix
-- Session #4 발견 1건 (I-S4-1) — 후속
+- I-S2-2 ~ I-S2-10 (9건): high-effort code review 잔여 — 후속 hotfix 또는 다음 sprint
+- I-S4-1 (1건): CalendarCell.tsx hasHoliday/hasAssessment 비즈니스 식별 — 후속
+- 시각 검증 (T10 AC-T10-3): sprint-review 또는 deploy-prod 단계
