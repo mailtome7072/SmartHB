@@ -7,6 +7,14 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Sprint 5 T1 — 동일 PC 다중 인스턴스 차단. 두 번째 실행 시 기존 창 포커스 + 새 프로세스 즉시 종료.
+        // PRD §5.3 의 app.lock 본래 의도(양 PC 간 시점 분리)와 분리하여 같은 머신 내 충돌을 원천 차단.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {

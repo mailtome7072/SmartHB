@@ -14,9 +14,9 @@ Sprint: 5  |  Date: 2026-05-22  |  Session: #1
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
 | src-tauri/Cargo.toml | [0회] | tauri-plugin-single-instance 의존성 |
-| src-tauri/src/lib.rs | [0회] | plugin 등록 + 두 번째 인스턴스 핸들러 |
-| src-tauri/capabilities/default.json | [0회] | single-instance 권한 (필요 시) |
-| package.json | [0회] | @tauri-apps/plugin-single-instance JS 바인딩 |
+| src-tauri/src/lib.rs | [1회] | plugin 등록 + 두 번째 인스턴스 핸들러 |
+| ~~src-tauri/capabilities/default.json~~ | - | **불필요** — 플러그인이 JS API 미제공 (Tauri 공식 문서 확인) |
+| ~~package.json (JS 바인딩)~~ | - | **불필요** — @tauri-apps/plugin-single-instance npm 미발행 |
 
 ### T1-sub — 강제 점유 버튼 검증/수정
 | 파일 | 수정 횟수 | 비고 |

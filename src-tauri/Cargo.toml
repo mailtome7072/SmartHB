@@ -69,6 +69,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # bundled-sqlcipher-vendored-openssl: rusqlite 가 자체적으로 libsqlite3-sys 의 SQLCipher 빌드를 활성.
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "backup"], optional = true }
 tauri-plugin-dialog = "2.7.1"
+tauri-plugin-single-instance = "2.4.2"
 
 [profile.release]
 codegen-units = 1
