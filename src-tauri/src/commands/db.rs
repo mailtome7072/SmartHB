@@ -112,10 +112,11 @@ async fn apply_startup_pragmas(pool: &SqlitePool) -> Result<(), AppError> {
 
 #[cfg(feature = "cipher")]
 async fn apply_cipher_key_if_enabled(pool: &SqlitePool) -> Result<(), AppError> {
-    use crate::commands::auth::retrieve_key_from_keyring;
+    use crate::commands::auth::get_cached_or_load_key;
     use crate::commands::paths::pragma_key_sql;
 
-    let key = retrieve_key_from_keyring()?;
+    // Sprint 7 T1: 캐시 경유로 keyring 호출 1회로 통합 (verify_password 가 이미 채워둔 캐시 hit).
+    let key = get_cached_or_load_key()?;
     let hex_key = key.to_hex();
     // PRAGMA key 는 첫 connection 마다 적용되어야 한다. max_connections=1 이므로 1회로 충분.
     sqlx::query(&pragma_key_sql(hex_key.as_str())).execute(pool).await?;

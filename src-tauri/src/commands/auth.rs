@@ -22,6 +22,7 @@ use pbkdf2::pbkdf2;
 use rand::RngCore;
 use serde::Serialize;
 use sha2::Sha256;
+use std::sync::{Mutex, OnceLock};
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 /// OWASP 2024 권장 — PBKDF2-HMAC-SHA256 최소 반복 횟수.
@@ -49,6 +50,82 @@ const KEYRING_USER_KEY: &str = "db_encryption_key";
 /// 클라우드 폴더의 평문 파일(`smarthb/salt.bin`)로 이전한다. salt 는 비밀이 아니므로
 /// 평문 보관이 가능하며, 양 PC 시점 분리 사용 시 자동 동기화 이득이 크다.
 const KEYRING_USER_SALT: &str = "db_password_salt";
+
+// ────────────────────────────────────────────────────────────────────
+// CredentialCache (Sprint 7 T1, Issue 1)
+// ────────────────────────────────────────────────────────────────────
+//
+// macOS Keychain access 마다 별도 Security Framework 다이얼로그가 표시되는 문제 해소.
+// salt + key 를 한 번 keyring 에서 읽어 메모리 캐시 → 후속 호출은 캐시 hit (keyring 0회).
+//
+// 보안 모델:
+// - 캐시 항목은 `ZeroizeOnDrop` — 프로세스 종료 또는 명시적 invalidate 시 메모리 영(0)으로 덮어쓰임.
+// - 캐시는 비밀번호 검증 후 메모리에 상주 — PRD §5.5 단일 사용자/로컬 앱 모델에서 수용 가능한 trade-off (R35).
+// - 캐시 채움은 `set_password` / `verify_password` 첫 호출 / `reset_password_with_code` 시점.
+
+/// 캐시된 자격증명 (salt + 유도된 키).
+#[derive(ZeroizeOnDrop)]
+struct CachedCredentials {
+    salt: [u8; SALT_LEN],
+    key: DerivedKey,
+}
+
+static CRED_CACHE: OnceLock<Mutex<Option<CachedCredentials>>> = OnceLock::new();
+
+fn cred_cache() -> &'static Mutex<Option<CachedCredentials>> {
+    CRED_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// 캐시에 자격증명 저장 (set_password 또는 reset_password_with_code 호출 후).
+pub(crate) fn cache_credentials(salt: [u8; SALT_LEN], key: DerivedKey) {
+    *cred_cache().lock().expect("cred_cache poisoned") =
+        Some(CachedCredentials { salt, key });
+}
+
+/// 캐시 무효화 (delete_key_from_keyring 또는 로그아웃 시).
+pub(crate) fn invalidate_credential_cache() {
+    *cred_cache().lock().expect("cred_cache poisoned") = None;
+}
+
+/// 캐시에서 salt 조회 — 캐시 미스면 None.
+fn cached_salt() -> Option<[u8; SALT_LEN]> {
+    cred_cache()
+        .lock()
+        .expect("cred_cache poisoned")
+        .as_ref()
+        .map(|c| c.salt)
+}
+
+/// 캐시 미스 시 keyring 에서 salt + key 동시 로드.
+fn load_credentials_to_cache() -> Result<(), AppError> {
+    let salt = retrieve_salt_from_keyring()?;
+    let key = retrieve_key_from_keyring()?;
+    cache_credentials(salt, key);
+    Ok(())
+}
+
+/// 캐시 우선 조회, 미스 시 keyring 1회 로드 후 캐시 → DerivedKey 복제 반환.
+///
+/// cipher feature on 빌드의 db.rs / backup.rs / integrity.rs 가 사용. 매 호출마다 keyring
+/// 다이얼로그를 띄우던 기존 패턴을 1회로 통합.
+#[cfg_attr(not(feature = "cipher"), allow(dead_code))]
+pub fn get_cached_or_load_key() -> Result<DerivedKey, AppError> {
+    let guard = cred_cache().lock().expect("cred_cache poisoned");
+    if let Some(c) = guard.as_ref() {
+        return Ok(DerivedKey(c.key.0));
+    }
+    drop(guard);
+    load_credentials_to_cache()?;
+    let guard = cred_cache().lock().expect("cred_cache poisoned");
+    Ok(DerivedKey(guard.as_ref().expect("just loaded").key.0))
+}
+
+#[cfg(test)]
+pub(crate) fn reset_credential_cache_for_tests() {
+    invalidate_credential_cache();
+}
+
+// ────────────────────────────────────────────────────────────────────
 
 /// 사용자 인증 상태.
 ///
@@ -196,11 +273,13 @@ pub fn retrieve_key_from_keyring() -> Result<DerivedKey, AppError> {
 /// OS Keychain 에서 SQLCipher DB 키를 삭제한다.
 ///
 /// T5 (PI-07 복구 코드 재발급) 에서 사용 예정 — 현재는 미호출이라 dead_code 허용.
+/// Sprint 7 T1: 캐시도 함께 무효화.
 #[allow(dead_code)]
 pub fn delete_key_from_keyring() -> Result<(), AppError> {
     keyring_entry_for(KEYRING_USER_KEY)?
         .delete_credential()
         .map_err(|e| AppError::Auth(format!("Keychain 삭제 실패: {}", e)))?;
+    invalidate_credential_cache();
     Ok(())
 }
 
@@ -234,11 +313,16 @@ pub(crate) async fn derive_key_async(
 
 /// 현재 인증 상태를 반환한다.
 ///
-/// Keychain 에 salt 항목이 존재하면 `Locked`, `NoEntry` 응답이면 `NotInitialized`.
-/// 다른 keyring 에러(권한 부족, daemon 오류 등)는 그대로 전파하여 "최초 설정" 으로
-/// 잘못 해석되지 않도록 한다.
+/// 캐시(salt 보유)가 있으면 즉시 `Locked`. 캐시 미스 시 keyring 1회 조회 — `Some`이면 `Locked`,
+/// `NoEntry` 응답이면 `NotInitialized`. 다른 keyring 에러(권한 부족, daemon 오류 등)는 그대로
+/// 전파하여 "최초 설정" 으로 잘못 해석되지 않도록 한다.
+///
+/// Sprint 7 T1: 캐시 우선 조회 — `verify_password` 후 호출되면 keyring 다이얼로그 0회.
 #[tauri::command]
 pub async fn check_auth_status() -> Result<AuthStatus, String> {
+    if cached_salt().is_some() {
+        return Ok(AuthStatus::Locked);
+    }
     match keyring_get_or_none(KEYRING_USER_SALT).map_err(String::from)? {
         Some(_) => Ok(AuthStatus::Locked),
         None => Ok(AuthStatus::NotInitialized),
@@ -271,6 +355,8 @@ pub async fn set_password(password: String) -> Result<(), String> {
     store_salt_in_keyring(&salt).map_err(String::from)?;
     store_key_in_keyring(&key).map_err(String::from)?;
     eprintln!("[auth] set_password: keyring 저장 완료");
+    // Sprint 7 T1: 저장 직후 캐시에 즉시 반영 — 후속 verify_password / cipher key 조회가 keyring 호출 없이 동작.
+    cache_credentials(salt, DerivedKey(key.0));
     // 최초 설정 시점은 pool 미초기화 — try_record 가 silent skip. 비밀번호 변경 IPC(추후)는 unlock 후 호출되어 정상 기록.
     audit::try_record(AuditEventType::PasswordChange, None, None).await;
     Ok(())
@@ -278,8 +364,12 @@ pub async fn set_password(password: String) -> Result<(), String> {
 
 /// 비밀번호 정합성을 검증한다 (내부 헬퍼).
 ///
-/// 흐름: keyring 에서 salt 조회 → 입력 비밀번호로 key 유도 (blocking) → 저장된 key 와 비교.
-/// `unlock_db` IPC 와 T10 `app_startup_sequence` 양쪽이 공유.
+/// Sprint 7 T1: keyring 직접 호출 제거 — `get_cached_or_load_key` 가 첫 호출 시 keyring 2회
+/// 통합 로드 + 캐시 채움, 후속 호출은 캐시 hit. 후속 cipher key 조회 (db.rs / backup.rs /
+/// integrity.rs) 도 모두 캐시 경유 → macOS Keychain 다이얼로그가 startup 동안 1회로 통합 (prod
+/// "Always Allow" 적용 시).
+///
+/// `unlock_db` IPC 와 `app_startup_sequence` 양쪽이 공유.
 pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), AppError> {
     if password.is_empty() {
         eprintln!("[auth] verify_password: 빈 비밀번호");
@@ -289,22 +379,30 @@ pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), 
         "[auth] verify_password 진입 (password.len={})",
         password.len()
     );
-    let salt = retrieve_salt_from_keyring()?;
-    eprintln!(
-        "[auth] verify_password: salt 조회 OK (첫 8byte hex={})",
-        hex::encode(&salt[..8])
-    );
+
+    // 캐시 미스 시 한 번에 salt + key 로드 (keyring 2회 → 통합 호출).
+    if cred_cache().lock().expect("cred_cache poisoned").is_none() {
+        load_credentials_to_cache()?;
+        eprintln!("[auth] verify_password: 캐시 미스 → salt+key 통합 로드 완료");
+    } else {
+        eprintln!("[auth] verify_password: 캐시 hit — keyring 호출 0회");
+    }
+
+    let salt = cached_salt().expect("just loaded into cache");
     let candidate = derive_key_async(password.clone(), salt).await?;
     eprintln!(
         "[auth] verify_password: candidate key 유도 OK (첫 8byte hex={})",
         &candidate.to_hex()[..16]
     );
-    let stored = retrieve_key_from_keyring()?;
-    eprintln!(
-        "[auth] verify_password: stored key 조회 OK (첫 8byte hex={})",
-        &stored.to_hex()[..16]
-    );
-    if !candidate.matches(&stored) {
+
+    // 캐시에서 stored key 비교 (Mutex guard 내에서 직접 비교 — 별도 복사 회피).
+    let matches = {
+        let guard = cred_cache().lock().expect("cred_cache poisoned");
+        let stored_key = &guard.as_ref().expect("just loaded into cache").key;
+        candidate.matches(stored_key)
+    };
+
+    if !matches {
         eprintln!(
             "[auth] verify_password: 키 매치 실패 (candidate≠stored — set/verify 사이 salt 또는 key 불일치 의심)"
         );
@@ -418,4 +516,61 @@ mod tests {
 
     // Keychain 통합 테스트는 OS Keychain daemon 의존 — 환경에 따라 실패할 수 있어
     // 단위 테스트에서 제외한다. T11 사용자 환경 검증 또는 통합 테스트(별도 모듈)에서 다룬다.
+
+    // ─── Sprint 7 T1: CredentialCache 단위 테스트 (keyring 없이 검증) ───
+
+    /// 동일 process 내 테스트 간 캐시 상태 격리 — Mutex 가 process-wide 이므로 명시적 reset.
+    fn reset_cache_for_test() {
+        reset_credential_cache_for_tests();
+    }
+
+    #[test]
+    fn cache_miss_returns_none() {
+        reset_cache_for_test();
+        assert!(cached_salt().is_none());
+    }
+
+    #[test]
+    fn cache_credentials_then_read_salt() {
+        reset_cache_for_test();
+        let salt = [99u8; SALT_LEN];
+        let key = derive_key("test", &salt);
+        cache_credentials(salt, key);
+        assert_eq!(cached_salt(), Some(salt));
+    }
+
+    #[test]
+    fn invalidate_clears_cache() {
+        reset_cache_for_test();
+        let salt = [11u8; SALT_LEN];
+        let key = derive_key("p", &salt);
+        cache_credentials(salt, key);
+        assert!(cached_salt().is_some());
+        invalidate_credential_cache();
+        assert!(cached_salt().is_none());
+    }
+
+    #[test]
+    fn cache_credentials_overwrites_previous() {
+        reset_cache_for_test();
+        let salt_a = [1u8; SALT_LEN];
+        cache_credentials(salt_a, derive_key("a", &salt_a));
+        let salt_b = [2u8; SALT_LEN];
+        cache_credentials(salt_b, derive_key("b", &salt_b));
+        assert_eq!(cached_salt(), Some(salt_b));
+        reset_cache_for_test(); // 후속 테스트 격리
+    }
+
+    /// get_cached_or_load_key 가 캐시 hit 시 keyring 호출 없이 반환 — Mutex 만 동작 확인.
+    #[test]
+    fn get_cached_or_load_key_hits_cache() {
+        reset_cache_for_test();
+        let salt = [42u8; SALT_LEN];
+        let original = derive_key("pw", &salt);
+        let original_bytes = *original.as_bytes();
+        cache_credentials(salt, original);
+        let retrieved = get_cached_or_load_key().expect("cache hit must succeed");
+        assert_eq!(retrieved.as_bytes(), &original_bytes);
+        reset_cache_for_test();
+    }
 }

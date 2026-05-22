@@ -123,8 +123,9 @@ fn run_pragma_check_with_key(
 
 #[cfg(feature = "cipher")]
 fn run_pragma_check(db_path: &Path, mode: IntegrityMode) -> Result<IntegrityCheckResult, AppError> {
-    use crate::commands::auth::retrieve_key_from_keyring;
-    let key = retrieve_key_from_keyring()?;
+    use crate::commands::auth::get_cached_or_load_key;
+    // Sprint 7 T1: 캐시 경유 — startup 후 무결성 검증 시 keyring 다이얼로그 0회.
+    let key = get_cached_or_load_key()?;
     let hex_key = key.to_hex();
     run_pragma_check_with_key(db_path, hex_key.as_str(), mode)
 }
@@ -176,8 +177,9 @@ fn select_healthy_backup(layer: BackupLayer) -> Result<Option<BackupMetadata>, A
 fn select_first_healthy_with_cached_key(
     candidates: Vec<BackupMetadata>,
 ) -> Result<Option<BackupMetadata>, AppError> {
-    use crate::commands::auth::retrieve_key_from_keyring;
-    let key = retrieve_key_from_keyring()?;
+    use crate::commands::auth::get_cached_or_load_key;
+    // Sprint 7 T1: 캐시 경유 — 다수 백업 후보 검증 시 매번 keyring 다이얼로그 0회.
+    let key = get_cached_or_load_key()?;
     let hex_key = key.to_hex();
     for candidate in candidates {
         let path = PathBuf::from(&candidate.path);

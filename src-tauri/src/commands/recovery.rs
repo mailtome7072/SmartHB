@@ -25,8 +25,8 @@
 
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::auth::{
-    derive_key_async, generate_salt, keyring_entry_for, keyring_get_or_none, store_key_in_keyring,
-    store_salt_in_keyring,
+    cache_credentials, derive_key_async, generate_salt, keyring_entry_for, keyring_get_or_none,
+    store_key_in_keyring, store_salt_in_keyring,
 };
 use crate::error::AppError;
 use argon2::{
@@ -180,6 +180,8 @@ pub async fn reset_password_with_code(code: String, new_password: String) -> Res
         .map_err(String::from)?;
     store_salt_in_keyring(&salt).map_err(String::from)?;
     store_key_in_keyring(&new_key).map_err(String::from)?;
+    // Sprint 7 T1: 새 자격증명을 캐시에 즉시 반영 → 후속 verify_password / cipher key 조회가 keyring 호출 없이 동작.
+    cache_credentials(salt, new_key);
     audit::try_record(AuditEventType::PasswordChange, Some("recovery-reset"), None).await;
     Ok(())
 }

@@ -183,12 +183,13 @@ fn rotate_layer(layer: BackupLayer) -> Result<(), AppError> {
 /// 별도 검증 connection 을 다시 열지 않음 (SQLCipher PBKDF2 key derivation 1회 절감).
 #[cfg(feature = "cipher")]
 fn perform_backup_with_cipher(source: &Path, dest: &Path) -> Result<(), AppError> {
-    use crate::commands::auth::retrieve_key_from_keyring;
+    use crate::commands::auth::get_cached_or_load_key;
     use rusqlite::Connection;
     use rusqlite::backup::Backup;
     use std::time::Duration;
 
-    let key = retrieve_key_from_keyring()?;
+    // Sprint 7 T1: 캐시 경유로 startup 후 백업 시 keyring 다이얼로그 0회.
+    let key = get_cached_or_load_key()?;
     let hex_key = key.to_hex();
     let pragma_sql = paths::pragma_key_sql(hex_key.as_str());
 
