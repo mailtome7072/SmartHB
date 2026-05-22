@@ -3,27 +3,75 @@
 /**
  * `/lock` 라우트 — 잠금 화면.
  *
- * Sprint 2 T1 에서 `onUnlocked` 콜백을 연결하여 인증 성공 시:
- * 1. `LockScreen` 내부에서 `app_startup_sequence(password)` 가 호출되어 DB pool 초기화·
- *    백그라운드 task spawn·audit 정리가 일괄 수행되고
- * 2. 그 결과 `StartupResult` 를 받아 `useSessionStore.markUnlocked` 에 저장한 뒤
- * 3. `useRouter().replace('/')` 로 메인 화면에 진입한다.
+ * Sprint 5 T1-sub: 락 상태에 따라 두 화면을 분기 렌더.
+ * - `owned-by-other`: LockWarning (다른 PC 사용 중 안내 + 5분 이상 미갱신 시 강제 점유 옵션)
+ * - 그 외(`free` / `owned-by-self`): LockScreen (비밀번호 입력)
+ *
+ * 인증 성공 시 (LockScreen.onUnlocked):
+ * 1. `app_startup_sequence(password)` 결과 `StartupResult` 를 `useSessionStore.markUnlocked` 저장
+ * 2. `/` 로 redirect → 메인 화면 진입
+ *
+ * 강제 점유 성공 시 (LockWarning.onForceAcquired) → 락 상태 재조회 → LockScreen 으로 자동 전환.
  *
  * PRD §5.6 의 < 3000 ms 측정값은 루트 페이지에서 표시한다 (`StartupResult.elapsed_ms`).
  */
 
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { LockScreen } from '@/components/LockScreen'
+import { LockWarning } from '@/components/LockWarning'
+import { SplashScreen } from '@/components/splash-screen'
+import { checkLockStatus } from '@/lib/tauri'
 import { useSessionStore } from '@/stores/session-store'
-import type { StartupResult } from '@/types'
+import type { LockStatus, StartupResult } from '@/types'
 
 export default function LockPage() {
   const router = useRouter()
   const markUnlocked = useSessionStore((s) => s.markUnlocked)
+  const [lockStatus, setLockStatus] = useState<LockStatus | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(() => {
+    setError(null)
+    checkLockStatus()
+      .then(setLockStatus)
+      .catch((e) => setError(typeof e === 'string' ? e : '잠금 상태를 확인할 수 없습니다.'))
+  }, [])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const handleUnlocked = (result: StartupResult) => {
     markUnlocked(result)
     router.replace('/')
+  }
+
+  if (error !== null) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-8">
+        <div
+          role="alert"
+          className="max-w-md rounded-md border-2 border-[var(--danger)] bg-red-50 p-4 text-base text-[var(--danger)]"
+        >
+          {error}
+        </div>
+      </main>
+    )
+  }
+
+  if (lockStatus === null) {
+    return <SplashScreen message="잠금 상태를 확인하는 중입니다..." />
+  }
+
+  if (lockStatus.kind === 'owned-by-other') {
+    return (
+      <LockWarning
+        initialSecondsAgo={lockStatus.last_heartbeat_seconds_ago}
+        onForceAcquired={refresh}
+        onRetry={refresh}
+      />
+    )
   }
 
   return <LockScreen onUnlocked={handleUnlocked} />

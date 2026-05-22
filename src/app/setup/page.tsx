@@ -7,7 +7,8 @@
  * 1. 환영 + 안내
  * 2. 클라우드 동기화 폴더 선택 (`selectFolder` → `saveCloudFolder`)
  * 3. 비밀번호 설정 + DB 초기화 (`LockScreen` 재사용 — `not-initialized` 모드)
- * 4. 완료 (`completeSetup`) → 메인(`/`) 으로 이동
+ * 4. 완료 (`completeSetup`) → 설정(`/settings`) 으로 이동 (Sprint 5 T2 — 운영 시간/코드 테이블
+ *    확인을 먼저 진행하도록 UX 흐름 변경)
  *
  * 나머지 단계(운영시간/학교코드/표준교습비/결제수단/백업폴더/가져오기/샘플등록)는 각
  * 도메인 sprint 에서 점진 추가 — 본 Phase 1 마법사는 핵심 4단계만 구현.
@@ -62,7 +63,7 @@ export default function SetupPage() {
     setBusy(true)
     try {
       await completeSetup()
-      router.replace('/')
+      router.replace('/settings')
     } catch (e) {
       setError(typeof e === 'string' ? e : '마법사 완료를 저장할 수 없습니다.')
       setBusy(false)
