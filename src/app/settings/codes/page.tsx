@@ -33,6 +33,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { SettingsHomeLink } from '@/components/settings/SettingsHomeLink'
 import {
   createCode,
   createFee,
@@ -104,6 +105,7 @@ export default function CodesPage() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-4xl">
+        <SettingsHomeLink />
         <h1 className="mb-4 text-2xl font-bold">설정 — 코드 테이블</h1>
 
         <nav role="tablist" className="mb-4 flex gap-2 border-b border-[var(--border)]">

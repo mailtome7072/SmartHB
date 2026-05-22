@@ -179,7 +179,7 @@ export function StudentForm({
             readOnly={isEdit}
             aria-readonly={isEdit}
             className={`h-11 w-full rounded-md border border-[var(--border)] px-3 ${
-              isEdit ? 'cursor-not-allowed bg-gray-100 text-gray-500' : ''
+              isEdit ? 'cursor-not-allowed bg-gray-100 text-gray-500' : 'bg-white'
             }`}
           />
         </Field>
@@ -188,14 +188,17 @@ export function StudentForm({
             value={form.name}
             onChange={(e) => update('name', e.target.value)}
             required
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            // V5 (Sprint 7 post-review): 신규 원생 등록 진입 시 이름에 첫 포커스 — 50대 사용자
+            // 친화 UX (PRD §5.7). 수정 모드(isEdit)에서는 autoFocus 비활성화하여 다른 동작과 충돌 회피.
+            autoFocus={!isEdit}
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
         <Field label="성별">
           <select
             value={form.gender}
             onChange={(e) => update('gender', e.target.value as Gender)}
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           >
             <option value="male">남</option>
             <option value="female">여</option>
@@ -205,7 +208,7 @@ export function StudentForm({
           <select
             value={form.school_level}
             onChange={(e) => update('school_level', e.target.value as SchoolLevel)}
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           >
             <option value="elementary">초등</option>
             <option value="middle">중등</option>
@@ -218,7 +221,7 @@ export function StudentForm({
             onChange={(e) => update('grade', Number(e.target.value))}
             min={1}
             max={6}
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
         <Field label="학교">
@@ -227,7 +230,7 @@ export function StudentForm({
             onChange={(e) =>
               update('school_id', e.target.value === '' ? null : Number(e.target.value))
             }
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           >
             <option value="">(미지정)</option>
             {schools.filter((s) => s.is_active).map((s) => (
@@ -242,7 +245,7 @@ export function StudentForm({
             type="date"
             value={form.enroll_date}
             onChange={(e) => update('enroll_date', e.target.value)}
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
         <Field label="원생 연락처">
@@ -251,7 +254,7 @@ export function StudentForm({
             onChange={(e) => update('phone_student', formatPhone(e.target.value))}
             placeholder="010-1234-5678"
             inputMode="tel"
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
         <Field label="모 연락처">
@@ -260,7 +263,7 @@ export function StudentForm({
             onChange={(e) => update('phone_mother', formatPhone(e.target.value))}
             placeholder="010-1234-5678"
             inputMode="tel"
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
         <Field label="부 연락처">
@@ -269,7 +272,7 @@ export function StudentForm({
             onChange={(e) => update('phone_father', formatPhone(e.target.value))}
             placeholder="010-1234-5678"
             inputMode="tel"
-            className="h-11 w-full rounded-md border border-[var(--border)] px-3"
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
       </div>

@@ -13,11 +13,13 @@
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { ScheduleCodePanel } from '@/components/academic/ScheduleCodePanel'
+import { SettingsHomeLink } from '@/components/settings/SettingsHomeLink'
 
 export default function ScheduleCodesSettingsPage() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-4xl">
+        <SettingsHomeLink />
         <h1 className="mb-2 text-2xl font-bold">학사 일정 코드 관리</h1>
         <p className="mb-6 text-base text-gray-600">
           공휴일·보강데이 등 시스템 예약 코드(🔒)는 활성/비활성 토글만 가능합니다.

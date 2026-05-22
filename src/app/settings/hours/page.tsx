@@ -10,9 +10,9 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { SettingsHomeLink } from '@/components/settings/SettingsHomeLink'
 import { SplashScreen } from '@/components/splash-screen'
 import { getOperatingHours, saveOperatingHours, type DayHours } from '@/lib/tauri'
 
@@ -25,7 +25,6 @@ const HOUR_OPTIONS = Array.from({ length: 11 }, (_, i) => {
 })
 
 export default function OperatingHoursPage() {
-  const router = useRouter()
   const [hours, setHours] = useState<DayHours[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -86,20 +85,12 @@ export default function OperatingHoursPage() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-3xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">교습소 운영 시간</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              요일별 운영 시작/종료 시간 설정. 수업 스케줄 시작 시간 선택지 기준.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push('/settings')}
-            className="h-11 rounded-md border border-[var(--border)] px-4 hover:bg-gray-50"
-          >
-            ← 설정 허브
-          </button>
+        <SettingsHomeLink />
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold">교습소 운영 시간</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            요일별 운영 시작/종료 시간 설정. 수업 스케줄 시작 시간 선택지 기준.
+          </p>
         </div>
 
         {error !== null && (

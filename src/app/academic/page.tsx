@@ -204,7 +204,9 @@ export default function AcademicPage() {
           </p>
         </header>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+        {/* V3 (Sprint 7 post-review): 상단 박스를 3-col grid 로 — ThreeMonthCalendar 의
+            3개 달력 컬럼과 정렬. 교습기간 박스 = 1열(첫 달력 너비), 일정배치코드 = 2~3열. */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="flex flex-col gap-4">
             <StudyPeriodEditor
               centerYearMonth={centerYearMonth}
@@ -224,10 +226,12 @@ export default function AcademicPage() {
               />
             )}
           </div>
-          <ScheduleCodeSelector
-            selectedCodeId={selectedCode?.id ?? null}
-            onSelect={handleSelectCode}
-          />
+          <div className="lg:col-span-2">
+            <ScheduleCodeSelector
+              selectedCodeId={selectedCode?.id ?? null}
+              onSelect={handleSelectCode}
+            />
+          </div>
         </div>
 
         <ThreeMonthCalendar

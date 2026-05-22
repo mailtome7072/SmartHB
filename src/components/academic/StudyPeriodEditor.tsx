@@ -94,9 +94,11 @@ export function StudyPeriodEditor({
 
   const mutation = useMutation({
     mutationFn: async (range: { start: string; end: string }) => {
-      const yearMonth = range.start.slice(0, 7)
+      // V1 fix (Sprint 7 post-review): year_month 는 사용자가 보고 있는 중앙 캘린더 월 기준.
+      // 시작일이 이전 월(예: 6월 교습기간에 5/29 시작)이어도 year_month=2026-06 으로 저장하여
+      // 사용자 의도(=중앙 월의 교습기간)와 일치. 기간(start/end)은 선택값 그대로 보존.
       const created = await createStudyPeriod({
-        year_month: yearMonth,
+        year_month: centerYearMonth,
         start_date: range.start,
         end_date: range.end,
       })

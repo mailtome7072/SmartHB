@@ -4,12 +4,13 @@
  * 학사 일정 배치 모드의 코드 선택 컴팩트 selector — Sprint 7 T5 (Issue 3).
  *
  * 분리 원칙:
- * - 본 컴포넌트: `/academic` 페이지 운영성 작업 (활성 사용자 코드 선택만)
+ * - 본 컴포넌트: `/academic` 페이지 운영성 작업 (활성 코드 선택)
  * - [[ScheduleCodePanel]]: `/settings/schedule-codes` 설정성 작업 (CRUD)
  *
- * 시스템 예약 코드(`is_system_reserved=1`) 는 자동 배치 (공휴일 시드·단원평가 자동 배치) 되거나
- * 별도 워크플로우로 처리되므로 본 selector 는 **활성 사용자 코드만** 노출한다.
- * 코드 추가/관리가 필요하면 우측 "설정에서 관리" 링크로 이동.
+ * V6 fix (Sprint 7 post-review): 활성화된 시스템 예약 코드도 노출 — 사용자가
+ * `/settings/schedule-codes` 에서 활성 토글한 시스템 코드(예: 보강데이, 방학)는 교습기간
+ * 일정 배치에 사용 가능해야 함. is_active 만 필터하고 is_system_reserved 는 노출 여부에
+ * 영향 주지 않는다. 시스템 코드 row 는 시각적 마커(🔒)로 사용자에 안내.
  */
 
 import Link from 'next/link'
@@ -32,9 +33,7 @@ export function ScheduleCodeSelector({
     staleTime: 60_000,
   })
 
-  const activeUserCodes = (codesQuery.data ?? []).filter(
-    (c) => c.is_active && !c.is_system_reserved,
-  )
+  const activeCodes = (codesQuery.data ?? []).filter((c) => c.is_active)
 
   return (
     <section
@@ -60,19 +59,19 @@ export function ScheduleCodeSelector({
         </p>
       )}
 
-      {!codesQuery.isLoading && activeUserCodes.length === 0 && (
+      {!codesQuery.isLoading && activeCodes.length === 0 && (
         <p className="text-sm text-gray-500">
-          활성 사용자 코드가 없습니다.{' '}
+          활성 코드가 없습니다.{' '}
           <Link href="/settings/schedule-codes" className="text-blue-700 underline">
-            설정에서 추가하세요
+            설정에서 활성화하세요
           </Link>
           .
         </p>
       )}
 
-      {activeUserCodes.length > 0 && (
+      {activeCodes.length > 0 && (
         <ul className="flex flex-col gap-1" role="radiogroup" aria-label="배치할 코드 선택">
-          {activeUserCodes.map((code) => {
+          {activeCodes.map((code) => {
             const isSelected = code.id === selectedCodeId
             return (
               <li key={code.id}>
@@ -88,7 +87,10 @@ export function ScheduleCodeSelector({
                       : 'border-[var(--border)] bg-white hover:bg-gray-50',
                   ].join(' ')}
                 >
-                  <span className="font-semibold">{code.code_name}</span>
+                  <span className="font-semibold">
+                    {code.is_system_reserved && <span title="시스템 예약 코드">🔒 </span>}
+                    {code.code_name}
+                  </span>
                   {code.is_period_type && (
                     <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">
                       기간성
