@@ -68,6 +68,9 @@ interface EventBadgeProps {
 }
 
 function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
+  // Sprint 7 T9 (Issue 7): 공휴일 배지는 삭제 클릭 차단 — 백엔드 가드와 동일 조건.
+  const isHoliday = event.is_system_reserved && event.code_name === '공휴일'
+  const clickable = !disabled && !isHoliday && onClick !== undefined
   const { setNodeRef, listeners, attributes, transform, isDragging } = useDraggable({
     id: eventDraggableId(event.id),
     disabled: disabled || !draggable,
@@ -83,14 +86,16 @@ function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
       data-event-id={event.id}
       onClick={(ev) => {
         ev.stopPropagation()
-        if (!disabled) onClick?.(event)
+        if (clickable) onClick?.(event)
       }}
-      disabled={disabled || onClick === undefined}
+      disabled={!clickable}
       title={
         disabled
           ? '지난 달 일정은 수정할 수 없습니다'
-          : (event.display_name ?? event.code_name) +
-            (draggable ? ' · 드래그로 이동' : '')
+          : isHoliday
+            ? '공휴일은 삭제할 수 없습니다'
+            : (event.display_name ?? event.code_name) +
+              (draggable ? ' · 드래그로 이동' : '')
       }
       style={style}
       {...(draggable && !disabled ? listeners : {})}
@@ -98,7 +103,7 @@ function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
       className={[
         'truncate rounded px-1 text-left text-xs',
         codeBadgeClass(event.code_name, event.is_system_reserved),
-        onClick !== undefined && !disabled ? 'hover:opacity-80 cursor-pointer' : 'cursor-default',
+        clickable ? 'hover:opacity-80 cursor-pointer' : 'cursor-default',
         isDragging ? 'opacity-50' : '',
       ].join(' ')}
     >

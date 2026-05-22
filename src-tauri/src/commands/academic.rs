@@ -564,7 +564,105 @@ where
     Ok(row.try_get("id")?)
 }
 
-/// 학사 일정 생성. 중복불가 검증(AC-T7-1) + 기간성 일관성 검증(AC-T7-2).
+/// 배치 제약 가드 (Sprint 7 T7, Issue 4/R34):
+///
+/// 1. **중복불가 상호 차단**: 새 코드가 `is_duplicate_blocked=1` 이면 해당 일자에 다른 일정이
+///    있어도 차단. 역방향: 해당 일자에 이미 `is_duplicate_blocked=1` 일정이 있으면 새 배치 차단.
+/// 2. **교습기간 내만 배치**: `event_date` (기간성 코드는 `period_end_date` 포함) 가 어떤 확정된
+///    교습기간 `[start_date, end_date]` 안에 있어야 함.
+///
+/// `exclude_event_id` 는 update 시 자기 자신 row 를 검증 대상에서 제외 (id != ?).
+/// create 시 None 으로 호출.
+async fn check_placement_constraints(
+    pool: &sqlx::SqlitePool,
+    code_id: i64,
+    is_dup_blocked: bool,
+    event_date: &str,
+    period_end_date: Option<&str>,
+    exclude_event_id: Option<i64>,
+) -> Result<(), String> {
+    // 제약 1: 중복불가 상호 차단.
+    let existing_on_date: Vec<(i64, i64)> = {
+        let q = match exclude_event_id {
+            Some(_) => sqlx::query_as::<_, (i64, i64)>(
+                "SELECT e.id, c.is_duplicate_blocked \
+                 FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+                 WHERE e.event_date = ? AND e.id != ?",
+            )
+            .bind(event_date)
+            .bind(exclude_event_id.unwrap()),
+            None => sqlx::query_as::<_, (i64, i64)>(
+                "SELECT e.id, c.is_duplicate_blocked \
+                 FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+                 WHERE e.event_date = ?",
+            )
+            .bind(event_date),
+        };
+        q.fetch_all(pool).await.map_err(AppError::Db).map_err(String::from)?
+    };
+
+    if !existing_on_date.is_empty() {
+        if is_dup_blocked {
+            return Err(
+                "중복불가 코드는 다른 일정이 있는 날짜에 배치할 수 없습니다.".to_string(),
+            );
+        }
+        if existing_on_date.iter().any(|(_, dup)| *dup != 0) {
+            return Err(
+                "해당 일자에 중복불가 일정이 있어 배치할 수 없습니다.".to_string(),
+            );
+        }
+    }
+
+    // AC-T7-1: 동일 code_id + 동일 event_date 중복은 별도 차단 — 같은 코드 두 번 배치 방지.
+    let same_code_cnt: i64 = match exclude_event_id {
+        Some(eid) => sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schedule_events \
+             WHERE code_id = ? AND event_date = ? AND id != ?",
+        )
+        .bind(code_id)
+        .bind(event_date)
+        .bind(eid)
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?,
+        None => sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schedule_events WHERE code_id = ? AND event_date = ?",
+        )
+        .bind(code_id)
+        .bind(event_date)
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?,
+    };
+    if same_code_cnt > 0 {
+        return Err("동일 일자에 같은 코드의 일정이 이미 존재합니다.".to_string());
+    }
+
+    // 제약 2: 교습기간 내만 배치 — 확정된 교습기간이 event_date 를 포함해야 함.
+    // 기간성 코드는 period_end_date 도 동일 교습기간 안에 있어야 함.
+    let end_for_check = period_end_date.unwrap_or(event_date);
+    let in_period: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM study_periods \
+         WHERE is_confirmed = 1 AND start_date <= ? AND end_date >= ?",
+    )
+    .bind(event_date)
+    .bind(end_for_check)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::Db)
+    .map_err(String::from)?;
+    if in_period == 0 {
+        return Err(
+            "학사 일정은 확정된 교습기간 내 일자에만 배치할 수 있습니다.".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// 학사 일정 생성. 중복불가 검증(AC-T7-1) + 기간성 일관성(AC-T7-2) + 교습기간 제약(Sprint 7 T7).
 #[tauri::command]
 pub async fn create_schedule_event(
     payload: CreateScheduleEventPayload,
@@ -600,21 +698,15 @@ pub async fn create_schedule_event(
         _ => {}
     }
 
-    // 중복불가 검증 (AC-T7-1) — 동일 event_date 에 동일 code_id 이미 존재?
-    if is_dup_blocked != 0 {
-        let cnt: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM schedule_events WHERE code_id = ? AND event_date = ?",
-        )
-        .bind(payload.code_id)
-        .bind(&payload.event_date)
-        .fetch_one(pool)
-        .await
-        .map_err(AppError::Db)
-        .map_err(String::from)?;
-        if cnt > 0 {
-            return Err("동일 일자에 같은 코드의 일정이 이미 존재합니다.".to_string());
-        }
-    }
+    check_placement_constraints(
+        pool,
+        payload.code_id,
+        is_dup_blocked != 0,
+        &payload.event_date,
+        payload.period_end_date.as_deref(),
+        None,
+    )
+    .await?;
 
     let row = sqlx::query(
         "INSERT INTO schedule_events (code_id, event_date, period_end_date, display_name) \
@@ -632,28 +724,49 @@ pub async fn create_schedule_event(
     ScheduleEvent::from_row(&row).map_err(String::from)
 }
 
-/// 학사 일정 수정 — 지난 달 차단 (AC-T7-3).
+/// 학사 일정 수정 — 지난 달 차단 (AC-T7-3) + 배치 제약 (Sprint 7 T7).
 #[tauri::command]
 pub async fn update_schedule_event(
     id: i64,
     payload: UpdateScheduleEventPayload,
 ) -> Result<ScheduleEvent, String> {
     let pool = db::pool().map_err(String::from)?;
-    let target = sqlx::query("SELECT event_date FROM schedule_events WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(AppError::Db)
-        .map_err(String::from)?
-        .ok_or_else(|| "해당 학사 일정을 찾을 수 없습니다.".to_string())?;
+    let target = sqlx::query(
+        "SELECT e.event_date, e.code_id, c.is_duplicate_blocked \
+         FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE e.id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Db)
+    .map_err(String::from)?
+    .ok_or_else(|| "해당 학사 일정을 찾을 수 없습니다.".to_string())?;
     let event_date: String = target
         .try_get("event_date")
         .map_err(AppError::Db)
         .map_err(String::from)?;
+    let code_id: i64 = target.try_get("code_id").map_err(AppError::Db).map_err(String::from)?;
+    let is_dup_blocked: i64 = target
+        .try_get("is_duplicate_blocked")
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
     let ym = year_month_of(&event_date).ok_or_else(|| "기존 일자 형식 오류".to_string())?;
     if ym.as_str() < current_year_month().as_str() {
         return Err("지난 달의 학사 일정은 수정할 수 없습니다.".to_string());
     }
+
+    // 배치 제약 검증 — exclude_event_id=Some(id) 로 자기 자신 row 제외 (드래그 이동 시 동일 자리도 허용).
+    check_placement_constraints(
+        pool,
+        code_id,
+        is_dup_blocked != 0,
+        &payload.event_date,
+        payload.period_end_date.as_deref(),
+        Some(id),
+    )
+    .await?;
 
     let row = sqlx::query(
         "UPDATE schedule_events SET \
@@ -673,21 +786,39 @@ pub async fn update_schedule_event(
     ScheduleEvent::from_row(&row).map_err(String::from)
 }
 
-/// 학사 일정 삭제 — 지난 달 차단 (AC-T7-3).
+/// 학사 일정 삭제 — 지난 달 차단 (AC-T7-3) + 공휴일 차단 (Sprint 7 T9, Issue 7).
 #[tauri::command]
 pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
     let pool = db::pool().map_err(String::from)?;
-    let target = sqlx::query("SELECT event_date FROM schedule_events WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(AppError::Db)
-        .map_err(String::from)?
-        .ok_or_else(|| "해당 학사 일정을 찾을 수 없습니다.".to_string())?;
+    let target = sqlx::query(
+        "SELECT e.event_date, c.code_name, c.is_system_reserved \
+         FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE e.id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Db)
+    .map_err(String::from)?
+    .ok_or_else(|| "해당 학사 일정을 찾을 수 없습니다.".to_string())?;
     let event_date: String = target
         .try_get("event_date")
         .map_err(AppError::Db)
         .map_err(String::from)?;
+    let code_name: String = target
+        .try_get("code_name")
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    let is_system_reserved: i64 = target
+        .try_get("is_system_reserved")
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
+    // 공휴일 시스템 코드 삭제 차단 (단원평가 등 다른 시스템 코드는 수동 삭제 허용).
+    if is_system_reserved != 0 && code_name == "공휴일" {
+        return Err("공휴일은 삭제할 수 없습니다.".to_string());
+    }
+
     let ym = year_month_of(&event_date).ok_or_else(|| "기존 일자 형식 오류".to_string())?;
     if ym.as_str() < current_year_month().as_str() {
         return Err("지난 달의 학사 일정은 삭제할 수 없습니다.".to_string());
@@ -1201,5 +1332,216 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 2, "2025-05-05 어린이날·부처님오신날 2건 동시 표시");
+    }
+
+    // ─── Sprint 7 T7: 배치 제약 강화 단위 테스트 ───
+    //
+    // `check_placement_constraints` 를 직접 호출하여 가드 동작을 검증한다.
+    // 두 IPC (create / update) 가 동일 헬퍼를 공유하므로 헬퍼 단위 테스트로 충분.
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_blocks_when_date_outside_study_period() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let code_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        // 교습기간 미확정 또는 부재 — 가드 차단 예상.
+        let err = check_placement_constraints(&pool, code_id, false, "2099-03-15", None, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("교습기간"),
+            "교습기간 외 일자 차단 에러: {}",
+            err
+        );
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_allows_when_inside_confirmed_period() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        // 확정 교습기간 삽입.
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-03', '2099-03-01', '2099-03-31', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let code_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let result =
+            check_placement_constraints(&pool, code_id, true, "2099-03-15", None, None).await;
+        assert!(result.is_ok(), "확정 교습기간 내 빈 일자 허용: {:?}", result);
+    }
+
+    /// AC-T7-1: 중복불가 코드 배치 시 다른 일정 존재 일자에서 차단.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_blocks_when_dup_blocked_meets_other_event() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-04', '2099-04-01', '2099-04-30', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // 비-중복불가 코드의 일정 먼저 삽입.
+        let bogang_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '보강데이' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2099-04-10')")
+            .bind(bogang_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // 중복불가 코드 (휴원일, V102 + V301: is_duplicate_blocked=1) 배치 시도.
+        let hyuwon_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let err =
+            check_placement_constraints(&pool, hyuwon_id, true, "2099-04-10", None, None)
+                .await
+                .unwrap_err();
+        assert!(
+            err.contains("중복불가 코드는 다른 일정이 있는"),
+            "중복불가 상호 차단 에러: {}",
+            err
+        );
+    }
+
+    /// AC-T7-2: 역방향 — 해당 일자에 중복불가 일정이 있으면 새 배치 차단.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_blocks_when_target_date_has_dup_blocked_event() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-05', '2099-05-01', '2099-05-31', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // 휴원일(중복불가=1) 먼저 배치.
+        let hyuwon_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2099-05-15')")
+            .bind(hyuwon_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // 비-중복불가 코드 (방학) 배치 시도 — 역방향 차단.
+        let bangak_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '방학'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let err =
+            check_placement_constraints(&pool, bangak_id, false, "2099-05-15", None, None)
+                .await
+                .unwrap_err();
+        assert!(
+            err.contains("중복불가 일정이 있어"),
+            "역방향 중복불가 차단 에러: {}",
+            err
+        );
+    }
+
+    /// AC-T7-4: update 시 자기 자신 row 는 검증 대상 제외 (드래그 이동 시 동일 자리도 허용).
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_excludes_self_event_on_update() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-06', '2099-06-01', '2099-06-30', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let hyuwon_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let event_id: i64 = sqlx::query_scalar(
+            "INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2099-06-15') RETURNING id",
+        )
+        .bind(hyuwon_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // 본인 row 제외 — 동일 일자에 자기 자신만 존재해도 통과.
+        let result = check_placement_constraints(
+            &pool,
+            hyuwon_id,
+            true,
+            "2099-06-15",
+            None,
+            Some(event_id),
+        )
+        .await;
+        assert!(result.is_ok(), "자기 자신 row 제외 시 허용: {:?}", result);
+    }
+
+    // ─── Sprint 7 T9: 공휴일 삭제 차단 ───
+
+    /// AC-T9-1: 공휴일 시스템 코드 이벤트 삭제 차단 검증 (delete_schedule_event 가드 SQL 동등 쿼리).
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn delete_event_blocks_holiday_system_code() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        // V301 시드 공휴일 이벤트 1건 조회.
+        let holiday_event: Option<(i64, String, i64)> = sqlx::query_as(
+            "SELECT e.id, c.code_name, c.is_system_reserved \
+             FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+             WHERE c.code_name = '공휴일' AND c.is_system_reserved = 1 LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        let (_id, code_name, is_sys) = holiday_event.expect("V301 공휴일 이벤트 시드 있어야 함");
+        // 가드 조건 — delete_schedule_event 내부 분기와 동일.
+        let blocked = is_sys != 0 && code_name == "공휴일";
+        assert!(blocked, "공휴일 시스템 코드는 삭제 차단 분기에 진입해야 함");
+    }
+
+    /// AC-T9-3: 비공휴일 시스템 코드 (단원평가) 는 삭제 허용 — 가드 분기에 걸리지 않음.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn delete_event_allows_non_holiday_system_code() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let assessment: (String, i64) = sqlx::query_as(
+            "SELECT code_name, is_system_reserved FROM schedule_codes \
+             WHERE code_name = '단원평가 응시일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let (code_name, is_sys) = assessment;
+        let blocked = is_sys != 0 && code_name == "공휴일";
+        assert!(
+            !blocked,
+            "단원평가는 system_reserved=1 이지만 공휴일 아님 → 삭제 허용"
+        );
     }
 }
