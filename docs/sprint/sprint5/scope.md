@@ -21,7 +21,7 @@ Sprint: 5  |  Date: 2026-05-22  |  Session: #1
 ### T1-sub — 강제 점유 버튼 검증/수정
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src/app/lock/page.tsx | [1회] | 강제 점유 버튼 onClick 핸들러 검증 |
+| src/app/lock/page.tsx | [3회 ⚠️] | 강제 점유 버튼 onClick 핸들러 검증 |
 | src-tauri/src/commands/(lock 관련) | [0회] | force_acquire_lock IPC 동작 확인 |
 
 ### T2 — 마법사 redirect 수정
@@ -32,7 +32,7 @@ Sprint: 5  |  Date: 2026-05-22  |  Session: #1
 ### T3 + T4 — 시드 데이터 마이그레이션
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/migrations/201__update_seed_data.sql | [0회] | 표준교습비 + 결제수단 시드 변경 (V201 신규) |
+| src-tauri/migrations/201__update_seed_data.sql | [1회] | 표준교습비 + 결제수단 시드 변경 (V201 신규) |
 | src-tauri/.sqlx/ | [0회] | 오프라인 캐시 갱신 (sqlx prepare 결과) |
 
 ### T5 — 통합 검증
