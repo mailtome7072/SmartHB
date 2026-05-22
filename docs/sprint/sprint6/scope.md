@@ -22,11 +22,9 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #1
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src/app/lock/page.tsx | [2회] | T1: 재시도 버튼 + refresh 시 setLockStatus(null) |
-| src-tauri/src/commands/paths.rs | [0회] | T3: OnceLock → 테스트 격리 가능 구조 (방안 1: cfg(test) Mutex 또는 방안 2: DI) |
-| src/components/codes/* | [0회] | T4: handleDragEnd visibleCodes 기준 재정렬 (대상 파일은 구현 시 확정) |
-
-> 코드 테이블 DnD 컴포넌트 정확한 위치는 1단계 코드 탐색에서 확인.
+| src/app/lock/page.tsx | [3회 ⚠️] | T1 완료 — 같은 Task 내 두 부분 동시 수정(refresh + 에러 화면). false-positive ⚠️ (실제 loop 아님) |
+| src-tauri/src/commands/paths.rs | [2회] | T3 완료 — storage 모듈 cfg 분기 + tests reset 제거 |
+| src/app/settings/codes/page.tsx | [1회] | T4 완료 — handleDragEnd 방법 B 구현 (전체 codes 재구성 후 1..N 재부여) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
@@ -39,28 +37,28 @@ Sprint: 6  |  Date: 2026-05-22  |  Session: #1
 ## 완료 기준 (이번 세션)
 
 ### T1 (A20)
-- [ ] AC-T1-1: IPC 에러 발생 시 "다시 시도" 버튼이 표시되고, 클릭 시 `checkLockStatus()` 재호출
-- [ ] AC-T1-2: `refresh()` 호출 시 SplashScreen이 먼저 표시된 후 결과에 따라 LockScreen/LockWarning 전환
-- [ ] AC-T1-3: 정상 동작 경로(에러 없음)에 영향 없음 확인
+- ✅ AC-T1-1: IPC 에러 발생 시 "다시 시도" 버튼이 표시되고, 클릭 시 `checkLockStatus()` 재호출
+- ✅ AC-T1-2: `refresh()` 호출 시 SplashScreen이 먼저 표시된 후 결과에 따라 LockScreen/LockWarning 전환
+- ✅ AC-T1-3: 정상 동작 경로(에러 없음)에 영향 없음 확인
 
 ### T3 (A21)
-- [ ] AC-T3-1: `cargo test --manifest-path src-tauri/Cargo.toml` 전체 통과 (`--test-threads` 제한 없이)
-- [ ] AC-T3-2: `paths` 관련 테스트가 병렬 실행에서도 안정적으로 통과 (5회 연속 실행 확인)
-- [ ] AC-T3-3: 프로덕션 코드 동작에 영향 없음
+- ✅ AC-T3-1: `cargo test --manifest-path src-tauri/Cargo.toml` 전체 통과 (`--test-threads` 제한 없이)
+- ✅ AC-T3-2: `paths` 관련 테스트가 병렬 실행에서도 안정적으로 통과 (5회 연속 실행 확인)
+- ✅ AC-T3-3: 프로덕션 코드 동작에 영향 없음
 - skill: **systematic-debugging** (sprint6.md에 명시)
 
 ### T4 (A22, R26)
-- [ ] AC-T4-1: 활성/비활성 필터 적용 상태에서 DnD 순서 변경 시 전체 codes의 sort_order가 정확하게 반영
-- [ ] AC-T4-2: 필터 해제 후 전체 목록에서 순서가 일관성 유지
-- [ ] AC-T4-3: 기존 DnD 동작(필터 미적용 상태)에 영향 없음
+- ✅ AC-T4-1: 활성/비활성 필터 적용 상태에서 DnD 순서 변경 시 전체 codes의 sort_order가 정확하게 반영
+- ✅ AC-T4-2: 필터 해제 후 전체 목록에서 순서가 일관성 유지
+- ✅ AC-T4-3: 기존 DnD 동작(필터 미적용 상태)에 영향 없음
 
 ### 세션 종료 조건
-- [ ] 각 Task 별 의미있는 커밋 (T1 1개 / T3 1개 / T4 1개 — 총 3개 권장)
-- [ ] Self-verify: `cargo test` + `cargo clippy -- -D warnings` + `pnpm lint` + `pnpm tsc --noEmit` 모두 통과
-- [ ] simplify 스킬 1회 실행 (모든 Task 완료 후)
+- ✅ 각 Task 별 의미있는 커밋 (T1 `2c5b8a1` / T3 `c2be584` / T4 `83f19d1`)
+- ✅ Self-verify: `cargo test` 130 passed + `cargo clippy -- -D warnings` clean + `pnpm lint` clean + `pnpm tsc --noEmit` clean
+- ✅ simplify 스킬 1회 실행 (변경 사항 없음 — 3 Task 모두 단일 파일 작은 diff, 추상화/중복 없음)
 
 ## 발견된 이슈
 
 > 코드 수정 중 예상 외 충돌·구조 발견 시 여기에 기록 후 사용자에게 보고 (step-back 프로토콜).
 
-(없음)
+- lock/page.tsx 가 scope-tracker hook 에 의해 [3회 ⚠️] 표시됨 — 실제로는 T1 한 Task 내 두 영역(refresh + 에러 화면) Edit 두 번 + commit 시 추가 stage 카운트로 보임. 동일 오류 반복 없었고 loop-detection 진짜 트리거 조건(동일 테스트 3회 실패) 아님. 정상 종료.
