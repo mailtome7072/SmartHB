@@ -8,7 +8,8 @@
  * - 'study-period' : T10 교습기간 설정 (StudyPeriodEditor 가 셀 클릭 → selection)
  * - 'event-place'  : T11 일정 배치 (EventPlacer + 선택 코드 → 셀 클릭 = INSERT 또는 selection)
  *
- * ScheduleCodePanel 의 코드 선택 = mode 자동 활성. 코드 해제 = mode='view' 복귀.
+ * ScheduleCodeSelector 의 코드 선택 = mode 자동 활성. 코드 해제 = mode='view' 복귀.
+ * (Sprint 7 T5: 코드 CRUD 는 `/settings/schedule-codes` 페이지로 이동, 본 페이지는 selector 만 사용)
  */
 
 import { useEffect, useState } from 'react'
@@ -29,7 +30,7 @@ import {
   type EditorMode,
   type SelectionRange,
 } from '@/components/academic/StudyPeriodEditor'
-import { ScheduleCodePanel } from '@/components/academic/ScheduleCodePanel'
+import { ScheduleCodeSelector } from '@/components/academic/ScheduleCodeSelector'
 import {
   EventPlacer,
   useEventPlaceCellHandler,
@@ -223,7 +224,7 @@ export default function AcademicPage() {
               />
             )}
           </div>
-          <ScheduleCodePanel
+          <ScheduleCodeSelector
             selectedCodeId={selectedCode?.id ?? null}
             onSelect={handleSelectCode}
           />

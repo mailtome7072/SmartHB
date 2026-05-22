@@ -4,7 +4,7 @@
  * 학사 일정 배치 에디터 — Sprint 6 T11 (PRD §4.4.6, §4.4.7).
  *
  * 흐름:
- *   1) ScheduleCodePanel 에서 코드 선택 → mode='event-place' + selectedCode 설정
+ *   1) ScheduleCodeSelector 에서 코드 선택 → mode='event-place' + selectedCode 설정
  *   2) 캘린더 셀 클릭:
  *      - 단일 일자 코드: 1회 클릭 → createScheduleEvent({ code_id, event_date, period_end_date: null })
  *      - 기간성 코드: 시작/종료일 두 셀 클릭 → createScheduleEvent({ ..., period_end_date })
