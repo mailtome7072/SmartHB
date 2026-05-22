@@ -877,7 +877,7 @@ mod tests {
         assert_eq!(val, 1);
     }
 
-    /// AC-T6-1 — V102 시드의 시스템 예약 5종이 `is_system_reserved = 1` 로 존재.
+    /// AC-T6-1 — 시스템 예약 코드 시드 확인 (V102 5종 + V301 "공휴일" 1종 = 6).
     #[cfg(not(feature = "cipher"))]
     #[tokio::test]
     async fn system_reserved_codes_seeded() {
@@ -888,7 +888,7 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(cnt, 5, "V102 시스템 예약 5종 시드 확인");
+        assert_eq!(cnt, 6, "V102 5종 + V301 '공휴일' = 6종");
     }
 
     /// AC-T6-4 — 사용자 추가 코드 INSERT 후 동일 code_name 으로 재시도 시 UNIQUE 위반.
@@ -1061,5 +1061,138 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(other_month, 0, "다른 month 는 영향 받지 않아야 함");
+    }
+
+    // ─── T2-b V301 검증 (ADR-005, PRD §4.4.4) ───
+
+    /// AC-T2-1 — V101 시드의 3속성을 V301 이 PRD §4.4.4 기준으로 보정했는지.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn v301_corrects_system_code_attributes() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+
+        let bogang: (i64, i64) = sqlx::query_as(
+            "SELECT is_duplicate_blocked, allows_makeup_class FROM schedule_codes \
+             WHERE code_name = '보강데이' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(bogang.0, 1, "보강데이 is_duplicate_blocked = 1 (PRD §4.4.4 ON)");
+        assert_eq!(bogang.1, 1, "보강데이 allows_makeup_class = 1");
+
+        let gonghyu: i64 = sqlx::query_scalar(
+            "SELECT allows_makeup_class FROM schedule_codes \
+             WHERE code_name = '공휴수업일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(gonghyu, 1, "공휴수업일 allows_makeup_class = 1 (V102 0 → V301 1)");
+
+        let danwon: (i64, i64) = sqlx::query_as(
+            "SELECT is_duplicate_blocked, is_period_type FROM schedule_codes \
+             WHERE code_name = '단원평가 응시일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(danwon.0, 0, "단원평가 is_duplicate_blocked = 0 (V102 1 → V301 0)");
+        assert_eq!(danwon.1, 1, "단원평가 is_period_type = 1 (기간성 5일, V102 0 → V301 1)");
+    }
+
+    /// AC-T2-4 — "공휴일" 시스템 코드가 ADR-005 결정 속성으로 등록되었는지.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn v301_inserts_holiday_system_code() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let code: (i64, i64, i64, i64, i64) = sqlx::query_as(
+            "SELECT is_system_reserved, allows_regular_class, allows_makeup_class, \
+                    is_duplicate_blocked, is_period_type \
+             FROM schedule_codes WHERE code_name = '공휴일'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(code.0, 1, "공휴일 is_system_reserved = 1 (3속성 수정 차단)");
+        assert_eq!(code.1, 0, "공휴일 정규수업 OFF");
+        assert_eq!(code.2, 0, "공휴일 보강 OFF");
+        assert_eq!(code.3, 1, "공휴일 중복불가 ON");
+        assert_eq!(code.4, 0, "공휴일 단일 일자");
+    }
+
+    /// AC-T2-4 — 한국 법정 공휴일 2025~2027 (64건) + 주요 공휴일 존재 검증.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn v301_seeds_korean_holidays_2025_2027() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let code_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '공휴일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schedule_events WHERE code_id = ?",
+        )
+        .bind(code_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(total, 64, "2025~2027 한국 법정 공휴일 64건 시드");
+
+        // 주요 고정 공휴일 (연도별 1건씩 표본)
+        for (date, name_prefix) in [
+            ("2025-01-01", "1월1일"),
+            ("2026-03-01", "삼일절"),
+            ("2027-05-05", "어린이날"),
+            ("2025-08-15", "광복절"),
+            ("2026-10-09", "한글날"),
+            ("2027-12-25", "기독탄신일"),
+        ] {
+            let exists: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM schedule_events \
+                 WHERE code_id = ? AND event_date = ? AND display_name LIKE ?",
+            )
+            .bind(code_id)
+            .bind(date)
+            .bind(format!("{}%", name_prefix))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert!(exists >= 1, "{} {} 누락", date, name_prefix);
+        }
+    }
+
+    /// AC-T2-4 — 대체공휴일 최소 5건 시드 (한국 「관공서의 공휴일에 관한 규정」).
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn v301_seeds_at_least_five_substitute_holidays() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let substitutes: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schedule_events e \
+             JOIN schedule_codes c ON c.id = e.code_id \
+             WHERE c.code_name = '공휴일' AND e.display_name LIKE '대체공휴일%'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(substitutes >= 5, "대체공휴일 5건 이상 (실제 {})", substitutes);
+    }
+
+    /// 2025-05-05 어린이날 + 부처님오신날 동일 일자 다중 공휴일 — V103 (code_id, event_date) UNIQUE 없음.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn v301_allows_multiple_holidays_same_date() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schedule_events e \
+             JOIN schedule_codes c ON c.id = e.code_id \
+             WHERE c.code_name = '공휴일' AND e.event_date = '2025-05-05'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 2, "2025-05-05 어린이날·부처님오신날 2건 동시 표시");
     }
 }
