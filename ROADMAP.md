@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 43% (6/14 스프린트 완료) |
-| 현재 Phase | Phase 2 진행 중 — Sprint 6 완료, Sprint 7 (carry-over 해소) 진행 중, Sprint 8 (출결 관리) 예정 |
-| 다음 마일스톤 | Phase 2 carry-over 해소 (Sprint 7) → 출결 관리 (Sprint 8) |
+| 전체 진행률 | 47% (7/15 스프린트 완료) |
+| 현재 Phase | Phase 2 진행 중 — Sprint 7 완료 (2026-05-22), Sprint 8 (출결 관리) 예정 |
+| 다음 마일스톤 | 출결 관리 (Sprint 8) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -366,31 +366,32 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 7: Phase 2 carry-over 해소 + 인프라 안정화 (2주) 🔄 진행 중
+### Sprint 7: Phase 2 carry-over 해소 + 인프라 안정화 (2주) ✅ 완료 (2026-05-22)
 
-> 계획 문서: `docs/sprint/sprint7.md`
+> 계획 문서: `docs/sprint/sprint7.md` / Task 10/10 완료 / 9 세션
 > Sprint 6 시각 검증에서 발견된 carry-over 8건 전수 해소. 출결 도메인은 Sprint 8로 이연.
+> develop 머지: `sprint7 → develop` (--no-ff, 2026-05-22)
 
 #### 작업 목록
 
-- ⬜ **T1**: macOS Keychain 반복 다이얼로그 해소 — keyring 호출 통합 캐싱 (Critical UX, Issue 1) · skill: systematic-debugging
-- ⬜ **T2**: salt.bin 이전 (Keychain → cloud/smarthb/salt.bin) — A17/A27 3회 이월 최종 해소
-- ⬜ **T3**: device_id 영속화 — stale lock 정확한 디바이스 식별 (Issue 8, PRD §5.3)
-- ⬜ **T4**: is_system_reserved JOIN 추가 + 프론트 하드코딩 제거 (A23, R33)
-- ⬜ **T5**: 학사 일정 코드 관리 → `/settings/schedule-codes` 이동 (Issue 3) · skill: frontend-design
-- ⬜ **T6**: 교습기간 설정 UX 재설계 — 토글 제거, 기본 선택 모드 (Issue 5) · skill: frontend-design
-- ⬜ **T7**: 학사 일정 배치 제약 강화 — 중복불가 상호 차단 + 교습기간 내만 (Issue 4, R34)
-- ⬜ **T8**: 교습기간 삭제 + cascade 삭제 (공휴일 보존) (Issue 6)
-- ⬜ **T9**: 확정 교습기간 내 공휴일 삭제 차단 (Issue 7)
-- ⬜ **T10**: 통합 검증
+- ✅ **T1**: macOS Keychain 반복 다이얼로그 해소 — keyring 호출 통합 캐싱 (Critical UX, Issue 1) `8eb1c92`
+- ✅ **T2**: salt.bin 이전 (Keychain → cloud/smarthb/salt.bin) + Critical 보안 패치 6건 (A17/A27 3회 이월 최종 해소) `4178324`
+- ✅ **T3**: device_id 영속화 — stale lock 정확한 디바이스 식별 (Issue 8, PRD §5.3) `2fad4fb`
+- ✅ **T4**: is_system_reserved JOIN 추가 + 프론트 하드코딩 제거 (A23, R33) `6b5f8de`
+- ✅ **T5**: 학사 일정 코드 관리 → `/settings/schedule-codes` 이동 (Issue 3) `ba7ef09`
+- ✅ **T6**: 교습기간 설정 UX 재설계 — 토글 제거, 자동 selection 모드 (Issue 5) `2405ca5`
+- ✅ **T7**: 학사 일정 배치 제약 강화 — 중복불가 상호 차단 + 교습기간 내만 (Issue 4, R34) `84aa86f`
+- ✅ **T8**: 교습기간 삭제 + cascade 삭제 (공휴일 보존) (Issue 6) `a521102`
+- ✅ **T9**: 확정 교습기간 내 공휴일 삭제 차단 (Issue 7) `84aa86f`
+- ✅ **T10**: 통합 검증 — 자동 검증 전수 통과 `c39dab2`
 
 #### 완료 기준 (Definition of Done)
-- ⬜ Keychain 다이얼로그 최대 1회 + startup < 3초 (Issue 1)
-- ⬜ salt.bin 클라우드 폴더 이전 완료 (A17/A27)
-- ⬜ device_id 영속화 + stale lock 정확한 식별 (Issue 8)
-- ⬜ 교습기간 UX 재설계 + 배치 제약 + cascade 삭제 + 공휴일 보호 (Issue 3~7)
-- ⬜ is_system_reserved JOIN + 프론트 하드코딩 제거 (R33)
-- ⬜ `cargo test` 전체 통과 + clippy/lint/tsc/build 무오류
+- ✅ Keychain 다이얼로그 최대 1회 + startup < 3초 (Issue 1) — 자동 검증 통과, 시각 검증은 sprint-review 단계
+- ✅ salt.bin 클라우드 폴더 이전 완료 (A17/A27)
+- ✅ device_id 영속화 + stale lock 정확한 식별 (Issue 8)
+- ✅ 교습기간 UX 재설계 + 배치 제약 + cascade 삭제 + 공휴일 보호 (Issue 3~7)
+- ✅ is_system_reserved JOIN + 프론트 하드코딩 제거 (R33)
+- ✅ `cargo test` 177 passed (cipher off) / 127 passed (cipher on) + clippy/lint/tsc/build 무오류
 
 #### 기술 고려사항
 - Keychain 캐싱: ZeroizeOnDrop + Mutex<Option<>> 패턴, 앱 프로세스 종료 시 자동 폐기

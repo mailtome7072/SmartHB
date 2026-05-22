@@ -1,7 +1,9 @@
 # Sprint Plan sprint7
 
 ## 기간
-2026-05-22 ~ 2026-06-05 (예상, 2주)
+2026-05-22 (1일, 9 세션으로 압축 완료)
+
+> 머지: `sprint7 → develop` (--no-ff, 2026-05-22)
 
 ## 목표
 Sprint 6 시각 검증에서 발견된 carry-over 8건을 전수 해소하여 Phase 2 학사 도메인의 운영 신뢰도를 확보한다. 특히 macOS Keychain 반복 다이얼로그(Critical UX)를 근본 해결하고, 교습기간 UX 5건(Issue 3~7)을 재설계하며, device_id 영속화로 양 PC 동시성 안전성을 보장한다. 아울러 3회 이월된 A17(salt.bin 이전)을 auth.rs 리팩토링과 함께 처리한다.

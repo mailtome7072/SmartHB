@@ -38,6 +38,38 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 7: `CredentialCache` 구조체 도입 (`OnceLock<Mutex<Option<CachedCredentials>>>`, ZeroizeOnDrop) — 앱 시작 시 1회 Keychain 로드 후 캐시 경유, macOS Keychain 다이얼로그 반복(3+ 회→최대 1회) 해소 (Issue 1, Critical UX)
+- Sprint 7: salt.bin 클라우드 동기화 폴더 이전 (`smarthb/salt.bin`) — Keychain 의존도 감소, 양 PC 동일 salt 자동 동기화 보장 (A17/A27 3회 이월 최종 해소)
+- Sprint 7: device_id 영속화 — `app_config_dir/device_id` 파일로 재시작 간 UUID 유지. stale lock 디바이스 식별 정확도 향상 (Issue 8, PRD §5.3)
+- Sprint 7: `ScheduleCodeSelector` 컴팩트 컴포넌트 신규 (`src/components/academic/ScheduleCodeSelector.tsx`) — `/academic` 캘린더에서 코드 패널 제거 후 셀 배치 시 인라인 코드 선택 UX 제공
+- Sprint 7: `/settings/schedule-codes` 라우트 신설 — 학사 일정 코드 관리 화면을 설정 메뉴 하위로 이동 (Issue 3)
+- Sprint 7: 보안 패치 6건 (S-T2-1~6) — eprintln 키 누출 제거, set_password 원자성 보강, recovery 원자성 보강, NTFS power-loss fsync 강화, delete_key NoEntry idempotent, PC-B UX 개선
+
+### Changed
+- Sprint 7: 교습기간 설정 UX 재설계 — 토글 버튼 제거, 셀 클릭 즉시 selection 모드 자동 진입 (Issue 5, PRD §4.4.2)
+- Sprint 7: `schedule_events` 배치 제약 강화 — 교습기간 내 일자에만 배치 허용 + 중복불가 코드(`is_duplicate_blocked`) 간 동일 일자 중복 배치 상호 차단 (Issue 4, R34)
+- Sprint 7: `ScheduleEventListItem` 응답에 `is_system_reserved` 플래그 추가 (백엔드 JOIN 확장) — 프론트엔드 `codeBadgeClass`/`draggableEventIds` 하드코딩 제거 (A23/R33)
+- Sprint 7: `academic.rs` `delete_schedule_event` — 공휴일 이벤트(`is_holiday=true`) 삭제 차단 추가 (Issue 7)
+- Sprint 7: 교습기간 삭제(`delete_study_period`) 시 cascade — 해당 기간 내 공휴일을 제외한 학사 일정 일괄 삭제 (Issue 6)
+- Sprint 7: 사이드바 종료 메뉴 위치 최종 확정 — 설정 메뉴 다음, 메뉴 리스트 내 배치 + TopBar h-16 정렬 보정 (Sprint 6 후속 보강 3건)
+
+### Fixed
+- Sprint 7: Issue 1 — macOS 앱 시작 시 Keychain 비밀번호 다이얼로그가 3회 이상 반복 표시되어 startup 31초 소요되던 Critical UX 이슈 해소
+- Sprint 7: Issue 3 — 학사 일정 코드 관리가 `/academic` 화면 하단에 노출되어 UX 혼란 야기, `/settings/schedule-codes`로 분리
+- Sprint 7: Issue 4/R34 — 교습기간 외 일자에 학사 일정 배치 가능하던 가드 부재 문제 해소
+- Sprint 7: Issue 5 — 교습기간 선택 진입을 위한 토글 버튼을 찾기 어렵던 문제, 셀 클릭으로 자동 진입
+- Sprint 7: Issue 6 — 교습기간 삭제 버튼 부재 + 삭제 시 학사 일정이 고아 데이터로 잔류하던 문제 해소
+- Sprint 7: Issue 7 — 확정 교습기간 내 법정 공휴일이 삭제 가능하던 보안 부재 문제 해소
+- Sprint 7: Issue 8 — `lock.rs` device_id가 매 프로세스 재생성되어 stale lock이 항상 "다른 디바이스" 로 오식별되던 문제 해소
+- Sprint 7: A23/R33 — `codeBadgeClass`에 시스템 코드 ID 하드코딩으로 코드 추가 시 배지가 무채색 표시되던 문제 해소
+
+### Security
+- Sprint 7: S-T2-1 — `eprintln!` 으로 DB 암호화 키 hex가 콘솔에 노출되던 문제 제거
+- Sprint 7: S-T2-2 ~ S-T2-6 — set_password/recovery 원자성 보강, NTFS fsync, delete_key idempotent, PC-B UX 개선
+
+---
+
+### Added
 - Sprint 6: Phase 2 학사 스케줄 관리 첫 기능 진입 — `/academic` 라우트 신설, 사이드바 "학사 스케줄" 메뉴 활성화
 - Sprint 6: 3개월 학사 캘린더 컴포넌트 — Tailwind grid-cols-7 직접 구현 (shadcn/ui Calendar 미사용), 공휴일/교습기간/일정 배지 표시, 교습기간 셀 selection 통합
 - Sprint 6: 교습기간 설정 UI (PRD §4.4.2) — 시작일/종료일 셀 클릭 → StudyPeriodEditor, 교습기간 확정/해제, 지난 달 읽기 전용 (AC-4.4-1)
