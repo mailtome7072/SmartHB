@@ -72,6 +72,16 @@ pub fn run() {
             commands::setup::get_setup_status,
             commands::settings::get_operating_hours,
             commands::settings::save_operating_hours,
+            commands::academic::create_study_period,
+            commands::academic::update_study_period,
+            commands::academic::list_study_periods,
+            commands::academic::get_study_period,
+            commands::academic::confirm_study_period,
+            commands::academic::delete_study_period,
+            commands::academic::list_schedule_codes,
+            commands::academic::create_schedule_code,
+            commands::academic::update_schedule_code,
+            commands::academic::toggle_schedule_code_active,
             startup::app_startup_sequence,
         ])
         .build(tauri::generate_context!())
