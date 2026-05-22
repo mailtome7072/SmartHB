@@ -194,10 +194,18 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
     const oldIdx = visibleCodes.findIndex((c) => String(c.id) === String(active.id))
     const newIdx = visibleCodes.findIndex((c) => String(c.id) === String(over.id))
     if (oldIdx < 0 || newIdx < 0) return
-    const reordered = arrayMove(visibleCodes, oldIdx, newIdx)
-    // 보이는 행만 1, 2, 3 ... 으로 재할당. 숨겨진(필터 제외) 행은 그대로 유지되지만
-    // 같은 sort_order 값이 충돌 가능 — 단순화를 위해 전체 base 0 부터 다시 부여.
-    const orders: [number, number][] = reordered.map((c, idx) => [c.id, idx + 1])
+    const reorderedVisible = arrayMove(visibleCodes, oldIdx, newIdx)
+
+    // A22 / R26: 필터링 중 DnD 시 visible 만 재할당하면 hidden 과 sort_order 충돌.
+    // 전체 codes 의 정렬 위치에서 visible 슬롯에 reorderedVisible 을 차례로 끼워 넣어
+    // hidden 행의 상대 순서를 보존한 채 전체에 새 sort_order 1..N 을 부여한다.
+    const sortedAll = [...codes].sort((a, b) => a.sort_order - b.sort_order)
+    const visibleIds = new Set(visibleCodes.map((c) => c.id))
+    let vi = 0
+    const merged = sortedAll.map((c) =>
+      visibleIds.has(c.id) ? reorderedVisible[vi++] : c,
+    )
+    const orders: [number, number][] = merged.map((c, idx) => [c.id, idx + 1])
     reorder.mutate(orders)
   }
 
