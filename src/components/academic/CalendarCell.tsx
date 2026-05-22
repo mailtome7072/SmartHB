@@ -29,6 +29,12 @@ interface CalendarCellProps {
   isSaturday: boolean
   inStudyPeriod: boolean
   events: ScheduleEventListItem[]           // 해당 일자의 schedule_events (공휴일 포함)
+  /** 교습기간 선택 모드에서 선택 범위 안에 포함 (Sprint 6 T10) */
+  isInSelection?: boolean
+  /** 선택 범위 시작일 (강조 ring) */
+  isSelectionStart?: boolean
+  /** 선택 범위 종료일 (강조 ring) */
+  isSelectionEnd?: boolean
   onClick?: (date: string) => void
 }
 
@@ -62,6 +68,9 @@ export function CalendarCell({
   isSaturday,
   inStudyPeriod,
   events,
+  isInSelection = false,
+  isSelectionStart = false,
+  isSelectionEnd = false,
   onClick,
 }: CalendarCellProps) {
   const hasHoliday = events.some((e) => e.code_name === '공휴일')
@@ -72,19 +81,30 @@ export function CalendarCell({
   const dayColor =
     hasHoliday || isSunday ? 'text-red-700' : isSaturday ? 'text-blue-700' : 'text-[var(--foreground)]'
 
+  // 선택 모드 하이라이트가 교습기간 배경보다 우선 (사용자가 무엇을 선택하는지 명확히).
+  const background = isInSelection
+    ? 'bg-blue-100'
+    : inStudyPeriod
+      ? 'bg-amber-50'
+      : 'bg-white'
+  const ring = isSelectionStart || isSelectionEnd ? 'ring-2 ring-blue-500 z-10' : ''
+
   return (
     <button
       type="button"
       onClick={clickable ? () => onClick(date) : undefined}
       disabled={!clickable}
       aria-label={`${date}${hasHoliday ? ' 공휴일' : ''}${hasAssessment ? ' 단원평가' : ''}`}
+      aria-pressed={isSelectionStart || isSelectionEnd}
       className={[
         'relative flex min-h-[72px] min-w-[44px] flex-col items-stretch border border-[var(--border)] p-1 text-left',
         'focus:outline-none focus:ring-2 focus:ring-blue-400',
-        inStudyPeriod ? 'bg-amber-50' : 'bg-white',
+        background,
+        ring,
         isPastMonth ? 'cursor-not-allowed opacity-60' : '',
         isOutsideMonth ? 'opacity-40' : '',
-        clickable ? 'hover:bg-amber-100' : '',
+        clickable && !isInSelection ? 'hover:bg-amber-100' : '',
+        clickable && isInSelection ? 'hover:bg-blue-200' : '',
       ].join(' ')}
     >
       {hasAssessment && (

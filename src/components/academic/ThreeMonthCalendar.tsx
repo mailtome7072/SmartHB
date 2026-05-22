@@ -129,6 +129,11 @@ function buildMonthGrid(year: number, month: number, today: string): MonthCell[]
 
 // ─── 단일 월 그리드 컴포넌트 ───────────────────────────────────────────────
 
+interface SelectionRange {
+  start: string | null
+  end: string | null
+}
+
 interface MonthGridProps {
   year: number
   month: number
@@ -136,6 +141,7 @@ interface MonthGridProps {
   eventsByDate: Map<string, ScheduleEventListItem[]>
   studyPeriod: StudyPeriod | null
   today: string
+  selection?: SelectionRange
   onCellClick?: (date: string) => void
 }
 
@@ -146,6 +152,7 @@ function MonthGrid({
   eventsByDate,
   studyPeriod,
   today,
+  selection,
   onCellClick,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthGrid(year, month, today), [year, month, today])
@@ -153,6 +160,15 @@ function MonthGrid({
   function inStudyPeriod(date: string): boolean {
     if (!studyPeriod) return false
     return date >= studyPeriod.start_date && date <= studyPeriod.end_date
+  }
+
+  /** 선택 범위 내 — start <= date <= end (둘 다 있을 때) 또는 start === date (start 만 있을 때). */
+  function inSelectionRange(date: string): boolean {
+    if (!selection?.start) return false
+    if (!selection.end) return date === selection.start
+    const lo = selection.start <= selection.end ? selection.start : selection.end
+    const hi = selection.start <= selection.end ? selection.end : selection.start
+    return date >= lo && date <= hi
   }
 
   return (
@@ -168,6 +184,7 @@ function MonthGrid({
           <span className="text-xs text-amber-700">
             교습기간 {studyPeriod.start_date.slice(5)} ~ {studyPeriod.end_date.slice(5)}
             {studyPeriod.is_confirmed ? ' · 확정' : ''}
+            {isPastMonth ? ' · 🔒 수정 불가' : ''}
           </span>
         )}
       </header>
@@ -194,6 +211,9 @@ function MonthGrid({
             isSaturday={c.isSaturday}
             inStudyPeriod={!c.isOutsideMonth && inStudyPeriod(c.date)}
             events={eventsByDate.get(c.date) ?? []}
+            isInSelection={!c.isOutsideMonth && inSelectionRange(c.date)}
+            isSelectionStart={selection?.start === c.date}
+            isSelectionEnd={selection?.end === c.date}
             onClick={onCellClick}
           />
         ))}
@@ -207,9 +227,11 @@ function MonthGrid({
 interface ThreeMonthCalendarProps {
   /** 셀 클릭 핸들러 — T10/T11 에서 모드별 분기 (교습기간 설정 / 일정 배치). */
   onCellClick?: (date: string) => void
+  /** 선택 모드에서 시작/종료일 프리뷰 (Sprint 6 T10). null = 선택 모드 비활성. */
+  selection?: SelectionRange | null
 }
 
-export function ThreeMonthCalendar({ onCellClick }: ThreeMonthCalendarProps) {
+export function ThreeMonthCalendar({ onCellClick, selection }: ThreeMonthCalendarProps) {
   // 중앙 = 기본 다음 달 (PRD §4.4.1).
   const [center, setCenter] = useState<{ year: number; month: number }>(() => {
     const cur = currentYearMonth()
@@ -306,6 +328,7 @@ export function ThreeMonthCalendar({ onCellClick }: ThreeMonthCalendarProps) {
             eventsByDate={eventsByDate}
             studyPeriod={periodByYm.get(`${m.year}-${pad2(m.month)}`) ?? null}
             today={today}
+            selection={selection ?? undefined}
             onCellClick={onCellClick}
           />
         ))}
