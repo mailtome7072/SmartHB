@@ -1,81 +1,100 @@
 ---
 name: sprint-next-session
-description: "Sprint 6 Session #1 완료(T1/T3/T4 회고 carry-over 3건 해소, 2026-05-22). 다음: /sprint-dev 6 재진입 → Session #2 (T5+T6 academic.rs 신설)"
+description: "Sprint 6 Session #2 완료(T5+T6 academic.rs 신설, 2026-05-22). 다음: /sprint-dev 6 재진입 → Session #3 (T7 schedule_events IPC)"
 metadata: 
   node_type: memory
   type: project
   originSessionId: ec4dbd04-fb9a-48c2-82eb-4dab55bbfa1a
 ---
 
-Sprint 6 Session #1 종료 상태. **브랜치 `sprint6` 가 origin 에 push 완료** (https://github.com/mailtome7072/SmartHB/tree/sprint6). 새 대화에서 `/sprint-dev 6` 재입력만 하면 동일 브랜치에서 이어갈 수 있다.
+Sprint 6 Session #2 종료. **브랜치 `sprint6` 가 origin 동기화 완료** (https://github.com/mailtome7072/SmartHB/tree/sprint6). 새 대화에서 `/sprint-dev 6` 재입력하면 깨끗한 컨텍스트로 Session #3 진입.
 
-## Session #1 완료 (3 Task 회고 carry-over 모두 해소)
+## Sprint 6 진행률: 5/12 (≈42%)
 
-| Task | 커밋 | 영향 파일 |
-|------|------|----------|
-| ✅ T1 (A20) | `2c5b8a1` | `src/app/lock/page.tsx` — 재시도 버튼 + `setLockStatus(null)` |
-| ✅ T3 (A21) | `c2be584` | `src-tauri/src/commands/paths.rs` — storage 모듈 cfg 분기. **`cargo test --test-threads` 제한 제거 가능** (130 passed, 5회 연속 안정) |
-| ✅ T4 (A22, R26) | `83f19d1` | `src/app/settings/codes/page.tsx` — DnD 방법 B (전체 codes 재구성 후 1..N 재부여) |
+| Session | Task | 커밋 |
+|---------|------|------|
+| #1 | T1 (A20 lock 재시도) | `2c5b8a1` |
+| #1 | T3 (A21 paths.rs OnceLock 분리) | `c2be584` |
+| #1 | T4 (A22 DnD 방법 B) | `83f19d1` |
+| #2 | **T5+T6** (academic.rs 신규 — study_periods 6 IPC + schedule_codes 4 IPC) | `c8dc3c8` |
 
-scope.md 갱신 커밋: `ea4e8c1`.
+검증 현황 (Session #2 종료 시점): `cargo test` 136 passed, `cargo clippy -- -D warnings` clean.
 
-## Session #2 진입 시 우선 액션
+## Session #3 진입 시 우선 액션
 
 1. `/sprint-dev 6` 재진입 (사용자 직접 입력)
-2. `docs/sprint/sprint6/scope.md` 읽고 **Session 번호 +1 (#2)**, 수정 횟수 [0회] 리셋
-3. T5+T6 작업 — **academic.rs 신규 모듈** 신설
+2. `docs/sprint/sprint6/scope.md` 읽고 **Session 번호 +1 (#3)**, 수정 횟수 [0회] 리셋
+3. **T7 작업** — `academic.rs` 에 schedule_events IPC 5개 추가 (신규 모듈 아님, 기존 파일 확장)
 
-## T5+T6 구체 작업 안내 (다음 세션 가이드)
+## T7 구체 작업 안내 (다음 세션 가이드)
 
 ### 구조
-- 신규 파일: `src-tauri/src/commands/academic.rs`
-- `src-tauri/src/commands/mod.rs`: `pub mod academic;` 추가
-- `src-tauri/src/lib.rs` invoke_handler: 10개 커맨드 등록
+- 기존 파일 확장: `src-tauri/src/commands/academic.rs` — schedule_events 섹션 신설 (// schedule_events (T7) 구분선 이후)
+- `src-tauri/src/lib.rs` invoke_handler: 5개 커맨드 추가 등록
 
-### 도메인 검증
-- 스키마 SSOT: `src-tauri/migrations/102__create_study_periods_and_schedule_codes.sql`
-  - `study_periods`: id / year_month UNIQUE / start_date / end_date / is_confirmed / is_closed
-  - `schedule_codes`: id / code_name UNIQUE / is_system_reserved / 3속성(allows_regular_class/allows_makeup_class/is_duplicate_blocked) / is_period_type / is_active
-- 시스템 예약 5종 시드: 보강데이/공휴수업일/방학/단원평가 응시일/휴원일 (V102 INSERT)
+### 도메인 스키마 (V103 — Sprint 2)
+- `schedule_events(id, code_id FK, event_date, period_end_date?, display_name?, created_at, updated_at)`
+- CHECK: `period_end_date IS NULL OR period_end_date >= event_date`
+- period_end_date NULL = 단일 일자, NOT NULL = 기간성
 
-### T5 — 6 IPC (study_periods, 4h)
-1. `create_study_period({ year_month, start_date, end_date })` — **일자 중첩 검증**: `NOT (end_date < new.start_date OR start_date > new.end_date)`. 중첩 시 한국어 에러.
-2. `update_study_period(id, { start_date, end_date })` — **지난 달 차단** (year_month < current month 또는 is_closed=1).
-3. `list_study_periods(from_month, to_month)` — 범위 조회.
-4. `get_study_period(year_month)` — 단일.
-5. `confirm_study_period(id)` — is_confirmed=1.
-6. `delete_study_period(id)` — is_confirmed=0 인 경우만.
+### T7 — 5 IPC (5h)
+1. `create_schedule_event({ code_id, event_date, period_end_date?, display_name? })`
+   - **중복불가 검증** (AC-4.4-4 / AC-T7-1): `is_duplicate_blocked=1` 코드는 동일 `event_date` 에 이미 존재하면 차단. schedule_codes JOIN 필요.
+   - **기간성 일관성** (AC-T7-2): `is_period_type=1` 인 코드는 period_end_date 필수 (None 거부), `is_period_type=0` 은 period_end_date None 강제.
+2. `update_schedule_event(id, ...)` — **지난 달 차단** (AC-T7-3): event_date 의 year-month < 현재 월 이면 거부.
+3. `delete_schedule_event(id)` — 지난 달 차단 동일.
+4. `list_schedule_events(from_date, to_date)` — 코드 JOIN 으로 코드 정보 포함. 공휴일 이벤트(T2 V301 시드)는 schedule_events 자체에서 같이 조회됨.
+5. `auto_place_assessment_dates(year_month)` (AC-T7-4/5):
+   - 해당 year_month 의 study_period 조회 → start_date/end_date 안에서 2주차 월~금 + 4주차 월~금 자동 INSERT (단원평가 응시일 code_id 사용).
+   - **AC-4.4-6**: 이미 해당 month 에 단원평가가 1건이라도 있으면 No-op (중복 생성 금지).
+   - 자동 배치 후 사용자가 드래그 이동/삭제 가능 — IPC 자체에는 후속 편집 권한 무관.
 
-### T6 — 4 IPC (schedule_codes, 3h)
-1. `list_schedule_codes()` — 전체 (is_active 포함).
-2. `create_schedule_code({ code_name, allows_regular_class, allows_makeup_class, is_duplicate_blocked, is_period_type })` — 사용자 추가 코드. 보수적 디폴트(OFF/OFF/ON)는 **프론트엔드**가 결정.
-3. `update_schedule_code(id, ...)` — `is_system_reserved=1` 행은 차단 (AC-4.4-5).
-4. `toggle_schedule_code_active(id)` — 시스템 코드도 활성/비활성 토글은 허용.
+### 응답 struct (academic.rs 에 추가)
+```rust
+pub struct ScheduleEvent {
+    pub id: i64,
+    pub code_id: i64,
+    pub event_date: String,
+    pub period_end_date: Option<String>,
+    pub display_name: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    // list_schedule_events 가 JOIN 으로 함께 반환할 코드 정보 — 별도 ScheduleEventWithCode 구조 고려
+}
+```
 
-### 코드 패턴 (기존 모듈 참고)
-- **시그니처**: `pub async fn xxx(...) -> Result<T, String>`
-- **풀**: `let pool = db::pool().map_err(String::from)?;`
-- **에러**: `.map_err(AppError::Db).map_err(String::from)?;`
-- **응답 struct**: `Serialize + from_row(&SqliteRow)` 패턴 (참고: `schedules::StudentSchedule`)
-- **테스트**: `#[cfg(not(feature = "cipher"))]` + `db::test_pool_in_memory()` (참고: `src-tauri/src/commands/schedules.rs:207~`)
+list_schedule_events 는 캘린더 렌더링용이므로 코드명·3속성을 함께 반환하는 게 효율적. 두 가지 패턴:
+- **A**: `ScheduleEventWithCode { event: ScheduleEvent, code: ScheduleCode }` 중첩
+- **B**: 평탄화된 `ScheduleEventListItem { id, code_id, code_name, is_duplicate_blocked, is_period_type, event_date, period_end_date, display_name }`
+> 권장 B — 프론트 캘린더 셀 렌더링에 JSON 평탄 구조가 편함.
 
-### 단위 테스트 우선순위
-1. 일자 중첩 검증 (T5 핵심 비즈니스 규칙, PRD §6.2)
-2. 지난 달 수정 차단 (AC-4.4-1)
-3. 시스템 예약 코드 3속성 변경 차단 (AC-4.4-5)
-4. CRUD 정상 동작 smoke test
+### 단위 테스트 우선순위 (AC-T7-6)
+1. 중복불가 코드 동일 일자 INSERT 거부 (AC-T7-1)
+2. 기간성 코드의 period_end_date 필수 검증 (AC-T7-2)
+3. 지난 달 update/delete 차단 (AC-T7-3)
+4. auto_place_assessment_dates 가 2주차/4주차 월~금 정확히 생성 (AC-T7-4)
+5. 자동 배치 재실행 시 No-op (AC-T7-5)
 
-### 신규 의존성
-- 없음. `tsx`(T2용)는 다음 세션의 다음(T2 진입 시)에 검토.
+### 코드 패턴 (academic.rs 의 기존 T5/T6 패턴 그대로 따름)
+- 시그니처: `pub async fn ... -> Result<T, String>`
+- pool: `db::pool().map_err(String::from)?;`
+- 에러: `.map_err(AppError::Db).map_err(String::from)?;`
+- 테스트: `#[cfg(not(feature = "cipher"))] + #[tokio::test]` + `db::test_pool_in_memory()` + V102 시스템 5종 시드 활용
 
 ### 마이그레이션
-- 본 세션(T5+T6) 범위에서는 변경 없음. V102 기존 스키마 그대로 활용.
+- 본 세션(T7) 범위에서는 변경 없음. V103 스키마 그대로 활용.
 
-## Sprint 6 전체 진행률
+## Sprint 6 남은 작업 (T7 이후)
 
-- 완료: 3/12 Task (T1, T3, T4 — 회고 carry-over 기술 부채)
-- 다음 세션: T5+T6 (백엔드 IPC, 예상 7h)
-- 남은: T2(시드+공휴일 7h) + T7~T12 (총 ~28h)
+| Task | 작업 | 의존성 | 권장 세션 묶음 |
+|------|------|--------|---------------|
+| T7 | schedule_events IPC | T5+T6 (충족) | Session #3 단독 |
+| T2 | V301 시드 + 공휴일 + ADR | 없음 | Session #4 (brainstorming skill) |
+| T8 | IPC 래퍼 + 도메인 타입 (프론트) | T5+T6+T7 | Session #5 (T7 다음, 작음) |
+| T9 | 3개월 캘린더 컴포넌트 | T2+T8 | Session #6 (frontend-design skill) |
+| T10 | 교습기간 설정 UI | T9 | Session #7 |
+| T11 | 일정 코드 + 배치 UI | T9+T10 | Session #8 (frontend-design skill) |
+| T12 | 통합 검증 | 전부 | Session #9 (마지막) |
 
 ## Sprint 5 완료 산출물 (참고)
 
