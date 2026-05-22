@@ -18,7 +18,7 @@
  * - 셀 onClick prop 는 T10/T11 에서 모드별 핸들러로 확장
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listScheduleEvents, listStudyPeriods } from '@/lib/tauri'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
@@ -143,6 +143,7 @@ interface MonthGridProps {
   today: string
   selection?: SelectionRange
   onCellClick?: (date: string) => void
+  onEventClick?: (event: ScheduleEventListItem) => void
 }
 
 function MonthGrid({
@@ -154,6 +155,7 @@ function MonthGrid({
   today,
   selection,
   onCellClick,
+  onEventClick,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthGrid(year, month, today), [year, month, today])
 
@@ -215,6 +217,7 @@ function MonthGrid({
             isSelectionStart={selection?.start === c.date}
             isSelectionEnd={selection?.end === c.date}
             onClick={onCellClick}
+            onEventClick={onEventClick}
           />
         ))}
       </div>
@@ -229,9 +232,18 @@ interface ThreeMonthCalendarProps {
   onCellClick?: (date: string) => void
   /** 선택 모드에서 시작/종료일 프리뷰 (Sprint 6 T10). null = 선택 모드 비활성. */
   selection?: SelectionRange | null
+  /** 일정 배지 클릭 (Sprint 6 T11) — 삭제 핸들러. */
+  onEventClick?: (event: ScheduleEventListItem) => void
+  /** 중앙 month 변경 콜백 — 부모가 자동 배치 등 month 기반 액션에 사용. */
+  onCenterChange?: (yearMonth: string) => void
 }
 
-export function ThreeMonthCalendar({ onCellClick, selection }: ThreeMonthCalendarProps) {
+export function ThreeMonthCalendar({
+  onCellClick,
+  selection,
+  onEventClick,
+  onCenterChange,
+}: ThreeMonthCalendarProps) {
   // 중앙 = 기본 다음 달 (PRD §4.4.1).
   const [center, setCenter] = useState<{ year: number; month: number }>(() => {
     const cur = currentYearMonth()
@@ -288,6 +300,11 @@ export function ThreeMonthCalendar({ onCellClick, selection }: ThreeMonthCalenda
     setCenter((c) => shiftMonth(c.year, c.month, delta))
   }
 
+  // 마운트 시 + center 변경 시 부모에 알림 (자동 배치 등 month 기반 액션에 사용).
+  useEffect(() => {
+    onCenterChange?.(`${center.year}-${pad2(center.month)}`)
+  }, [center, onCenterChange])
+
   return (
     <div className="flex flex-col gap-3">
       <nav className="flex items-center justify-center gap-4">
@@ -330,6 +347,7 @@ export function ThreeMonthCalendar({ onCellClick, selection }: ThreeMonthCalenda
             today={today}
             selection={selection ?? undefined}
             onCellClick={onCellClick}
+            onEventClick={onEventClick}
           />
         ))}
       </div>
