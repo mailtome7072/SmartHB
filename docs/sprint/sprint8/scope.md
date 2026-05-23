@@ -75,16 +75,16 @@ Sprint: 8  |  Date: 2026-05-23  |  Session: #1
 ## 완료 기준 (이번 세션)
 
 ### T1 — V106 마이그레이션 (sprint8.md L73-129)
-- ⬜ AC-T1-1: `sqlx migrate run` 성공 + 테이블 2개 생성 확인
-- ⬜ AC-T1-2: `regular_attendances.(student_id, event_date)` UNIQUE 제약 동작
-- ⬜ AC-T1-3: `makeup_attendances` UNIQUE 없이 동일 (student_id, event_date) 다중 INSERT 가능
-- ⬜ AC-T1-4: status CHECK 제약 위반 시 INSERT 실패
-- ⬜ AC-T1-5: `.sqlx/` 오프라인 캐시 갱신 — 본 세션은 query 매크로 미사용이라 skip (T2 에서)
+- ✅ AC-T1-1: `test_pool_in_memory` 마이그레이션 적용 + 두 테이블 생성 (`v106_creates_attendance_tables`)
+- ✅ AC-T1-2: UNIQUE 동작 (`regular_attendances_unique_student_date`)
+- ✅ AC-T1-3: makeup 다중 INSERT 3건 누적 (`makeup_attendances_allows_multiple_same_date`)
+- ✅ AC-T1-4: status CHECK + year_month GLOB + class_minutes>0 (`attendances_status_check_rejects_invalid` + `attendances_format_checks`)
+- ⬜ AC-T1-5: `.sqlx/` 캐시 — T2 세션 이연 (query 매크로 도입 시점)
 
 ### 세션 종료 조건
-- ⬜ Self-verify: cargo test (cipher off + on) + cargo clippy -- -D warnings clean
-- ⬜ simplify 검토 — 마이그레이션 + 테스트 단일 책임 유지
-- ⬜ 단일 커밋 (마이그레이션 파일 + scope.md, 테스트 위치에 따라 +1)
+- ✅ Self-verify: cipher off 191 passed / on 126 passed, clippy clean (양쪽)
+- ✅ simplify — db.rs 단위 테스트 + V106 SQL 단일 책임 유지
+- ✅ 단일 커밋 `f72778b` (3파일, +305)
 
 ## 발견된 이슈
 
