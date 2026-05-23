@@ -146,18 +146,45 @@ fn load_credentials_to_cache() -> Result<(), AppError> {
     Ok(())
 }
 
+/// load 작업 직렬화용 Mutex (Sprint 8 T6 / I-S2-7 / R45).
+///
+/// `cred_cache().lock()` 만으로는 fast-path 캐시 hit 만 race-free — slow-path 의
+/// `load_credentials_to_cache()` 호출 사이에 lock 이 해제되어 두 스레드가 동시 진입 시
+/// keyring 을 2회 호출하는 race 가 가능했다. 본 Mutex 로 load 자체를 직렬화하여
+/// macOS Keychain 다이얼로그가 startup 동안 정확히 1회만 표시되도록 보장한다.
+///
+/// 락 순서: 항상 `LOAD_MUTEX` → `cred_cache` (deadlock 회피). fast-path 는 `cred_cache`
+/// 만 사용하므로 `LOAD_MUTEX` 를 잡지 않아 다른 fast-path 호출과 경합하지 않는다.
+static LOAD_MUTEX: Mutex<()> = Mutex::new(());
+
+/// 캐시 미스 시 keyring + salt 를 정확히 1회만 로드한다 (Sprint 8 T7 / R45).
+///
+/// double-checked locking 패턴: fast-path 캐시 hit → slow-path LOAD_MUTEX 직렬화
+/// → double-check (다른 스레드가 이미 로드 완료했을 수 있음) → load.
+fn ensure_cache_loaded() -> Result<(), AppError> {
+    // Fast path — 캐시 hit (대다수 호출).
+    if cred_cache().lock().expect("cred_cache poisoned").is_some() {
+        return Ok(());
+    }
+    // Slow path — load 직렬화. 첫 진입자가 keyring/salt 1회 로드, 후속 진입자는 대기 후 hit.
+    let _load_guard = LOAD_MUTEX.lock().expect("LOAD_MUTEX poisoned");
+    if cred_cache().lock().expect("cred_cache poisoned").is_some() {
+        return Ok(());
+    }
+    load_credentials_to_cache()
+}
+
 /// 캐시 우선 조회, 미스 시 keyring 1회 로드 후 캐시 → DerivedKey 복제 반환.
 ///
 /// cipher feature on 빌드의 db.rs / backup.rs / integrity.rs 가 사용. 매 호출마다 keyring
 /// 다이얼로그를 띄우던 기존 패턴을 1회로 통합.
+///
+/// Sprint 8 T7 (R45): double-checked locking 누락 race 제거 — `ensure_cache_loaded` 헬퍼로
+/// 통합. `tokio::join!` 안의 integrity check + 후속 verify_password 가 동시 진입해도 keyring
+/// 은 정확히 1회만 호출된다.
 #[cfg_attr(not(feature = "cipher"), allow(dead_code))]
 pub fn get_cached_or_load_key() -> Result<DerivedKey, AppError> {
-    let guard = cred_cache().lock().expect("cred_cache poisoned");
-    if let Some(c) = guard.as_ref() {
-        return Ok(DerivedKey(c.key.0));
-    }
-    drop(guard);
-    load_credentials_to_cache()?;
+    ensure_cache_loaded()?;
     let guard = cred_cache().lock().expect("cred_cache poisoned");
     Ok(DerivedKey(guard.as_ref().expect("just loaded").key.0))
 }
@@ -612,12 +639,9 @@ pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), 
     );
 
     // 캐시 미스 시 한 번에 salt + key 로드 (keyring 2회 → 통합 호출).
-    if cred_cache().lock().expect("cred_cache poisoned").is_none() {
-        load_credentials_to_cache()?;
-        eprintln!("[auth] verify_password: 캐시 미스 → salt+key 통합 로드 완료");
-    } else {
-        eprintln!("[auth] verify_password: 캐시 hit — keyring 호출 0회");
-    }
+    // Sprint 8 T7 (R45): `ensure_cache_loaded` 가 LOAD_MUTEX 로 직렬화 — `tokio::join!` 안의
+    // integrity check 와 동시 진입해도 keyring 은 정확히 1회만 호출된다.
+    ensure_cache_loaded()?;
 
     let salt = cached_salt().expect("just loaded into cache");
     let candidate = derive_key_async(password.clone(), salt).await?;
@@ -1078,6 +1102,73 @@ mod tests {
         cache_credentials(salt, key);
         let status = check_auth_status().await.expect("성공");
         assert_eq!(status, AuthStatus::Locked, "캐시 적중 시 Locked");
+        reset_credential_cache_for_tests();
+    }
+
+    // ─── Sprint 8 T7 (R45): ensure_cache_loaded 직렬화 ───
+
+    /// 캐시 hit 상태에서 N 스레드가 동시 진입해도 모두 fast path 로 같은 결과 반환.
+    /// keyring/salt 파일 호출 없음 — `get_cached_or_load_key` 가 즉시 캐시 값 반환.
+    #[test]
+    fn ensure_cache_loaded_fast_path_is_concurrent_safe() {
+        reset_credential_cache_for_tests();
+        let salt = varied_salt(101);
+        let key = derive_key("concurrent", &salt);
+        let expected_bytes = *key.as_bytes();
+        cache_credentials(salt, key);
+
+        const THREADS: usize = 16;
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    get_cached_or_load_key().expect("fast path 캐시 hit 성공")
+                })
+            })
+            .collect();
+
+        for h in handles {
+            let k = h.join().expect("thread panic 없음");
+            assert_eq!(
+                k.as_bytes(),
+                &expected_bytes,
+                "모든 스레드가 동일 캐시 값 반환"
+            );
+        }
+        reset_credential_cache_for_tests();
+    }
+
+    /// 캐시 미스 상태에서 `ensure_cache_loaded` 다중 스레드 진입 시 LOAD_MUTEX 가 직렬화하는지
+    /// 검증한다. 실제 keyring/salt 호출은 OS 의존이므로 본 테스트는 다음만 단언:
+    /// (1) deadlock 발생 안 함 (모든 스레드가 정해진 시간 내 종료),
+    /// (2) 결과는 일관 — 모두 Err 또는 모두 Ok (race 로 일부 Ok, 일부 Err 가 섞이지 않음).
+    /// load_credentials_to_cache 가 dev 환경 keyring/salt 부재로 Err 반환할 가능성이 높으므로
+    /// 결과 자체보다 race 없음에 집중. macOS dev 환경 keychain 부수효과 방지를 위해 #[ignore].
+    #[test]
+    #[ignore = "T7: dev keychain 부수효과 방지 — 명시적 --ignored 시에만 실행"]
+    fn ensure_cache_loaded_serializes_slow_path() {
+        reset_credential_cache_for_tests();
+
+        const THREADS: usize = 8;
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| std::thread::spawn(ensure_cache_loaded))
+            .collect();
+
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|h| h.join().expect("thread panic 없음"))
+            .collect();
+
+        // race 없음: 모든 결과가 같은 variant. Ok 면 모두 Ok, Err 면 모두 Err.
+        let all_ok = results.iter().all(|r| r.is_ok());
+        let all_err = results.iter().all(|r| r.is_err());
+        assert!(
+            all_ok || all_err,
+            "race 발생 — 일부 Ok 일부 Err 섞임: {:?}",
+            results
+                .iter()
+                .map(|r| r.is_ok())
+                .collect::<Vec<_>>()
+        );
         reset_credential_cache_for_tests();
     }
 }

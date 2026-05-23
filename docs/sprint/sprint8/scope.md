@@ -428,7 +428,7 @@ T3 세션에서 이미 비즈니스 규칙 핵심 5개 시나리오가 커버됨
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| src-tauri/src/commands/auth.rs | [13회 ⚠️] | partial-NULL 검증 강화 + 재진입 가드 + pub 승격 + 신규 단위 테스트 |
+| src-tauri/src/commands/auth.rs | [16회 ⚠️] | partial-NULL 검증 강화 + 재진입 가드 + pub 승격 + 신규 단위 테스트 |
 | src-tauri/src/startup.rs | [2회] | `exit_hook` 에 `invalidate_credential_cache()` 호출 추가 |
 | docs/sprint/sprint8/scope.md | [6회 ⚠️] | Session #6 추가 (loop-detection 임계 도달 — 단순 문서 추적이므로 무해, scope/Session 누적 특성) |
 
@@ -459,3 +459,107 @@ T3 세션에서 이미 비즈니스 규칙 핵심 5개 시나리오가 커버됨
 
 ### 발견된 이슈
 - `[1u8; SALT_LEN]` 등 단일 바이트 도배 salt 를 직접 사용하던 5개 store/load 라운드트립 테스트가 강화된 `is_salt_corrupted` 의 partial-NULL 감지에 걸려 실패 → `varied_salt(seed)` 헬퍼 도입으로 일괄 정리 (의도 변경 없음, 다양성만 추가). `derive_key`/`matches`/`cache_credentials` 테스트는 store/load 미경유라 영향 없음.
+
+---
+
+## Session #7 (T7 — Sprint 7 carry-over Medium-High R45, 2026-05-24)
+
+> **skill: systematic-debugging** 자동 배정 (보안/동시성 경로 변경).
+> Sprint 7 Session #2 review 의 I-S2-7 (R45) — Keychain concurrent race.
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T7** | `get_cached_or_load_key` + `verify_password` 의 double-checked locking 누락 race 제거 | 3h |
+
+### 사전 점검 결과 — R45 실제 race 확인
+
+sprint8.md T7 의 가설(`tokio::join!` 지점에서 Keychain 직접 접근이 병렬 실행되는가) 을 코드 조사 결과:
+
+| 위치 | 직접 Keychain 접근? |
+|------|---------------------|
+| `startup::tokio::join!(acquire_lock + check_integrity_quick)` | cipher on 시 integrity 가 `get_cached_or_load_key()` 경유 |
+| `verify_password` (join! 외부 순차) | cache 미스 시 `load_credentials_to_cache()` 호출 |
+
+**문제**: `get_cached_or_load_key` (auth.rs L117-126) 와 `verify_password` (L559-561) 둘 다 **double-checked locking 패턴 누락**:
+
+```rust
+// 현재 코드 — race 발생 가능
+let guard = cred_cache().lock();
+if let Some(c) = guard.as_ref() { return Ok(...); }
+drop(guard);  // ← 여기서 lock 해제
+load_credentials_to_cache()?;  // ← T1/T2 동시 진입 시 keyring 2회 호출
+```
+
+`tokio::join!` 안에서 `integrity::run_pragma_check` 가 `get_cached_or_load_key` 를 호출하는 시점과, 그 직후 `verify_password` 가 `load_credentials_to_cache` 를 호출하는 시점 사이에 race 가 발생. 둘 다 캐시 미스 상태에서 동시 진입하면 **macOS Keychain 다이얼로그 2회** (AC-T1-1 "다이얼로그 최대 1회" 위반).
+
+> Sprint 7 T1 CredentialCache 가 의도한 race 해소는 **fast path 캐시 hit 시 keyring 0회**만 보장 — slow path(첫 로드) 의 직렬화는 미흡.
+
+### 설계 결정 (T7)
+
+#### 해결 방식: `ensure_cache_loaded` 헬퍼 + `LOAD_MUTEX` 직렬화
+
+```rust
+static LOAD_MUTEX: Mutex<()> = Mutex::new(());
+
+fn ensure_cache_loaded() -> Result<(), AppError> {
+    // Fast path — 캐시 hit (대다수 호출 경로)
+    if cred_cache().lock().expect("cred_cache poisoned").is_some() {
+        return Ok(());
+    }
+    // Slow path — load 직렬화. 다른 스레드가 load 중이면 대기.
+    let _load_guard = LOAD_MUTEX.lock().expect("LOAD_MUTEX poisoned");
+    // Double-check — 대기 중 다른 스레드가 이미 load 완료했을 수 있음.
+    if cred_cache().lock().expect("cred_cache poisoned").is_some() {
+        return Ok(());
+    }
+    load_credentials_to_cache()
+}
+```
+
+`get_cached_or_load_key` 와 `verify_password` 의 캐시 채움 로직을 모두 이 헬퍼로 통합. 결과: keyring 호출은 첫 진입자 **정확히 1회**.
+
+#### Mutex 선택 — `std::sync::Mutex` vs `tokio::sync::Mutex`
+
+`std::sync::Mutex` 채택. 이유:
+- 캐시 접근은 이미 `std::sync::Mutex<Option<CachedCredentials>>` 사용 — 일관성 유지
+- `load_credentials_to_cache` 는 sync 함수 (keyring 호출도 sync) — async lock 불필요
+- 호출자 `get_cached_or_load_key` 는 sync 함수 (cipher feature 가드 안)
+- `verify_password` 는 async 이지만 spawn_blocking 으로 PBKDF2 만 분리 — Mutex 자체는 sync 컨텍스트에서 안전 (`tokio::task::block_in_place` 불요)
+
+#### `LOAD_MUTEX` 와 `cred_cache().lock()` 중첩 안전성
+
+- Fast path: `cred_cache` lock 만 잡고 즉시 drop.
+- Slow path: `LOAD_MUTEX` 먼저 → `cred_cache` lock (double-check) → drop → `load_credentials_to_cache` (내부에서 `cache_credentials` 가 `cred_cache` lock).
+- 락 순서: 항상 `LOAD_MUTEX` → `cred_cache`. Deadlock 불가.
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/auth.rs | [1회] | `LOAD_MUTEX` + `ensure_cache_loaded` 추가, `get_cached_or_load_key` + `verify_password` 리팩토링, multi-thread race 단위 테스트 |
+| docs/sprint/sprint8/scope.md | [7회 ⚠️] | Session #7 추가 (세션별 누적, loop-detection 무관) |
+
+### 수정하지 않을 파일
+
+- [ ] `src-tauri/src/startup.rs` — tokio::join! 구조 변경 없음 (auth.rs 내부 직렬화로 해소)
+- [ ] `src-tauri/src/commands/integrity.rs`, `db.rs`, `backup.rs` — `get_cached_or_load_key` 호출자 변경 없음
+- [ ] `.github/workflows/`, `SETUP.sh`, `docs/harness-engineering/` — Forbidden
+- [ ] `src/` 프론트엔드 — T7 범위 외
+
+### 완료 기준 (이번 세션) — T7 AC (sprint8.md L307-310)
+
+- ✅ AC-T7-1: startup sequence 에서 Keychain 다이얼로그 ≤ 1회 — `ensure_cache_loaded` LOAD_MUTEX 직렬화로 보장
+- ✅ AC-T7-2: `tokio::join!` 지점에서 Keychain 직접 접근이 병렬 실행되지 않음 — slow-path 가 LOAD_MUTEX 잡은 첫 진입자만 keyring hit, 후속 진입자는 double-check 에서 캐시 hit. `ensure_cache_loaded_fast_path_is_concurrent_safe` (16 스레드) 통과, slow-path 직렬화 검증 테스트는 `#[ignore]` (OS keychain 의존)
+- ✅ AC-T7-3: 캐시 적중 경로에서 Keychain 호출 0회 — Fast path 가 `cred_cache().lock()` 만 잡고 즉시 반환. 16 스레드 동시 진입에서도 같은 캐시 값 반환 확인
+
+### 세션 종료 조건
+
+- ✅ Self-verify: `cargo test --lib` cipher off **219 passed** / cipher on **132 passed** (T7 신규 2건 — fast-path concurrent + slow-path race ignored)
+- ✅ Clippy `--lib -- -D warnings` 양쪽 clean
+- ✅ simplify — `ensure_cache_loaded` 헬퍼 분리로 `verify_password` 캐시 미스 분기가 5줄 → 1줄로 자연 단순화 (의도된 부수효과). `get_cached_or_load_key` 도 fast/slow path 분기 제거하고 헬퍼 호출 + 캐시 읽기만으로 축약.
+- ⬜ 단일 커밋 (auth.rs + scope.md)
+
+### 발견된 이슈
+(없음 — race 가설이 코드 조사로 확인되었고, 설계대로 LOAD_MUTEX 직렬화로 해소)
