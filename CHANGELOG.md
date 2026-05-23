@@ -44,6 +44,11 @@
 - Sprint 7: `ScheduleCodeSelector` 컴팩트 컴포넌트 신규 (`src/components/academic/ScheduleCodeSelector.tsx`) — `/academic` 캘린더에서 코드 패널 제거 후 셀 배치 시 인라인 코드 선택 UX 제공
 - Sprint 7: `/settings/schedule-codes` 라우트 신설 — 학사 일정 코드 관리 화면을 설정 메뉴 하위로 이동 (Issue 3)
 - Sprint 7: 보안 패치 6건 (S-T2-1~6) — eprintln 키 누출 제거, set_password 원자성 보강, recovery 원자성 보강, NTFS power-loss fsync 강화, delete_key NoEntry idempotent, PC-B UX 개선
+- Sprint 7 post-review: 확대 보기 모드 — 월별 캘린더 단독 확대 표시 (V15), prev/next 비활성 (V31), 창 가변 확장 (V33)
+- Sprint 7 post-review: `tauri-plugin-window-state` 도입 — 윈도우 크기·위치 자동 저장·복원 (V18)
+- Sprint 7 post-review: `schedule_events.is_seeded` 컬럼 추가 (V302 마이그레이션) — 시드 공휴일 vs 사용자 추가 공휴일 구분, 시드 공휴일만 삭제 차단 (V16/V21)
+- Sprint 7 post-review: 비밀번호 입력 모드 배지 — 마지막 입력 문자 종류(한글/영문/숫자/특수) 실시간 표시 (V37b)
+- Sprint 7 post-review: dev 빌드 자동 로그인 우회 (`NEXT_PUBLIC_DEV_AUTOLOGIN`) — 시각 검증 효율화 (V30)
 
 ### Changed
 - Sprint 7: 교습기간 설정 UX 재설계 — 토글 버튼 제거, 셀 클릭 즉시 selection 모드 자동 진입 (Issue 5, PRD §4.4.2)
@@ -52,6 +57,14 @@
 - Sprint 7: `academic.rs` `delete_schedule_event` — 공휴일 이벤트(`is_holiday=true`) 삭제 차단 추가 (Issue 7)
 - Sprint 7: 교습기간 삭제(`delete_study_period`) 시 cascade — 해당 기간 내 공휴일을 제외한 학사 일정 일괄 삭제 (Issue 6)
 - Sprint 7: 사이드바 종료 메뉴 위치 최종 확정 — 설정 메뉴 다음, 메뉴 리스트 내 배치 + TopBar h-16 정렬 보정 (Sprint 6 후속 보강 3건)
+- Sprint 7 post-review: 학사 컨트롤 바 통합 — 교습기간 + 코드 selector를 단일 컨트롤 바로 (V11), 외곽 박스 제거, 코드명만 chip 표기 (V10)
+- Sprint 7 post-review: `ScheduleCodeSelector` — 시스템 예약 코드 포함 활성 전체 코드 노출 (V6)
+- Sprint 7 post-review: 교습기간 셀 배경 강화 — 수업 가능(amber-100)/불가(gray-100) 색상 구분 (V22/V23), 다른 월 교습기간 블러 (V32/V35)
+- Sprint 7 post-review: 기간성 코드 캘린더 표시 — 시작/종료 마커(S/E), 중간 날짜 배지 연속 표시 (V13/V20)
+- Sprint 7 post-review: TopBar 시작 속도 텍스트를 "정상속도"/"속도저하" 레이블로 변경 (V34)
+- Sprint 7 post-review: 비밀번호 입력 보기/숨김 버튼 텍스트화 ("보기"/"숨김") (V36)
+- Sprint 7 post-review: `exit_hook` idempotent 가드 — 윈도우 닫기·앱 종료 이중 이벤트 시 1회만 실행 (V24)
+- Sprint 7 post-review: 글로벌 단축키 훅(`use-keyboard-shortcuts`) 제거 (V19) — 혼동 유발 단축키 비활성화, 사이드바 shortcut 표기 제거
 
 ### Fixed
 - Sprint 7: Issue 1 — macOS 앱 시작 시 Keychain 비밀번호 다이얼로그가 3회 이상 반복 표시되어 startup 31초 소요되던 Critical UX 이슈 해소
@@ -62,6 +75,17 @@
 - Sprint 7: Issue 7 — 확정 교습기간 내 법정 공휴일이 삭제 가능하던 보안 부재 문제 해소
 - Sprint 7: Issue 8 — `lock.rs` device_id가 매 프로세스 재생성되어 stale lock이 항상 "다른 디바이스" 로 오식별되던 문제 해소
 - Sprint 7: A23/R33 — `codeBadgeClass`에 시스템 코드 ID 하드코딩으로 코드 추가 시 배지가 무채색 표시되던 문제 해소
+- Sprint 7 post-review: V1 — 교습기간 `year_month`가 시작일 기준 월로 저장되어 cross-month 교습기간의 월 분류 오류 (시작일 5/29 → 6월 교습기간이 5월로 저장됨) 수정
+- Sprint 7 post-review: V7 — 교습기간이 월 경계를 넘어가는 경우 이전/이후 그리드에서 in-study 셀이 표시되지 않던 문제 수정 (allStudyPeriods 전달로 cross-month 처리)
+- Sprint 7 post-review: V9 — 공휴수업일 배치 가드 정상화 (공휴일 없는 날에 배치 차단, 공휴수업일+공휴일 외 조합 차단)
+- Sprint 7 post-review: V12 — 교습기간 selection 시 다른 교습월의 기간 일자 포함 차단 (프론트엔드 가드 추가)
+- Sprint 7 post-review: V14 — 단원평가 응시일 셀 상단 색 라인 제거, 일반 배지로 통일
+- Sprint 7 post-review: V18 — 앱 종료 후 재시작 시 윈도우 크기·위치가 초기화되던 문제 (tauri-plugin-window-state)
+- Sprint 7 post-review: V20 — 기간성 코드(방학 등)가 시작일 셀에만 배지 표시되고 중간/종료일 셀에서 보이지 않던 문제
+- Sprint 7 post-review: V26 — 기간성 코드 배치 시 범위 겹침 충돌 검사 미적용으로 사이 일자 중복 가드 누락 수정
+- Sprint 7 post-review: V29 — 보강데이를 운영일(수업 있는 날)에 배치 가능하던 가드 부재 문제 수정
+- Sprint 7 post-review: V32/V35 — 다른 월 교습기간 셀이 현재 월 교습기간과 시각 구분이 안 되던 문제 수정 (블러 강화)
+- Sprint 7 post-review: V37 — 한글 IME 활성 상태에서 비밀번호 입력 시 한글 자모가 비밀번호로 입력되던 UX 문제 수정
 
 ### Security
 - Sprint 7: S-T2-1 — `eprintln!` 으로 DB 암호화 키 hex가 콘솔에 노출되던 문제 제거
