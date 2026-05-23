@@ -1,9 +1,9 @@
 ---
-Sprint: 8  |  Date: 2026-05-23  |  Session: #1
+Sprint: 8  |  Date: 2026-05-23  |  Session: #2 (T1 완료, T2 진행)
 ---
 
-> Sprint 8 Session #1 — T1 단독 (V106 마이그레이션: regular_attendances + makeup_attendances).
-> Phase 2 마감 출결 도메인의 데이터 기반. 예상 3h.
+> Sprint 8 Session #2 — T2 단독 (출결 생성 IPC: generate_attendances + check_attendance_exists).
+> 예상 6h. T1 의 V106 마이그레이션 위에 IPC 레이어 구축.
 
 ## 이번 세션의 Task 선정
 
@@ -93,4 +93,52 @@ Sprint: 8  |  Date: 2026-05-23  |  Session: #1
 ## carry-over
 
 - Sprint 7 carry-over 흡수 (T6~T8) 는 별도 세션에서 진행
-- AC-T1-5 (.sqlx) 는 T2 세션에서 query 매크로와 함께 처리
+- AC-T1-5 (.sqlx) — T2 본 세션에서 query 매크로 사용 시 `sqlx prepare` 함께 실행
+
+---
+
+## Session #2 (T2 — 출결 생성 IPC, 2026-05-23)
+
+### 이번 세션 Task
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T2** | `attendance.rs` 신규 + `generate_attendances` + `check_attendance_exists` IPC + 단위 테스트 | 6h |
+
+### 설계 결정 (T2)
+
+- **모듈 위치**: `src-tauri/src/commands/attendance.rs` (신규). T3 이후 IPC도 같은 모듈에 누적.
+- **IPC 2종**:
+  - `check_attendance_exists(year_month) -> bool` — 중복 검사 사전 호출용
+  - `generate_attendances(year_month) -> GenerateResult { year_month, student_count, attendance_count }`
+- **`_impl` 분리**: 두 IPC는 인메모리 풀 테스트가 가능하도록 `*_impl(pool, ...)` private 함수를 가지고 `#[tauri::command]` 래퍼가 전역 `pool()` 을 주입.
+- **OFF 일자 계산**: `schedule_events JOIN schedule_codes WHERE allows_regular_class=0` 의 (event_date, period_end_date) 범위를 모두 펼친 `HashSet<String>` — 단일 쿼리 + 메모리 전개로 N+1 회피.
+- **트랜잭션**: `pool.begin()` (SQLite는 BEGIN DEFERRED 기본 — write 시점에 자동 IMMEDIATE 승격). 전 원생 INSERT 후 commit.
+- **요일 매핑**: chrono `NaiveDate::weekday().number_from_monday()` (1=월~7=일) — 기존 academic.rs 와 동일 매핑.
+- **class_minutes 계산**: `student_schedules.duration_hours * 60` (V101에서 hours INTEGER 저장).
+- **`is_none_or`** clippy 1.95 가 `map_or(true, ...)` 거부 → `withdraw_d.is_none_or(|wd| d <= wd)` 채용 (안정화된 표준 API).
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/attendance.rs | [신규] | IPC + 테스트 |
+| src-tauri/src/commands/mod.rs | [2회] | `pub mod attendance;` 추가 |
+| src-tauri/src/lib.rs | [2회] | `invoke_handler` 에 IPC 2개 등록 |
+| src-tauri/.sqlx/ | [재생성] | query 매크로 미사용 (raw `sqlx::query` 만) → prepare skip |
+| docs/sprint/sprint8/scope.md | [2회] | Session #2 추가 |
+
+### 단위 테스트 (Acceptance Criteria 대응)
+
+- AC-T2-1: `generate_creates_attendances_for_active_students` — 원생 2명×주 3일, 6/1~6/30 → 정확한 건수
+- AC-T2-2: `generate_skips_off_days` — 6/6 현충일(allows_regular_class=0) 일자 INSERT 없음
+- AC-T2-3: `generate_respects_enroll_withdraw_range` — enroll=6/15, withdraw=6/25 → 그 사이 일자만
+- AC-T2-4: `generate_blocks_duplicate_month` — 두 번째 호출 시 에러
+- AC-T2-5: `generate_requires_confirmed_period` — is_confirmed=0 인 교습기간 거부
+- AC-T2-6: `class_minutes_matches_schedule_hours` — duration_hours=2 → class_minutes=120
+- AC-T2-7: 단위 테스트 빌드 + 통과 → Self-verify 절차로 보장
+
+### 세션 종료 조건
+- ✅ Self-verify: cargo test cipher off **200 passed** (T2 신규 9건) / cipher on **126 passed** (cipher 가드로 attendance test skip — 의도된 동작)
+- ✅ Clippy off+on (lib) clean. 참고: `--tests` 옵션으로는 cipher on 에서 기존 students.rs/schedules.rs/academic.rs 의 cipher-off-only 헬퍼 6건이 `dead_code` 로 잡힘 — T2 범위 외 이슈 (T6 carry-over 또는 별도 정리)
+- ✅ simplify — MINUTES_PER_HOUR 상수, StudentRow struct, 헬퍼 4종 분리 모두 단일 책임. 추가 단순화 불필요
+- ⬜ 단일 커밋 (attendance.rs + mod.rs + lib.rs + scope.md)
