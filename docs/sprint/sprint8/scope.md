@@ -202,7 +202,7 @@ ToggleResult {
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| src-tauri/src/commands/attendance.rs | [5회 ⚠️] | IPC 4종 + 응답 구조체 + 헬퍼 + 단위 테스트 추가 |
+| src-tauri/src/commands/attendance.rs | [6회 ⚠️] | IPC 4종 + 응답 구조체 + 헬퍼 + 단위 테스트 추가 |
 | src-tauri/src/commands/audit.rs | [3회 ⚠️] | `AttendanceToggled` variant + as_code 매핑 |
 | src-tauri/src/lib.rs | [3회] | invoke_handler 에 4개 등록 |
 | docs/sprint/sprint8/scope.md | [3회] | Session #3 추가 |
@@ -314,3 +314,54 @@ ToggleResult {
 ### AC 영향
 - AC-T4-4/5/9 모두 유지 (단위 표기 변경은 PRD §4.5.3 그리드 요구 사항을 더 정확히 반영).
 - 신규 회귀 없음 — `pnpm lint` clean.
+
+---
+
+## Session #5 (T5 — 보강필요시간/소멸기한 단위 테스트 100%, 2026-05-23)
+
+### 이번 세션 Task
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T5** | attendance.rs 단위 테스트에서 누락된 4개 시나리오 보강 | 2h |
+
+### 설계 결정 (T5)
+
+#### 기존 커버 vs 신규 커버
+T3 세션에서 이미 비즈니스 규칙 핵심 5개 시나리오가 커버됨 — `compute_summary`, `toggle_impl`, `next_month_str` 모두 잘 분리되어 별도 `calculate_makeup_needed` / `set_makeup_deadline` 추상화 추가는 의도적으로 생략 (karpathy: don't add abstractions beyond what the task requires).
+
+| 시나리오 | 위치 |
+|---------|------|
+| 1. 결석 1건 → needed=class_minutes | `toggle_present_to_absent_increases_makeup_needed` (T3) |
+| 2. 결석 2건 → needed 합산 | **신규** `t5_two_absents_sum_makeup_needed` |
+| 3. 결석 → 출석 환원 → needed 감소 | `toggle_absent_to_present_decreases_makeup_needed` (T3) |
+| 4. makeup_done → needed 제외 | `summary_excludes_matched_makeup_from_needed` (T3) |
+| 5. makeup_expired → needed 제외 | **신규** `t5_expired_absent_excluded_from_needed` |
+| 6. 5월 결석 → deadline 2026-06 | `toggle_to_absent_sets_deadline_next_month` (T3) |
+| 7. 12월 결석 → deadline 다음해 01 | `toggle_to_absent_sets_deadline_next_month` (T3) |
+| 8. 출석 환원 → deadline NULL | `toggle_absent_to_present_decreases_makeup_needed` (T3) |
+| 9. 동일 월 다중 결석 → 독립 deadline | **신규** `t5_multiple_absents_have_independent_deadlines` |
+| 10. class_minutes=0 엣지 | **신규** `t5_class_minutes_check_rejects_zero_and_negative` (DB CHECK 검증) |
+
+시나리오 9 해석 — "독립"의 의미를 "row 별 deadline 컬럼 + 한 row 토글이 타 row 무영향"으로 정의 (T3 정책상 동월 결석은 모두 동일 월+1 deadline).
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/attendance.rs | [4회] | T5 단위 테스트 4건 추가 |
+| docs/sprint/sprint8/scope.md | [5회 ⚠️] | Session #5 추가 |
+
+### 완료 기준 (이번 세션) — T5 (sprint8.md L266-270)
+- ✅ AC-T5-1: 보강필요시간 = SUM(class_minutes WHERE status='absent' AND makeup_attendance_id IS NULL) — makeup_done/makeup_expired/매칭 결석 모두 제외 확인
+- ✅ AC-T5-2: 소멸기한 = 결석 발생 월 + 1 (5월→6월, 12월→다음해 1월, 다중 결석 독립)
+- ✅ AC-T5-3: 10개 시나리오 전수 통과 (T3 기존 6건 + T5 신규 4건)
+- ✅ AC-T5-4: 비즈니스 규칙 100% 단위 테스트 커버 (PRD §6.5)
+
+### 세션 종료 조건
+- ✅ Self-verify: cargo test cipher off **213 passed** (attendance 모듈 22 passed — T5 신규 4건 추가)
+- ✅ clippy --lib clean
+- ✅ simplify — 신규 추상화 추가 없이 기존 헬퍼(`toggle_impl`/`compute_summary`/`fetch_cell`/`set_cell_state`/`first_attendance_id`) 재사용
+- ⬜ 단일 커밋 — 본 섹션 작성 후 진행
+
+### 발견된 이슈
+(없음)

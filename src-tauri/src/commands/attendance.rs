@@ -1207,6 +1207,123 @@ mod tests {
         assert_eq!(s.makeup_needed_minutes, 60, "매칭된 결석은 needed 에서 제외");
     }
 
+    // ─────── T5: 보강필요시간 + 소멸기한 규칙 전수 ───────
+
+    /// 시나리오 2 — 결석 2건이면 needed 는 class_minutes 합산.
+    #[tokio::test]
+    async fn t5_two_absents_sum_makeup_needed() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await; // 60m
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        let ids: Vec<(i64,)> = sqlx::query_as(
+            "SELECT id FROM regular_attendances \
+             WHERE student_id=? AND year_month=? ORDER BY event_date LIMIT 2",
+        )
+        .bind(sid)
+        .bind("2026-06")
+        .fetch_all(&pool)
+        .await
+        .expect("ids");
+        toggle_impl(&pool, ids[0].0, "absent").await.expect("a1");
+        toggle_impl(&pool, ids[1].0, "absent").await.expect("a2");
+
+        let s = compute_summary(&pool, sid, "2026-06").await.expect("summary");
+        assert_eq!(s.absent_count, 2);
+        assert_eq!(s.makeup_needed_minutes, 120, "결석 2건 → 60+60");
+    }
+
+    /// 시나리오 5 — makeup_expired (소멸) 상태는 needed 에서 제외.
+    #[tokio::test]
+    async fn t5_expired_absent_excluded_from_needed() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+
+        toggle_impl(&pool, aid, "absent").await.expect("absent");
+        assert_eq!(
+            compute_summary(&pool, sid, "2026-06").await.expect("mid").makeup_needed_minutes,
+            60
+        );
+
+        // 소멸 상태로 강제 전이 — Phase 3 소멸 트리거가 들어오기 전 까지의 직접 검증.
+        set_cell_state(&pool, aid, "makeup_expired", None).await;
+
+        let s = compute_summary(&pool, sid, "2026-06").await.expect("summary");
+        assert_eq!(s.absent_count, 0, "expired 는 absent_count 에서 제외");
+        assert_eq!(
+            s.makeup_needed_minutes, 0,
+            "expired 는 needed 에서 제외 (status='absent' 조건 위반)"
+        );
+    }
+
+    /// 시나리오 9 — 동일 월 다중 결석은 각각 독립 소멸기한을 갖는다.
+    /// (현재 구현은 결석 발생 월 +1 이라 같은 월 결석은 모두 같은 deadline.
+    ///  "독립" 의 의미는 row 별로 deadline 컬럼이 따로 저장되며, 한 row 토글이
+    ///  다른 row 의 deadline 을 건드리지 않는다는 무간섭성 검증.)
+    #[tokio::test]
+    async fn t5_multiple_absents_have_independent_deadlines() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        let ids: Vec<(i64,)> = sqlx::query_as(
+            "SELECT id FROM regular_attendances \
+             WHERE student_id=? AND year_month=? ORDER BY event_date LIMIT 3",
+        )
+        .bind(sid)
+        .bind("2026-06")
+        .fetch_all(&pool)
+        .await
+        .expect("ids");
+        let (a, b, c) = (ids[0].0, ids[1].0, ids[2].0);
+
+        toggle_impl(&pool, a, "absent").await.expect("a");
+        toggle_impl(&pool, b, "absent").await.expect("b");
+        toggle_impl(&pool, c, "absent").await.expect("c");
+
+        for &id in &[a, b, c] {
+            assert_eq!(
+                fetch_cell(&pool, id).await.makeup_deadline.as_deref(),
+                Some("2026-07")
+            );
+        }
+
+        // 한 row 출석 환원 시 다른 row 의 deadline 무영향.
+        toggle_impl(&pool, b, "present").await.expect("b present");
+        assert!(fetch_cell(&pool, b).await.makeup_deadline.is_none());
+        assert_eq!(fetch_cell(&pool, a).await.makeup_deadline.as_deref(), Some("2026-07"));
+        assert_eq!(fetch_cell(&pool, c).await.makeup_deadline.as_deref(), Some("2026-07"));
+    }
+
+    /// 시나리오 10 — class_minutes <= 0 은 DB CHECK 로 거부된다 (V106 정책 회귀 방지).
+    #[tokio::test]
+    async fn t5_class_minutes_check_rejects_zero_and_negative() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[]).await;
+
+        for bad in [0i64, -1, -60] {
+            let r = sqlx::query(
+                "INSERT INTO regular_attendances \
+                 (student_id, event_date, year_month, status, class_minutes) \
+                 VALUES (?, '2026-06-01', '2026-06', 'present', ?)",
+            )
+            .bind(sid)
+            .bind(bad)
+            .execute(&pool)
+            .await;
+            assert!(
+                r.is_err(),
+                "class_minutes={} 은 CHECK 로 거부되어야 함",
+                bad
+            );
+        }
+    }
+
     // ─────── 보조: 보강완료 분 합산 ───────
 
     #[tokio::test]
