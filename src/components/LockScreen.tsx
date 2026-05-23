@@ -39,6 +39,34 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
       .catch((e) => setError(typeof e === 'string' ? e : '인증 상태를 확인할 수 없습니다.'))
   }, [])
 
+  // V30 (Sprint 7 post-review): dev 빌드 자동 로그인 우회. 환경 변수
+  // `NEXT_PUBLIC_DEV_AUTOLOGIN` 에 평문 비밀번호 (8자 이상) 가 설정되어 있으면 자동 입력 + 제출.
+  // 이미 한 번 `set_password` 한 상태 (`status==='locked'`) 에서만 우회 — 첫 설치 시 마법사는
+  // 사용자가 직접 진행. release 빌드에서는 NEXT_PUBLIC 환경 변수 자체가 없으므로 무동작.
+  useEffect(() => {
+    const devPw = process.env.NEXT_PUBLIC_DEV_AUTOLOGIN
+    if (status !== 'locked' || !devPw || devPw.length < MIN_PASSWORD_LENGTH) return
+    if (submitting) return
+    setPasswordInput(devPw)
+    // 다음 tick 에서 form submit — state 갱신 후 동기 호출이라 안전한 microtask.
+    void (async () => {
+      setSubmitting(true)
+      try {
+        const startup = await appStartupSequence(devPw, false)
+        onUnlocked?.(startup)
+      } catch (e) {
+        setError(
+          typeof e === 'string'
+            ? e
+            : 'dev 자동 로그인 실패 — 비밀번호 또는 락 상태 확인 필요.',
+        )
+      } finally {
+        setSubmitting(false)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
+
   if (status === null) {
     return <SplashScreen message="잠금 상태를 확인하는 중입니다..." />
   }
