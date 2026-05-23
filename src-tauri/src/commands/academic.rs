@@ -621,8 +621,10 @@ pub struct ScheduleEventListItem {
     pub is_period_type: bool,
     pub is_seeded: bool,
     /// V25 (Sprint 7 post-review): 정규 수업 허용 여부 — 프론트 `hasClassOnDate` 판정.
-    /// 셀의 어떤 이벤트라도 `true` 면 수업 가능. 방학·휴원일·공휴일(공휴수업일 페어 제외)은 0.
+    /// V28: 보강수업(allows_makeup_class)도 함께 사용 — 보강데이 등 정규수업=0/보강=1 코드 분기.
+    /// 셀의 어떤 이벤트라도 둘 중 하나 `true` 면 수업 가능.
     pub allows_regular_class: bool,
+    pub allows_makeup_class: bool,
     pub event_date: String,
     pub period_end_date: Option<String>,
     pub display_name: Option<String>,
@@ -639,6 +641,7 @@ impl ScheduleEventListItem {
             is_period_type: row.try_get::<i64, _>("is_period_type")? != 0,
             is_seeded: row.try_get::<i64, _>("is_seeded")? != 0,
             allows_regular_class: row.try_get::<i64, _>("allows_regular_class")? != 0,
+            allows_makeup_class: row.try_get::<i64, _>("allows_makeup_class")? != 0,
             event_date: row.try_get("event_date")?,
             period_end_date: row.try_get("period_end_date")?,
             display_name: row.try_get("display_name")?,
@@ -1028,7 +1031,8 @@ pub async fn list_schedule_events(
     let pool = db::pool().map_err(String::from)?;
     let rows = sqlx::query(
         "SELECT e.id, e.code_id, c.code_name, c.is_system_reserved, \
-                c.is_duplicate_blocked, c.is_period_type, c.allows_regular_class, \
+                c.is_duplicate_blocked, c.is_period_type, \
+                c.allows_regular_class, c.allows_makeup_class, \
                 e.is_seeded, e.event_date, e.period_end_date, e.display_name \
          FROM schedule_events e \
          JOIN schedule_codes c ON c.id = e.code_id \

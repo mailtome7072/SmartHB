@@ -425,14 +425,13 @@ export function ThreeMonthCalendar({
     return ids
   }, [eventsQuery.data])
 
-  // V23 + V25 (Sprint 7 post-review): 셀별 수업 가능 여부 판정.
+  // V23 + V25 + V28 (Sprint 7 post-review): 셀별 수업 가능 여부 판정.
   // - 운영 시간 (해당 요일 open_time 있어야 함)
-  // - 이벤트가 있을 때: 어떤 이벤트라도 `allows_regular_class=1` 이면 수업 가능
-  //   (방학·휴원일·공휴일 = 0, 공휴수업일 = 1 → 페어 시 수업 가능)
+  // - 이벤트가 있을 때: 어떤 이벤트라도 `allows_regular_class || allows_makeup_class` 면 수업 가능
+  //   - V25: 정규수업 허용 (공휴수업일, 단원평가)
+  //   - V28: 보강수업 허용 (보강데이, 공휴수업일)
+  //   - 방학·휴원일·공휴일 = 둘 다 0 → 수업 불가
   // - 이벤트 없을 때 + 운영일 = 수업 가능
-  //
-  // 코드명 하드코딩 없이 schedule_codes 의 `allows_regular_class` 플래그만 검사 — 사용자 추가
-  // 코드도 자동 분기 적용.
   const hasClassOnDate = useCallback(
     (date: string): boolean => {
       const dow = isoDayOfWeek(date)
@@ -447,7 +446,9 @@ export function ThreeMonthCalendar({
 
       const cellEvents = eventsByDate.get(date) ?? []
       if (cellEvents.length === 0) return true
-      return cellEvents.some((e) => e.allows_regular_class)
+      return cellEvents.some(
+        (e) => e.allows_regular_class || e.allows_makeup_class,
+      )
     },
     [eventsByDate, operatingHoursQuery.data],
   )

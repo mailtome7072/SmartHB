@@ -105,6 +105,8 @@ export interface ScheduleEventListItem {
   is_seeded: boolean
   /** V25 (post-review): 정규 수업 허용 여부 — 셀 색상 (수업 가능/불가) 판정 기준. */
   allows_regular_class: boolean
+  /** V28: 보강 수업 허용 여부 — 보강데이 등 정규수업=0/보강=1 코드도 수업 가능 표시. */
+  allows_makeup_class: boolean
   event_date: string
   period_end_date: string | null
   display_name: string | null

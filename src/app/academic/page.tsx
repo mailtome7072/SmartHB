@@ -239,11 +239,11 @@ export default function AcademicPage() {
   const calendarCellHandler =
     studyPeriodMode || selectedCode !== null ? handleCellClick : undefined
 
-  // 일정 배지 클릭 = 삭제 (활성 모드 없을 때만, 모드 활성 시 셀 클릭 우선).
-  const calendarEventClick =
-    studyPeriodMode || selectedCode !== null
-      ? undefined
-      : (event: ScheduleEventListItem) => setEventToDelete(event)
+  // V27 (Sprint 7 post-review): 일정 배지 클릭 = 항상 삭제 다이얼로그 호출.
+  // EventBadge 의 onClick 은 stopPropagation 되므로 셀 클릭(selection/event placement)과
+  // 분리되어 활성 모드와 무관하게 안전. 사용자가 코드 선택을 해제하지 않고도 일정 삭제 가능.
+  const calendarEventClick = (event: ScheduleEventListItem) =>
+    setEventToDelete(event)
 
   if (!ready) return <SplashScreen message="학사 스케줄 화면 준비 중..." />
 
