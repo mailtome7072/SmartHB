@@ -44,6 +44,22 @@ export function LockWarning({ initialSecondsAgo, onForceAcquired, onRetry }: Loc
     return () => clearInterval(timer)
   }, [])
 
+  // V30 (Sprint 7 post-review): dev 빌드 자동 force-acquire 우회 — LockScreen 의 autologin 과
+  // 동일 환경 변수. release 빌드에서는 NEXT_PUBLIC 자체가 없어 무동작.
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_DEV_AUTOLOGIN) return
+    void (async () => {
+      try {
+        await acquireLock(true)
+        const status = await checkLockStatus()
+        if (status.kind === 'owned-by-self') onForceAcquired()
+      } catch {
+        // dev 자동 우회 실패 시 사용자 수동 처리로 fallback — 에러 표시 안 함.
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const isStale = elapsed >= STALE_THRESHOLD_SECONDS
   const remainingToStale = Math.max(0, STALE_THRESHOLD_SECONDS - elapsed)
 

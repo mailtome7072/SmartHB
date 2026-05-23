@@ -171,6 +171,7 @@ mod tests {
     #[tokio::test]
     async fn match_fee_returns_exact_match() {
         let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        // V201(Sprint 5 T3)에서 시드 금액 변경: 4시간 250000 → 200000
         let row = sqlx::query(
             "SELECT id, weekly_hours, amount, sort_order, is_active, created_at, updated_at \
              FROM standard_fees WHERE is_active = 1 AND weekly_hours <= 4 \
@@ -181,7 +182,7 @@ mod tests {
         .unwrap();
         let fee = StandardFee::from_row(&row).unwrap();
         assert_eq!(fee.weekly_hours, 4);
-        assert_eq!(fee.amount, 250000);
+        assert_eq!(fee.amount, 200000); // V201 이후 20만원
     }
 
     #[cfg(not(feature = "cipher"))]
@@ -220,16 +221,16 @@ mod tests {
     #[tokio::test]
     async fn weekly_hours_unique_violation_returns_korean() {
         let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
-        // 시드에 2시간 이미 존재 — 동일 weekly_hours INSERT 시 UNIQUE 위반
+        // V201(Sprint 5 T3)에서 2시간 행이 삭제되었으므로 3시간(시드 보정 후에도 존재)으로 검증
         let err = sqlx::query(
-            "INSERT INTO standard_fees (weekly_hours, amount) VALUES (2, 999999)",
+            "INSERT INTO standard_fees (weekly_hours, amount) VALUES (3, 999999)",
         )
         .execute(&pool)
         .await
         .expect_err("UNIQUE 위반");
-        let mapped = map_weekly_hours_unique(2, err);
+        let mapped = map_weekly_hours_unique(3, err);
         let msg: String = mapped.into();
-        assert!(msg.contains("주 2시간 교습비"), "msg={}", msg);
+        assert!(msg.contains("주 3시간 교습비"), "msg={}", msg);
         assert!(msg.contains("이미 등록"));
     }
 }

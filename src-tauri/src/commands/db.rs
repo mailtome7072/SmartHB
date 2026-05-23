@@ -112,10 +112,11 @@ async fn apply_startup_pragmas(pool: &SqlitePool) -> Result<(), AppError> {
 
 #[cfg(feature = "cipher")]
 async fn apply_cipher_key_if_enabled(pool: &SqlitePool) -> Result<(), AppError> {
-    use crate::commands::auth::retrieve_key_from_keyring;
+    use crate::commands::auth::get_cached_or_load_key;
     use crate::commands::paths::pragma_key_sql;
 
-    let key = retrieve_key_from_keyring()?;
+    // Sprint 7 T1: 캐시 경유로 keyring 호출 1회로 통합 (verify_password 가 이미 채워둔 캐시 hit).
+    let key = get_cached_or_load_key()?;
     let hex_key = key.to_hex();
     // PRAGMA key 는 첫 connection 마다 적용되어야 한다. max_connections=1 이므로 1회로 충분.
     sqlx::query(&pragma_key_sql(hex_key.as_str())).execute(pool).await?;
@@ -186,11 +187,12 @@ mod tests {
         assert!(card_count.0 >= 10, "card_companies 시드 ≥ 10개: {}", card_count.0);
 
         // V104 적용 후 standard_fees 는 주 수업시간별 모델 (V001 학년별 모델 폐기, data-model §5.1)
+        // V201(Sprint 5 T3)에서 2시간 행 삭제 → 3~6시간 4건으로 변경
         let fee_count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM standard_fees")
             .fetch_one(&pool)
             .await
             .expect("standard_fees 조회 성공");
-        assert_eq!(fee_count.0, 5, "주 2~6시간 시드 5건 (V104)");
+        assert_eq!(fee_count.0, 4, "주 3~6시간 시드 4건 (V201: 2시간 삭제)");
 
         let fee_columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(standard_fees)")
             .fetch_all(&pool)

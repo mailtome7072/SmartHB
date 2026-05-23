@@ -35,8 +35,10 @@ if [[ "$TOOL_NAME" != "Edit" && "$TOOL_NAME" != "Write" ]]; then
   exit 0
 fi
 
-# ── 규칙 1: .env 파일 수정 차단 ──────────────────────────────────────────
-if echo "$FILE_PATH" | grep -qE '(^|/)\.(env)(\.[a-zA-Z0-9.]+)?$'; then
+# ── 규칙 1: .env 파일 수정 차단 (.env.example 은 허용) ───────────────────
+# 차단 대상: .env / .env.local / .env.<env>.local (실제 값 파일)
+# 허용 대상: .env.example (키 이름만 기재된 템플릿 — CLAUDE.md 환경변수 관리 정책)
+if echo "$FILE_PATH" | grep -qE '(^|/)\.env(\.local|\.[a-zA-Z0-9]+\.local)?$'; then
   echo ""
   echo "🚫 [posttooluse-validator] .env 파일 수정이 차단됩니다."
   echo ""

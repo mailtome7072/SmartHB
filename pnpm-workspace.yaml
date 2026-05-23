@@ -1,3 +1,4 @@
 allowBuilds:
+  msw: false  # Service Worker mocking — 본 프로젝트 미사용 (shadcn CLI 의 transitive dep)
   sharp: true
   unrs-resolver: true

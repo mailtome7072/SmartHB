@@ -39,6 +39,169 @@
 
 ---
 
+## [0.3.1] - 2026-05-23
+
+### Added
+- Sprint 7: `CredentialCache` 구조체 도입 (`OnceLock<Mutex<Option<CachedCredentials>>>`, ZeroizeOnDrop) — 앱 시작 시 1회 Keychain 로드 후 캐시 경유, macOS Keychain 다이얼로그 반복(3+ 회→최대 1회) 해소 (Issue 1, Critical UX)
+- Sprint 7: salt.bin 클라우드 동기화 폴더 이전 (`smarthb/salt.bin`) — Keychain 의존도 감소, 양 PC 동일 salt 자동 동기화 보장 (A17/A27 3회 이월 최종 해소)
+- Sprint 7: device_id 영속화 — `app_config_dir/device_id` 파일로 재시작 간 UUID 유지. stale lock 디바이스 식별 정확도 향상 (Issue 8, PRD §5.3)
+- Sprint 7: `ScheduleCodeSelector` 컴팩트 컴포넌트 신규 (`src/components/academic/ScheduleCodeSelector.tsx`) — `/academic` 캘린더에서 코드 패널 제거 후 셀 배치 시 인라인 코드 선택 UX 제공
+- Sprint 7: `/settings/schedule-codes` 라우트 신설 — 학사 일정 코드 관리 화면을 설정 메뉴 하위로 이동 (Issue 3)
+- Sprint 7: 보안 패치 6건 (S-T2-1~6) — eprintln 키 누출 제거, set_password 원자성 보강, recovery 원자성 보강, NTFS power-loss fsync 강화, delete_key NoEntry idempotent, PC-B UX 개선
+- Sprint 7 post-review: 확대 보기 모드 — 월별 캘린더 단독 확대 표시 (V15), prev/next 비활성 (V31), 창 가변 확장 (V33)
+- Sprint 7 post-review: `tauri-plugin-window-state` 도입 — 윈도우 크기·위치 자동 저장·복원 (V18)
+- Sprint 7 post-review: `schedule_events.is_seeded` 컬럼 추가 (V302 마이그레이션) — 시드 공휴일 vs 사용자 추가 공휴일 구분, 시드 공휴일만 삭제 차단 (V16/V21)
+- Sprint 7 post-review: 비밀번호 입력 모드 배지 — 마지막 입력 문자 종류(한글/영문/숫자/특수) 실시간 표시 (V37b)
+- Sprint 7 post-review: dev 빌드 자동 로그인 우회 (`NEXT_PUBLIC_DEV_AUTOLOGIN`) — 시각 검증 효율화 (V30)
+
+### Changed
+- Sprint 7: 교습기간 설정 UX 재설계 — 토글 버튼 제거, 셀 클릭 즉시 selection 모드 자동 진입 (Issue 5, PRD §4.4.2)
+- Sprint 7: `schedule_events` 배치 제약 강화 — 교습기간 내 일자에만 배치 허용 + 중복불가 코드(`is_duplicate_blocked`) 간 동일 일자 중복 배치 상호 차단 (Issue 4, R34)
+- Sprint 7: `ScheduleEventListItem` 응답에 `is_system_reserved` 플래그 추가 (백엔드 JOIN 확장) — 프론트엔드 `codeBadgeClass`/`draggableEventIds` 하드코딩 제거 (A23/R33)
+- Sprint 7: `academic.rs` `delete_schedule_event` — 공휴일 이벤트(`is_holiday=true`) 삭제 차단 추가 (Issue 7)
+- Sprint 7: 교습기간 삭제(`delete_study_period`) 시 cascade — 해당 기간 내 공휴일을 제외한 학사 일정 일괄 삭제 (Issue 6)
+- Sprint 7: 사이드바 종료 메뉴 위치 최종 확정 — 설정 메뉴 다음, 메뉴 리스트 내 배치 + TopBar h-16 정렬 보정 (Sprint 6 후속 보강 3건)
+- Sprint 7 post-review: 학사 컨트롤 바 통합 — 교습기간 + 코드 selector를 단일 컨트롤 바로 (V11), 외곽 박스 제거, 코드명만 chip 표기 (V10)
+- Sprint 7 post-review: `ScheduleCodeSelector` — 시스템 예약 코드 포함 활성 전체 코드 노출 (V6)
+- Sprint 7 post-review: 교습기간 셀 배경 강화 — 수업 가능(amber-100)/불가(gray-100) 색상 구분 (V22/V23), 다른 월 교습기간 블러 (V32/V35)
+- Sprint 7 post-review: 기간성 코드 캘린더 표시 — 시작/종료 마커(S/E), 중간 날짜 배지 연속 표시 (V13/V20)
+- Sprint 7 post-review: TopBar 시작 속도 텍스트를 "정상속도"/"속도저하" 레이블로 변경 (V34)
+- Sprint 7 post-review: 비밀번호 입력 보기/숨김 버튼 텍스트화 ("보기"/"숨김") (V36)
+- Sprint 7 post-review: `exit_hook` idempotent 가드 — 윈도우 닫기·앱 종료 이중 이벤트 시 1회만 실행 (V24)
+- Sprint 7 post-review: 글로벌 단축키 훅(`use-keyboard-shortcuts`) 제거 (V19) — 혼동 유발 단축키 비활성화, 사이드바 shortcut 표기 제거
+
+### Fixed
+- Sprint 7: Issue 1 — macOS 앱 시작 시 Keychain 비밀번호 다이얼로그가 3회 이상 반복 표시되어 startup 31초 소요되던 Critical UX 이슈 해소
+- Sprint 7: Issue 3 — 학사 일정 코드 관리가 `/academic` 화면 하단에 노출되어 UX 혼란 야기, `/settings/schedule-codes`로 분리
+- Sprint 7: Issue 4/R34 — 교습기간 외 일자에 학사 일정 배치 가능하던 가드 부재 문제 해소
+- Sprint 7: Issue 5 — 교습기간 선택 진입을 위한 토글 버튼을 찾기 어렵던 문제, 셀 클릭으로 자동 진입
+- Sprint 7: Issue 6 — 교습기간 삭제 버튼 부재 + 삭제 시 학사 일정이 고아 데이터로 잔류하던 문제 해소
+- Sprint 7: Issue 7 — 확정 교습기간 내 법정 공휴일이 삭제 가능하던 보안 부재 문제 해소
+- Sprint 7: Issue 8 — `lock.rs` device_id가 매 프로세스 재생성되어 stale lock이 항상 "다른 디바이스" 로 오식별되던 문제 해소
+- Sprint 7: A23/R33 — `codeBadgeClass`에 시스템 코드 ID 하드코딩으로 코드 추가 시 배지가 무채색 표시되던 문제 해소
+- Sprint 7 post-review: V1 — 교습기간 `year_month`가 시작일 기준 월로 저장되어 cross-month 교습기간의 월 분류 오류 (시작일 5/29 → 6월 교습기간이 5월로 저장됨) 수정
+- Sprint 7 post-review: V7 — 교습기간이 월 경계를 넘어가는 경우 이전/이후 그리드에서 in-study 셀이 표시되지 않던 문제 수정 (allStudyPeriods 전달로 cross-month 처리)
+- Sprint 7 post-review: V9 — 공휴수업일 배치 가드 정상화 (공휴일 없는 날에 배치 차단, 공휴수업일+공휴일 외 조합 차단)
+- Sprint 7 post-review: V12 — 교습기간 selection 시 다른 교습월의 기간 일자 포함 차단 (프론트엔드 가드 추가)
+- Sprint 7 post-review: V14 — 단원평가 응시일 셀 상단 색 라인 제거, 일반 배지로 통일
+- Sprint 7 post-review: V18 — 앱 종료 후 재시작 시 윈도우 크기·위치가 초기화되던 문제 (tauri-plugin-window-state)
+- Sprint 7 post-review: V20 — 기간성 코드(방학 등)가 시작일 셀에만 배지 표시되고 중간/종료일 셀에서 보이지 않던 문제
+- Sprint 7 post-review: V26 — 기간성 코드 배치 시 범위 겹침 충돌 검사 미적용으로 사이 일자 중복 가드 누락 수정
+- Sprint 7 post-review: V29 — 보강데이를 운영일(수업 있는 날)에 배치 가능하던 가드 부재 문제 수정
+- Sprint 7 post-review: V32/V35 — 다른 월 교습기간 셀이 현재 월 교습기간과 시각 구분이 안 되던 문제 수정 (블러 강화)
+- Sprint 7 post-review: V37 — 한글 IME 활성 상태에서 비밀번호 입력 시 한글 자모가 비밀번호로 입력되던 UX 문제 수정
+
+### Security
+- Sprint 7: S-T2-1 — `eprintln!` 으로 DB 암호화 키 hex가 콘솔에 노출되던 문제 제거
+- Sprint 7: S-T2-2 ~ S-T2-6 — set_password/recovery 원자성 보강, NTFS fsync, delete_key idempotent, PC-B UX 개선
+
+### Added
+- Sprint 6: Phase 2 학사 스케줄 관리 첫 기능 진입 — `/academic` 라우트 신설, 사이드바 "학사 스케줄" 메뉴 활성화
+- Sprint 6: 3개월 학사 캘린더 컴포넌트 — Tailwind grid-cols-7 직접 구현 (shadcn/ui Calendar 미사용), 공휴일/교습기간/일정 배지 표시, 교습기간 셀 selection 통합
+- Sprint 6: 교습기간 설정 UI (PRD §4.4.2) — 시작일/종료일 셀 클릭 → StudyPeriodEditor, 교습기간 확정/해제, 지난 달 읽기 전용 (AC-4.4-1)
+- Sprint 6: 학사 일정 코드 + 배치 UI (PRD §4.4.3~4.4.6) — 시스템 예약 5종 활성 토글, 사용자 코드 CRUD, 날짜 셀 클릭 등록, @dnd-kit 드래그 이동 (단일 일자, 시스템 코드 제외)
+- Sprint 6: 단원평가 응시일 자동 배치 (PRD §4.4.7) — 2주차/4주차 월~금 자동 배치 IPC (`auto_place_assessment_dates`)
+- Sprint 6: 백엔드 IPC 15개 (`src-tauri/src/commands/academic.rs` 신규) — study_periods 6종 + schedule_codes 4종 + schedule_events 5종
+- Sprint 6: TypeScript IPC 래퍼 15개 + 도메인 타입 10개 (`src/types/academic.ts`)
+- Sprint 6: V301 마이그레이션 — schedule_codes 시드 3속성 보정 (보강데이/공휴수업일/단원평가 속성, PRD §4.4.4 정합) + 한국 법정 공휴일 2025~2027 64건
+- Sprint 6: `pnpm holidays:fetch` 빌드 스크립트 (`scripts/fetch-holidays.ts`, tsx 기반) — 공공데이터포털 API 호출 + V301 SQL 생성 자동화
+- Sprint 6: ADR-005 (`docs/arch/adr-005-holiday-api-selection.md`) — 공휴일 API 소스/저장 위치/갱신 주기 결정 (매년 1월 V401+ 마이그레이션)
+- Sprint 6: 신규 devDependency — `tsx 4.22` (빌드 타임 TypeScript 실행)
+- Sprint 6: 신규 환경변수 — `KOREA_HOLIDAY_API_KEY` (`.env.example` 추가)
+- Sprint 6: A20 해소 — lock/page.tsx 에러 화면 재시도 버튼 + lockStatus 초기화
+- Sprint 6: A21 해소 — paths.rs OnceLock 병렬 테스트 격리 (테스트 146건 안정화)
+- Sprint 6: A22 해소 — 코드 DnD 필터링 sort_order 충돌 (방법 B 적용)
+
+### Changed
+- Sprint 6: V301 — V102 schedule_codes 시드 3속성 보정 (보강데이 `is_duplicate_blocked` false → true 외 PRD §4.4.4 정합 2건)
+- Sprint 6: `.claude/hooks/posttooluse-code-validator.sh` — `.env` 차단 정규식 좁힘 (`.env.example` 허용, `.env.local`/`.env.*.local` 패턴으로 실제 시크릿 파일만 차단)
+
+### Fixed
+- Sprint 6: A20 — lock/page.tsx 에러 화면에서 재시도 버튼 누락으로 앱 재시작 없이 락 재점유가 불가능하던 문제 해소
+- Sprint 6: A21 — paths.rs OnceLock 테스트 격리 부족으로 병렬 실행 시 flaky 발생하던 문제 해소
+- Sprint 6: A22 — 코드 DnD 드래그 후 필터 변경 시 sort_order가 충돌하여 순서가 뒤섞이던 문제 해소
+
+---
+
+## [0.2.1] - 2026-05-21
+
+### Added
+- Sprint 5: `tauri-plugin-single-instance` 2.4.2 도입 — 동일 PC 다중 인스턴스 원천 차단. 두 번째 인스턴스 기동 시 기존 창 포커스 + 새 프로세스 즉시 종료 (PRD §5.3)
+- Sprint 5: `cross-env` devDependency 추가 — `pnpm dev` 스크립트에 `NODE_OPTIONS=--no-experimental-webstorage` 적용 (Node 25/20 cross-OS 호환)
+- Sprint 5: V201 마이그레이션 (`201__update_seed_data.sql`) — 표준교습비 시드 (3/4/5/6h: 16만/20만/23만/26만원) + 결제수단 시드 (현금 비활성 + 계좌이체/카드/결제선생/성남사랑 활성 5종) 운영 값으로 보정. 멱등성 보장 (V001/V104 baseline 일치 행만 변경, 사용자 수정 데이터 보존)
+
+### Changed
+- Sprint 5: LockPage 진입 시 락 상태 사전 체크 로직 추가 — stale 락(5분 미갱신) 자동 점유 후 LockWarning 라우팅 활성화. 이전에는 LockWarning 화면으로 진입하지 않던 문제 해소
+- Sprint 5: 마법사 완료 redirect 경로 수정 — `/` → `/settings` (마법사 완료 후 교습소 설정 화면으로 직행)
+
+### Fixed
+- Sprint 5: Node 25 환경에서 Next.js Dev Overlay의 `localStorage.getItem` 호출이 SSR에서 실패하여 `/` 페이지 500 에러 발생하던 이슈 해소 (`--no-experimental-webstorage` 플래그)
+- Sprint 5: 동일 PC 다중 인스턴스 기동 시 두 번째 인스턴스가 외부 디바이스로 오인 → "다른 PC 사용 중" 오표시 + 잠금해제 무반응 이슈 해소 (single-instance 플러그인)
+
+### Added
+- Sprint 4: 교습소 설정 메뉴 화면 신설 (PRD §4.12) — 운영 시간(요일별 시작/종료/수업 길이) 편집, `save_operating_hours`/`get_operating_hours` IPC
+- Sprint 4: 수업 스케줄 시작시간 콤보박스 + 수정/삭제 기능 — 운영 시간 내 1시간 단위 선택, 운영시간 디폴트 자동 적용, 스케줄 카드 수정/삭제 UI
+- Sprint 4: 코드 테이블 DnD 순서 변경 (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`) + 활성 상태 필터 + 신규 항목 sort_order 자동 부여
+- Sprint 4: 원생 목록 화면 — 주총 수업시간 + 수업 요일 컬럼 추가
+- Sprint 4: 원생 등록/수정 폼 — 학교명 Select 연동(학교 코드 테이블), 연락처 자동 하이픈(`formatPhone`), 금액 천단위 콤마(`formatCurrency`), 일련번호(`serial_no`) readonly 보호, 퇴교일 필드 + 퇴교 번복 기능
+- Sprint 4: 원생 등록 완료 후 수업 스케줄 등록 안내 UX (등록 직후 알림 + 스케줄 편집 페이지 이동 버튼)
+- Sprint 4: `format.ts` 유틸 신규 (`src/lib/format.ts`) — `formatPhone`, `formatCurrency` 2종
+- Sprint 4: `reinstate_student` IPC 커맨드 신규 — 퇴교 번복 기능 백엔드
+- Sprint 4: shadcn/ui AlertDialog 컴포넌트 도입 — `window.confirm`/`window.alert` 전면 교체 (Tauri 2 CSP 차단 해소)
+- Sprint 4: 단위 테스트 130건 (Sprint 3 109건 → +7건, post-sprint3 23건 포함 기준 +7)
+- Sprint 4: 신규 의존성 — `@base-ui/react`, `class-variance-authority`, `clsx`, `lucide-react`, `tailwind-merge`, `tw-animate-css` (shadcn/ui init), `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`
+
+### Changed
+- Sprint 4: 상태바 — 점유/백업/동기화/시작시간 IPC 실연결 (AppShell 에서 `checkLockStatus`/`listBackups`/`checkSyncStatus` 60초 polling 호출, 시작시간은 `useSessionStore.lastStartup.elapsed_ms` 사용)
+- Sprint 4: 수업 스케줄 편집 UI — 추가/변경 폼을 등록된 스케줄 그리드 **위**로 이동 (`ScheduleEditor` 내 영역 재배치), 1회 수업 시간 select 옵션을 1시간 단위(1/2/3/4)로 제한
+- Sprint 4: 원생 목록 디폴트 정렬 — 번호순(`StudentSort::SerialAsc`) 으로 변경. 컬럼 헤더 클릭으로 번호/이름/학년/입교일 asc↔desc 토글
+
+### Fixed
+- Sprint 4: `window.confirm`/`window.alert` 차단 — Tauri 2 `dialog:allow-confirm` 미허용으로 퇴교 확인 다이얼로그가 작동하지 않던 Critical Runtime Error 해소 (shadcn AlertDialog로 교체)
+- Sprint 4: 상태바 IPC 미연결 — 점유/백업/동기화/시작시간 표시가 항상 초기값으로 표시되던 이슈 해소
+- Sprint 4: 퇴교일 필드 미표시 — 원생 등록/수정 폼에서 `withdraw_date`를 입력할 수 없던 이슈 해소
+- Sprint 4: 일련번호 수정 허용 — `serial_no` 필드가 편집 가능하여 PI-05 자동 채번 정합성 위험. 프론트 readonly + 백엔드 `update_student` SQL 에서 `serial_no` 컬럼 제외 (defense in depth)
+- Sprint 4: 학교명 텍스트 자유입력 — 코드 테이블과 연동 없이 자유입력만 가능하던 이슈 해소 (Select 컴포넌트로 교체)
+- Sprint 4: 스케줄 시작시간 자유입력 — 운영 시간 범위 외 시간 입력이 가능하던 이슈 해소 (콤보박스 + 운영 시간 검증)
+- Sprint 4: 코드 테이블 정렬 변경 불가 — sort_order 변경 UX가 없어 순서를 조정할 수 없던 이슈 해소 (DnD)
+
+### Security
+- Sprint 4: Next.js 15.3.2 CVE-2025-66478 — 현재 미적용, release 전 업그레이드 필수 (Sprint 5 또는 별도 hotfix)
+
+### Added
+- Sprint 3: Pretendard 폰트 self-host — `public/fonts/` woff2 배치, `@font-face` + Tailwind config 설정. 본문 18px, 헤더 24px+, 행간 1.5 기본값 확립 (ADR-006)
+- Sprint 3: 앱 레이아웃 셸 — 사이드바(메뉴 9종 + 단축키 병기 + 비활성 툴팁), 상단 상태바(점유 디바이스/마지막 백업/동기화 상태), AppShell 조합 컴포넌트
+- Sprint 3: 글로벌 검색바 (PRD §4.14) — 원생 이름(우선)/학교명/메뉴명 검색, 한글 자모 부분 일치, 200ms 디바운싱, 1클릭 이동, Ctrl+F 단축키
+- Sprint 3: Zustand 스토어 2종 (`src/stores/session-store.ts`, `src/stores/app-store.ts`) — 세션 상태/락 점유/사이드바 상태/선택 교습기간월
+- Sprint 3: TanStack Query Provider — IPC 응답 캐싱/무효화 패턴 확립 (`src/providers/query-provider.tsx`)
+- Sprint 3: `tauri-plugin-dialog` 통합 — 폴더 선택 네이티브 다이얼로그 IPC + `capabilities/default.json` `dialog:default` 권한
+- Sprint 3: 초기 설정 마법사 백엔드 (`src-tauri/src/commands/setup.rs`) — `save_cloud_folder`, `complete_setup`, `get_setup_status` IPC 3종 + `app_config_dir/config.json` 설정 분리 저장 (chicken-and-egg step-back 반영)
+- Sprint 3: 초기 설정 마법사 프론트엔드 (`src/app/setup/page.tsx`) — 4단계(환영/클라우드 폴더 선택/비밀번호 설정/완료) + 단계별 독립 저장 + 뒤로가기 지원
+- Sprint 3: 원생 목록 화면 (`src/app/students/page.tsx`) — TanStack Query 캐싱, 필터 7종(이름/학교급/학년/학교명/요일/성별/재원상태) + 정렬 3종 + 페이지네이션
+- Sprint 3: 원생 등록/수정 폼 — `create_student`/`update_student`/`withdraw_student` IPC 연동, 3분 자동 임시저장(localStorage), 미저장 경고 다이얼로그, 퇴교 처리 확인 다이얼로그
+- Sprint 3: 코드 테이블 관리 화면 (PRD §4.12) — 학교/표준교습비/결제수단/카드사 탭 CRUD, is_active 소프트 삭제, sort_order 변경
+- Sprint 3: 수업 스케줄 편집 UI (PRD §4.2) — 요일별 시작 시간/수업 시간 입력, 운영 시간 내 제한, 주 총 수업시간 실시간 표시, 표준 교습비 자동 매칭 표시
+- Sprint 3: 키보드 단축키 체계 (`src/hooks/use-keyboard-shortcuts.ts`) — F1/Ctrl+F/Ctrl+N/Ctrl+S/Ctrl+Z/ESC/Ctrl+P 7종 바인딩
+- Sprint 3: `count_students(filter)` IPC 신규 — 페이지네이션 총 건수 반환
+- Sprint 3: 단위 테스트 109건 (Sprint 2 97건 → +12건)
+
+### Changed
+- Sprint 3: `src/app/page.tsx` 라우팅 분기 업데이트 — `not-initialized` 상태 시 `/setup` 마법사로 이동
+- Sprint 3: `StudentFilter` 구조체에 `limit: Option<u32>`, `offset: Option<u32>` 추가 — 기본 limit=50, 상한 1000
+- Sprint 3: `list_students`/`list_codes` SQL에 `LIMIT ? OFFSET ?` 적용
+
+### Fixed
+- Sprint 3: R13 PII 마스킹 — `students.rs` `try_record` 3곳 `details=None` 적용하여 감사 로그에 원생 이름 미포함
+- post-sprint3: `config.json` 손상 자동 복구 (`setup.rs`) — PC 강제 종료로 인한 NTFS power-loss 시 발생하는 NULL-바이트 파일/파싱 실패를 감지하여 `config.json.corrupted-{ts}` 로 백업 후 기본값 fallback. 사용자는 마법사를 다시 진행하면 자동 복구됨. 단위 테스트 6건 추가 (총 115건)
+- post-sprint3: `app.lock` 손상 자동 복구 (`lock.rs`) — 동일한 NTFS power-loss 패턴이 락 파일에도 발생. `String::trim()` 이 NULL 을 공백으로 인식하지 않아 파싱 실패가 `AppError::Lock` 으로 wrap 되어 사용자에게 "다른 컴퓨터에서 사용 중" 으로 잘못 표시되던 회귀 해소. `parse_lock_info` 가 손상 감지 시 `Ok(None)` 반환 → `acquire_lock_atomic` 이 새 락 즉시 작성. 단위 테스트 5건 추가 (총 123건)
+- post-sprint3: keyring v3 OS native backend 활성화 (`Cargo.toml`) — `keyring = "3"` default-features 만 켜진 상태에서 backend 미연결로 `set_password` 가 silent OK 반환 후 `get_password` 가 항상 `NoEntry` 반환하던 critical 회귀 해소. `features = ["apple-native", "windows-native"]` 명시. 마법사 비밀번호 설정 흐름 전체가 차단되던 증상 해결
+- post-sprint3: stale 락 자동 점유 (`lock.rs`) — 이전 세션 비정상 종료로 잔존한 stale 락(5분 미갱신)을 `force` 옵션과 무관하게 자동 정리. PRD §5.3 "강제 점유 옵션" 은 fresh 락에만 적용 (단일 사용자 UX). 마법사 LockScreen 의 `force=false` 하드코딩이 stale 락에 막히던 회귀 해소
+
+### Added
+- post-sprint3: 에러 진단 인프라 (`error.rs`, `auth.rs`) — `From<AppError> for String` 변환 시점에 raw `Display` 메시지를 stderr 에 `[error] ...` 로 보존 (PRD §6.4 "사용자 화면엔 친화 메시지, 콘솔엔 기술 상세" 정책 준수). `set_password` / `verify_password` 단계별 진단 로그 (hex 첫 8byte 만 — 키 노출 방지). tracing crate 통합 시 `tracing::error!` 로 교체 예정
+
+---
+
 ## [0.2.1] - 2026-05-22
 
 ### Security

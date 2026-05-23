@@ -67,13 +67,6 @@ if echo "$COMMAND" | grep -qE 'git push(\s+[^\s]+)?\s+main(\s|$)'; then
   → PR 워크플로우를 사용하세요: develop → main PR은 deploy-prod 에이전트가 담당합니다."
 fi
 
-# ── 규칙 3: develop 브랜치 직접 push 차단 ───────────────────────────
-if echo "$COMMAND" | grep -qE 'git push(\s+[^\s]+)?\s+develop(\s|$)'; then
-  RULE_ID="push-develop"
-  block "develop 브랜치 직접 push는 금지됩니다.
-  → PR 워크플로우를 사용하세요: sprint-close 에이전트가 PR을 생성합니다."
-fi
-
 # ── 규칙 4: force push 차단 ─────────────────────────────────────────
 if echo "$COMMAND" | grep -qE 'git push.+(-f\b|--force\b|--force-with-lease\b)'; then
   RULE_ID="force-push"

@@ -20,6 +20,7 @@
 
 import { useEffect, useState } from 'react'
 import { appStartupSequence, checkAuthStatus, setPassword } from '@/lib/tauri'
+import { SplashScreen } from '@/components/splash-screen'
 import type { AuthStatus, StartupResult } from '@/types'
 
 const MIN_PASSWORD_LENGTH = 8
@@ -38,8 +39,36 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
       .catch((e) => setError(typeof e === 'string' ? e : '인증 상태를 확인할 수 없습니다.'))
   }, [])
 
+  // V30 (Sprint 7 post-review): dev 빌드 자동 로그인 우회. 환경 변수
+  // `NEXT_PUBLIC_DEV_AUTOLOGIN` 에 평문 비밀번호 (8자 이상) 가 설정되어 있으면 자동 입력 + 제출.
+  // 이미 한 번 `set_password` 한 상태 (`status==='locked'`) 에서만 우회 — 첫 설치 시 마법사는
+  // 사용자가 직접 진행. release 빌드에서는 NEXT_PUBLIC 환경 변수 자체가 없으므로 무동작.
+  useEffect(() => {
+    const devPw = process.env.NEXT_PUBLIC_DEV_AUTOLOGIN
+    if (status !== 'locked' || !devPw || devPw.length < MIN_PASSWORD_LENGTH) return
+    if (submitting) return
+    setPasswordInput(devPw)
+    // 다음 tick 에서 form submit — state 갱신 후 동기 호출이라 안전한 microtask.
+    void (async () => {
+      setSubmitting(true)
+      try {
+        const startup = await appStartupSequence(devPw, false)
+        onUnlocked?.(startup)
+      } catch (e) {
+        setError(
+          typeof e === 'string'
+            ? e
+            : 'dev 자동 로그인 실패 — 비밀번호 또는 락 상태 확인 필요.',
+        )
+      } finally {
+        setSubmitting(false)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
+
   if (status === null) {
-    return <div className="flex min-h-screen items-center justify-center">불러오는 중...</div>
+    return <SplashScreen message="잠금 상태를 확인하는 중입니다..." />
   }
 
   const isInitialSetup = status === 'not-initialized'
@@ -149,6 +178,17 @@ interface PasswordFieldProps {
   hasError: boolean
 }
 
+/** V37b — 마지막 입력 문자 종류 감지. 한글 자모/음절 / 영문 / 숫자 / 특수 / null(빈 입력). */
+function detectInputMode(text: string): '한글' | '영문' | '숫자' | '특수' | null {
+  if (text.length === 0) return null
+  const ch = text[text.length - 1]
+  // U+1100~ 한글 자모, U+3130~ 한글 호환 자모, U+AC00~ 한글 음절
+  if (/[ᄀ-ᇿ㄰-㆏가-힣]/.test(ch)) return '한글'
+  if (/[a-zA-Z]/.test(ch)) return '영문'
+  if (/[0-9]/.test(ch)) return '숫자'
+  return '특수'
+}
+
 function PasswordField({
   id,
   label,
@@ -159,6 +199,10 @@ function PasswordField({
   autoFocus,
   hasError,
 }: PasswordFieldProps) {
+  // V37b (Sprint 7 post-review): 한글 차단 제거 → 사용자가 한글 비밀번호도 가능. 단, 마지막
+  // 입력 문자의 종류를 실시간 배지로 표시하여 의도와 다른 IME 모드 즉시 인지 가능.
+  const [composing, setComposing] = useState(false)
+  const mode = composing ? '한글' : detectInputMode(value)
   return (
     <div className="space-y-2">
       <label htmlFor={id} className="block text-base font-medium">
@@ -170,21 +214,46 @@ function PasswordField({
           type={show ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
           autoComplete={id === 'password' ? 'current-password' : 'new-password'}
           autoFocus={autoFocus}
-          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-14 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+          lang="en"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="text"
+          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-32 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
             hasError ? 'border-[var(--danger)]' : 'border-[var(--border)]'
           }`}
         />
+        {/* V37b — 입력 모드 배지 (한글일 때 강조). */}
+        {mode !== null && (
+          <span
+            aria-live="polite"
+            title="마지막으로 입력한 문자 종류"
+            className={`absolute right-[72px] top-1/2 flex h-[44px] min-w-[44px] -translate-y-1/2 items-center justify-center rounded-md px-2 text-sm ${
+              mode === '한글'
+                ? 'bg-orange-100 font-semibold text-orange-700'
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            {mode}
+          </span>
+        )}
+        {/* V36 — 보기/숨김 버튼. */}
         <button
           type="button"
           onClick={onToggleShow}
           aria-label={show ? '비밀번호 가리기' : '비밀번호 표시'}
-          className="absolute right-2 top-1/2 flex h-[44px] w-[44px] -translate-y-1/2 items-center justify-center rounded-md text-xl text-gray-600 hover:bg-gray-100"
+          className="absolute right-2 top-1/2 flex h-[44px] min-w-[60px] -translate-y-1/2 items-center justify-center rounded-md border border-[var(--border)] bg-white px-2 text-sm text-gray-700 hover:bg-gray-50"
         >
-          {show ? '🙈' : '👁'}
+          {show ? '숨김' : '보기'}
         </button>
       </div>
+      <p className="text-xs text-gray-500">
+        입력 문자 종류가 우측에 표시됩니다. 의도와 다르면 키보드 한/영 전환 후 다시 입력하세요.
+      </p>
     </div>
   )
 }

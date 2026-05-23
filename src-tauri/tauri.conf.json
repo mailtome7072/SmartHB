@@ -1,6 +1,6 @@
 {
   "productName": "SmartHB",
-  "version": "0.2.1",
+  "version": "0.3.1",
   "identifier": "co.kr.ubcare.smarthb",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -17,7 +17,8 @@
         "minWidth": 1024,
         "minHeight": 600,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "center": true
       }
     ],
     "security": {

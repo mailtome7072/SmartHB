@@ -27,6 +27,19 @@ import type {
   StandardFee,
 } from '@/types/fee'
 import type {
+  CascadeDeletePreview,
+  CreateScheduleCodePayload,
+  CreateScheduleEventPayload,
+  CreateStudyPeriodPayload,
+  ScheduleCode,
+  ScheduleEvent,
+  ScheduleEventListItem,
+  StudyPeriod,
+  UpdateScheduleCodePayload,
+  UpdateScheduleEventPayload,
+  UpdateStudyPeriodPayload,
+} from '@/types/academic'
+import type {
   ScheduleSet,
   StudentSchedule,
 } from '@/types/schedule'
@@ -38,6 +51,26 @@ import type {
 } from '@/types/student'
 
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null
+
+/**
+ * OS 폴더 선택 다이얼로그를 띄우고 사용자가 선택한 경로를 반환한다 (Sprint 3 T7).
+ *
+ * 마법사(`/setup`)에서 클라우드 동기화 폴더(MYBOX/iCloud Drive/Dropbox) 선택용.
+ * 사용자가 취소하면 `null` 반환. 개발 모드(Tauri 미동작)에서는 더미 경로 반환.
+ *
+ * 권한: `capabilities/default.json` 의 `dialog:allow-open` 필요.
+ */
+export async function selectFolder(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({ directory: true, multiple: false })
+    if (selected === null) return null
+    return typeof selected === 'string' ? selected : selected[0] ?? null
+  } catch {
+    return '[개발 모드] /Users/dev/MYBOX'
+  }
+}
 
 async function getInvoke() {
   if (typeof window === 'undefined') return null
@@ -57,6 +90,17 @@ export async function greet(name: string): Promise<string> {
   const inv = await getInvoke()
   if (!inv) return `[개발 모드] 안녕하세요, ${name}!`
   return inv('greet', { name }) as Promise<string>
+}
+
+/**
+ * 앱 종료 — AppHandle::exit(0) → RunEvent::ExitRequested → release_lock + exit 백업.
+ *
+ * 사이드바 "종료" 메뉴가 호출. capabilities 권한 우회 + macOS 닥 메뉴바 잔존 회피를 위해 백엔드 IPC 경유.
+ */
+export async function quitApp(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('quit_app')
 }
 
 /**
@@ -379,10 +423,40 @@ export async function withdrawStudent(id: number, withdrawDate: string): Promise
   await inv('withdraw_student', { id, withdrawDate })
 }
 
+/**
+ * 퇴교 처리를 번복한다 (Sprint 4 T8 / 사용자 이슈 #8) — withdraw_date NULL 처리.
+ *
+ * 보강 잔여 처리 등 부수 효과는 본 IPC 범위 외 (Phase 3).
+ */
+export async function reinstateStudent(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('reinstate_student', { id })
+}
+
+/**
+ * 원생 목록을 다중 필터·정렬·페이지네이션으로 조회한다.
+ *
+ * R14: `filter.limit` 미지정 시 백엔드 기본 100 (상한 1000), `filter.offset` 기본 0.
+ * 페이지 UI 는 `countStudents(filter)` 로 총 건수를 별도 조회.
+ * 개발 모드(Tauri 미동작)에서는 빈 배열을 반환한다.
+ */
 export async function listStudents(filter: StudentFilter = {}): Promise<Student[]> {
   const inv = await getInvoke()
   if (!inv) return []
   return inv('list_students', { filter }) as Promise<Student[]>
+}
+
+/**
+ * 동일 필터에 매칭되는 총 원생 수를 반환한다 (R14 페이지네이션 UI 보조).
+ *
+ * `filter.limit` / `filter.offset` 은 백엔드에서 무시된다 — 필터 조합 자체의 총 건수.
+ * 개발 모드에서는 0 을 반환.
+ */
+export async function countStudents(filter: StudentFilter = {}): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_students', { filter }) as Promise<number>
 }
 
 // ----------------------------------------------------------------------------
@@ -405,6 +479,21 @@ export async function setSchedule(payload: ScheduleSet): Promise<StudentSchedule
     }
   }
   return inv('set_schedule', { payload }) as Promise<StudentSchedule>
+}
+
+/**
+ * 원생의 특정 요일 스케줄을 마감한다 (Sprint 4 T9 / 사용자 이슈 #10).
+ *
+ * effective_to=today 로 설정 — 다음날부터 해당 요일에 수업 없음.
+ */
+export async function deleteSchedule(
+  studentId: number,
+  dayOfWeek: number,
+  today: string,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_schedule', { studentId, dayOfWeek, today })
 }
 
 export async function getSchedules(studentId: number): Promise<StudentSchedule[]> {
@@ -475,10 +564,33 @@ export async function matchFeeByHours(weeklyHours: number): Promise<StandardFee 
 // Sprint 2 — 코드 테이블
 // ----------------------------------------------------------------------------
 
-export async function listCodes(table: CodeTable): Promise<CodeEntry[]> {
+/**
+ * 코드 항목 목록을 페이지네이션으로 조회한다 (R14).
+ *
+ * `limit` 미지정 시 백엔드 기본 100 (상한 1000), `offset` 기본 0.
+ * 개발 모드에서는 빈 배열을 반환한다.
+ */
+export async function listCodes(
+  table: CodeTable,
+  limit?: number,
+  offset?: number,
+): Promise<CodeEntry[]> {
   const inv = await getInvoke()
   if (!inv) return []
-  return inv('list_codes', { table }) as Promise<CodeEntry[]>
+  return inv('list_codes', {
+    table,
+    limit: limit ?? null,
+    offset: offset ?? null,
+  }) as Promise<CodeEntry[]>
+}
+
+/**
+ * 코드 테이블 총 항목 수 (R14 페이지네이션 UI 보조).
+ */
+export async function countCodes(table: CodeTable): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_codes', { table }) as Promise<number>
 }
 
 export async function createCode(table: CodeTable, payload: NewCode): Promise<CodeEntry> {
@@ -521,4 +633,321 @@ export async function reorderCodes(
   const inv = await getInvoke()
   if (!inv) return
   await inv('reorder_codes', { table, orders })
+}
+
+// ----------------------------------------------------------------------------
+// Sprint 3 — 초기 설정 마법사 (T8/T9, PRD §4.0)
+// ----------------------------------------------------------------------------
+
+export interface SetupStatus {
+  cloud_folder_path: string
+  setup_completed: boolean
+}
+
+/** 마법사 진행 상태 — 미진입 시 빈 경로 + setup_completed=false. */
+export async function getSetupStatus(): Promise<SetupStatus> {
+  const inv = await getInvoke()
+  if (!inv) return { cloud_folder_path: '', setup_completed: false }
+  return inv('get_setup_status') as Promise<SetupStatus>
+}
+
+/** 클라우드 동기화 폴더 경로를 저장 — 폴더 안에 smarthb/ 디렉토리 생성. */
+export async function saveCloudFolder(path: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_cloud_folder', { path })
+}
+
+/** 마법사 완료 표시 — 모든 단계 완료 후 호출. */
+export async function completeSetup(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('complete_setup')
+}
+
+// ============================================================================
+// 영구 설정 (Sprint 4 T2, PRD §4.0/§4.12) — 교습소 운영 시간
+// ============================================================================
+
+/**
+ * 요일별 운영 시간. open/close 가 모두 null 이면 미운영.
+ *
+ * `src-tauri/src/commands/settings.rs::DayHours` 와 정합.
+ * day_of_week: 1=월, 2=화, 3=수, 4=목, 5=금, 6=토, 7=일 (ISO 8601, schedules.rs 와 일관)
+ */
+export interface DayHours {
+  day_of_week: number
+  open_time: string | null
+  close_time: string | null
+}
+
+/** 운영 시간 조회 — 저장값 없으면 디폴트 (월~금 13:00~19:00, 토/일 미운영). */
+export async function getOperatingHours(): Promise<DayHours[]> {
+  const inv = await getInvoke()
+  if (!inv) {
+    // dev fallback — 디폴트 7일 반환
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = i + 1
+      return day <= 5
+        ? { day_of_week: day, open_time: '13:00', close_time: '19:00' }
+        : { day_of_week: day, open_time: null, close_time: null }
+    })
+  }
+  return inv('get_operating_hours') as Promise<DayHours[]>
+}
+
+/** 운영 시간 저장 — 7개 요일 모두 포함 필수, 백엔드가 검증. */
+export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_operating_hours', { hours })
+}
+
+// ============================================================================
+// Sprint 6 — 학사 스케줄 도메인 (T8, PRD §4.4)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/academic.rs (T5/T6/T7).
+// Tauri invoke args 는 자동 camelCase ↔ snake_case 변환 (예: Rust from_month ↔ TS fromMonth).
+
+// ─── 교습기간 study_periods (T5) ─────────────────────────────────────
+
+export async function createStudyPeriod(
+  payload: CreateStudyPeriodPayload,
+): Promise<StudyPeriod> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      year_month: payload.year_month,
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+      is_confirmed: false,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_study_period', { payload }) as Promise<StudyPeriod>
+}
+
+export async function updateStudyPeriod(
+  id: number,
+  payload: UpdateStudyPeriodPayload,
+): Promise<StudyPeriod> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      year_month: payload.start_date.slice(0, 7),
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+      is_confirmed: false,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_study_period', { id, payload }) as Promise<StudyPeriod>
+}
+
+/** 교습기간 목록 — "YYYY-MM" 범위(포함). */
+export async function listStudyPeriods(
+  fromMonth: string,
+  toMonth: string,
+): Promise<StudyPeriod[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_study_periods', { fromMonth, toMonth }) as Promise<StudyPeriod[]>
+}
+
+/** 특정 월의 교습기간 조회 — 없으면 null. */
+export async function getStudyPeriod(yearMonth: string): Promise<StudyPeriod | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_study_period', { yearMonth }) as Promise<StudyPeriod | null>
+}
+
+export async function confirmStudyPeriod(id: number): Promise<StudyPeriod> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      year_month: '',
+      start_date: '',
+      end_date: '',
+      is_confirmed: true,
+      is_closed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('confirm_study_period', { id }) as Promise<StudyPeriod>
+}
+
+/** 미확정 교습기간 삭제 — 확정/마감 시 백엔드가 throw. */
+export async function deleteStudyPeriod(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_study_period', { id })
+}
+
+/** 교습기간 cascade 삭제 미리보기 (Sprint 7 T8) — 영향 건수 + 가능 여부. */
+export async function getCascadeDeletePreview(
+  id: number,
+): Promise<CascadeDeletePreview> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      affected_count: 0,
+      holiday_count: 0,
+      deletable: false,
+      reason: '개발 모드: 백엔드 없이는 cascade 삭제 미리보기 불가',
+    }
+  }
+  return inv('get_cascade_delete_preview', { id }) as Promise<CascadeDeletePreview>
+}
+
+/** 교습기간 cascade 삭제 — 공휴일 제외 학사 일정 + 교습기간 트랜잭션 삭제 (Sprint 7 T8). */
+export async function deleteStudyPeriodCascade(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_study_period_cascade', { id })
+}
+
+// ─── 학사 일정 코드 schedule_codes (T6) ──────────────────────────────
+
+export async function listScheduleCodes(): Promise<ScheduleCode[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_schedule_codes') as Promise<ScheduleCode[]>
+}
+
+export async function createScheduleCode(
+  payload: CreateScheduleCodePayload,
+): Promise<ScheduleCode> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      code_name: payload.code_name,
+      is_system_reserved: false,
+      allows_regular_class: payload.allows_regular_class,
+      allows_makeup_class: payload.allows_makeup_class,
+      is_duplicate_blocked: payload.is_duplicate_blocked,
+      is_period_type: payload.is_period_type,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_schedule_code', { payload }) as Promise<ScheduleCode>
+}
+
+export async function updateScheduleCode(
+  id: number,
+  payload: UpdateScheduleCodePayload,
+): Promise<ScheduleCode> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      code_name: '',
+      is_system_reserved: false,
+      allows_regular_class: payload.allows_regular_class,
+      allows_makeup_class: payload.allows_makeup_class,
+      is_duplicate_blocked: payload.is_duplicate_blocked,
+      is_period_type: payload.is_period_type,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_schedule_code', { id, payload }) as Promise<ScheduleCode>
+}
+
+/** 활성/비활성 토글 — 시스템 예약 코드도 허용 (AC-T6-2). */
+export async function toggleScheduleCodeActive(id: number): Promise<ScheduleCode> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      code_name: '',
+      is_system_reserved: false,
+      allows_regular_class: false,
+      allows_makeup_class: false,
+      is_duplicate_blocked: true,
+      is_period_type: false,
+      is_active: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('toggle_schedule_code_active', { id }) as Promise<ScheduleCode>
+}
+
+// ─── 학사 일정 schedule_events (T7) ──────────────────────────────────
+
+export async function createScheduleEvent(
+  payload: CreateScheduleEventPayload,
+): Promise<ScheduleEvent> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      code_id: payload.code_id,
+      event_date: payload.event_date,
+      period_end_date: payload.period_end_date,
+      display_name: payload.display_name,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('create_schedule_event', { payload }) as Promise<ScheduleEvent>
+}
+
+export async function updateScheduleEvent(
+  id: number,
+  payload: UpdateScheduleEventPayload,
+): Promise<ScheduleEvent> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id,
+      code_id: 0,
+      event_date: payload.event_date,
+      period_end_date: payload.period_end_date,
+      display_name: payload.display_name,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('update_schedule_event', { id, payload }) as Promise<ScheduleEvent>
+}
+
+/** 학사 일정 삭제 — 지난 달이면 백엔드가 throw (AC-T7-3). */
+export async function deleteScheduleEvent(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_schedule_event', { id })
+}
+
+/** 기간 내 학사 일정 목록 (코드명 JOIN 평탄 응답) — "YYYY-MM-DD" 범위. */
+export async function listScheduleEvents(
+  fromDate: string,
+  toDate: string,
+): Promise<ScheduleEventListItem[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_schedule_events', { fromDate, toDate }) as Promise<ScheduleEventListItem[]>
+}
+
+/**
+ * 단원평가 응시일 자동 배치 (§4.4.7).
+ *
+ * 해당 month 2주차 월~금 + 4주차 월~금 10건 INSERT. 이미 단원평가 1건 이상 존재 시 빈 배열 반환(No-op, AC-4.4-6).
+ */
+export async function autoPlaceAssessmentDates(yearMonth: string): Promise<ScheduleEvent[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('auto_place_assessment_dates', { yearMonth }) as Promise<ScheduleEvent[]>
 }
