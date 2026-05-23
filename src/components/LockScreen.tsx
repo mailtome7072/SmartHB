@@ -201,17 +201,25 @@ function PasswordField({
           onChange={(e) => onChange(e.target.value)}
           autoComplete={id === 'password' ? 'current-password' : 'new-password'}
           autoFocus={autoFocus}
-          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-14 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+          // V37 (Sprint 7 post-review): 영문 소문자 기본 입력 — IME 한글 자동 활성화 방지.
+          // type="password" 는 보통 macOS 가 IME 비활성화하지만 lang/autoCapitalize 명시로 보강.
+          lang="en"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="text"
+          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-20 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
             hasError ? 'border-[var(--danger)]' : 'border-[var(--border)]'
           }`}
         />
+        {/* V36 (Sprint 7 post-review): 눈 이모지 → 한국어 텍스트 "보기"/"숨김" 으로 변경. */}
         <button
           type="button"
           onClick={onToggleShow}
           aria-label={show ? '비밀번호 가리기' : '비밀번호 표시'}
-          className="absolute right-2 top-1/2 flex h-[44px] w-[44px] -translate-y-1/2 items-center justify-center rounded-md text-xl text-gray-600 hover:bg-gray-100"
+          className="absolute right-2 top-1/2 flex h-[44px] min-w-[60px] -translate-y-1/2 items-center justify-center rounded-md border border-[var(--border)] bg-white px-2 text-sm text-gray-700 hover:bg-gray-50"
         >
-          {show ? '🙈' : '👁'}
+          {show ? '숨김' : '보기'}
         </button>
       </div>
     </div>

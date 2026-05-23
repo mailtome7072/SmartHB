@@ -190,6 +190,9 @@ interface MonthGridProps {
   studyPeriod: StudyPeriod | null
   /** 전체 교습기간 리스트 — 셀의 `inStudyPeriod` 색 판정에 사용 (cross-month 포함, V7). */
   allStudyPeriods: StudyPeriod[]
+  /** V32 — 중앙 캘린더 month (예: "2026-06"). 본 그리드 셀이 다른 교습기간(year_month!=center)에
+   *  속하면 블러. 확대 모드에서는 expanded month 와 동일. */
+  centerYearMonth: string
   /** V23 — 셀이 수업 가능 일자인지 판정 콜백 (운영시간 + 공휴일/휴원일/공휴수업일 종합). */
   hasClassOnDate: (date: string) => boolean
   today: string
@@ -209,6 +212,7 @@ function MonthGrid({
   eventsByDate,
   studyPeriod,
   allStudyPeriods,
+  centerYearMonth,
   hasClassOnDate,
   today,
   selection,
@@ -226,15 +230,15 @@ function MonthGrid({
     return allStudyPeriods.some((p) => date >= p.start_date && date <= p.end_date)
   }
 
-  // V32 — 셀의 교습기간이 본 그리드의 month 와 일치하는지 (own) vs 다른 월의 교습기간 일부 (other).
-  // 6월 교습기간이 5월 그리드의 5/29~5/31 에 걸치면 'other' → 시각적으로 블러 처리.
-  const ownYearMonth = `${year}-${pad2(month)}`
+  // V32 (재구현) — 중앙 캘린더 month 기준 비교: 셀의 교습기간이 **중앙 월의 교습기간** 이 아니면
+  // 모든 그리드에서 블러 처리. 예: 중앙=6월일 때 5월 그리드의 5월 교습기간 일자 + 7월 그리드의 7월
+  // 교습기간 일자가 모두 블러. 6월 교습기간(5/29~6/30)에 속한 셀은 5월/6월 그리드 모두 선명.
   function isStudyPeriodOther(date: string): boolean {
     const period = allStudyPeriods.find(
       (p) => date >= p.start_date && date <= p.end_date,
     )
     if (!period) return false
-    return period.year_month !== ownYearMonth
+    return period.year_month !== centerYearMonth
   }
 
   /** 선택 범위 내 — start <= date <= end (둘 다 있을 때) 또는 start === date (start 만 있을 때). */
@@ -539,6 +543,7 @@ export function ThreeMonthCalendar({
                 periodByYm.get(`${expandedMonth.year}-${pad2(expandedMonth.month)}`) ?? null
               }
               allStudyPeriods={periodsQuery.data ?? []}
+              centerYearMonth={`${expandedMonth.year}-${pad2(expandedMonth.month)}`}
               hasClassOnDate={hasClassOnDate}
               today={today}
               selection={selection ?? undefined}
@@ -559,6 +564,7 @@ export function ThreeMonthCalendar({
             eventsByDate={eventsByDate}
             studyPeriod={periodByYm.get(`${m.year}-${pad2(m.month)}`) ?? null}
             allStudyPeriods={periodsQuery.data ?? []}
+            centerYearMonth={`${center.year}-${pad2(center.month)}`}
             hasClassOnDate={hasClassOnDate}
             today={today}
             selection={selection ?? undefined}
