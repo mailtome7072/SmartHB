@@ -178,6 +178,17 @@ interface PasswordFieldProps {
   hasError: boolean
 }
 
+/** V37b — 마지막 입력 문자 종류 감지. 한글 자모/음절 / 영문 / 숫자 / 특수 / null(빈 입력). */
+function detectInputMode(text: string): '한글' | '영문' | '숫자' | '특수' | null {
+  if (text.length === 0) return null
+  const ch = text[text.length - 1]
+  // U+1100~ 한글 자모, U+3130~ 한글 호환 자모, U+AC00~ 한글 음절
+  if (/[ᄀ-ᇿ㄰-㆏가-힣]/.test(ch)) return '한글'
+  if (/[a-zA-Z]/.test(ch)) return '영문'
+  if (/[0-9]/.test(ch)) return '숫자'
+  return '특수'
+}
+
 function PasswordField({
   id,
   label,
@@ -188,6 +199,10 @@ function PasswordField({
   autoFocus,
   hasError,
 }: PasswordFieldProps) {
+  // V37b (Sprint 7 post-review): 한글 차단 제거 → 사용자가 한글 비밀번호도 가능. 단, 마지막
+  // 입력 문자의 종류를 실시간 배지로 표시하여 의도와 다른 IME 모드 즉시 인지 가능.
+  const [composing, setComposing] = useState(false)
+  const mode = composing ? '한글' : detectInputMode(value)
   return (
     <div className="space-y-2">
       <label htmlFor={id} className="block text-base font-medium">
@@ -198,17 +213,9 @@ function PasswordField({
           id={id}
           type={show ? 'text' : 'password'}
           value={value}
-          // V37 재 (Sprint 7 post-review): 웹 표준상 키보드 IME 모드 강제 전환 불가 →
-          // ASCII printable(0x20~0x7E) 외 문자(한글 등) 자동 차단. 사용자가 한글 IME 상태에서
-          // 키 입력해도 비밀번호에는 영문/숫자/특수문자만 들어감.
-          onChange={(e) => {
-            const ascii = e.target.value.replace(/[^\x20-\x7E]/g, '')
-            onChange(ascii)
-          }}
-          onCompositionEnd={(e) => {
-            const ascii = e.currentTarget.value.replace(/[^\x20-\x7E]/g, '')
-            if (ascii !== e.currentTarget.value) onChange(ascii)
-          }}
+          onChange={(e) => onChange(e.target.value)}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
           autoComplete={id === 'password' ? 'current-password' : 'new-password'}
           autoFocus={autoFocus}
           lang="en"
@@ -216,11 +223,25 @@ function PasswordField({
           autoCorrect="off"
           spellCheck={false}
           inputMode="text"
-          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-20 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-32 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
             hasError ? 'border-[var(--danger)]' : 'border-[var(--border)]'
           }`}
         />
-        {/* V36 (Sprint 7 post-review): 눈 이모지 → 한국어 텍스트 "보기"/"숨김" 으로 변경. */}
+        {/* V37b — 입력 모드 배지 (한글일 때 강조). */}
+        {mode !== null && (
+          <span
+            aria-live="polite"
+            title="마지막으로 입력한 문자 종류"
+            className={`absolute right-[72px] top-1/2 flex h-[44px] min-w-[44px] -translate-y-1/2 items-center justify-center rounded-md px-2 text-sm ${
+              mode === '한글'
+                ? 'bg-orange-100 font-semibold text-orange-700'
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            {mode}
+          </span>
+        )}
+        {/* V36 — 보기/숨김 버튼. */}
         <button
           type="button"
           onClick={onToggleShow}
@@ -230,9 +251,8 @@ function PasswordField({
           {show ? '숨김' : '보기'}
         </button>
       </div>
-      {/* V37 — 사용자 안내. */}
       <p className="text-xs text-gray-500">
-        비밀번호는 영문/숫자/특수문자만 사용합니다. (한글 입력은 자동으로 차단됩니다)
+        입력 문자 종류가 우측에 표시됩니다. 의도와 다르면 키보드 한/영 전환 후 다시 입력하세요.
       </p>
     </div>
   )
