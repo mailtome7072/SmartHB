@@ -226,6 +226,17 @@ function MonthGrid({
     return allStudyPeriods.some((p) => date >= p.start_date && date <= p.end_date)
   }
 
+  // V32 — 셀의 교습기간이 본 그리드의 month 와 일치하는지 (own) vs 다른 월의 교습기간 일부 (other).
+  // 6월 교습기간이 5월 그리드의 5/29~5/31 에 걸치면 'other' → 시각적으로 블러 처리.
+  const ownYearMonth = `${year}-${pad2(month)}`
+  function isStudyPeriodOther(date: string): boolean {
+    const period = allStudyPeriods.find(
+      (p) => date >= p.start_date && date <= p.end_date,
+    )
+    if (!period) return false
+    return period.year_month !== ownYearMonth
+  }
+
   /** 선택 범위 내 — start <= date <= end (둘 다 있을 때) 또는 start === date (start 만 있을 때). */
   function inSelectionRange(date: string): boolean {
     if (!selection?.start) return false
@@ -288,6 +299,7 @@ function MonthGrid({
             isSunday={c.isSunday}
             isSaturday={c.isSaturday}
             inStudyPeriod={!c.isOutsideMonth && inStudyPeriod(c.date)}
+            studyPeriodIsOtherMonth={!c.isOutsideMonth && isStudyPeriodOther(c.date)}
             hasClass={!c.isOutsideMonth && hasClassOnDate(c.date)}
             events={eventsByDate.get(c.date) ?? []}
             isInSelection={!c.isOutsideMonth && inSelectionRange(c.date)}
@@ -507,6 +519,7 @@ export function ThreeMonthCalendar({
       )}
 
       {/* V15 — 확대 모드: 단일 월 크게. 일반 모드: 3개월 동시. */}
+      {/* V33 (Sprint 7 post-review): max-w-5xl 제거 — 창 크기에 비례 가변 확장. */}
       {expandedMonth ? (
         <div className="flex flex-col gap-2">
           <button
@@ -516,7 +529,7 @@ export function ThreeMonthCalendar({
           >
             ← 3개월 보기로 돌아가기
           </button>
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             <MonthGrid
               year={expandedMonth.year}
               month={expandedMonth.month}

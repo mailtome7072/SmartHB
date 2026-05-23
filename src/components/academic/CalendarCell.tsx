@@ -35,6 +35,8 @@ interface CalendarCellProps {
   isSunday: boolean
   isSaturday: boolean
   inStudyPeriod: boolean
+  /** V32 — 본 그리드의 month 와 다른 month 의 교습기간에 속하는 셀 (블러 처리). */
+  studyPeriodIsOtherMonth?: boolean
   /** V23 — 교습기간 내 셀의 수업 가능 여부 (운영시간 + 공휴일/휴원일/공휴수업일 종합). */
   hasClass?: boolean
   events: ScheduleEventListItem[]
@@ -161,6 +163,7 @@ export function CalendarCell({
   isSunday,
   isSaturday,
   inStudyPeriod,
+  studyPeriodIsOtherMonth = false,
   hasClass = false,
   events,
   isInSelection = false,
@@ -218,6 +221,8 @@ export function CalendarCell({
         ring,
         isPastMonth ? 'cursor-not-allowed opacity-60' : '',
         isOutsideMonth ? 'opacity-40' : '',
+        // V32 (Sprint 7 post-review): 다른 월의 교습기간에 속하는 셀은 블러 처리 (opacity 60%).
+        studyPeriodIsOtherMonth ? 'opacity-60' : '',
         clickable && !isInSelection ? 'hover:bg-amber-200 cursor-pointer' : '',
         clickable && isInSelection ? 'hover:bg-blue-200 cursor-pointer' : '',
       ].join(' ')}
