@@ -1,13 +1,13 @@
 ---
 name: sprint-next-session
-description: "Sprint 8 Session #5 완료 (T1~T5, 5/9). 다음 세션: T6 (Sprint 7 carry-over High 4건 — Keychain/auth 보안)"
+description: "Sprint 8 Session #6 완료 (T1~T6, 6/9). 다음 세션: T7 (Medium-High R45 — Keychain concurrent race)"
 metadata: 
   node_type: memory
   type: project
-  originSessionId: sprint8-session5-t5
+  originSessionId: sprint8-session6-t6
 ---
 
-Sprint 8 출결 관리 — T1~T5 완료, T6~T9 다음 세션 이연.
+Sprint 8 출결 관리 — T1~T6 완료, T7~T9 다음 세션 이연.
 
 ## Sprint 8 진행 현황
 
@@ -19,37 +19,44 @@ Sprint 8 출결 관리 — T1~T5 완료, T6~T9 다음 세션 이연.
 | T4 | 출결표 프론트엔드 UI (/attendance + AttendanceGrid + AbsenceMemoDialog) | ✅ `0a20c18` |
 | T4 follow-up | UX 보강 (AppShell 누락, 사이드바 너비, 요일 행, 시간 단위, 컬럼 재배치/배경색, 보강관리 메뉴) | ✅ `516758c` |
 | T5 | 보강필요시간/소멸기한 단위 테스트 100% (시나리오 2/5/9/10 추가) | ✅ `5f2f0fd` |
-| **T6** | **Sprint 7 carry-over High 4건** (I-S2-2/3/4/5, R40~R43) | ⬜ 다음 세션 |
-| T7 | carry-over Medium-High (I-S2-7, R45) | ⬜ |
+| T6 | Sprint 7 carry-over High 4건 (I-S2-2/3/4/5, R40~R43) — Keychain/auth 보안 | ✅ `14b9bfb` |
+| **T7** | **Sprint 7 carry-over Medium-High** (I-S2-7, R45 — Keychain concurrent race) | ⬜ 다음 세션 |
 | T8 | carry-over Medium + R51/R52 (I-S2-8/9/10, R39, A31) | ⬜ |
 | T9 | 통합 검증 | ⬜ |
 
-검증 상태: `cargo test` cipher off **213 passed** (attendance 22) / clippy --lib clean / `pnpm lint` clean.
+검증 상태: `cargo test --lib` cipher off **218 passed** / cipher on **131 passed** / clippy --lib clean 양쪽 / `pnpm lint` 변경 없음.
+
+## Session #6 (T6) 핵심 변경
+
+- **I-S2-2 (R40)** auth.rs `is_salt_corrupted`: length 불일치 + 전체 NULL + **첫 8바이트 단일 바이트 도배** 감지
+- **I-S2-3 (R41)** auth.rs `set_password`: `static AtomicBool SET_PASSWORD_IN_PROGRESS` + RAII `SetPasswordGuard` 진입 가드 (panic 안전)
+- **I-S2-4 (R42)** `invalidate_credential_cache` `pub` 승격 + `startup::exit_hook()` 에서 backup/lock 해제 후 호출
+- **I-S2-5 (R43)** `salt_exists_at` legacy keyring fallback 검증 — `check_auth_status_returns_locked_on_cache_hit` 추가
+- `varied_salt(seed)` 테스트 헬퍼 — 단일 바이트 도배 salt 가 강화된 손상 감지에 걸리는 5개 store/load 테스트 일괄 정리
 
 ## 다음 세션 우선 액션
 
-1. 새 대화에서 `/sprint-dev 8` → Session #6 진입 (T6)
-2. **T6는 보안 경로 변경** — `systematic-debugging` 스킬 자동 배정 대상
-3. 변경 대상 모듈:
-   - `auth.rs` (verify_password / set_password / check_auth_status)
-   - `keyring/` (CRED_CACHE static drop)
-   - 관련 테스트의 Keychain 사이드이펙트 방지 (`#[ignore]` 또는 mock)
+1. 새 대화에서 `/sprint-dev 8` → Session #7 진입 (T7)
+2. **T7도 보안 경로 변경** — `systematic-debugging` 스킬 자동 배정 대상
+3. 핵심 작업:
+   - startup sequence 의 `tokio::join!` 지점에서 Keychain 직접 접근이 병렬 실행되지 않는지 코드 리뷰
+   - T1(Sprint 7)의 `CredentialCache` 가 race 를 이미 해소했는지 검증 — 캐시 적중 시 Keychain 직접 호출 0회이므로 race 불가 가능성 높음
 
-## T6 세부 (sprint8.md L274-294 참조)
+## T7 세부 (sprint8.md L296-310 참조)
 
-- **I-S2-2 (R40)**: `verify_password`에서 partial-NULL 손상 감지·복구 강화 — atomic write fallback 패턴 적용
-- **I-S2-3 (R41)**: `set_password` 재진입 가드 — Mutex flag, 중복 호출 거부
-- **I-S2-4 (R42)**: `CRED_CACHE` static drop 시점 정리 — shutdown hook에서 명시적 무효화
-- **I-S2-5 (R43)**: `check_auth_status`의 legacy keyring fallback 마이그레이션 — `salt_exists_at` 경로 검증
+- **I-S2-7 (R45)**: `verify_password` ↔ `retrieve_key_from_keyring` 순서 보장 검증
+- AC-T7-1: startup sequence 에서 Keychain 다이얼로그 ≤ 1회
+- AC-T7-2: `tokio::join!` 지점에서 Keychain 직접 접근 함수 병렬 실행 없음 (코드 리뷰)
+- AC-T7-3: 캐시 적중 경로에서 Keychain 호출 0회
 
-## 후속 처리 필요 항목 (T7~T8)
+## 후속 처리 필요 항목 (T8~T9)
 
-- **R45 (Medium-High)**: I-S2-7 — concurrent race (verify_password ↔ retrieve_key_from_keyring 순서)
-- **R39**: StudyPeriodEditor create+confirm 원자성 (T8 또는 hotfix 후보)
-- **R51/R52**: 잡다 low
+- **R39**: StudyPeriodEditor create+confirm 원자성 (T8)
+- **R51/R52**: 잡다 low (T8)
+- **T9**: 통합 검증 (수동 시각 검증 1h 포함)
 
 ## 정책 (재확인)
 
 - **PR 단계 생략** — 단일 개발자, 직접 머지 (`gh pr create` 금지)
 - **`/sprint-dev` 사용자 직접 입력** — 에이전트 호출 금지 (CLAUDE.md)
-- **사용자 메모리 미러 동기화 필수** — `~/.claude/projects/-Users-skyang-Projects-SmartHB/memory/sprint-next-session.md` 동시 갱신
+- **사용자 메모리 미러 동기화 필수** — `.claude/memory/sprint-next-session.md` 동시 갱신
