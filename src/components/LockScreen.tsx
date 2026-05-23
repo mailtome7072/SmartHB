@@ -198,11 +198,19 @@ function PasswordField({
           id={id}
           type={show ? 'text' : 'password'}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          // V37 재 (Sprint 7 post-review): 웹 표준상 키보드 IME 모드 강제 전환 불가 →
+          // ASCII printable(0x20~0x7E) 외 문자(한글 등) 자동 차단. 사용자가 한글 IME 상태에서
+          // 키 입력해도 비밀번호에는 영문/숫자/특수문자만 들어감.
+          onChange={(e) => {
+            const ascii = e.target.value.replace(/[^\x20-\x7E]/g, '')
+            onChange(ascii)
+          }}
+          onCompositionEnd={(e) => {
+            const ascii = e.currentTarget.value.replace(/[^\x20-\x7E]/g, '')
+            if (ascii !== e.currentTarget.value) onChange(ascii)
+          }}
           autoComplete={id === 'password' ? 'current-password' : 'new-password'}
           autoFocus={autoFocus}
-          // V37 (Sprint 7 post-review): 영문 소문자 기본 입력 — IME 한글 자동 활성화 방지.
-          // type="password" 는 보통 macOS 가 IME 비활성화하지만 lang/autoCapitalize 명시로 보강.
           lang="en"
           autoCapitalize="off"
           autoCorrect="off"
@@ -222,6 +230,10 @@ function PasswordField({
           {show ? '숨김' : '보기'}
         </button>
       </div>
+      {/* V37 — 사용자 안내. */}
+      <p className="text-xs text-gray-500">
+        비밀번호는 영문/숫자/특수문자만 사용합니다. (한글 입력은 자동으로 차단됩니다)
+      </p>
     </div>
   )
 }
