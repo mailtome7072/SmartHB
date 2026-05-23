@@ -30,7 +30,7 @@ export function Sidebar() {
   return (
     <nav
       aria-label="메인 메뉴"
-      className="flex h-full w-56 flex-col border-r border-[var(--border)] bg-white"
+      className="flex h-full w-56 shrink-0 flex-col border-r border-[var(--border)] bg-white"
     >
       <div className="flex h-16 flex-col justify-center border-b border-[var(--border)] px-4">
         <p className="text-base font-bold leading-tight text-[var(--foreground)]">스마트해법수학</p>

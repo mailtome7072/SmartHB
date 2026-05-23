@@ -261,7 +261,7 @@ ToggleResult {
 |------|------|------|
 | src/types/attendance.ts | [신규] | AttendanceCell/Summary/GridStudent/Grid/ToggleResult/GenerateResult 타입 |
 | src/lib/tauri/index.ts | [3회 ⚠️] | IPC 래퍼 6개 추가 |
-| src/lib/menu-config.ts | [2회] | `/attendance` disabledHint 제거 |
+| src/lib/menu-config.ts | [7회 ⚠️] | `/attendance` disabledHint 제거 |
 | src/app/attendance/page.tsx | [신규] | 출결 관리 메인 페이지 |
 | src/components/attendance/AttendanceGrid.tsx | [신규] | 그리드 본체 |
 | src/components/attendance/AbsenceMemoDialog.tsx | [신규] | 결석 사유 메모 다이얼로그 |
@@ -282,5 +282,35 @@ ToggleResult {
 - ✅ 단일 커밋 `0a20c18` (7파일, +764)
 
 ### 미해결/이연
-- 시각 검수: 사용자가 다음 단계에서 진행 (실제 데이터로 그리드/토글/메모/Undo 확인)
 - 낙관적 업데이트 → 사용자 액션 빈도 보고 T9 통합 검증에서 보강 검토
+
+---
+
+## Session #4-follow-up (T4 UX 보강) — 2026-05-23 23:xx
+
+### 사용자 시각 검수 피드백 반영
+출결표 첫 사용 검수 중 발견된 UX 결함을 한 커밋으로 정리.
+
+| 영역 | 변경 |
+|------|------|
+| 사이드바 너비 | `w-56`만으로는 flex 컨테이너에서 압축됨 → `shrink-0` + AppShell 메인 컬럼 `min-w-0` 병행 |
+| 출결표 헤더 | 일자 행 위에 한글 요일 행 추가 (`rowSpan=2` 그룹 헤더 구조). 토·일은 `text-red-600` |
+| 보강시간 단위 | `(분)` → `(시간)` 변환. `minutesToHours()` 헬퍼 (정수는 정수, 그 외 소수점 1자리) |
+| 출석/결석 단위 | `출석` → `출석 (일)` 2단 헤더로 분리 표시 |
+| 요약 컬럼 위치 | 일자 컬럼들 우측 → 원생 이름 바로 우측으로 이동, `border-r-2`로 일자 영역과 분리 |
+| 요약 컬럼 배경 | `bg-amber-100` (헤더) / `bg-amber-50` (데이터) 베이지 톤 그룹화 (PRD §5.7 저자극) |
+| 사이드바 메뉴 | "보강 관리" disabled 항목 추가 (Phase 3 안내). 출결/단원평가/청구/공지문/학습보고서 순서 재배치 |
+
+### 수정 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src/components/layout/sidebar.tsx | [2회] | `shrink-0` |
+| src/components/layout/app-shell.tsx | [신규-follow-up] | `min-w-0` |
+| src/components/attendance/AttendanceGrid.tsx | [2회] | 요일 행/시간 변환/컬럼 재배치/배경색 |
+| src/lib/menu-config.ts | [8회 ⚠️] | 보강 관리 추가 + 순서 재배치 |
+| src/app/attendance/page.tsx | [2회] | (이번 세션에서 직접 수정은 없으나 git status에 잡혀 확인 필요) |
+
+### AC 영향
+- AC-T4-4/5/9 모두 유지 (단위 표기 변경은 PRD §4.5.3 그리드 요구 사항을 더 정확히 반영).
+- 신규 회귀 없음 — `pnpm lint` clean.

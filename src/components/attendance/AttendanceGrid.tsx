@@ -44,6 +44,21 @@ function daysOfMonth(yearMonth: string): number[] {
   return Array.from({ length: lastDay }, (_, i) => i + 1)
 }
 
+const WEEKDAY_LABEL = ['일', '월', '화', '수', '목', '금', '토'] as const
+
+/** yearMonth(YYYY-MM) + 일자 → 한글 요일 (일~토). */
+function weekdayLabel(yearMonth: string, day: number): string {
+  const [year, month] = yearMonth.split('-').map(Number)
+  return WEEKDAY_LABEL[new Date(year, month - 1, day).getDay()]
+}
+
+/** 분 → 시간 (소수점 1자리, 정수면 정수로). 0 → '0'. */
+function minutesToHours(minutes: number): string {
+  if (minutes === 0) return '0'
+  const hours = minutes / 60
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
+}
+
 /** 일자에 해당하는 출결 셀 검색 (Map). */
 function buildAttendanceByDay(
   attendances: AttendanceCell[],
@@ -139,29 +154,64 @@ export function AttendanceGrid({ grid }: Props) {
         <table className="border-collapse text-base">
           <thead className="sticky top-0 z-10 bg-gray-100">
             <tr>
-              <th className="sticky left-0 z-20 min-w-[140px] border-b border-r border-[var(--border)] bg-gray-100 px-3 py-2 text-left">
+              <th
+                rowSpan={2}
+                className="sticky left-0 z-20 min-w-[140px] border-b border-r border-[var(--border)] bg-amber-100 px-3 py-2 text-left"
+              >
                 원생
               </th>
+              <th
+                rowSpan={2}
+                className="min-w-[80px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+              >
+                출석
+                <div className="text-xs text-gray-600">(일)</div>
+              </th>
+              <th
+                rowSpan={2}
+                className="min-w-[80px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+              >
+                결석
+                <div className="text-xs text-gray-600">(일)</div>
+              </th>
+              <th
+                rowSpan={2}
+                className="min-w-[100px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+              >
+                보강필요
+                <div className="text-xs text-gray-600">(시간)</div>
+              </th>
+              <th
+                rowSpan={2}
+                className="min-w-[100px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+              >
+                보강완료
+                <div className="text-xs text-gray-600">(시간)</div>
+              </th>
+              {days.map((d) => {
+                const wd = weekdayLabel(grid.yearMonth, d)
+                const isWeekend = wd === '토' || wd === '일'
+                return (
+                  <th
+                    key={`wd-${d}`}
+                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-xs ${
+                      isWeekend ? 'text-red-600' : 'text-gray-600'
+                    }`}
+                  >
+                    {wd}
+                  </th>
+                )
+              })}
+            </tr>
+            <tr>
               {days.map((d) => (
                 <th
-                  key={d}
+                  key={`d-${d}`}
                   className="min-w-[44px] border-b border-r border-[var(--border)] px-1 py-2 text-center text-sm"
                 >
                   {d}
                 </th>
               ))}
-              <th className="min-w-[80px] border-b border-r border-[var(--border)] px-2 py-2 text-center text-sm">
-                출석
-              </th>
-              <th className="min-w-[80px] border-b border-r border-[var(--border)] px-2 py-2 text-center text-sm">
-                결석
-              </th>
-              <th className="min-w-[100px] border-b border-r border-[var(--border)] px-2 py-2 text-center text-sm">
-                보강필요(분)
-              </th>
-              <th className="min-w-[100px] border-b border-[var(--border)] px-2 py-2 text-center text-sm">
-                보강완료(분)
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -229,11 +279,23 @@ const StudentRow = memo(function StudentRow({
     <tr className="hover:bg-gray-50">
       <th
         scope="row"
-        className="sticky left-0 z-10 min-w-[140px] border-b border-r border-[var(--border)] bg-white px-3 py-2 text-left text-base font-medium"
+        className="sticky left-0 z-10 min-w-[140px] border-b border-r border-[var(--border)] bg-amber-50 px-3 py-2 text-left text-base font-medium"
       >
         <div>{student.name}</div>
         <div className="text-xs text-gray-500">#{student.serialNo}</div>
       </th>
+      <td className="border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+        {student.summary.presentCount}
+      </td>
+      <td className="border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+        {student.summary.absentCount}
+      </td>
+      <td className="border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+        {minutesToHours(student.summary.makeupNeededMinutes)}
+      </td>
+      <td className="border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+        {minutesToHours(student.summary.makeupCompletedMinutes)}
+      </td>
       {days.map((day) => {
         const dayKey = String(day).padStart(2, '0')
         const cell = byDay.get(dayKey)
@@ -246,18 +308,6 @@ const StudentRow = memo(function StudentRow({
           />
         )
       })}
-      <td className="border-b border-r border-[var(--border)] px-2 py-2 text-center">
-        {student.summary.presentCount}
-      </td>
-      <td className="border-b border-r border-[var(--border)] px-2 py-2 text-center">
-        {student.summary.absentCount}
-      </td>
-      <td className="border-b border-r border-[var(--border)] px-2 py-2 text-center">
-        {student.summary.makeupNeededMinutes}
-      </td>
-      <td className="border-b border-[var(--border)] px-2 py-2 text-center">
-        {student.summary.makeupCompletedMinutes}
-      </td>
     </tr>
   )
 })

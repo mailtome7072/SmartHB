@@ -21,6 +21,8 @@ import {
   generateAttendances,
   getAttendanceGrid,
 } from '@/lib/tauri'
+import { AppShell } from '@/components/layout/app-shell'
+import { GlobalSearch } from '@/components/layout/global-search'
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
 
 function currentYearMonth(): string {
@@ -78,8 +80,9 @@ export default function AttendancePage() {
   const showGrid = existsQuery.data === true && gridQuery.data !== undefined
 
   return (
-    <main className="flex h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-[var(--border)] px-6 py-4">
+    <AppShell topBarSlot={<GlobalSearch />}>
+      <main className="flex h-full flex-col">
+      <header className="flex items-center gap-4 border-b border-[var(--border)] px-0 py-4">
         <h1 className="text-2xl font-bold">출결 관리</h1>
 
         <div className="flex items-center gap-2">
@@ -121,7 +124,7 @@ export default function AttendancePage() {
         </div>
       )}
 
-      <section className="flex-1 overflow-auto px-6 py-4">
+      <section className="flex-1 overflow-auto py-4">
         {existsQuery.isLoading && (
           <p className="text-gray-600">출결 상태 확인 중...</p>
         )}
@@ -148,6 +151,7 @@ export default function AttendancePage() {
           <p className="text-gray-600">출결 데이터 불러오는 중...</p>
         )}
       </section>
-    </main>
+      </main>
+    </AppShell>
   )
 }

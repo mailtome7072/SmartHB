@@ -77,7 +77,7 @@ export function AppShell({
   return (
     <div className="flex h-screen">
       <Sidebar />
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <TopBar latestBackupAt={latestBackupAt} syncStatus={syncStatus}>
           {topBarSlot}
         </TopBar>
