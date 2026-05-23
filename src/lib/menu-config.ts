@@ -7,14 +7,14 @@
 export interface MenuItem {
   label: string
   href: string
-  shortcut?: string
   /** Phase 2+ 예정 항목 — 비활성 표시 + 클릭 시 안내 */
   disabledHint?: string
 }
 
+// V19 (Sprint 7 post-review): 모든 메뉴 단축키 제거 — 50대 사용자 친화 UX 단순화.
 export const MENU_ITEMS: MenuItem[] = [
   { label: '대시보드', href: '/', disabledHint: 'Phase 6 에서 제공' },
-  { label: '원생 관리', href: '/students', shortcut: 'Ctrl+N' },
+  { label: '원생 관리', href: '/students' },
   { label: '학사 스케줄', href: '/academic' },
   { label: '수업 관리', href: '/schedules', disabledHint: 'Phase 2 에서 제공' },
   { label: '출결 관리', href: '/attendance', disabledHint: 'Phase 2 에서 제공' },

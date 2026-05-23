@@ -17,6 +17,9 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        // V18 (Sprint 7 post-review): 윈도우 크기/위치 자동 저장·복원. 첫 시작은 tauri.conf.json
+        // `center: true` 로 모니터 중앙. 이후 사용자 종료 시 마지막 크기/위치를 OS 로컬에 저장.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             // R20 (Sprint 3 sprint-review): 앱 시작 시 config.json 의 cloud_folder_path 를 읽어
             // paths::data_root() 가 동적 경로를 반환하도록 초기화. 마법사가 폴더를 다시 지정하면

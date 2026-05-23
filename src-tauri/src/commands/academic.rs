@@ -953,12 +953,12 @@ pub async fn update_schedule_event(
     ScheduleEvent::from_row(&row).map_err(String::from)
 }
 
-/// 학사 일정 삭제 — 지난 달 차단 (AC-T7-3) + 공휴일 차단 (Sprint 7 T9, Issue 7).
+/// 학사 일정 삭제 — 지난 달 차단 (AC-T7-3) + 시드 공휴일 차단 (Sprint 7 T9 + V16 post-review).
 #[tauri::command]
 pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
     let pool = db::pool().map_err(String::from)?;
     let target = sqlx::query(
-        "SELECT e.event_date, c.code_name, c.is_system_reserved \
+        "SELECT e.event_date, e.is_seeded, c.code_name, c.is_system_reserved \
          FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
          WHERE e.id = ?",
     )
@@ -980,10 +980,15 @@ pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
         .try_get("is_system_reserved")
         .map_err(AppError::Db)
         .map_err(String::from)?;
+    let is_seeded: i64 = target
+        .try_get("is_seeded")
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
 
-    // 공휴일 시스템 코드 삭제 차단 (단원평가 등 다른 시스템 코드는 수동 삭제 허용).
-    if is_system_reserved != 0 && code_name == "공휴일" {
-        return Err("공휴일은 삭제할 수 없습니다.".to_string());
+    // V16 (Sprint 7 post-review): 시드 공휴일(`is_seeded=1`)만 삭제 차단. 사용자가 추가한
+    // 공휴일(`is_seeded=0`)은 일반 삭제 흐름 허용.
+    if is_system_reserved != 0 && code_name == "공휴일" && is_seeded != 0 {
+        return Err("시드된 공휴일은 삭제할 수 없습니다.".to_string());
     }
 
     let ym = year_month_of(&event_date).ok_or_else(|| "기존 일자 형식 오류".to_string())?;
@@ -2007,5 +2012,57 @@ mod tests {
             "공휴수업일 + 다른 코드 차단 에러: {}",
             err
         );
+    }
+
+    // ─── V16 (Sprint 7 post-review): 시드 vs 사용자 공휴일 구분 ───
+
+    /// V302 마이그레이션 적용 후, V301 시드 공휴일 row 는 모두 `is_seeded=1` 로 마킹됨.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn v302_marks_seeded_holidays() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let unseeded_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schedule_events e \
+             JOIN schedule_codes c ON c.id = e.code_id \
+             WHERE c.code_name = '공휴일' AND c.is_system_reserved = 1 AND e.is_seeded = 0",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(unseeded_count, 0, "V301 시드 공휴일은 모두 is_seeded=1 마킹");
+    }
+
+    /// 사용자가 추가한 공휴일(`is_seeded=0`)은 삭제 가드에 걸리지 않음.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn delete_event_allows_user_added_holiday() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let holiday_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM schedule_codes WHERE code_name = '공휴일' AND is_system_reserved = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        // is_seeded=0 으로 사용자 추가 공휴일 삽입 (시뮬레이션).
+        sqlx::query(
+            "INSERT INTO schedule_events (code_id, event_date, is_seeded) VALUES (?, '2099-12-25', 0)",
+        )
+        .bind(holiday_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 가드 분기 시뮬레이션: is_system_reserved=1 + code_name='공휴일' 이지만 is_seeded=0 →
+        // 삭제 허용 분기로 진입해야 함.
+        let row: (String, i64, i64) = sqlx::query_as(
+            "SELECT c.code_name, c.is_system_reserved, e.is_seeded \
+             FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+             WHERE e.event_date = '2099-12-25' AND e.is_seeded = 0",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let blocked = row.1 != 0 && row.0 == "공휴일" && row.2 != 0;
+        assert!(!blocked, "is_seeded=0 사용자 공휴일은 삭제 가드 분기에 안 걸려야 함");
     }
 }

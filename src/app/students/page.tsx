@@ -124,7 +124,7 @@ export default function StudentsPage() {
             href="/students/new"
             className="inline-flex h-11 items-center rounded-md bg-[var(--accent)] px-4 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
           >
-            신규 등록 (Ctrl+N)
+            신규 등록
           </Link>
         </header>
 

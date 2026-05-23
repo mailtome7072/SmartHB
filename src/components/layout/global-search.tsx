@@ -7,7 +7,7 @@
  * 결과 클릭 시 해당 화면으로 1클릭 이동.
  *
  * - 검색 대상: 활성 메뉴(`ACTIVE_MENU_ITEMS`) + TanStack Query 가 캐싱한 listStudents 응답
- * - 단축키: Ctrl+F / Ctrl+/ — Tauri WebView 환경이라 브라우저 기본 검색은 의미 없음.
+ * V19 (Sprint 7 post-review): 단축키 (Ctrl+F / Ctrl+/) 제거 — 50대 사용자 친화 UX 단순화. ESC 클리어만 유지.
  *   preventDefault 로 입력 포커스만 빼앗는다.
  * - 디바운스: `useDeferredValue` (React 18+) 가 입력 후 다음 idle 까지 갱신 지연 — 200ms
  *   타이머 수동 관리 불필요.
@@ -37,12 +37,9 @@ export function GlobalSearch() {
   const [query, setQuery] = useState('')
   const debouncedQuery = useDeferredValue(query)
 
+  // V19 (Sprint 7 post-review): 단축키 핸들러 제거. ESC 만 활성 상태일 때 검색어 클리어 유지.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === '/')) {
-        e.preventDefault()
-        inputRef.current?.focus()
-      }
       if (e.key === 'Escape' && document.activeElement === inputRef.current) {
         setQuery('')
         inputRef.current?.blur()
@@ -92,7 +89,7 @@ export function GlobalSearch() {
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="원생·메뉴 검색 (Ctrl+F)"
+        placeholder="원생·메뉴 검색"
         aria-label="글로벌 검색"
         className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3 text-base focus:border-[var(--accent)] focus:outline-none"
       />

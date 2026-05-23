@@ -4,7 +4,7 @@
  * 학사 캘린더 1일 셀 — Sprint 6 T9 + T10 + T11 (PRD §4.4.1·§5.7).
  *
  * 시각 요소 (위에서 아래):
- * - 단원평가 응시일: 셀 상단 띠 배지 (PRD §4.4.7)
+ * - 단원평가 응시일: 일반 배지 텍스트로 표시 (V14 — 이전 셀 상단 띠 표시 폐기)
  * - 날짜 숫자 + 공휴일/일요일 빨강, 토요일 파랑
  * - 일정 배지 EventBadge — 클릭 시 삭제 + 드래그 가능(단일 일자)
  *
@@ -62,14 +62,25 @@ export function cellDroppableId(date: string): string {
 /** 드래그 가능한 일정 배지 — useDraggable hook 호출은 각 컴포넌트 인스턴스에서 1회. */
 interface EventBadgeProps {
   event: ScheduleEventListItem
+  /** 본 배지가 표시되는 셀의 일자 — V13 기간성 코드 시작/종료 라벨 분기. */
+  cellDate: string
   draggable: boolean
   disabled: boolean        // 지난 달/그리드 외 — 클릭+드래그 모두 차단
   onClick?: (event: ScheduleEventListItem) => void
 }
 
-function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
+function EventBadge({ event, cellDate, draggable, disabled, onClick }: EventBadgeProps) {
   // Sprint 7 T9 (Issue 7): 공휴일 배지는 삭제 클릭 차단 — 백엔드 가드와 동일 조건.
   const isHoliday = event.is_system_reserved && event.code_name === '공휴일'
+  // V13 (Sprint 7 post-review): 기간성 코드 + 시작일 ≠ 종료일 → 시작 셀 "S" / 종료 셀 "E" 마커.
+  const periodMarker = event.is_period_type && event.period_end_date && event.period_end_date !== event.event_date
+    ? cellDate === event.event_date
+      ? 'S'
+      : cellDate === event.period_end_date
+        ? 'E'
+        : ''
+    : ''
+  const label = (event.display_name ?? event.code_name) + periodMarker
   const clickable = !disabled && !isHoliday && onClick !== undefined
   const { setNodeRef, listeners, attributes, transform, isDragging } = useDraggable({
     id: eventDraggableId(event.id),
@@ -94,8 +105,7 @@ function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
           ? '지난 달 일정은 수정할 수 없습니다'
           : isHoliday
             ? '공휴일은 삭제할 수 없습니다'
-            : (event.display_name ?? event.code_name) +
-              (draggable ? ' · 드래그로 이동' : '')
+            : label + (draggable ? ' · 드래그로 이동' : '')
       }
       style={style}
       {...(draggable && !disabled ? listeners : {})}
@@ -107,7 +117,7 @@ function EventBadge({ event, draggable, disabled, onClick }: EventBadgeProps) {
         isDragging ? 'opacity-50' : '',
       ].join(' ')}
     >
-      {event.display_name ?? event.code_name}
+      {label}
     </button>
   )
 }
@@ -156,9 +166,8 @@ export function CalendarCell({
   draggableEventIds,
   droppableProps,
 }: CalendarCellProps) {
+  // V14 (Sprint 7 post-review): 단원평가 셀 상단 색 라인 제거 — 일반 배지로 통일.
   const hasHoliday = events.some((e) => e.code_name === '공휴일')
-  const hasAssessment = events.some((e) => e.code_name === '단원평가 응시일')
-  const nonAssessmentEvents = events.filter((e) => e.code_name !== '단원평가 응시일')
 
   const clickable = !isPastMonth && !isOutsideMonth && onClick !== undefined
   const dayColor =
@@ -192,7 +201,7 @@ export function CalendarCell({
       tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? handleCellClick : undefined}
       onKeyDown={clickable ? handleKeyDown : undefined}
-      aria-label={`${date}${hasHoliday ? ' 공휴일' : ''}${hasAssessment ? ' 단원평가' : ''}`}
+      aria-label={`${date}${hasHoliday ? ' 공휴일' : ''}`}
       aria-pressed={isSelectionStart || isSelectionEnd}
       className={[
         'relative flex min-h-[72px] min-w-[44px] flex-col items-stretch border border-[var(--border)] p-1 text-left',
@@ -205,12 +214,6 @@ export function CalendarCell({
         clickable && isInSelection ? 'hover:bg-blue-200 cursor-pointer' : '',
       ].join(' ')}
     >
-      {hasAssessment && (
-        <span
-          aria-hidden="true"
-          className="absolute top-0 left-0 right-0 h-1.5 rounded-t bg-blue-400"
-        />
-      )}
       <span
         className={[
           'mt-0.5 text-base font-semibold',
@@ -221,17 +224,18 @@ export function CalendarCell({
         {dayOfMonth}
       </span>
       <span className="mt-0.5 flex flex-col gap-0.5">
-        {nonAssessmentEvents.slice(0, 3).map((e) => (
+        {events.slice(0, 3).map((e) => (
           <EventBadge
-            key={e.id}
+            key={`${e.id}-${date}`}
             event={e}
+            cellDate={date}
             draggable={draggableEventIds?.has(e.id) ?? false}
             disabled={isPastMonth || isOutsideMonth}
             onClick={onEventClick}
           />
         ))}
-        {nonAssessmentEvents.length > 3 && (
-          <span className="text-xs text-gray-500">+{nonAssessmentEvents.length - 3}</span>
+        {events.length > 3 && (
+          <span className="text-xs text-gray-500">+{events.length - 3}</span>
         )}
       </span>
     </div>

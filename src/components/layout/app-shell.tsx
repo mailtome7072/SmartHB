@@ -15,7 +15,6 @@
 import { useEffect, useState } from 'react'
 import { Sidebar } from './sidebar'
 import { TopBar } from './top-bar'
-import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useAppStore } from '@/stores/app-store'
 import { useSessionStore } from '@/stores/session-store'
 import { checkLockStatus, checkSyncStatus, listBackups } from '@/lib/tauri'
@@ -31,7 +30,6 @@ export function AppShell({
   /** 글로벌 검색바 등 상단바 중앙 슬롯 — T6 이후 채워진다 */
   topBarSlot?: React.ReactNode
 }) {
-  useKeyboardShortcuts()
   const unlocked = useSessionStore((s) => s.unlocked)
   const setLockStatus = useAppStore((s) => s.setLockStatus)
   const [latestBackupAt, setLatestBackupAt] = useState<string | null>(null)

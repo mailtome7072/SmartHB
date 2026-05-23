@@ -43,22 +43,16 @@ export function Sidebar() {
               <span
                 aria-disabled="true"
                 title={item.disabledHint}
-                className="flex min-h-[44px] cursor-not-allowed items-center justify-between px-4 py-3 text-gray-400"
+                className="flex min-h-[44px] cursor-not-allowed items-center px-4 py-3 text-gray-400"
               >
-                <span>{item.label}</span>
-                {item.shortcut !== undefined && (
-                  <span className="text-sm">{item.shortcut}</span>
-                )}
+                {item.label}
               </span>
             ) : (
               <Link
                 href={item.href}
-                className="flex min-h-[44px] items-center justify-between px-4 py-3 text-[var(--foreground)] hover:bg-[var(--background)]"
+                className="flex min-h-[44px] items-center px-4 py-3 text-[var(--foreground)] hover:bg-[var(--background)]"
               >
-                <span>{item.label}</span>
-                {item.shortcut !== undefined && (
-                  <span className="text-sm text-gray-500">{item.shortcut}</span>
-                )}
+                {item.label}
               </Link>
             )}
           </li>

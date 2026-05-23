@@ -12,13 +12,14 @@
  * - 위 둘 다 아님 (확정 월 + 코드 미선택) → 셀 클릭 무동작 (배지 클릭만 활성 — 삭제)
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkAuthStatus,
   deleteScheduleEvent,
   getStudyPeriod,
+  listStudyPeriods,
   updateScheduleEvent,
 } from '@/lib/tauri'
 import { useSessionStore } from '@/stores/session-store'
@@ -142,6 +143,44 @@ export default function AcademicPage() {
     centerPeriodQuery.data === null
   const studyPeriodMode = isCenterUnconfirmed && selectedCode === null
 
+  // V12 (Sprint 7 post-review): 인접 3개월 교습기간 조회 — selection 단계에서 다른 교습기간
+  // 일자 포함 차단. ThreeMonthCalendar 와 동일 쿼리 키로 캐시 공유.
+  const adjacentMonths = useMemo(() => {
+    if (!/^\d{4}-\d{2}$/.test(centerYearMonth)) return { from: '', to: '' }
+    const [y, m] = centerYearMonth.split('-').map(Number)
+    const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
+    const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+    return { from: prev, to: next }
+  }, [centerYearMonth])
+  const adjacentPeriodsQuery = useQuery({
+    queryKey: ['study-periods', adjacentMonths.from, adjacentMonths.to],
+    queryFn: () => listStudyPeriods(adjacentMonths.from, adjacentMonths.to),
+    staleTime: 30_000,
+    enabled: adjacentMonths.from.length > 0,
+  })
+
+  /** V12: 주어진 일자가 다른 교습월의 교습기간에 이미 속하는지. */
+  function isDateInOtherPeriod(date: string): boolean {
+    return (adjacentPeriodsQuery.data ?? []).some(
+      (p) =>
+        p.year_month !== centerYearMonth &&
+        date >= p.start_date &&
+        date <= p.end_date,
+    )
+  }
+
+  /** V12: 선택 range [start, end] 가 다른 교습기간과 겹치는지. */
+  function rangeOverlapsOtherPeriod(start: string, end: string): boolean {
+    const lo = start <= end ? start : end
+    const hi = start <= end ? end : start
+    return (adjacentPeriodsQuery.data ?? []).some(
+      (p) =>
+        p.year_month !== centerYearMonth &&
+        p.start_date <= hi &&
+        p.end_date >= lo,
+    )
+  }
+
   // 통합 셀 클릭 핸들러 — 활성 모드 자동 분기 (Sprint 7 T6).
   function handleCellClick(date: string) {
     if (selectedCode !== null) {
@@ -149,9 +188,23 @@ export default function AcademicPage() {
       return
     }
     if (studyPeriodMode) {
+      // V12: 다른 교습기간 일자에 포함되면 차단
+      if (isDateInOtherPeriod(date)) {
+        setEventErrorMessage(
+          '이미 다른 교습월의 교습기간에 포함된 날짜입니다. 다른 일자를 선택해 주세요.',
+        )
+        return
+      }
       if (!studyPeriodSelection.start || studyPeriodSelection.end) {
         setStudyPeriodSelection({ start: date, end: null })
       } else {
+        // V12: 시작 ~ 종료 범위가 다른 교습기간과 겹치는지 검사.
+        if (rangeOverlapsOtherPeriod(studyPeriodSelection.start, date)) {
+          setEventErrorMessage(
+            '선택 범위가 다른 교습월의 교습기간과 겹칩니다. 종료일을 다시 선택해 주세요.',
+          )
+          return
+        }
         setStudyPeriodSelection({ start: studyPeriodSelection.start, end: date })
       }
     }

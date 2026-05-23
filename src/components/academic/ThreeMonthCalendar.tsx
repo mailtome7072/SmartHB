@@ -176,6 +176,8 @@ interface MonthGridProps {
   draggableEventIds?: Set<number>
   onCellClick?: (date: string) => void
   onEventClick?: (event: ScheduleEventListItem) => void
+  /** V15 — 확대 보기 버튼 핸들러. 헤더에 ⛶ 버튼 노출. 본 그리드가 이미 확대 모드면 undefined. */
+  onExpand?: () => void
 }
 
 function MonthGrid({
@@ -190,6 +192,7 @@ function MonthGrid({
   draggableEventIds,
   onCellClick,
   onEventClick,
+  onExpand,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthGrid(year, month, today), [year, month, today])
 
@@ -214,17 +217,31 @@ function MonthGrid({
       aria-label={`${year}년 ${month}월`}
       className="flex flex-col rounded-lg border border-[var(--border)] bg-white p-3"
     >
-      <header className="mb-2 flex items-center justify-between">
+      <header className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-lg font-bold text-[var(--foreground)]">
           {year}년 {month}월
         </h3>
-        {studyPeriod !== null && (
-          <span className="text-xs text-amber-700">
-            교습기간 {studyPeriod.start_date.slice(5)} ~ {studyPeriod.end_date.slice(5)}
-            {studyPeriod.is_confirmed ? ' · 확정' : ''}
-            {isPastMonth ? ' · 🔒 수정 불가' : ''}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {studyPeriod !== null && (
+            <span className="text-xs text-amber-700">
+              교습기간 {studyPeriod.start_date.slice(5)} ~ {studyPeriod.end_date.slice(5)}
+              {studyPeriod.is_confirmed ? ' · 확정' : ''}
+              {isPastMonth ? ' · 🔒 수정 불가' : ''}
+            </span>
+          )}
+          {/* V15 — 크게 보기 버튼. */}
+          {onExpand !== undefined && (
+            <button
+              type="button"
+              onClick={onExpand}
+              aria-label={`${year}년 ${month}월 크게 보기`}
+              title="크게 보기"
+              className="min-h-[32px] min-w-[32px] rounded border border-[var(--border)] bg-white px-2 text-base hover:bg-gray-50"
+            >
+              ⛶
+            </button>
+          )}
+        </div>
       </header>
       <div className="grid grid-cols-7 gap-px text-center text-sm font-semibold text-gray-600">
         {WEEKDAY_LABELS.map((d, i) => (
@@ -286,6 +303,8 @@ export function ThreeMonthCalendar({
   onEventDrop,
 }: ThreeMonthCalendarProps) {
   // 중앙 = 기본 다음 달 (PRD §4.4.1).
+  // V15 — 확대 보기 모드 (단일 월 큰 그리드). null 이면 3개월 그리드.
+  const [expandedMonth, setExpandedMonth] = useState<{ year: number; month: number } | null>(null)
   const [center, setCenter] = useState<{ year: number; month: number }>(() => {
     const cur = currentYearMonth()
     return shiftMonth(cur.year, cur.month, 1)
@@ -314,12 +333,23 @@ export function ThreeMonthCalendar({
   })
 
   // event_date → events 매핑 (성능: O(n) → O(1) 셀 렌더 조회).
+  // V13 (Sprint 7 post-review): 기간성 코드(`is_period_type=1`) 는 종료일 셀에도 마커 표시
+  // 위해 종료일에도 동일 이벤트 추가. CalendarCell 의 EventBadge 가 cellDate 비교로 "S"/"E" 분기.
   const eventsByDate = useMemo(() => {
     const map = new Map<string, ScheduleEventListItem[]>()
     for (const e of eventsQuery.data ?? []) {
-      const arr = map.get(e.event_date) ?? []
-      arr.push(e)
-      map.set(e.event_date, arr)
+      const startArr = map.get(e.event_date) ?? []
+      startArr.push(e)
+      map.set(e.event_date, startArr)
+      if (
+        e.is_period_type &&
+        e.period_end_date &&
+        e.period_end_date !== e.event_date
+      ) {
+        const endArr = map.get(e.period_end_date) ?? []
+        endArr.push(e)
+        map.set(e.period_end_date, endArr)
+      }
     }
     return map
   }, [eventsQuery.data])
@@ -405,6 +435,35 @@ export function ThreeMonthCalendar({
         </div>
       )}
 
+      {/* V15 — 확대 모드: 단일 월 크게. 일반 모드: 3개월 동시. */}
+      {expandedMonth ? (
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => setExpandedMonth(null)}
+            className="self-start min-h-[44px] rounded-md border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
+          >
+            ← 3개월 보기로 돌아가기
+          </button>
+          <div className="mx-auto w-full max-w-5xl">
+            <MonthGrid
+              year={expandedMonth.year}
+              month={expandedMonth.month}
+              isPastMonth={isMonthPast(expandedMonth.year, expandedMonth.month)}
+              eventsByDate={eventsByDate}
+              studyPeriod={
+                periodByYm.get(`${expandedMonth.year}-${pad2(expandedMonth.month)}`) ?? null
+              }
+              allStudyPeriods={periodsQuery.data ?? []}
+              today={today}
+              selection={selection ?? undefined}
+              draggableEventIds={draggableEventIds}
+              onCellClick={onCellClick}
+              onEventClick={onEventClick}
+            />
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {[prev, center, next].map((m) => (
           <MonthGrid
@@ -420,9 +479,11 @@ export function ThreeMonthCalendar({
             draggableEventIds={draggableEventIds}
             onCellClick={onCellClick}
             onEventClick={onEventClick}
+            onExpand={() => setExpandedMonth({ year: m.year, month: m.month })}
           />
         ))}
       </div>
+      )}
     </div>
     </DndContext>
   )
