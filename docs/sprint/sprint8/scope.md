@@ -203,7 +203,7 @@ ToggleResult {
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src-tauri/src/commands/attendance.rs | [6회 ⚠️] | IPC 4종 + 응답 구조체 + 헬퍼 + 단위 테스트 추가 |
-| src-tauri/src/commands/audit.rs | [3회 ⚠️] | `AttendanceToggled` variant + as_code 매핑 |
+| src-tauri/src/commands/audit.rs | [5회 ⚠️] | `AttendanceToggled` variant + as_code 매핑 |
 | src-tauri/src/lib.rs | [3회] | invoke_handler 에 4개 등록 |
 | docs/sprint/sprint8/scope.md | [3회] | Session #3 추가 |
 
@@ -309,7 +309,7 @@ ToggleResult {
 | src/components/layout/app-shell.tsx | [신규-follow-up] | `min-w-0` |
 | src/components/attendance/AttendanceGrid.tsx | [2회] | 요일 행/시간 변환/컬럼 재배치/배경색 |
 | src/lib/menu-config.ts | [8회 ⚠️] | 보강 관리 추가 + 순서 재배치 |
-| src/app/attendance/page.tsx | [2회] | (이번 세션에서 직접 수정은 없으나 git status에 잡혀 확인 필요) |
+| src/app/attendance/page.tsx | [3회 ⚠️] | (이번 세션에서 직접 수정은 없으나 git status에 잡혀 확인 필요) |
 
 ### AC 영향
 - AC-T4-4/5/9 모두 유지 (단위 표기 변경은 PRD §4.5.3 그리드 요구 사항을 더 정확히 반영).
@@ -428,7 +428,7 @@ T3 세션에서 이미 비즈니스 규칙 핵심 5개 시나리오가 커버됨
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| src-tauri/src/commands/auth.rs | [16회 ⚠️] | partial-NULL 검증 강화 + 재진입 가드 + pub 승격 + 신규 단위 테스트 |
+| src-tauri/src/commands/auth.rs | [22회 ⚠️] | partial-NULL 검증 강화 + 재진입 가드 + pub 승격 + 신규 단위 테스트 |
 | src-tauri/src/startup.rs | [2회] | `exit_hook` 에 `invalidate_credential_cache()` 호출 추가 |
 | docs/sprint/sprint8/scope.md | [6회 ⚠️] | Session #6 추가 (loop-detection 임계 도달 — 단순 문서 추적이므로 무해, scope/Session 누적 특성) |
 
@@ -563,3 +563,137 @@ fn ensure_cache_loaded() -> Result<(), AppError> {
 
 ### 발견된 이슈
 (없음 — race 가설이 코드 조사로 확인되었고, 설계대로 LOAD_MUTEX 직렬화로 해소)
+
+---
+
+## Session #8 (T8 — carry-over Medium 6항목, 2026-05-24)
+
+> Sprint 7 Session #2 review 의 Medium 잔여 (I-S2-8/9/10, R39, A31, R51) 통합 처리.
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T8** | R46(Mutex poison) + R47(audit SecurityEvent) + R48-a(device.id 0o600) + R39(overlap is_confirmed) + R51(eventClick 차단) + A31 검토 | 4h |
+
+### 사전 점검 결과
+
+| 항목 | 위치 | 작업 |
+|------|------|------|
+| R46 | auth.rs `.expect("cred_cache poisoned")` 7곳 + `.expect("LOAD_MUTEX poisoned")` 1곳 | `cred_cache_lock()` 헬퍼 + `LOAD_MUTEX` 인라인 |
+| R47 | auth.rs `migrate_keyring_salt_to` (L480) / audit.rs `AuditEventType` (L34) | `SecurityEvent` variant 추가 + `tokio::spawn(try_record(...))` fire-and-forget |
+| R48-a | lock.rs `write_device_id_atomic` (L111) | `#[cfg(unix)]` + `PermissionsExt::set_mode(0o600)` |
+| R48-b (skip) | salt buffer ZeroizeOnDrop | 시그니처 광범위 변경 필요 — 별도 task. 캐시 진입 후엔 이미 보호됨 (`CachedCredentials` ZeroizeOnDrop) |
+| R48-c | stale doc comment | 작업 중 자연 정리 |
+| R39 | academic.rs `create_study_period` (L115) + `update_study_period` (L183) overlap | `AND is_confirmed = 1` 추가 |
+| R51 | academic/page.tsx `calendarEventClick` (L245) | `studyPeriodMode` 진입 시 early return |
+| A31 | lock.rs `release_lock_atomic_removes_self_owned_lock` (L600) | 현 코드는 이미 `acquired.is_err()` skip 가드 보유. flaky 잔존 시그널 없으면 코멘트 정리만 |
+
+### 설계 결정 (T8)
+
+#### R46 — `cred_cache_lock()` 헬퍼
+
+```rust
+fn cred_cache_lock() -> std::sync::MutexGuard<'static, Option<CachedCredentials>> {
+    cred_cache().lock().unwrap_or_else(|e| e.into_inner())
+}
+```
+
+`std::sync::PoisonError::into_inner()` 로 poisoned guard 의 inner 를 회수 — panic 흔적이 남았어도 캐시 자체는 무결할 가능성이 높으므로 graceful 복구. 호출 사이트 7곳 일괄 단순화.
+
+`LOAD_MUTEX` 는 단발 1회이므로 헬퍼 없이 인라인 `.unwrap_or_else(|e| e.into_inner())` 적용.
+
+#### R47 — `AuditEventType::SecurityEvent` + fire-and-forget
+
+- variant 추가: `SecurityEvent` → kebab-case "security-event"
+- `migrate_keyring_salt_to` 는 sync 함수이고 `audit::try_record` 는 async. tokio runtime 검출 후 spawn:
+  ```rust
+  if let Ok(handle) = tokio::runtime::Handle::try_current() {
+      handle.spawn(async {
+          audit::try_record(AuditEventType::SecurityEvent,
+              Some("salt-migration"),
+              Some(r#"{"path":"cloud/smarthb/salt.bin"}"#)).await;
+      });
+  }
+  ```
+- migrate 호출 경로: `verify_password` (async, tokio runtime 있음) → `load_credentials_to_cache` (sync) → `load_salt` (sync) → `load_salt_from` (sync) → `migrate_keyring_salt_to`. tokio handle 검출 가능.
+
+#### R48-a — Unix only
+
+```rust
+#[cfg(unix)]
+{
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+}
+```
+
+rename 전 tmp 파일에 0o600 설정 (소유자 read/write only). Windows 는 ACL 모델이라 별도 처리 불필요 (sprint8.md 명시).
+
+#### R39 — overlap + `AND is_confirmed = 1`
+
+`create_study_period` (L121) + `update_study_period` (L183) 둘 다 같은 패턴.
+
+**의도**: 미확정 교습기간 (is_confirmed=0) 은 임시 작성 중인 상태로 간주, 다른 신규 교습기간 등록을 차단하지 않아야 한다. 확정된 것만 overlap 검사 대상.
+
+#### R51 — selection 모드에서 배지 클릭 차단
+
+```typescript
+const calendarEventClick = (event: ScheduleEventListItem) => {
+  // R51: studyPeriodMode 활성 중 배지 클릭 무시 — selection 모드에서 의도치 않은 삭제 다이얼로그 방지.
+  if (studyPeriodMode) return
+  setEventToDelete(event)
+}
+```
+
+V27 코멘트는 갱신.
+
+#### A31 검토
+
+현 코드 (lock.rs:600-614):
+```rust
+let acquired = acquire_lock_atomic(false);
+if acquired.is_err() { return; } // 외부 점유 — skip
+let result = release_lock_atomic();
+assert!(result.is_ok(), ...);
+```
+
+이미 외부 점유 시 skip 가드 보유. lock_path 격리는 글로벌 `paths::lock_path()` 의존성을 깨야 하므로 광범위 변경. **현 상태로 충분 — 추가 변경 없음**. 단, sprint8.md 의도에 따라 코멘트만 "flaky 조건은 외부 점유 skip 가드로 차단됨" 으로 명시.
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/auth.rs | [1회] | cred_cache_lock 헬퍼 + LOAD_MUTEX 인라인 + migrate audit spawn |
+| src-tauri/src/commands/audit.rs | [1회] | SecurityEvent variant + as_code 매핑 |
+| src-tauri/src/commands/lock.rs | [3회 ⚠️] | write_device_id_atomic 0o600 + 테스트 코멘트 |
+| src-tauri/src/commands/academic.rs | [4회 ⚠️] | overlap 쿼리 2곳 + 단위 테스트 (미확정 무시) |
+| src/app/academic/page.tsx | [1회] | calendarEventClick studyPeriodMode early return |
+| docs/sprint/sprint8/scope.md | [8회 ⚠️] | Session #8 추가 (세션별 누적, loop-detection 무관) |
+
+### 수정하지 않을 파일 (Forbidden Areas 포함)
+
+- [ ] `.github/workflows/`, `SETUP.sh`, `docs/harness-engineering/` — Forbidden
+- [ ] `src-tauri/src/startup.rs` — T7 의 LOAD_MUTEX 직렬화로 race 해소. 추가 변경 없음
+- [ ] `src-tauri/migrations/` — 스키마 변경 없음
+- [ ] R48-b salt buffer ZeroizeOnDrop — 시그니처 광범위 변경 필요. 별도 task 로 이연
+
+### 완료 기준 (이번 세션) — T8 AC (sprint8.md L332-339)
+
+- ✅ AC-T8-1: `cred_cache` Mutex poison 시 앱 crash 대신 graceful 복구 — `cred_cache_lock` 헬퍼 + `LOAD_MUTEX` 인라인 (`unwrap_or_else(|e| e.into_inner())`)
+- ✅ AC-T8-2: `migrate_keyring_salt_to` 실행 시 audit 로그에 SecurityEvent 기록 — tokio runtime 검출 시 fire-and-forget spawn
+- ✅ AC-T8-3: `device.id` 파일 권한 0o600 (Unix) — `device_id_file_has_owner_only_permissions` 단위 테스트 통과
+- ✅ AC-T8-4: `create_study_period` / `update_study_period` 미확정 교습기간이 있어도 overlap 미차단 — overlap 쿼리 `AND is_confirmed = 1` + `overlap_skips_unconfirmed_periods` SQL 단위 테스트
+- ✅ AC-T8-5: selection 모드 중 배지 클릭 시 삭제 다이얼로그 미표시 — `calendarEventClick` `if (studyPeriodMode) return`
+- ✅ AC-T8-6: lock 테스트 flaky 검토 — 외부 점유 skip 가드 (`if acquired.is_err() { return; }`) 가 이미 본 시나리오를 차단. 추가 변경 불필요. R48-c 의 "stale doc comment 정리" 도 이미 충분히 명시적이라 변경 없음
+- ✅ AC-T8-7: 기존 단위 테스트 전체 통과 — cipher off **221 passed** / cipher on **133 passed** (T7 219/132 → +2/+1)
+
+### 세션 종료 조건
+
+- ✅ Self-verify: `cargo test --lib` cipher off **221 passed** / cipher on **133 passed** / `pnpm lint` clean / `pnpm tsc --noEmit` clean
+- ✅ Clippy `--lib -- -D warnings` 양쪽 clean
+- ✅ simplify — `cred_cache_lock` 헬퍼로 7곳 expect 패턴 일괄 정리 (의도된 simplification). `cached_salt` 5줄 → 3줄 축소 부수효과. 추가 작업 불필요
+- ⬜ 단일 커밋
+
+### 발견된 이슈
+- R48-b (salt buffer ZeroizeOnDrop) 는 함수 시그니처 광범위 변경 필요 — `load_salt_from`/`migrate_keyring_salt_to`/`generate_salt`/`store_salt_to` 가 모두 `[u8; SALT_LEN]` raw array 시그니처. `Zeroizing<[u8; SALT_LEN]>` 또는 신규 wrapper struct 도입 시 호출 사이트 광범위 영향. T8 범위에서 skip, 별도 후속 task 로 분리. 캐시 진입 후엔 `CachedCredentials.salt` 의 `ZeroizeOnDrop` 으로 이미 보호되므로 잔존 위험은 stack 임시 변수 한정.

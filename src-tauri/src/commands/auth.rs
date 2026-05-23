@@ -79,10 +79,18 @@ fn cred_cache() -> &'static Mutex<Option<CachedCredentials>> {
     CRED_CACHE.get_or_init(|| Mutex::new(None))
 }
 
+/// poisoned Mutex 도 graceful 복구 — `PoisonError::into_inner()` 로 inner guard 회수.
+///
+/// Sprint 8 T8 (R46 / I-S2-8): `cred_cache().lock().expect("cred_cache poisoned")` 패턴은
+/// poison 발생 시 앱 crash. 본 헬퍼는 panic 흔적이 남았어도 캐시 자체는 무결할 가능성이
+/// 높다는 가정 아래 graceful 복구한다. 7곳의 lock 호출을 일괄 단순화.
+fn cred_cache_lock() -> std::sync::MutexGuard<'static, Option<CachedCredentials>> {
+    cred_cache().lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// 캐시에 자격증명 저장 (set_password 또는 reset_password_with_code 호출 후).
 pub(crate) fn cache_credentials(salt: [u8; SALT_LEN], key: DerivedKey) {
-    *cred_cache().lock().expect("cred_cache poisoned") =
-        Some(CachedCredentials { salt, key });
+    *cred_cache_lock() = Some(CachedCredentials { salt, key });
 }
 
 /// 캐시 무효화 (delete_key_from_keyring 또는 로그아웃 시).
@@ -90,7 +98,7 @@ pub(crate) fn cache_credentials(salt: [u8; SALT_LEN], key: DerivedKey) {
 /// Sprint 8 T6 (I-S2-4): `startup::exit_hook()` 에서도 명시적으로 호출되어 종료 시점에
 /// 프로세스 메모리의 키 잔류를 최소화한다. `pub` 노출은 cross-module 호출용.
 pub fn invalidate_credential_cache() {
-    *cred_cache().lock().expect("cred_cache poisoned") = None;
+    *cred_cache_lock() = None;
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -128,11 +136,7 @@ impl Drop for SetPasswordGuard {
 
 /// 캐시에서 salt 조회 — 캐시 미스면 None.
 fn cached_salt() -> Option<[u8; SALT_LEN]> {
-    cred_cache()
-        .lock()
-        .expect("cred_cache poisoned")
-        .as_ref()
-        .map(|c| c.salt)
+    cred_cache_lock().as_ref().map(|c| c.salt)
 }
 
 /// 캐시 미스 시 salt(파일) + key(keyring) 동시 로드.
@@ -163,12 +167,13 @@ static LOAD_MUTEX: Mutex<()> = Mutex::new(());
 /// → double-check (다른 스레드가 이미 로드 완료했을 수 있음) → load.
 fn ensure_cache_loaded() -> Result<(), AppError> {
     // Fast path — 캐시 hit (대다수 호출).
-    if cred_cache().lock().expect("cred_cache poisoned").is_some() {
+    if cred_cache_lock().is_some() {
         return Ok(());
     }
     // Slow path — load 직렬화. 첫 진입자가 keyring/salt 1회 로드, 후속 진입자는 대기 후 hit.
-    let _load_guard = LOAD_MUTEX.lock().expect("LOAD_MUTEX poisoned");
-    if cred_cache().lock().expect("cred_cache poisoned").is_some() {
+    // poison 복구는 cred_cache_lock 과 동일 패턴 (Sprint 8 T8 / R46).
+    let _load_guard = LOAD_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    if cred_cache_lock().is_some() {
         return Ok(());
     }
     load_credentials_to_cache()
@@ -185,7 +190,7 @@ fn ensure_cache_loaded() -> Result<(), AppError> {
 #[cfg_attr(not(feature = "cipher"), allow(dead_code))]
 pub fn get_cached_or_load_key() -> Result<DerivedKey, AppError> {
     ensure_cache_loaded()?;
-    let guard = cred_cache().lock().expect("cred_cache poisoned");
+    let guard = cred_cache_lock();
     Ok(DerivedKey(guard.as_ref().expect("just loaded").key.0))
 }
 
@@ -508,6 +513,20 @@ fn migrate_keyring_salt_to(path: &Path) -> Result<[u8; SALT_LEN], AppError> {
             e
         );
     }
+
+    // Sprint 8 T8 (R47 / I-S2-9): salt 마이그레이션은 1회 이벤트이므로 audit 추적.
+    // 본 함수는 sync 이고 try_record 는 async — tokio runtime 이 활성일 때만 fire-and-forget.
+    // verify_password 경로에서 호출되므로 runtime 은 항상 있지만, 테스트/단위 호출 경로 보호.
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async {
+            audit::try_record(
+                AuditEventType::SecurityEvent,
+                Some("salt-migration"),
+                Some(r#"{"detail":"legacy keyring salt → cloud file"}"#),
+            )
+            .await;
+        });
+    }
     Ok(salt)
 }
 
@@ -649,7 +668,7 @@ pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), 
 
     // 캐시에서 stored key 비교 (Mutex guard 내에서 직접 비교 — 별도 복사 회피).
     let matches = {
-        let guard = cred_cache().lock().expect("cred_cache poisoned");
+        let guard = cred_cache_lock();
         let stored_key = &guard.as_ref().expect("just loaded into cache").key;
         candidate.matches(stored_key)
     };
