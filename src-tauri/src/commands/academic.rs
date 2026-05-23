@@ -620,6 +620,9 @@ pub struct ScheduleEventListItem {
     pub is_duplicate_blocked: bool,
     pub is_period_type: bool,
     pub is_seeded: bool,
+    /// V25 (Sprint 7 post-review): 정규 수업 허용 여부 — 프론트 `hasClassOnDate` 판정.
+    /// 셀의 어떤 이벤트라도 `true` 면 수업 가능. 방학·휴원일·공휴일(공휴수업일 페어 제외)은 0.
+    pub allows_regular_class: bool,
     pub event_date: String,
     pub period_end_date: Option<String>,
     pub display_name: Option<String>,
@@ -635,6 +638,7 @@ impl ScheduleEventListItem {
             is_duplicate_blocked: row.try_get::<i64, _>("is_duplicate_blocked")? != 0,
             is_period_type: row.try_get::<i64, _>("is_period_type")? != 0,
             is_seeded: row.try_get::<i64, _>("is_seeded")? != 0,
+            allows_regular_class: row.try_get::<i64, _>("allows_regular_class")? != 0,
             event_date: row.try_get("event_date")?,
             period_end_date: row.try_get("period_end_date")?,
             display_name: row.try_get("display_name")?,
@@ -721,23 +725,32 @@ async fn check_placement_constraints(
     period_end_date: Option<&str>,
     exclude_event_id: Option<i64>,
 ) -> Result<(), String> {
-    // V9: 동일 일자의 기존 일정을 (id, is_duplicate_blocked, code_name) 형태로 조회 — 공휴수업일/
-    // 공휴일 특별 처리에 코드명 검사 필요.
+    // V26 (Sprint 7 post-review): 범위 겹침 충돌 검사 — 기간성 코드의 사이 일자에도 가드 적용.
+    // 새 코드 범위: [new_start, new_end]  (단일 일자 코드면 new_end = new_start)
+    // 기존 row 범위: [e.event_date, COALESCE(e.period_end_date, e.event_date)]
+    // 두 범위가 겹치는 조건: e.event_date <= new_end AND COALESCE(e.period_end_date, e.event_date) >= new_start
+    let new_start = event_date;
+    let new_end = period_end_date.unwrap_or(event_date);
     let existing_on_date: Vec<(i64, i64, String)> = {
         let q = match exclude_event_id {
             Some(_) => sqlx::query_as::<_, (i64, i64, String)>(
                 "SELECT e.id, c.is_duplicate_blocked, c.code_name \
                  FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
-                 WHERE e.event_date = ? AND e.id != ?",
+                 WHERE e.event_date <= ? \
+                   AND COALESCE(e.period_end_date, e.event_date) >= ? \
+                   AND e.id != ?",
             )
-            .bind(event_date)
+            .bind(new_end)
+            .bind(new_start)
             .bind(exclude_event_id.unwrap()),
             None => sqlx::query_as::<_, (i64, i64, String)>(
                 "SELECT e.id, c.is_duplicate_blocked, c.code_name \
                  FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
-                 WHERE e.event_date = ?",
+                 WHERE e.event_date <= ? \
+                   AND COALESCE(e.period_end_date, e.event_date) >= ?",
             )
-            .bind(event_date),
+            .bind(new_end)
+            .bind(new_start),
         };
         q.fetch_all(pool).await.map_err(AppError::Db).map_err(String::from)?
     };
@@ -1015,7 +1028,7 @@ pub async fn list_schedule_events(
     let pool = db::pool().map_err(String::from)?;
     let rows = sqlx::query(
         "SELECT e.id, e.code_id, c.code_name, c.is_system_reserved, \
-                c.is_duplicate_blocked, c.is_period_type, \
+                c.is_duplicate_blocked, c.is_period_type, c.allows_regular_class, \
                 e.is_seeded, e.event_date, e.period_end_date, e.display_name \
          FROM schedule_events e \
          JOIN schedule_codes c ON c.id = e.code_id \
@@ -2066,5 +2079,151 @@ mod tests {
         .unwrap();
         let blocked = row.1 != 0 && row.0 == "공휴일" && row.2 != 0;
         assert!(!blocked, "is_seeded=0 사용자 공휴일은 삭제 가드 분기에 안 걸려야 함");
+    }
+
+    // ─── V26 (Sprint 7 post-review): 기간성 코드 사이 일자 충돌 검사 ───
+
+    /// 기간성 코드(방학 6/10~6/15) 등록 후 사이 일자(6/12)에 휴원일 시도 → 차단.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_blocks_inside_period_event() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-06', '2099-06-01', '2099-06-30', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 방학 기간성 이벤트 6/10~6/15 — 시작일에만 row 가 있고 period_end_date 컬럼이 종료일.
+        let bangak_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '방학'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query(
+            "INSERT INTO schedule_events (code_id, event_date, period_end_date) \
+             VALUES (?, '2099-06-10', '2099-06-15')",
+        )
+        .bind(bangak_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 사이 일자 6/12 에 휴원일 (중복불가=1) 단일 일자 배치 시도 → 차단.
+        let hyuwon_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let err = check_placement_constraints(
+            &pool,
+            hyuwon_id,
+            "휴원일",
+            true,
+            "2099-06-12",
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("중복불가 코드는 다른 일정이 있는"),
+            "기간성 코드 사이 일자 차단 에러: {}",
+            err
+        );
+    }
+
+    /// 단일 일자 휴원일 등록 후 기간성 방학이 그 일자를 포함하면 차단 (역방향).
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_blocks_period_overlapping_existing_single() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-07', '2099-07-01', '2099-07-31', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let hyuwon_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2099-07-12')")
+            .bind(hyuwon_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // 방학 7/10~7/15 시도 — 7/12 휴원일과 겹쳐서 차단.
+        let bangak_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '방학'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let err = check_placement_constraints(
+            &pool,
+            bangak_id,
+            "방학",
+            true,
+            "2099-07-10",
+            Some("2099-07-15"),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("중복불가 코드는 다른 일정이 있는"),
+            "기간성 코드와 기존 단일 일자 충돌 에러: {}",
+            err
+        );
+    }
+
+    /// 안 겹치는 기간성 코드는 허용.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn placement_allows_non_overlapping_periods() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2099-08', '2099-08-01', '2099-08-31', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let bangak_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '방학'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query(
+            "INSERT INTO schedule_events (code_id, event_date, period_end_date) \
+             VALUES (?, '2099-08-01', '2099-08-05')",
+        )
+        .bind(bangak_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 8/10 휴원일 — 방학 8/1~8/5 와 안 겹침 → 허용.
+        let hyuwon_id: i64 =
+            sqlx::query_scalar("SELECT id FROM schedule_codes WHERE code_name = '휴원일'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let result = check_placement_constraints(
+            &pool,
+            hyuwon_id,
+            "휴원일",
+            true,
+            "2099-08-10",
+            None,
+            None,
+        )
+        .await;
+        assert!(result.is_ok(), "안 겹치는 일자 허용: {:?}", result);
     }
 }

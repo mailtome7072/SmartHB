@@ -103,6 +103,8 @@ export interface ScheduleEventListItem {
   is_duplicate_blocked: boolean
   is_period_type: boolean
   is_seeded: boolean
+  /** V25 (post-review): 정규 수업 허용 여부 — 셀 색상 (수업 가능/불가) 판정 기준. */
+  allows_regular_class: boolean
   event_date: string
   period_end_date: string | null
   display_name: string | null
