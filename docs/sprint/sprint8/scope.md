@@ -1,9 +1,9 @@
 ---
-Sprint: 8  |  Date: 2026-05-23  |  Session: #3 (T1·T2 완료, T3 진행)
+Sprint: 8  |  Date: 2026-05-23  |  Session: #4 (T1·T2·T3 완료, T4 진행)
 ---
 
-> Sprint 8 Session #3 — T3 전체 (출결 조회 + 토글 IPC 4종).
-> 예상 6h. attendance.rs에 IPC 4개 추가 + audit 이벤트 1종 신규 + 단위 테스트.
+> Sprint 8 Session #4 — T4 전체 (출결표 프론트엔드 UI).
+> 예상 8h. 백엔드 IPC 6개를 소비하는 그리드 + 토글 + 메모 다이얼로그 + 사이드바 활성화.
 
 ## 이번 세션의 Task 선정
 
@@ -222,4 +222,61 @@ ToggleResult {
 - ✅ Self-verify: cargo test cipher off **209 passed** (T3 신규 9건) / cipher on **126 passed**
 - ✅ Clippy off+on (lib) clean
 - ✅ simplify — 응답 구조체 5개, `_impl` 분리, `compute_summary` 단일 정의 — 단일 책임 + 중복 없음
-- ⬜ 단일 커밋 (attendance.rs + audit.rs + lib.rs + scope.md)
+- ✅ 단일 커밋 `4efc570` (4파일, +741)
+
+---
+
+## Session #4 (T4 — 출결표 프론트엔드 UI, 2026-05-23)
+
+### 이번 세션 Task
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T4** | types/attendance.ts + IPC 래퍼 6 + /attendance 라우트 + AttendanceGrid + AbsenceMemoDialog + 사이드바 활성화 | 8h |
+
+### 설계 결정 (T4)
+
+#### 신규 라우트
+- `/attendance` — 출결 관리 메인 페이지. 월 선택 → "출결 생성" 또는 그리드 표시.
+
+#### 상태 관리
+- TanStack Query: `useQuery(['attendance-exists', ym])`, `useQuery(['attendance-grid', ym])`, `useMutation(toggle/memo)` 낙관적 업데이트
+- Undo: 마지막 토글 1건만 메모리 보관, Ctrl+Z로 역토글. localStorage 등 영속화 없음.
+- React.memo 적용 — 행 단위 메모 (셀 단위는 prop 변화 잦아 비효율).
+
+#### UI 패턴
+- 결석 셀: `bg-red-100 text-red-900` 굵게
+- 보강완료 셀(`makeup_done`): 빨강 배경 + 작은 "보강" 텍스트
+- 보강소멸 셀(`makeup_expired`): 회색 + "소멸"
+- 수업 요일 아닌 일자: `bg-gray-50 text-gray-300` (셀 없음 → 빈 placeholder)
+- 클릭 영역 44×44px (Tailwind `min-h-[44px] min-w-[44px]`)
+- Pretendard 18pt — globals.css 기 적용. 그리드 셀은 16pt 유지 (정보 밀도)
+- 좌측 원생 컬럼 sticky — `position: sticky; left: 0` + 헤더 z-index
+
+#### 사이드바
+- `menu-config.ts` — `/attendance` 의 `disabledHint` 제거 → ACTIVE_MENU_ITEMS 자동 포함
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src/types/attendance.ts | [신규] | AttendanceCell/Summary/GridStudent/Grid/ToggleResult/GenerateResult 타입 |
+| src/lib/tauri/index.ts | [3회 ⚠️] | IPC 래퍼 6개 추가 |
+| src/lib/menu-config.ts | [2회] | `/attendance` disabledHint 제거 |
+| src/app/attendance/page.tsx | [신규] | 출결 관리 메인 페이지 |
+| src/components/attendance/AttendanceGrid.tsx | [신규] | 그리드 본체 |
+| src/components/attendance/AbsenceMemoDialog.tsx | [신규] | 결석 사유 메모 다이얼로그 |
+| docs/sprint/sprint8/scope.md | [4회] | Session #4 추가 |
+
+### 완료 기준 (이번 세션)
+
+- ⬜ AC-T4-1: `/attendance` 페이지에서 월 선택 + 그리드 렌더링
+- ⬜ AC-T4-2: "출결 생성" 버튼으로 일괄 생성 → 그리드 자동 갱신
+- ⬜ AC-T4-3: 셀 클릭으로 present↔absent 토글 (낙관적 업데이트)
+- ⬜ AC-T4-4: 결석 셀 빨강, makeup_done/expired 시각 구분
+- ⬜ AC-T4-5: 요약 컬럼 (출석/결석/보강필요/보강완료) 토글 시 실시간 반영
+- ⬜ AC-T4-6: 결석 사유 메모 다이얼로그 동작
+- ⬜ AC-T4-7: Ctrl+Z 1단계 Undo
+- ⬜ AC-T4-8: 50×31 렌더링 1초 이내 (메모이제이션으로 보장)
+- ⬜ AC-T4-9: Pretendard, 44×44px, WCAG AA 준수
+- ⬜ AC-T4-10: `pnpm lint` + `pnpm tsc --noEmit` 통과
+- ⬜ 단일 커밋 (7파일)
