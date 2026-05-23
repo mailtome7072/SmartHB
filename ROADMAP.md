@@ -22,7 +22,7 @@
 | 항목 | 내용 |
 |------|------|
 | 전체 진행률 | 47% (7/15 스프린트 완료) |
-| 현재 Phase | Phase 2 진행 중 — Sprint 7 완료 (2026-05-22), Sprint 8 (출결 관리) 예정 |
+| 현재 Phase | Phase 2 진행 중 — Sprint 7 완료 (2026-05-22), Sprint 8 (출결 관리 + carry-over 흡수) 진행 중 |
 | 다음 마일스톤 | 출결 관리 (Sprint 8) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
@@ -400,13 +400,14 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 8: 출결 관리 (2주) 📋 예정
+### Sprint 8: 출결 관리 + Sprint 7 carry-over 흡수 (2주) 🔄 진행 중
 
-> 원래 Sprint 7 (출결 관리)이 Sprint 8로 이연됨 — Sprint 7에서 carry-over 해소 선행.
+> 계획 문서: `docs/sprint/sprint8.md`
+> Phase 2 마지막 마일스톤. 출결 생성 + 출결표 UI + 상태 토글 + Sprint 7 carry-over High 4건 + Medium 5건 흡수.
 
 #### 작업 목록
 
-- ⬜ **DB 마이그레이션 V005**: regular_attendances + makeup_attendances 테이블
+- ⬜ **DB 마이그레이션 V106**: regular_attendances + makeup_attendances 테이블
 - ⬜ **출결 생성 로직 (§4.5.1)**: 월 선택 → 재원 원생 x 수업 요일 일자 생성
   - "정규수업 진행 OFF" 일자 건너뜀
   - 입교일/퇴교일 범위 외 건너뜀
