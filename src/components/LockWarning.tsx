@@ -45,7 +45,12 @@ export function LockWarning({ initialSecondsAgo, onForceAcquired, onRetry }: Loc
   }, [])
 
   // V30 (Sprint 7 post-review): dev 빌드 자동 force-acquire 우회 — LockScreen 의 autologin 과
-  // 동일 환경 변수. release 빌드에서는 NEXT_PUBLIC 자체가 없어 무동작.
+  // 동일 환경 변수.
+  //
+  // ⚠️ 보안 주의 (R50, Sprint 7 hotfix): `NEXT_PUBLIC_*` 환경 변수는 Next.js 빌드 타임에
+  // 클라이언트 번들에 인라인된다. `.env` 에 설정된 채 `pnpm tauri:build` (release) 를 실행
+  // 하면 dev 비밀번호가 인스톨러 JS 번들에 포함되어 배포된다. release 빌드 전에 반드시 `.env`
+  // 에서 본 변수를 제거하거나 빈 값으로 설정할 것. (LockScreen.tsx 및 .env.example 참조)
   useEffect(() => {
     if (!process.env.NEXT_PUBLIC_DEV_AUTOLOGIN) return
     void (async () => {

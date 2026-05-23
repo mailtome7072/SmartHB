@@ -795,7 +795,13 @@ mod tests {
         assert!(!is_salt_corrupted(&[1u8; SALT_LEN]), "32바이트 비-NULL 정상");
     }
 
+    /// ⚠️ I-S2-6 (Sprint 7 hotfix): 본 테스트는 `load_salt_from` 호출 시 내부적으로
+    /// `migrate_keyring_salt_to` 가 트리거되어 dev 환경의 **실제 OS Keychain 항목** 을
+    /// 읽고 삭제할 수 있다. 개발자가 평소 SmartHB 를 사용 중이면 그 비밀번호 salt 가 손상
+    /// 가능. CI/통합 테스트에서만 명시적으로 실행하도록 `#[ignore]` 가드 적용.
+    /// 수동 실행: `cargo test --lib load_salt_backs_up_corrupted_file -- --ignored --nocapture`
     #[test]
+    #[ignore = "I-S2-6: dev keychain 부수효과 방지 — 명시적 --ignored 시에만 실행"]
     fn load_salt_backs_up_corrupted_file() {
         let dir = unique_test_dir("corrupted-backup");
         let path = dir.join("salt.bin");
