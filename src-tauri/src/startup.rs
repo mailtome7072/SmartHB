@@ -200,7 +200,7 @@ fn spawn_background_tasks() {
     });
 }
 
-/// 앱 종료 hook — `RunEvent::ExitRequested` 에서 호출.
+/// 앱 종료 hook — `RunEvent::ExitRequested` + `WindowEvent::CloseRequested` 양쪽에서 호출.
 ///
 /// exit 백업을 동기 실행한 후 락을 해제한다. async runtime 이 살아있을 때만 동작하므로
 /// `tauri::async_runtime::block_on` 으로 호출된다 (lib.rs).
@@ -208,10 +208,18 @@ fn spawn_background_tasks() {
 /// R15 (sprint-review Medium): `release_lock_atomic` 을 호출하여 advisory lock 보유 + 본
 /// 디바이스 점유 재확인 후 삭제. `std::fs::remove_file` 직접 호출 시 다른 디바이스 락을
 /// 손상시키는 엣지 케이스를 방지한다.
+///
+/// V24 (Sprint 7 post-review): idempotent 가드 — 윈도우 닫기 + 앱 종료 두 이벤트가 순차
+/// 발생해도 백업·락 해제 작업은 1회만 수행되도록 `AtomicBool` 플래그.
 pub async fn exit_hook() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static RAN: AtomicBool = AtomicBool::new(false);
+    if RAN.swap(true, Ordering::SeqCst) {
+        return;
+    }
     backup::try_create_backup(backup::BackupLayer::Exit).await;
     match tokio::task::spawn_blocking(lock::release_lock_atomic).await {
-        Ok(Ok(())) => {}
+        Ok(Ok(())) => eprintln!("[startup] exit 락 해제 완료"),
         Ok(Err(e)) => eprintln!("[startup] exit 락 해제 실패 (무시): {}", e),
         Err(e) => eprintln!("[startup] exit 락 작업 실패 (무시): {}", e),
     }

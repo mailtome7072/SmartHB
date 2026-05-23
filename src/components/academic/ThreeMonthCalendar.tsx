@@ -18,7 +18,7 @@
  * - 셀 onClick prop 는 T10/T11 에서 모드별 핸들러로 확장
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   DndContext,
@@ -28,7 +28,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import { listScheduleEvents, listStudyPeriods } from '@/lib/tauri'
+import {
+  getOperatingHours,
+  listScheduleEvents,
+  listStudyPeriods,
+  type DayHours,
+} from '@/lib/tauri'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 import { CalendarCell, cellDroppableId } from './CalendarCell'
 
@@ -52,6 +57,13 @@ function nextIsoDate(date: string): string {
   const dt = new Date(Date.UTC(y, m - 1, d))
   dt.setUTCDate(dt.getUTCDate() + 1)
   return dt.toISOString().slice(0, 10)
+}
+
+/** "YYYY-MM-DD" → ISO 요일 (1=월 ~ 7=일). V23 — 운영 시간 매칭에 사용. */
+function isoDayOfWeek(date: string): number {
+  const [y, m, d] = date.split('-').map(Number)
+  const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0=일~6=토
+  return jsDay === 0 ? 7 : jsDay
 }
 
 /** JS getDay(): 0=일, 1=월…6=토 → 월요일 시작 그리드 leading 칸 수 (0~6). */
@@ -178,6 +190,8 @@ interface MonthGridProps {
   studyPeriod: StudyPeriod | null
   /** 전체 교습기간 리스트 — 셀의 `inStudyPeriod` 색 판정에 사용 (cross-month 포함, V7). */
   allStudyPeriods: StudyPeriod[]
+  /** V23 — 셀이 수업 가능 일자인지 판정 콜백 (운영시간 + 공휴일/휴원일/공휴수업일 종합). */
+  hasClassOnDate: (date: string) => boolean
   today: string
   selection?: SelectionRange
   /** 드래그 가능한 일정 id 집합 (단일 일자 + 시스템 코드 제외 등 부모가 계산). */
@@ -195,6 +209,7 @@ function MonthGrid({
   eventsByDate,
   studyPeriod,
   allStudyPeriods,
+  hasClassOnDate,
   today,
   selection,
   draggableEventIds,
@@ -273,6 +288,7 @@ function MonthGrid({
             isSunday={c.isSunday}
             isSaturday={c.isSaturday}
             inStudyPeriod={!c.isOutsideMonth && inStudyPeriod(c.date)}
+            hasClass={!c.isOutsideMonth && hasClassOnDate(c.date)}
             events={eventsByDate.get(c.date) ?? []}
             isInSelection={!c.isOutsideMonth && inSelectionRange(c.date)}
             isSelectionStart={selection?.start === c.date}
@@ -340,6 +356,13 @@ export function ThreeMonthCalendar({
     staleTime: 30_000,
   })
 
+  // V23 (Sprint 7 post-review): 운영 시간 조회 — 셀별 수업 가능/불가 판정에 사용.
+  const operatingHoursQuery = useQuery({
+    queryKey: ['operating-hours'],
+    queryFn: getOperatingHours,
+    staleTime: 5 * 60_000,
+  })
+
   // event_date → events 매핑 (성능: O(n) → O(1) 셀 렌더 조회).
   // V13: 기간성 코드는 시작/종료 셀에 "S"/"E" 마커 분기.
   // V20 (Sprint 7 post-review): 기간성 코드의 시작~종료 **사이 모든 일자** 에도 매핑하여
@@ -401,6 +424,35 @@ export function ThreeMonthCalendar({
     }
     return ids
   }, [eventsQuery.data])
+
+  // V23 (Sprint 7 post-review): 셀별 수업 가능 여부 판정.
+  // - 운영 시간 (해당 요일 open_time 있어야 함)
+  // - 공휴일 이벤트 있으면 미수업 (단 공휴수업일 함께 있으면 수업 있음 — V9 비즈니스 룰)
+  // - 휴원일 이벤트 있으면 미수업
+  const hasClassOnDate = useCallback(
+    (date: string): boolean => {
+      const dow = isoDayOfWeek(date)
+      const dayHours = (operatingHoursQuery.data ?? []).find(
+        (h: DayHours) => h.day_of_week === dow,
+      )
+      const isOperatingDay =
+        dayHours !== undefined &&
+        dayHours.open_time !== null &&
+        dayHours.close_time !== null
+      if (!isOperatingDay) return false
+
+      const cellEvents = eventsByDate.get(date) ?? []
+      const hasOff = cellEvents.some((e) => e.code_name === '휴원일')
+      if (hasOff) return false
+      const hasHoliday = cellEvents.some((e) => e.code_name === '공휴일')
+      const hasHolidayClass = cellEvents.some(
+        (e) => e.code_name === '공휴수업일',
+      )
+      if (hasHoliday && !hasHolidayClass) return false
+      return true
+    },
+    [eventsByDate, operatingHoursQuery.data],
+  )
 
   // 드래그 센서 — pointer 8px 이동 후 활성화 (배지 클릭과 구분).
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -469,6 +521,7 @@ export function ThreeMonthCalendar({
                 periodByYm.get(`${expandedMonth.year}-${pad2(expandedMonth.month)}`) ?? null
               }
               allStudyPeriods={periodsQuery.data ?? []}
+              hasClassOnDate={hasClassOnDate}
               today={today}
               selection={selection ?? undefined}
               draggableEventIds={draggableEventIds}
@@ -488,6 +541,7 @@ export function ThreeMonthCalendar({
             eventsByDate={eventsByDate}
             studyPeriod={periodByYm.get(`${m.year}-${pad2(m.month)}`) ?? null}
             allStudyPeriods={periodsQuery.data ?? []}
+            hasClassOnDate={hasClassOnDate}
             today={today}
             selection={selection ?? undefined}
             draggableEventIds={draggableEventIds}

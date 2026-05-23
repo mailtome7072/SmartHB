@@ -35,6 +35,8 @@ interface CalendarCellProps {
   isSunday: boolean
   isSaturday: boolean
   inStudyPeriod: boolean
+  /** V23 — 교습기간 내 셀의 수업 가능 여부 (운영시간 + 공휴일/휴원일/공휴수업일 종합). */
+  hasClass?: boolean
   events: ScheduleEventListItem[]
   isInSelection?: boolean
   isSelectionStart?: boolean
@@ -159,6 +161,7 @@ export function CalendarCell({
   isSunday,
   isSaturday,
   inStudyPeriod,
+  hasClass = false,
   events,
   isInSelection = false,
   isSelectionStart = false,
@@ -175,15 +178,16 @@ export function CalendarCell({
   const dayColor =
     hasHoliday || isSunday ? 'text-red-700' : isSaturday ? 'text-blue-700' : 'text-[var(--foreground)]'
 
-  // V22 (Sprint 7 post-review): 교습기간 셀 배경 강화 (amber-50 → amber-100) — 50대 사용자
-  // 시각 구분 보강. selection / 드롭 hover 우선순위 유지.
+  // V22 + V23 (Sprint 7 post-review): 교습기간 셀 배경 강화 + 수업 가능/불가 구분.
+  // - 교습기간 + 수업 가능 (운영 요일·공휴 없음·휴원 없음 or 공휴수업일): bg-amber-100 (진함)
+  // - 교습기간 + 수업 불가 (미운영/공휴/휴원): bg-gray-100 (회색 — 시각 구분)
+  // selection / 드롭 hover 우선순위 유지.
+  const studyBg = inStudyPeriod ? (hasClass ? 'bg-amber-100' : 'bg-gray-100') : 'bg-white'
   const background = isInSelection
     ? 'bg-blue-100'
     : droppableProps?.isOver
       ? 'bg-green-100'
-      : inStudyPeriod
-        ? 'bg-amber-100'
-        : 'bg-white'
+      : studyBg
   const ring = isSelectionStart || isSelectionEnd ? 'ring-2 ring-blue-500 z-10' : ''
 
   function handleCellClick() {

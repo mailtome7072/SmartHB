@@ -100,6 +100,14 @@ pub fn run() {
             commands::academic::auto_place_assessment_dates,
             startup::app_startup_sequence,
         ])
+        .on_window_event(|_window, event| {
+            // V24 (Sprint 7 post-review): macOS 빨간 X / Windows 윈도우 닫기 시점에도 exit_hook
+            // 보장 호출 — RunEvent::ExitRequested 가 dock-resident 환경에서 즉시 발생 안 할 수
+            // 있어 이중 핸들. idempotent (AtomicBool RAN) 가드로 중복 실행 방지.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                tauri::async_runtime::block_on(startup::exit_hook());
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_handle, event| {
