@@ -223,6 +223,11 @@ pub async fn exit_hook() {
         Ok(Err(e)) => eprintln!("[startup] exit 락 해제 실패 (무시): {}", e),
         Err(e) => eprintln!("[startup] exit 락 작업 실패 (무시): {}", e),
     }
+    // Sprint 8 T6 (I-S2-4 / R42): CRED_CACHE 명시적 무효화.
+    // ZeroizeOnDrop 으로 메모리 영(0) 처리되어 종료 시점의 키 잔류 시간을 최소화한다.
+    // backup/lock 해제는 cipher feature on 빌드에서 캐시 키를 필요로 할 수 있으므로 그 이후에 호출.
+    auth::invalidate_credential_cache();
+    eprintln!("[startup] exit 자격증명 캐시 무효화 완료");
 }
 
 #[cfg(test)]
