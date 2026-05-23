@@ -42,7 +42,13 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
   // V30 (Sprint 7 post-review): dev 빌드 자동 로그인 우회. 환경 변수
   // `NEXT_PUBLIC_DEV_AUTOLOGIN` 에 평문 비밀번호 (8자 이상) 가 설정되어 있으면 자동 입력 + 제출.
   // 이미 한 번 `set_password` 한 상태 (`status==='locked'`) 에서만 우회 — 첫 설치 시 마법사는
-  // 사용자가 직접 진행. release 빌드에서는 NEXT_PUBLIC 환경 변수 자체가 없으므로 무동작.
+  // 사용자가 직접 진행.
+  //
+  // ⚠️ 보안 주의 (R50, Sprint 7 post-review): `NEXT_PUBLIC_*` 환경 변수는 Next.js 빌드 타임에
+  // 클라이언트 번들에 **인라인**된다. `.env` 에 설정된 채 `pnpm tauri:build` (release) 를 실행
+  // 하면 dev 비밀번호가 인스톨러 JS 번들에 포함되어 배포된다. release 빌드 전에 반드시 `.env`
+  // 에서 본 변수를 제거하거나 빈 값으로 설정할 것. 또는 `unset NEXT_PUBLIC_DEV_AUTOLOGIN` 후
+  // 빌드. CI 환경에서는 환경 변수 미설정 상태가 기본이라 안전.
   useEffect(() => {
     const devPw = process.env.NEXT_PUBLIC_DEV_AUTOLOGIN
     if (status !== 'locked' || !devPw || devPw.length < MIN_PASSWORD_LENGTH) return

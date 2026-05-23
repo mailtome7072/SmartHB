@@ -39,6 +39,14 @@
 
 ---
 
+## [0.3.2] - 2026-05-23
+
+### Fixed
+- R50: `NEXT_PUBLIC_DEV_AUTOLOGIN` 환경 변수가 Next.js 빌드 타임에 클라이언트 번들에 인라인되는 보안 위험을 코드 주석 및 `.env.example`에 명시. release 빌드 전 3가지 안전 조치(제거/빈 값/unset) 안내 추가. 동일 변수를 사용하는 `LockWarning.tsx`에도 동일 경고 반영 (LockScreen.tsx, .env.example, LockWarning.tsx)
+- I-S2-6: `auth.rs::load_salt_backs_up_corrupted_file` 테스트에 `#[ignore]` 가드 추가. 해당 테스트가 dev 환경의 실제 OS Keychain 항목을 읽고 삭제할 수 있어 개발자 SmartHB salt 손상 위험 방지. 수동 실행: `cargo test -- --ignored`
+
+---
+
 ## [0.3.1] - 2026-05-23
 
 ### Added
