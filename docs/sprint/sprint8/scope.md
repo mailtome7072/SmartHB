@@ -1,9 +1,9 @@
 ---
-Sprint: 8  |  Date: 2026-05-23  |  Session: #2 (T1 완료, T2 진행)
+Sprint: 8  |  Date: 2026-05-23  |  Session: #3 (T1·T2 완료, T3 진행)
 ---
 
-> Sprint 8 Session #2 — T2 단독 (출결 생성 IPC: generate_attendances + check_attendance_exists).
-> 예상 6h. T1 의 V106 마이그레이션 위에 IPC 레이어 구축.
+> Sprint 8 Session #3 — T3 전체 (출결 조회 + 토글 IPC 4종).
+> 예상 6h. attendance.rs에 IPC 4개 추가 + audit 이벤트 1종 신규 + 단위 테스트.
 
 ## 이번 세션의 Task 선정
 
@@ -123,7 +123,7 @@ Sprint: 8  |  Date: 2026-05-23  |  Session: #2 (T1 완료, T2 진행)
 |------|------|------|
 | src-tauri/src/commands/attendance.rs | [신규] | IPC + 테스트 |
 | src-tauri/src/commands/mod.rs | [2회] | `pub mod attendance;` 추가 |
-| src-tauri/src/lib.rs | [2회] | `invoke_handler` 에 IPC 2개 등록 |
+| src-tauri/src/lib.rs | [3회 ⚠️] | `invoke_handler` 에 IPC 2개 등록 |
 | src-tauri/.sqlx/ | [재생성] | query 매크로 미사용 (raw `sqlx::query` 만) → prepare skip |
 | docs/sprint/sprint8/scope.md | [2회] | Session #2 추가 |
 
@@ -141,4 +141,85 @@ Sprint: 8  |  Date: 2026-05-23  |  Session: #2 (T1 완료, T2 진행)
 - ✅ Self-verify: cargo test cipher off **200 passed** (T2 신규 9건) / cipher on **126 passed** (cipher 가드로 attendance test skip — 의도된 동작)
 - ✅ Clippy off+on (lib) clean. 참고: `--tests` 옵션으로는 cipher on 에서 기존 students.rs/schedules.rs/academic.rs 의 cipher-off-only 헬퍼 6건이 `dead_code` 로 잡힘 — T2 범위 외 이슈 (T6 carry-over 또는 별도 정리)
 - ✅ simplify — MINUTES_PER_HOUR 상수, StudentRow struct, 헬퍼 4종 분리 모두 단일 책임. 추가 단순화 불필요
-- ⬜ 단일 커밋 (attendance.rs + mod.rs + lib.rs + scope.md)
+- ✅ 단일 커밋 `366f880` (4파일, +647)
+
+---
+
+## Session #3 (T3 — 출결 조회 + 토글 IPC, 2026-05-23)
+
+### 이번 세션 Task
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T3** | attendance.rs에 IPC 4개 추가 + audit::AttendanceToggled variant 추가 + 단위 테스트 | 6h |
+
+### 설계 결정 (T3)
+
+#### IPC 4종
+- `get_attendance_grid(year_month) -> AttendanceGrid` — 출결표 그리드 (원생 × 일자)
+- `toggle_attendance(attendance_id, new_status) -> ToggleResult` — 출석/결석 토글
+- `update_absence_memo(attendance_id, memo)` — 결석 사유 메모
+- `get_attendance_summary(student_id, year_month) -> AttendanceSummary` — 원생 월간 요약
+
+#### 응답 구조 (camelCase)
+```ts
+AttendanceGrid {
+  yearMonth: string,
+  students: [{
+    studentId, name, serialNo, scheduleDays: number[1~7],
+    attendances: [{ id, eventDate, status, classMinutes, absenceMemo?, makeupDeadline? }],
+    summary: AttendanceSummary,
+  }]
+}
+AttendanceSummary {
+  studentId, yearMonth, presentCount, absentCount,
+  makeupNeededMinutes, makeupCompletedMinutes,
+}
+ToggleResult {
+  attendanceId, newStatus, newMakeupDeadline?, updatedSummary: AttendanceSummary,
+}
+```
+
+#### 토글 규칙
+- `present` → `absent`: status='absent', makeup_deadline = (year_month + 1), absence_memo는 유지
+- `absent` → `present`: status='present', makeup_deadline=NULL, absence_memo=NULL
+- `makeup_done` / `makeup_expired` → 토글 차단 (사용자 친화 한글 에러)
+- 보강 매칭(`makeup_done`) 또는 소멸(`makeup_expired`) 상태는 별도 보강 도메인에서 관리 — T3 범위 외
+
+#### 보강필요시간 계산
+- `makeup_needed_minutes = SUM(class_minutes WHERE status='absent' AND makeup_attendance_id IS NULL)`
+- `makeup_completed_minutes = SUM(class_minutes FROM makeup_attendances WHERE status='makeup_attended')`
+- `makeup_expired` 는 SUM에서 제외 (소멸 처리는 별도)
+
+#### 소멸기한 계산
+- `(year_month + 1)`: YYYY-MM + 1 month. 12월 → 다음해 01.
+- chrono `NaiveDate::with_day(1)?.checked_add_months(Months::new(1))?` 사용
+
+#### audit 이벤트
+- `AuditEventType::AttendanceToggled` 신규 variant + `"attendance-toggled"` code
+- `record()` 호출: `event_subject = Some(attendance_id)`, `details = JSON({student_id, year_month, from, to})`
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/attendance.rs | [5회 ⚠️] | IPC 4종 + 응답 구조체 + 헬퍼 + 단위 테스트 추가 |
+| src-tauri/src/commands/audit.rs | [3회 ⚠️] | `AttendanceToggled` variant + as_code 매핑 |
+| src-tauri/src/lib.rs | [3회] | invoke_handler 에 4개 등록 |
+| docs/sprint/sprint8/scope.md | [3회] | Session #3 추가 |
+
+### 단위 테스트 (T3 AC 매핑)
+
+- ✅ AC-T3-1: `get_attendance_grid_returns_full_structure` — 그리드 + 요약 + 일자별 셀
+- ✅ AC-T3-2: `toggle_present_to_absent_increases_makeup_needed` — class_minutes 증가
+- ✅ AC-T3-3: `toggle_absent_to_present_decreases_makeup_needed` — class_minutes 감소 + memo/deadline NULL 환원
+- ✅ AC-T3-4: `toggle_to_absent_sets_deadline_next_month` (5월→6월, 12월→다음해 01, 1월→2월)
+- ✅ AC-T3-5: `toggle_blocked_for_makeup_done_and_expired` + `toggle_rejects_invalid_status`
+- ✅ AC-T3-6: `update_absence_memo_writes_text_and_nulls` — set/clear/not-found
+- ✅ AC-T3-7: 단위 테스트 통과 (T3 신규 9건)
+- ✅ 보조: `summary_excludes_matched_makeup_from_needed` + `summary_aggregates_completed_makeup_minutes`
+
+### 세션 종료 조건
+- ✅ Self-verify: cargo test cipher off **209 passed** (T3 신규 9건) / cipher on **126 passed**
+- ✅ Clippy off+on (lib) clean
+- ✅ simplify — 응답 구조체 5개, `_impl` 분리, `compute_summary` 단일 정의 — 단일 책임 + 중복 없음
+- ⬜ 단일 커밋 (attendance.rs + audit.rs + lib.rs + scope.md)

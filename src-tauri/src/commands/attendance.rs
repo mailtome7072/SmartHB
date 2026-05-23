@@ -1,21 +1,36 @@
-//! 출결 도메인 IPC — Sprint 8 T2 (PRD §4.5.1, data-model §2.4).
+//! 출결 도메인 IPC — Sprint 8 T2·T3 (PRD §4.5, data-model §2.4).
 //!
-//! 두 IPC 제공:
+//! T2 — 생성:
 //! - [`check_attendance_exists`] — 해당 월 정규 출결 존재 여부 (UI "출결 생성" 버튼 활성 조건)
 //! - [`generate_attendances`] — 해당 월 재원 원생 × 수업 요일 일자에 정규 출결 일괄 INSERT
 //!
-//! 생성 규칙:
+//! T3 — 조회·토글:
+//! - [`get_attendance_grid`] — 출결표 그리드 (원생 × 일자, 일자별 셀 + 월간 요약)
+//! - [`toggle_attendance`] — 출석↔결석 토글 + 보강필요시간/소멸기한 자동 갱신
+//! - [`update_absence_memo`] — 결석 사유 메모 (NULL 가능)
+//! - [`get_attendance_summary`] — 원생별 월간 요약 (출석/결석/보강필요/보강완료 분)
+//!
+//! 생성 규칙 (T2):
 //! 1. 교습기간이 설정 + `is_confirmed=1` 이어야 한다
 //! 2. 같은 월에 이미 생성된 출결이 있으면 거부 (AC-4.5-1 중복 방지)
 //! 3. `student_schedules` 의 현행 (effective_to IS NULL) 요일별 스케줄을 기준으로 일자 산출
 //! 4. `schedule_events` JOIN `schedule_codes` 에서 `allows_regular_class=0` 인 일자/기간은 제외
-//!    (공휴일·휴원일·방학 등)
 //! 5. 원생 `enroll_date` 이전 / `withdraw_date` 이후 일자는 제외
 //! 6. `class_minutes = duration_hours × 60` (V101 hours INTEGER 저장)
 //! 7. 전체 INSERT 를 단일 트랜잭션으로 처리 (부분 실패 시 롤백)
+//!
+//! 토글 규칙 (T3):
+//! - `present` → `absent`: makeup_deadline = (year_month + 1), absence_memo는 유지
+//! - `absent` → `present`: makeup_deadline=NULL, absence_memo=NULL로 초기화
+//! - `makeup_done` (보강 매칭) / `makeup_expired` (소멸) 상태는 토글 차단 — 보강 도메인에서 관리
+//!
+//! 보강필요시간 정의:
+//! - `makeup_needed = SUM(class_minutes WHERE status='absent' AND makeup_attendance_id IS NULL)`
+//! - `makeup_completed = SUM(class_minutes FROM makeup_attendances WHERE status='makeup_attended')`
 
+use crate::commands::audit::{self, AuditEventType};
 use crate::commands::db::pool;
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use std::collections::{HashMap, HashSet};
@@ -279,6 +294,381 @@ where
         map.insert(dow, hours * MINUTES_PER_HOUR);
     }
     Ok(map)
+}
+
+// ─────────────────────── T3: 조회 + 토글 ───────────────────────
+
+/// 출결 셀 — 그리드 한 칸에 들어가는 정보.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceCell {
+    pub id: i64,
+    pub event_date: String,
+    pub status: String,
+    pub class_minutes: i64,
+    pub absence_memo: Option<String>,
+    pub makeup_deadline: Option<String>,
+    pub makeup_attendance_id: Option<i64>,
+}
+
+/// 원생별 월간 요약.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceSummary {
+    pub student_id: i64,
+    pub year_month: String,
+    pub present_count: i64,
+    pub absent_count: i64,
+    pub makeup_needed_minutes: i64,
+    pub makeup_completed_minutes: i64,
+}
+
+/// 그리드 한 원생 행.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceGridStudent {
+    pub student_id: i64,
+    pub name: String,
+    pub serial_no: String,
+    pub schedule_days: Vec<i64>,
+    pub attendances: Vec<AttendanceCell>,
+    pub summary: AttendanceSummary,
+}
+
+/// 그리드 응답 전체.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceGrid {
+    pub year_month: String,
+    pub students: Vec<AttendanceGridStudent>,
+}
+
+/// 토글 결과.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToggleResult {
+    pub attendance_id: i64,
+    pub new_status: String,
+    pub new_makeup_deadline: Option<String>,
+    pub updated_summary: AttendanceSummary,
+}
+
+#[tauri::command]
+pub async fn get_attendance_grid(year_month: String) -> Result<AttendanceGrid, String> {
+    let pool = pool().map_err(|e| e.to_string())?;
+    get_grid_impl(pool, &year_month).await
+}
+
+#[tauri::command]
+pub async fn toggle_attendance(
+    attendance_id: i64,
+    new_status: String,
+) -> Result<ToggleResult, String> {
+    let pool = pool().map_err(|e| e.to_string())?;
+    toggle_impl(pool, attendance_id, &new_status).await
+}
+
+#[tauri::command]
+pub async fn update_absence_memo(
+    attendance_id: i64,
+    memo: Option<String>,
+) -> Result<(), String> {
+    let pool = pool().map_err(|e| e.to_string())?;
+    update_memo_impl(pool, attendance_id, memo.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn get_attendance_summary(
+    student_id: i64,
+    year_month: String,
+) -> Result<AttendanceSummary, String> {
+    let pool = pool().map_err(|e| e.to_string())?;
+    get_summary_impl(pool, student_id, &year_month).await
+}
+
+async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<AttendanceGrid, String> {
+    validate_year_month(year_month)?;
+
+    // 1) 해당 월 출결이 있는 원생들 (정렬: serial_no)
+    let student_rows = sqlx::query(
+        "SELECT DISTINCT s.id, s.name, s.serial_no \
+         FROM students s \
+         JOIN regular_attendances a ON a.student_id = s.id \
+         WHERE a.year_month = ? \
+         ORDER BY CAST(s.serial_no AS INTEGER), s.serial_no",
+    )
+    .bind(year_month)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("원생 조회 실패: {}", e))?;
+
+    let mut students = Vec::with_capacity(student_rows.len());
+    for srow in student_rows {
+        let student_id: i64 = srow.try_get("id").map_err(|e| e.to_string())?;
+        let name: String = srow.try_get("name").map_err(|e| e.to_string())?;
+        let serial_no: String = srow.try_get("serial_no").map_err(|e| e.to_string())?;
+
+        // 수업 요일 (현행 스케줄)
+        let day_rows = sqlx::query(
+            "SELECT day_of_week FROM student_schedules \
+             WHERE student_id = ? AND effective_to IS NULL ORDER BY day_of_week",
+        )
+        .bind(student_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("스케줄 조회 실패: {}", e))?;
+        let schedule_days: Vec<i64> = day_rows
+            .iter()
+            .filter_map(|r| r.try_get::<i64, _>("day_of_week").ok())
+            .collect();
+
+        // 출결 셀들
+        let cell_rows = sqlx::query(
+            "SELECT id, event_date, status, class_minutes, absence_memo, \
+                    makeup_deadline, makeup_attendance_id \
+             FROM regular_attendances \
+             WHERE student_id = ? AND year_month = ? \
+             ORDER BY event_date",
+        )
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("출결 조회 실패: {}", e))?;
+
+        let attendances: Vec<AttendanceCell> = cell_rows
+            .into_iter()
+            .map(|r| {
+                Ok(AttendanceCell {
+                    id: r.try_get("id").map_err(|e: sqlx::Error| e.to_string())?,
+                    event_date: r.try_get("event_date").map_err(|e: sqlx::Error| e.to_string())?,
+                    status: r.try_get("status").map_err(|e: sqlx::Error| e.to_string())?,
+                    class_minutes: r
+                        .try_get("class_minutes")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                    absence_memo: r
+                        .try_get("absence_memo")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                    makeup_deadline: r
+                        .try_get("makeup_deadline")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                    makeup_attendance_id: r
+                        .try_get("makeup_attendance_id")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        let summary = compute_summary(pool, student_id, year_month).await?;
+
+        students.push(AttendanceGridStudent {
+            student_id,
+            name,
+            serial_no,
+            schedule_days,
+            attendances,
+            summary,
+        });
+    }
+
+    Ok(AttendanceGrid {
+        year_month: year_month.to_string(),
+        students,
+    })
+}
+
+async fn toggle_impl(
+    pool: &SqlitePool,
+    attendance_id: i64,
+    new_status: &str,
+) -> Result<ToggleResult, String> {
+    if new_status != "present" && new_status != "absent" {
+        return Err(format!(
+            "토글 가능한 상태는 'present' 또는 'absent' 입니다 (요청: {}).",
+            new_status
+        ));
+    }
+
+    // 현재 상태 조회
+    let row = sqlx::query(
+        "SELECT student_id, year_month, status, makeup_attendance_id \
+         FROM regular_attendances WHERE id = ?",
+    )
+    .bind(attendance_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("출결 조회 실패: {}", e))?
+    .ok_or_else(|| format!("출결 레코드를 찾을 수 없습니다 (id={}).", attendance_id))?;
+
+    let current_status: String = row.try_get("status").map_err(|e| e.to_string())?;
+    let student_id: i64 = row.try_get("student_id").map_err(|e| e.to_string())?;
+    let year_month: String = row.try_get("year_month").map_err(|e| e.to_string())?;
+
+    // 보강완료/소멸 상태는 토글 불가
+    if current_status == "makeup_done" {
+        return Err(
+            "이 출결은 보강이 매칭되어 있어 직접 토글할 수 없습니다. 보강 매칭을 먼저 해제하세요."
+                .to_string(),
+        );
+    }
+    if current_status == "makeup_expired" {
+        return Err(
+            "이 결석은 소멸 처리되어 토글할 수 없습니다. 필요 시 소멸 환원을 먼저 수행하세요."
+                .to_string(),
+        );
+    }
+    if current_status == new_status {
+        return Err(format!("이미 '{}' 상태입니다.", new_status));
+    }
+
+    // 토글 실행
+    let new_deadline = if new_status == "absent" {
+        Some(next_month_str(&year_month)?)
+    } else {
+        None
+    };
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
+
+    if new_status == "absent" {
+        sqlx::query(
+            "UPDATE regular_attendances \
+             SET status='absent', makeup_deadline=?, \
+                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+             WHERE id = ?",
+        )
+        .bind(&new_deadline)
+        .bind(attendance_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("토글 UPDATE 실패: {}", e))?;
+    } else {
+        sqlx::query(
+            "UPDATE regular_attendances \
+             SET status='present', makeup_deadline=NULL, absence_memo=NULL, \
+                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+             WHERE id = ?",
+        )
+        .bind(attendance_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("토글 UPDATE 실패: {}", e))?;
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
+
+    let details = format!(
+        r#"{{"student_id":{},"year_month":"{}","from":"{}","to":"{}"}}"#,
+        student_id, year_month, current_status, new_status
+    );
+    audit::try_record(
+        AuditEventType::AttendanceToggled,
+        Some(&attendance_id.to_string()),
+        Some(&details),
+    )
+    .await;
+
+    let updated_summary = compute_summary(pool, student_id, &year_month).await?;
+
+    Ok(ToggleResult {
+        attendance_id,
+        new_status: new_status.to_string(),
+        new_makeup_deadline: new_deadline,
+        updated_summary,
+    })
+}
+
+async fn update_memo_impl(
+    pool: &SqlitePool,
+    attendance_id: i64,
+    memo: Option<&str>,
+) -> Result<(), String> {
+    let result = sqlx::query(
+        "UPDATE regular_attendances \
+         SET absence_memo=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+         WHERE id = ?",
+    )
+    .bind(memo)
+    .bind(attendance_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("메모 UPDATE 실패: {}", e))?;
+
+    if result.rows_affected() == 0 {
+        return Err(format!("출결 레코드를 찾을 수 없습니다 (id={}).", attendance_id));
+    }
+    Ok(())
+}
+
+async fn get_summary_impl(
+    pool: &SqlitePool,
+    student_id: i64,
+    year_month: &str,
+) -> Result<AttendanceSummary, String> {
+    validate_year_month(year_month)?;
+    compute_summary(pool, student_id, year_month).await
+}
+
+async fn compute_summary(
+    pool: &SqlitePool,
+    student_id: i64,
+    year_month: &str,
+) -> Result<AttendanceSummary, String> {
+    let row = sqlx::query(
+        "SELECT \
+            SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) AS present_count, \
+            SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END) AS absent_count, \
+            COALESCE(SUM(CASE WHEN status='absent' AND makeup_attendance_id IS NULL \
+                              THEN class_minutes ELSE 0 END), 0) AS needed \
+         FROM regular_attendances \
+         WHERE student_id = ? AND year_month = ?",
+    )
+    .bind(student_id)
+    .bind(year_month)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("요약 조회 실패: {}", e))?;
+
+    let present_count: i64 = row.try_get::<Option<i64>, _>("present_count").map_err(|e| e.to_string())?.unwrap_or(0);
+    let absent_count: i64 = row.try_get::<Option<i64>, _>("absent_count").map_err(|e| e.to_string())?.unwrap_or(0);
+    let needed: i64 = row.try_get("needed").map_err(|e| e.to_string())?;
+
+    let completed_row = sqlx::query(
+        "SELECT COALESCE(SUM(class_minutes), 0) AS completed \
+         FROM makeup_attendances \
+         WHERE student_id = ? AND year_month = ? AND status = 'makeup_attended'",
+    )
+    .bind(student_id)
+    .bind(year_month)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("보강완료 조회 실패: {}", e))?;
+    let completed: i64 = completed_row.try_get("completed").map_err(|e| e.to_string())?;
+
+    Ok(AttendanceSummary {
+        student_id,
+        year_month: year_month.to_string(),
+        present_count,
+        absent_count,
+        makeup_needed_minutes: needed,
+        makeup_completed_minutes: completed,
+    })
+}
+
+/// `YYYY-MM` 다음 달을 `YYYY-MM` 형식으로 반환. 12월 → 다음해 01.
+fn next_month_str(year_month: &str) -> Result<String, String> {
+    validate_year_month(year_month)?;
+    let base = NaiveDate::parse_from_str(&format!("{}-01", year_month), "%Y-%m-%d")
+        .map_err(|e| format!("year_month 파싱 실패: {}", e))?;
+    let next = base
+        .checked_add_months(Months::new(1))
+        .ok_or_else(|| "다음 달 계산 오버플로".to_string())?;
+    Ok(format!("{:04}-{:02}", next.year(), next.month()))
 }
 
 // ─────────────────────── 단위 테스트 ───────────────────────
@@ -588,5 +978,258 @@ mod tests {
         assert!(validate_year_month("2026-6").is_err());
         assert!(validate_year_month("YYYY-MM").is_err());
         assert!(validate_year_month("").is_err());
+    }
+
+    // ─────────────── T3 단위 테스트 ───────────────
+
+    /// 출결 1건 직접 조회 (테스트 헬퍼).
+    async fn fetch_cell(pool: &SqlitePool, attendance_id: i64) -> AttendanceCell {
+        let row = sqlx::query(
+            "SELECT id, event_date, status, class_minutes, absence_memo, \
+                    makeup_deadline, makeup_attendance_id \
+             FROM regular_attendances WHERE id = ?",
+        )
+        .bind(attendance_id)
+        .fetch_one(pool)
+        .await
+        .expect("출결 조회");
+        AttendanceCell {
+            id: row.try_get("id").unwrap(),
+            event_date: row.try_get("event_date").unwrap(),
+            status: row.try_get("status").unwrap(),
+            class_minutes: row.try_get("class_minutes").unwrap(),
+            absence_memo: row.try_get("absence_memo").unwrap(),
+            makeup_deadline: row.try_get("makeup_deadline").unwrap(),
+            makeup_attendance_id: row.try_get("makeup_attendance_id").unwrap(),
+        }
+    }
+
+    /// 출결을 임의 상태로 직접 설정 (테스트 시나리오 셋업용).
+    async fn set_cell_state(
+        pool: &SqlitePool,
+        id: i64,
+        status: &str,
+        makeup_attendance_id: Option<i64>,
+    ) {
+        sqlx::query(
+            "UPDATE regular_attendances \
+             SET status=?, makeup_attendance_id=? WHERE id=?",
+        )
+        .bind(status)
+        .bind(makeup_attendance_id)
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("상태 설정");
+    }
+
+    async fn first_attendance_id(pool: &SqlitePool, student_id: i64, year_month: &str) -> i64 {
+        let r: (i64,) = sqlx::query_as(
+            "SELECT id FROM regular_attendances \
+             WHERE student_id=? AND year_month=? ORDER BY event_date LIMIT 1",
+        )
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_one(pool)
+        .await
+        .expect("attendance id");
+        r.0
+    }
+
+    // ─────── AC-T3-1 ───────
+
+    #[tokio::test]
+    async fn get_attendance_grid_returns_full_structure() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1), (3, 1)]).await;
+
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        assert_eq!(grid.year_month, "2026-06");
+        assert_eq!(grid.students.len(), 1);
+        let s = &grid.students[0];
+        assert_eq!(s.student_id, sid);
+        assert_eq!(s.serial_no, "S001");
+        assert_eq!(s.schedule_days, vec![1, 3]);
+        assert!(!s.attendances.is_empty());
+        assert_eq!(s.summary.year_month, "2026-06");
+        assert_eq!(s.summary.absent_count, 0);
+        assert!(s.summary.present_count > 0);
+    }
+
+    // ─────── AC-T3-2 ───────
+
+    #[tokio::test]
+    async fn toggle_present_to_absent_increases_makeup_needed() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 2)]).await; // 2h=120m
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+
+        let before = compute_summary(&pool, sid, "2026-06").await.expect("before");
+        assert_eq!(before.makeup_needed_minutes, 0);
+
+        let result = toggle_impl(&pool, aid, "absent").await.expect("toggle");
+        assert_eq!(result.new_status, "absent");
+        assert_eq!(result.new_makeup_deadline.as_deref(), Some("2026-07"));
+        assert_eq!(result.updated_summary.makeup_needed_minutes, 120);
+        assert_eq!(result.updated_summary.absent_count, 1);
+    }
+
+    // ─────── AC-T3-3 ───────
+
+    #[tokio::test]
+    async fn toggle_absent_to_present_decreases_makeup_needed() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await; // 60m
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+
+        toggle_impl(&pool, aid, "absent").await.expect("absent");
+        let mid = compute_summary(&pool, sid, "2026-06").await.expect("mid");
+        assert_eq!(mid.makeup_needed_minutes, 60);
+
+        let result = toggle_impl(&pool, aid, "present").await.expect("present");
+        assert_eq!(result.new_status, "present");
+        assert!(result.new_makeup_deadline.is_none());
+        assert_eq!(result.updated_summary.makeup_needed_minutes, 0);
+        assert_eq!(result.updated_summary.absent_count, 0);
+
+        // absence_memo 도 NULL 로 환원되어야 함
+        let cell = fetch_cell(&pool, aid).await;
+        assert!(cell.absence_memo.is_none());
+        assert!(cell.makeup_deadline.is_none());
+    }
+
+    // ─────── AC-T3-4 ───────
+
+    #[tokio::test]
+    async fn toggle_to_absent_sets_deadline_next_month() {
+        // 5월 → 6월
+        assert_eq!(next_month_str("2026-05").expect("ok"), "2026-06");
+        // 12월 → 다음해 01
+        assert_eq!(next_month_str("2026-12").expect("ok"), "2027-01");
+        // 1월 → 2월
+        assert_eq!(next_month_str("2026-01").expect("ok"), "2026-02");
+        // 잘못된 입력은 에러
+        assert!(next_month_str("invalid").is_err());
+    }
+
+    // ─────── AC-T3-5 ───────
+
+    #[tokio::test]
+    async fn toggle_blocked_for_makeup_done_and_expired() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+
+        // makeup_done 상태에서 토글 차단
+        set_cell_state(&pool, aid, "makeup_done", Some(999)).await;
+        let err = toggle_impl(&pool, aid, "present")
+            .await
+            .expect_err("makeup_done 차단");
+        assert!(err.contains("보강"), "보강 안내 메시지: {}", err);
+
+        // makeup_expired 상태에서 토글 차단
+        set_cell_state(&pool, aid, "makeup_expired", None).await;
+        let err = toggle_impl(&pool, aid, "absent")
+            .await
+            .expect_err("makeup_expired 차단");
+        assert!(err.contains("소멸"), "소멸 안내 메시지: {}", err);
+    }
+
+    #[tokio::test]
+    async fn toggle_rejects_invalid_status() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+
+        let err = toggle_impl(&pool, aid, "makeup_done")
+            .await
+            .expect_err("외부 새 상태 거부");
+        assert!(err.contains("present"));
+    }
+
+    // ─────── AC-T3-6 ───────
+
+    #[tokio::test]
+    async fn update_absence_memo_writes_text_and_nulls() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+        toggle_impl(&pool, aid, "absent").await.expect("absent");
+
+        update_memo_impl(&pool, aid, Some("가족 행사")).await.expect("set memo");
+        assert_eq!(fetch_cell(&pool, aid).await.absence_memo.as_deref(), Some("가족 행사"));
+
+        update_memo_impl(&pool, aid, None).await.expect("clear memo");
+        assert!(fetch_cell(&pool, aid).await.absence_memo.is_none());
+
+        // 존재하지 않는 id
+        assert!(update_memo_impl(&pool, 9999, Some("x")).await.is_err());
+    }
+
+    // ─────── 보조: 보강 매칭은 needed 에서 제외 ───────
+
+    #[tokio::test]
+    async fn summary_excludes_matched_makeup_from_needed() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await; // 60m/회
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        // 2건 결석 후 1건만 보강 매칭 (status=absent + makeup_attendance_id=NOT NULL → needed 제외)
+        let a_ids: Vec<(i64,)> = sqlx::query_as(
+            "SELECT id FROM regular_attendances WHERE student_id=? AND year_month=? ORDER BY event_date LIMIT 2",
+        )
+        .bind(sid)
+        .bind("2026-06")
+        .fetch_all(&pool)
+        .await
+        .expect("ids");
+        toggle_impl(&pool, a_ids[0].0, "absent").await.expect("a1 absent");
+        toggle_impl(&pool, a_ids[1].0, "absent").await.expect("a2 absent");
+        // 1번째 결석은 보강 매칭됨 — makeup_attendance_id 설정
+        set_cell_state(&pool, a_ids[0].0, "absent", Some(999)).await;
+
+        let s = compute_summary(&pool, sid, "2026-06").await.expect("summary");
+        assert_eq!(s.absent_count, 2);
+        assert_eq!(s.makeup_needed_minutes, 60, "매칭된 결석은 needed 에서 제외");
+    }
+
+    // ─────── 보조: 보강완료 분 합산 ───────
+
+    #[tokio::test]
+    async fn summary_aggregates_completed_makeup_minutes() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+
+        // 보강 출결 2건 (출석 + 결석)
+        sqlx::query(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) \
+             VALUES (?, '2026-06-10', '2026-06', 'makeup_attended', 60), \
+                    (?, '2026-06-17', '2026-06', 'makeup_attended', 90), \
+                    (?, '2026-06-24', '2026-06', 'makeup_absent',   60)",
+        )
+        .bind(sid)
+        .bind(sid)
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .expect("makeup INSERT");
+
+        let s = compute_summary(&pool, sid, "2026-06").await.expect("summary");
+        assert_eq!(s.makeup_completed_minutes, 150, "출석한 보강만 합산 (60+90)");
     }
 }
