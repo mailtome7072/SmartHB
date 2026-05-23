@@ -472,23 +472,29 @@ export function ThreeMonthCalendar({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
     <div className="flex flex-col gap-3">
+      {/* V31 (Sprint 7 post-review): 확대 보기 모드에서는 prev/next 비활성화 + 확대된 월을
+          타이틀로 표시. 3개월 보기 복귀 후에는 다시 활성화 + center 월 표시. */}
       <nav className="flex items-center justify-center gap-4">
         <button
           type="button"
           onClick={() => shift(-1)}
           aria-label="이전 달"
-          className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
+          disabled={expandedMonth !== null}
+          className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           ← 이전
         </button>
         <span className="min-w-[8rem] text-center text-lg font-bold text-[var(--foreground)]">
-          {center.year}년 {center.month}월
+          {expandedMonth
+            ? `${expandedMonth.year}년 ${expandedMonth.month}월`
+            : `${center.year}년 ${center.month}월`}
         </span>
         <button
           type="button"
           onClick={() => shift(1)}
           aria-label="다음 달"
-          className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
+          disabled={expandedMonth !== null}
+          className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           다음 →
         </button>
