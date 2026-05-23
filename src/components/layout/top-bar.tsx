@@ -3,7 +3,7 @@
 /**
  * 상단바 (Sprint 3 T5 + Sprint 4 T3 / 사용자 이슈 #1, #2).
  *
- * 우측 영역: 점유 디바이스 / 마지막 백업 / 동기화 상태 / 시작 시간(ms).
+ * 우측 영역: 점유 디바이스 / 마지막 백업 / 동기화 상태 / 시작 속도 (정상속도/속도저하).
  * IPC 호출은 AppShell 이 담당하고 본 컴포넌트는 표시만 한다 (store + props SSOT).
  * 사이드바 토글 + 글로벌 검색바 슬롯도 유지.
  */
@@ -56,9 +56,11 @@ export function TopBar({
   const lockStatus = useAppStore((s) => s.lockStatus)
   const lastStartup = useSessionStore((s) => s.lastStartup)
 
-  const startupLabel =
-    lastStartup === null ? null : `시작 ${lastStartup.elapsed_ms}ms`
+  // V34 (Sprint 7 post-review): 시작 시간 ms 숫자 → "정상속도" / "속도저하" 라벨로 변경.
+  // 사용자(50대) 친화 표현. 상세 ms 수치는 title 속성으로만 노출 (PRD §5.7).
   const startupWarn = lastStartup !== null && lastStartup.elapsed_ms > 3000
+  const startupLabel =
+    lastStartup === null ? null : startupWarn ? '속도저하' : '정상속도'
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-[var(--border)] bg-white px-4">
@@ -87,9 +89,11 @@ export function TopBar({
             <span aria-hidden="true" className="text-gray-300">|</span>
             <span
               title={
-                startupWarn
-                  ? 'PRD §5.6 < 3000ms 초과 — 환경 점검 권장'
-                  : 'app_startup_sequence 총 소요'
+                lastStartup !== null
+                  ? startupWarn
+                    ? `시작 ${lastStartup.elapsed_ms}ms — PRD §5.6 < 3000ms 초과, 환경 점검 권장`
+                    : `시작 ${lastStartup.elapsed_ms}ms — 정상`
+                  : ''
               }
               className={startupWarn ? 'font-semibold text-[var(--danger)]' : undefined}
             >

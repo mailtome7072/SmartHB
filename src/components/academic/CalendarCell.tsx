@@ -221,8 +221,10 @@ export function CalendarCell({
         ring,
         isPastMonth ? 'cursor-not-allowed opacity-60' : '',
         isOutsideMonth ? 'opacity-40' : '',
-        // V32 (Sprint 7 post-review): 다른 월의 교습기간에 속하는 셀은 블러 처리 (opacity 60%).
-        studyPeriodIsOtherMonth ? 'opacity-60' : '',
+        // V32 + V35 (Sprint 7 post-review): 다른 월의 교습기간 셀은 명확하게 블러 — opacity-30
+        // (visible 30%) + saturate-50 + grayscale 조합으로 시각 구분 강화. 사용자가 어느 달의
+        // 교습기간 셀인지 즉시 판별 가능.
+        studyPeriodIsOtherMonth ? 'opacity-30 saturate-50 grayscale' : '',
         clickable && !isInSelection ? 'hover:bg-amber-200 cursor-pointer' : '',
         clickable && isInSelection ? 'hover:bg-blue-200 cursor-pointer' : '',
       ].join(' ')}
