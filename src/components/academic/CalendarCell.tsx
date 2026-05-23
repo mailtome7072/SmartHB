@@ -70,8 +70,10 @@ interface EventBadgeProps {
 }
 
 function EventBadge({ event, cellDate, draggable, disabled, onClick }: EventBadgeProps) {
-  // Sprint 7 T9 (Issue 7): 공휴일 배지는 삭제 클릭 차단 — 백엔드 가드와 동일 조건.
-  const isHoliday = event.is_system_reserved && event.code_name === '공휴일'
+  // Sprint 7 T9 (Issue 7) + V21 (post-review): 시드 공휴일만 클릭 차단. 사용자 추가 공휴일
+  // (is_seeded=false)은 일반 클릭 흐름 허용 — 백엔드 delete_schedule_event 가드와 동일 조건.
+  const isSeededHoliday =
+    event.is_system_reserved && event.code_name === '공휴일' && event.is_seeded
   // V13 (Sprint 7 post-review): 기간성 코드 + 시작일 ≠ 종료일 → 시작 셀 "S" / 종료 셀 "E" 마커.
   const periodMarker = event.is_period_type && event.period_end_date && event.period_end_date !== event.event_date
     ? cellDate === event.event_date
@@ -81,7 +83,7 @@ function EventBadge({ event, cellDate, draggable, disabled, onClick }: EventBadg
         : ''
     : ''
   const label = (event.display_name ?? event.code_name) + periodMarker
-  const clickable = !disabled && !isHoliday && onClick !== undefined
+  const clickable = !disabled && !isSeededHoliday && onClick !== undefined
   const { setNodeRef, listeners, attributes, transform, isDragging } = useDraggable({
     id: eventDraggableId(event.id),
     disabled: disabled || !draggable,
@@ -103,8 +105,8 @@ function EventBadge({ event, cellDate, draggable, disabled, onClick }: EventBadg
       title={
         disabled
           ? '지난 달 일정은 수정할 수 없습니다'
-          : isHoliday
-            ? '공휴일은 삭제할 수 없습니다'
+          : isSeededHoliday
+            ? '시드된 공휴일은 삭제할 수 없습니다'
             : label + (draggable ? ' · 드래그로 이동' : '')
       }
       style={style}
@@ -173,12 +175,14 @@ export function CalendarCell({
   const dayColor =
     hasHoliday || isSunday ? 'text-red-700' : isSaturday ? 'text-blue-700' : 'text-[var(--foreground)]'
 
+  // V22 (Sprint 7 post-review): 교습기간 셀 배경 강화 (amber-50 → amber-100) — 50대 사용자
+  // 시각 구분 보강. selection / 드롭 hover 우선순위 유지.
   const background = isInSelection
     ? 'bg-blue-100'
     : droppableProps?.isOver
       ? 'bg-green-100'
       : inStudyPeriod
-        ? 'bg-amber-50'
+        ? 'bg-amber-100'
         : 'bg-white'
   const ring = isSelectionStart || isSelectionEnd ? 'ring-2 ring-blue-500 z-10' : ''
 
@@ -210,7 +214,7 @@ export function CalendarCell({
         ring,
         isPastMonth ? 'cursor-not-allowed opacity-60' : '',
         isOutsideMonth ? 'opacity-40' : '',
-        clickable && !isInSelection ? 'hover:bg-amber-100 cursor-pointer' : '',
+        clickable && !isInSelection ? 'hover:bg-amber-200 cursor-pointer' : '',
         clickable && isInSelection ? 'hover:bg-blue-200 cursor-pointer' : '',
       ].join(' ')}
     >

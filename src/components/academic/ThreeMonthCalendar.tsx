@@ -46,6 +46,14 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate()
 }
 
+/** "YYYY-MM-DD" → 다음 날짜 "YYYY-MM-DD" (V20). UTC 명시로 timezone 영향 회피. */
+function nextIsoDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + 1)
+  return dt.toISOString().slice(0, 10)
+}
+
 /** JS getDay(): 0=일, 1=월…6=토 → 월요일 시작 그리드 leading 칸 수 (0~6). */
 function leadingBlankCount(year: number, month: number): number {
   const jsDay = new Date(year, month - 1, 1).getDay()
@@ -333,8 +341,9 @@ export function ThreeMonthCalendar({
   })
 
   // event_date → events 매핑 (성능: O(n) → O(1) 셀 렌더 조회).
-  // V13 (Sprint 7 post-review): 기간성 코드(`is_period_type=1`) 는 종료일 셀에도 마커 표시
-  // 위해 종료일에도 동일 이벤트 추가. CalendarCell 의 EventBadge 가 cellDate 비교로 "S"/"E" 분기.
+  // V13: 기간성 코드는 시작/종료 셀에 "S"/"E" 마커 분기.
+  // V20 (Sprint 7 post-review): 기간성 코드의 시작~종료 **사이 모든 일자** 에도 매핑하여
+  // 셀 전체 구간에 이벤트가 보이도록. EventBadge 는 cellDate 비교로 시작/종료/사이 분기.
   const eventsByDate = useMemo(() => {
     const map = new Map<string, ScheduleEventListItem[]>()
     for (const e of eventsQuery.data ?? []) {
@@ -346,9 +355,14 @@ export function ThreeMonthCalendar({
         e.period_end_date &&
         e.period_end_date !== e.event_date
       ) {
-        const endArr = map.get(e.period_end_date) ?? []
-        endArr.push(e)
-        map.set(e.period_end_date, endArr)
+        // 시작 다음 날부터 종료일까지 모든 일자에 동일 event 추가.
+        let cursor = nextIsoDate(e.event_date)
+        while (cursor <= e.period_end_date) {
+          const arr = map.get(cursor) ?? []
+          arr.push(e)
+          map.set(cursor, arr)
+          cursor = nextIsoDate(cursor)
+        }
       }
     }
     return map

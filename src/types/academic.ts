@@ -92,8 +92,8 @@ export interface CascadeDeletePreview {
 
 /** 캘린더 렌더링용 평탄 응답 — schedule_codes JOIN 결과.
  *
- * Sprint 7 T4: `is_system_reserved` 추가 — 프론트엔드가 시스템 코드명 한국어 리터럴을
- * 하드코딩하지 않고 백엔드 플래그로 배지 색상·드래그 가능 여부 분기.
+ * Sprint 7 T4: `is_system_reserved` 추가 — 시스템 코드명 한국어 리터럴 하드코딩 제거.
+ * V21 (post-review): `is_seeded` 추가 — 시드 공휴일 vs 사용자 추가 공휴일 구분.
  */
 export interface ScheduleEventListItem {
   id: number
@@ -102,6 +102,7 @@ export interface ScheduleEventListItem {
   is_system_reserved: boolean
   is_duplicate_blocked: boolean
   is_period_type: boolean
+  is_seeded: boolean
   event_date: string
   period_end_date: string | null
   display_name: string | null
