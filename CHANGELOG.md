@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.3.1] - 2026-05-23
+
 ### Added
 - Sprint 7: `CredentialCache` 구조체 도입 (`OnceLock<Mutex<Option<CachedCredentials>>>`, ZeroizeOnDrop) — 앱 시작 시 1회 Keychain 로드 후 캐시 경유, macOS Keychain 다이얼로그 반복(3+ 회→최대 1회) 해소 (Issue 1, Critical UX)
 - Sprint 7: salt.bin 클라우드 동기화 폴더 이전 (`smarthb/salt.bin`) — Keychain 의존도 감소, 양 PC 동일 salt 자동 동기화 보장 (A17/A27 3회 이월 최종 해소)
@@ -91,8 +95,6 @@
 - Sprint 7: S-T2-1 — `eprintln!` 으로 DB 암호화 키 hex가 콘솔에 노출되던 문제 제거
 - Sprint 7: S-T2-2 ~ S-T2-6 — set_password/recovery 원자성 보강, NTFS fsync, delete_key idempotent, PC-B UX 개선
 
----
-
 ### Added
 - Sprint 6: Phase 2 학사 스케줄 관리 첫 기능 진입 — `/academic` 라우트 신설, 사이드바 "학사 스케줄" 메뉴 활성화
 - Sprint 6: 3개월 학사 캘린더 컴포넌트 — Tailwind grid-cols-7 직접 구현 (shadcn/ui Calendar 미사용), 공휴일/교습기간/일정 배지 표시, 교습기간 셀 selection 통합
@@ -120,6 +122,8 @@
 - Sprint 6: A22 — 코드 DnD 드래그 후 필터 변경 시 sort_order가 충돌하여 순서가 뒤섞이던 문제 해소
 
 ---
+
+## [0.2.1] - 2026-05-21
 
 ### Added
 - Sprint 5: `tauri-plugin-single-instance` 2.4.2 도입 — 동일 PC 다중 인스턴스 원천 차단. 두 번째 인스턴스 기동 시 기존 창 포커스 + 새 프로세스 즉시 종료 (PRD §5.3)
