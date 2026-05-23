@@ -1,47 +1,55 @@
 ---
 name: sprint-next-session
-description: "v0.3.1 배포 완료 (2026-05-23). 다음: /sprint-dev 8 → Sprint 8 (출결 관리 — Phase 2 나머지)"
+description: "Sprint 8 Session #5 완료 (T1~T5, 5/9). 다음 세션: T6 (Sprint 7 carry-over High 4건 — Keychain/auth 보안)"
 metadata: 
   node_type: memory
   type: project
-  originSessionId: deploy-prod-v0.3.1
+  originSessionId: sprint8-session5-t5
 ---
 
-v0.3.1 배포 완료 (2026-05-23). **develop → master 직접 머지 + v0.3.1 태그 push 완료**.
+Sprint 8 출결 관리 — T1~T5 완료, T6~T9 다음 세션 이연.
 
-## v0.3.1 배포 현황
+## Sprint 8 진행 현황
 
-| 항목 | 내용 |
-|------|------|
-| 배포일 | 2026-05-23 |
-| 버전 | v0.3.1 |
-| 포함 스프린트 | Sprint 6 (학사 스케줄) + Sprint 7 (carry-over 해소 + 38건 fix) |
-| master 머지 | 6bf7cd5 (--no-ff) |
-| 태그 | v0.3.1 push 완료 → GitHub Actions CD 트리거 |
-| cargo test | cipher off 187 passed / cipher on 127 passed |
+| Task | 내용 | 상태 |
+|------|------|------|
+| T1 | V106 마이그레이션 (regular_attendances + makeup_attendances) | ✅ `f72778b` |
+| T2 | 출결 생성 IPC (generate / check_exists) | ✅ `366f880` |
+| T3 | 출결 조회 + 토글 IPC (grid / toggle / memo / summary) | ✅ `4efc570` |
+| T4 | 출결표 프론트엔드 UI (/attendance + AttendanceGrid + AbsenceMemoDialog) | ✅ `0a20c18` |
+| T4 follow-up | UX 보강 (AppShell 누락, 사이드바 너비, 요일 행, 시간 단위, 컬럼 재배치/배경색, 보강관리 메뉴) | ✅ `516758c` |
+| T5 | 보강필요시간/소멸기한 단위 테스트 100% (시나리오 2/5/9/10 추가) | ✅ `5f2f0fd` |
+| **T6** | **Sprint 7 carry-over High 4건** (I-S2-2/3/4/5, R40~R43) | ⬜ 다음 세션 |
+| T7 | carry-over Medium-High (I-S2-7, R45) | ⬜ |
+| T8 | carry-over Medium + R51/R52 (I-S2-8/9/10, R39, A31) | ⬜ |
+| T9 | 통합 검증 | ⬜ |
 
-## Sprint 8 진입 시 우선 액션
+검증 상태: `cargo test` cipher off **213 passed** (attendance 22) / clippy --lib clean / `pnpm lint` clean.
 
-1. `/sprint-dev 8` 입력하여 Sprint 8 구현 시작
-2. Sprint 8: 출결 관리 (Phase 2 나머지) — Phase 2 마일스톤(M3)
-3. sprint-planner agent로 Sprint 8 계획 수립 먼저 (docs/sprint/sprint8.md)
+## 다음 세션 우선 액션
 
-## Sprint 8 핵심 작업 (참고)
+1. 새 대화에서 `/sprint-dev 8` → Session #6 진입 (T6)
+2. **T6는 보안 경로 변경** — `systematic-debugging` 스킬 자동 배정 대상
+3. 변경 대상 모듈:
+   - `auth.rs` (verify_password / set_password / check_auth_status)
+   - `keyring/` (CRED_CACHE static drop)
+   - 관련 테스트의 Keychain 사이드이펙트 방지 (`#[ignore]` 또는 mock)
 
-- DB 마이그레이션: regular_attendances + makeup_attendances 테이블
-- 출결 생성 로직 (`generate_attendances`, `get_attendance_grid`)
-- 출결표 UI (행×원생, 열×일자, 50명×31일 렌더링 1초 이내)
-- 캘린더 라이브러리 ADR (FullCalendar vs React Big Calendar) — `docs/arch/adr-006-calendar-library.md`
-- 수업 관리 캘린더 뷰 기초 (§4.6.1)
+## T6 세부 (sprint8.md L274-294 참조)
 
-## 후속 처리 필요 항목 (risk-register 등록됨)
+- **I-S2-2 (R40)**: `verify_password`에서 partial-NULL 손상 감지·복구 강화 — atomic write fallback 패턴 적용
+- **I-S2-3 (R41)**: `set_password` 재진입 가드 — Mutex flag, 중복 호출 거부
+- **I-S2-4 (R42)**: `CRED_CACHE` static drop 시점 정리 — shutdown hook에서 명시적 무효화
+- **I-S2-5 (R43)**: `check_auth_status`의 legacy keyring fallback 마이그레이션 — `salt_exists_at` 경로 검증
 
-- **R40~R44 (High)**: I-S2-2 ~ I-S2-6 — partial-NULL 손상, set_password 재진입 가드, CRED_CACHE static drop, check_auth_status 마이그레이션, test→Keychain 사이드이펙트
-- **R45~R48 (Medium~High)**: concurrent race, mutex poison, migration audit, 잡다 low
-- **R39**: StudyPeriodEditor create+confirm 원자성 (hotfix 후보)
+## 후속 처리 필요 항목 (T7~T8)
+
+- **R45 (Medium-High)**: I-S2-7 — concurrent race (verify_password ↔ retrieve_key_from_keyring 순서)
+- **R39**: StudyPeriodEditor create+confirm 원자성 (T8 또는 hotfix 후보)
+- **R51/R52**: 잡다 low
 
 ## 정책 (재확인)
 
-- **PR 단계 생략** — 단일 개발자, 직접 머지
+- **PR 단계 생략** — 단일 개발자, 직접 머지 (`gh pr create` 금지)
 - **`/sprint-dev` 사용자 직접 입력** — 에이전트 호출 금지 (CLAUDE.md)
-- **v0.3.1 인스톨러**: GitHub Release에서 Windows .msi / macOS .dmg 다운로드 가능 (Actions 완료 후)
+- **사용자 메모리 미러 동기화 필수** — `~/.claude/projects/-Users-skyang-Projects-SmartHB/memory/sprint-next-session.md` 동시 갱신
