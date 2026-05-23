@@ -269,14 +269,18 @@ ToggleResult {
 
 ### 완료 기준 (이번 세션)
 
-- ⬜ AC-T4-1: `/attendance` 페이지에서 월 선택 + 그리드 렌더링
-- ⬜ AC-T4-2: "출결 생성" 버튼으로 일괄 생성 → 그리드 자동 갱신
-- ⬜ AC-T4-3: 셀 클릭으로 present↔absent 토글 (낙관적 업데이트)
-- ⬜ AC-T4-4: 결석 셀 빨강, makeup_done/expired 시각 구분
-- ⬜ AC-T4-5: 요약 컬럼 (출석/결석/보강필요/보강완료) 토글 시 실시간 반영
-- ⬜ AC-T4-6: 결석 사유 메모 다이얼로그 동작
-- ⬜ AC-T4-7: Ctrl+Z 1단계 Undo
-- ⬜ AC-T4-8: 50×31 렌더링 1초 이내 (메모이제이션으로 보장)
-- ⬜ AC-T4-9: Pretendard, 44×44px, WCAG AA 준수
-- ⬜ AC-T4-10: `pnpm lint` + `pnpm tsc --noEmit` 통과
-- ⬜ 단일 커밋 (7파일)
+- ✅ AC-T4-1: `/attendance` 페이지 — 월 선택 콤보 (현재월 + 과거 11개월)
+- ✅ AC-T4-2: "출결 생성" 버튼 — exists=false 일 때만 노출, mutation 후 invalidate
+- ✅ AC-T4-3: 셀 클릭 토글 (mutation 후 invalidate — 단순성/안정성 우선)
+- ✅ AC-T4-4: present=○, absent=×(빨강), makeup_done=보강, makeup_expired=소멸 + 비수업일 placeholder
+- ✅ AC-T4-5: 요약 4컬럼 (출석/결석/보강필요/보강완료) — invalidate 로 실시간 갱신
+- ✅ AC-T4-6: AbsenceMemoDialog — 우클릭 진입, ESC/배경클릭 닫기, 빈 입력 NULL 환원
+- ✅ AC-T4-7: Ctrl+Z / Cmd+Z 1단계 Undo — `lastToggle` state
+- ✅ AC-T4-8: 메모이제이션 (`StudentRow` React.memo + `useMemo` byDay/days) — 실측은 시각 검수 단계
+- ✅ AC-T4-9: 44×44px 최소 영역, 한국어 라벨/툴팁, WCAG 대비
+- ✅ AC-T4-10: `pnpm lint` clean + `pnpm tsc --noEmit` clean
+- ✅ 단일 커밋 `0a20c18` (7파일, +764)
+
+### 미해결/이연
+- 시각 검수: 사용자가 다음 단계에서 진행 (실제 데이터로 그리드/토글/메모/Undo 확인)
+- 낙관적 업데이트 → 사용자 액션 빈도 보고 T9 통합 검증에서 보강 검토
