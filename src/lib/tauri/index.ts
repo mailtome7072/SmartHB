@@ -33,6 +33,14 @@ import type {
   ToggleResult,
 } from '@/types/attendance'
 import type {
+  BatchCreateMakeupsPayload,
+  BatchResult,
+  CreateMakeupPayload,
+  EligibleDate,
+  MakeupResult,
+  PendingAbsence,
+} from '@/types/makeup'
+import type {
   CascadeDeletePreview,
   CreateScheduleCodePayload,
   CreateScheduleEventPayload,
@@ -1022,4 +1030,59 @@ export async function getAttendanceSummary(
     }
   }
   return inv('get_attendance_summary', { studentId, yearMonth }) as Promise<AttendanceSummary>
+}
+
+// ──────────────────── 보강 도메인 (Sprint 9 T2~T4) ────────────────────
+
+/** 원생의 미처리 결석 목록 — 소멸기한 임박순 (NULL 마지막). PRD §4.5.4 다이얼로그 소스. */
+export async function getPendingAbsences(studentId: number): Promise<PendingAbsence[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_pending_absences', { studentId }) as Promise<PendingAbsence[]>
+}
+
+/** 보강 가능 일자 — year_month 내 `allows_makeup_class=1` 학사일정 + 학생 입퇴교 범위. */
+export async function getMakeupEligibleDates(
+  studentId: number,
+  yearMonth: string,
+): Promise<EligibleDate[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_makeup_eligible_dates', { studentId, yearMonth }) as Promise<EligibleDate[]>
+}
+
+/** 보강 등록 + 매칭 (트랜잭션 검증 5종). PI-02 일 단위 채택 — class_minutes 비교 없음. */
+export async function createMakeupWithAbsences(
+  payload: CreateMakeupPayload,
+): Promise<MakeupResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('create_makeup_with_absences', { payload }) as Promise<MakeupResult>
+}
+
+/** 보강 취소 — 연결 결석을 absent 환원 + makeup_attendances DELETE. */
+export async function cancelMakeup(makeupId: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('cancel_makeup', { makeupId })
+}
+
+/** 보강 미등원 — 보강 status='makeup_absent' 마킹 + 결석 재매칭 가능 상태로 환원. */
+export async function markMakeupAbsent(makeupId: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('mark_makeup_absent', { makeupId })
+}
+
+/** 보강데이 일괄 등록 — 학생별 독립 트랜잭션, 부분 성공 (`succeeded`/`failed`). */
+export async function batchCreateMakeups(
+  payload: BatchCreateMakeupsPayload,
+): Promise<BatchResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { succeeded: [], failed: [] }
+  }
+  return inv('batch_create_makeups', { payload }) as Promise<BatchResult>
 }

@@ -396,3 +396,38 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 
 ### 발견된 이슈
 (없음 — T3 의 `create_makeup_with_absences_impl` 재사용으로 batch 검증 로직 일관성 자동 확보)
+
+---
+
+## Session #5 (T5 — TS IPC 래퍼 + 도메인 타입, 2026-05-24)
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T5** | `src/types/makeup.ts` 신규 + `src/lib/tauri/index.ts` 래퍼 6종 | 2h |
+
+### 설계 결정 (T5)
+
+- **타입 매핑 1:1**: 백엔드 `makeup.rs` serde struct 와 정확히 동일 필드 (camelCase). PendingAbsence / EligibleDate / CreateMakeupPayload / MakeupResult / BatchMakeupEntry / BatchCreateMakeupsPayload / BatchFailure / BatchResult — 총 8종 신규
+- **래퍼 패턴**: 기존 `getInvoke()` + dev fallback 패턴 일관 적용
+  - 조회 (`getPendingAbsences`, `getMakeupEligibleDates`, `batchCreateMakeups`): dev 모드 시 빈 배열/객체 반환 (브라우저 테스트 가능)
+  - mutation (`createMakeupWithAbsences`): dev 모드 시 `throw` — 의도적 명시
+  - void (`cancelMakeup`, `markMakeupAbsent`): dev 모드 시 silent return
+- **payload 전달 방식**: 단일 객체 페이로드는 백엔드 시그니처 `fn cmd(payload: T)` → `invoke('cmd', { payload })` 형태로 wrapper key 동일
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src/types/makeup.ts | [신규] | 8 interface 1:1 매핑 |
+| src/lib/tauri/index.ts | [1회] | makeup 타입 import + 래퍼 6종 추가 |
+| docs/sprint/sprint9/scope.md | [5회 ⚠️] | Session #5 추가 |
+
+### 세션 종료 조건
+- ✅ Self-verify: `pnpm lint` clean / `pnpm tsc --noEmit` clean
+- ✅ simplify — 단순 1:1 래퍼라 추가 단순화 없음
+- ⬜ 단일 커밋 (types/makeup.ts + lib/tauri/index.ts + scope.md)
+
+### 발견된 이슈
+(없음)
