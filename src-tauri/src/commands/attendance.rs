@@ -1023,6 +1023,23 @@ mod tests {
         .expect("상태 설정");
     }
 
+    /// 테스트용 makeup_attendances 행 1개 삽입 → id 반환.
+    /// V107 (Sprint 8 review F2) 적용 후 FK 강제되므로, regular_attendances 의
+    /// makeup_attendance_id 컬럼에 더이상 dummy id 사용 불가. 본 헬퍼로 실제 id 확보.
+    async fn seed_makeup(pool: &SqlitePool, student_id: i64, event_date: &str, year_month: &str) -> i64 {
+        let row: (i64,) = sqlx::query_as(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, ?, ?, 60) RETURNING id",
+        )
+        .bind(student_id)
+        .bind(event_date)
+        .bind(year_month)
+        .fetch_one(pool)
+        .await
+        .expect("makeup INSERT");
+        row.0
+    }
+
     async fn first_attendance_id(pool: &SqlitePool, student_id: i64, year_month: &str) -> i64 {
         let r: (i64,) = sqlx::query_as(
             "SELECT id FROM regular_attendances \
@@ -1129,8 +1146,9 @@ mod tests {
         generate_impl(&pool, "2026-06").await.expect("generate");
         let aid = first_attendance_id(&pool, sid, "2026-06").await;
 
-        // makeup_done 상태에서 토글 차단
-        set_cell_state(&pool, aid, "makeup_done", Some(999)).await;
+        // makeup_done 상태에서 토글 차단 — V107 FK 강제로 실제 makeup id 필요.
+        let makeup_id = seed_makeup(&pool, sid, "2026-06-15", "2026-06").await;
+        set_cell_state(&pool, aid, "makeup_done", Some(makeup_id)).await;
         let err = toggle_impl(&pool, aid, "present")
             .await
             .expect_err("makeup_done 차단");
@@ -1199,8 +1217,9 @@ mod tests {
         .expect("ids");
         toggle_impl(&pool, a_ids[0].0, "absent").await.expect("a1 absent");
         toggle_impl(&pool, a_ids[1].0, "absent").await.expect("a2 absent");
-        // 1번째 결석은 보강 매칭됨 — makeup_attendance_id 설정
-        set_cell_state(&pool, a_ids[0].0, "absent", Some(999)).await;
+        // 1번째 결석은 보강 매칭됨 — V107 FK 강제로 실제 makeup id 필요.
+        let makeup_id = seed_makeup(&pool, sid, "2026-06-22", "2026-06").await;
+        set_cell_state(&pool, a_ids[0].0, "absent", Some(makeup_id)).await;
 
         let s = compute_summary(&pool, sid, "2026-06").await.expect("summary");
         assert_eq!(s.absent_count, 2);

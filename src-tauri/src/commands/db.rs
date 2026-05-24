@@ -382,4 +382,41 @@ mod tests {
         .await;
         assert!(bad_minutes.is_err(), "class_minutes > 0 CHECK 위반");
     }
+
+    /// V107 (Sprint 8 review F2): regular_attendances.makeup_attendance_id → makeup_attendances(id)
+    /// FK 제약. PRAGMA foreign_keys=ON 환경에서 무효 id 참조 시 INSERT 실패해야 한다.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn regular_attendances_makeup_fk_enforced() {
+        let pool = test_pool_in_memory().await.expect("인메모리 pool");
+        // 인메모리 SQLite 는 기본 foreign_keys=OFF — V107 동작 검증을 위해 명시적으로 ON.
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&pool)
+            .await
+            .expect("foreign_keys ON");
+        let sid = insert_test_student(&pool).await;
+
+        // makeup_attendances 에 존재하지 않는 id (9999) 참조 → FK 위반으로 실패해야 함.
+        let bad_fk = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes, status, makeup_attendance_id) \
+             VALUES (?, '2026-03-15', '2026-03', 90, 'makeup_done', 9999)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(
+            bad_fk.is_err(),
+            "무효 makeup_attendance_id 참조는 FK 위반 — V107 적용 확인"
+        );
+
+        // NULL 은 허용 (보강 미매칭 결석 상태).
+        let null_ok = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes, makeup_attendance_id) \
+             VALUES (?, '2026-03-16', '2026-03', 90, NULL)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(null_ok.is_ok(), "NULL makeup_attendance_id 는 허용");
+    }
 }

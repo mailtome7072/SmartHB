@@ -58,6 +58,7 @@
 - Sprint 8: I-S2-5 (R43) — `salt_exists_at` legacy keyring fallback 검증 테스트 추가
 - Sprint 8: I-S2-9 (R47) — `migrate_keyring_salt_to` `SecurityEvent` audit 기록 누락 수정
 - Sprint 8: I-S2-10 (R48-a) — `device.id` 파일 권한 `0o600` 설정 (Unix)
+- Sprint 8 review F2 — V107 마이그레이션 추가. `regular_attendances.makeup_attendance_id → makeup_attendances(id)` FK 제약 누락을 테이블 재생성 패턴으로 보강 (Phase 3 보강 매칭 도입 전 참조 무결성 확보)
 
 ### Security
 - Sprint 8: I-S2-2~5 (R40~R43) — auth.rs Keychain 보안 4건 강화 (partial-NULL 감지, AtomicBool 재진입 가드, cache invalidation exit_hook, legacy fallback 검증)
