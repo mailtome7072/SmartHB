@@ -451,6 +451,10 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 - TanStack Query로 출결 데이터 캐싱 + 토글 시 낙관적 업데이트
 - 캘린더 뷰 라이브러리는 ADR 결과에 따라 Sprint 8 후반에서 완성
 
+#### 🔁 차기 sprint 이연 후보 (Sprint 8 시각 검수에서 정리)
+- ⬜ **R48-b — salt buffer ZeroizeOnDrop 시그니처 변경**: `load_salt_from`/`migrate_keyring_salt_to`/`generate_salt`/`store_salt_to` 가 모두 `[u8; SALT_LEN]` raw array 반환. `Zeroizing<[u8; SALT_LEN]>` 또는 신규 wrapper struct 도입 시 호출 사이트 광범위 영향이라 Sprint 8 범위에서 분리. 캐시 진입 후엔 `CachedCredentials` ZeroizeOnDrop 으로 보호되므로 잔존 위험은 stack 임시 변수 한정.
+- ⬜ **반응형 폰트/셀 너비 — 모니터 해상도 비례 조정**: 현재 `--font-size-body: 18px` 와 h1~h6, `AttendanceGrid` 셀 너비(140/62/84px)가 모두 px 고정. 1024px ↔ 2560px 모니터에서 동일 픽셀. PRD §5.7 "18pt 권장(16pt 하한)" 유지하면서 큰 모니터 확대 — `clamp()` viewport 패턴 또는 html font-size 미디어쿼리 + rem 일괄 전환. 폰트 변경 시 셀 너비도 동기 필요 (텍스트 흘러나옴 방지).
+
 ---
 
 ## Phase 3: 보강 + 소멸 (Sprint 9~10) 📋 예정
