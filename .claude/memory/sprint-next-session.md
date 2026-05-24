@@ -1,13 +1,13 @@
 ---
 name: sprint-next-session
-description: "Sprint 9 Session #4 완료 (T1~T4 백엔드 전부, 4/9). 다음: T5 TS IPC 래퍼"
+description: "Sprint 9 Session #5 완료 (T1~T5, 5/9). 다음: T6 보강 등록 (개별) UI"
 metadata: 
   node_type: memory
   type: project
-  originSessionId: sprint9-session4-t4
+  originSessionId: sprint9-session5-t5
 ---
 
-Sprint 9 (Phase 3 보강 + 소멸) — **백엔드 전체 완료** (T1~T4). T5~T9 프론트엔드/검증 단계 남음.
+Sprint 9 (Phase 3 보강 + 소멸) — **백엔드 + TS 래퍼 완료**. T6~T9 프론트엔드/검증 남음.
 
 ## Sprint 9 진행 현황
 
@@ -17,49 +17,43 @@ Sprint 9 (Phase 3 보강 + 소멸) — **백엔드 전체 완료** (T1~T4). T5~T
 | T2 | 백엔드 IPC — 미처리 결석 + 보강 가능 일자 + A43 | ✅ `14f583e` |
 | T3 | 백엔드 IPC — 보강 등록 + 매칭 트랜잭션 | ✅ `e0e3659` |
 | T4 | 백엔드 IPC — 취소 + 미등원 + 일괄 | ✅ `a62150d` |
-| **T5** | **TS IPC 래퍼 + 도메인 타입** | ⬜ 다음 세션 |
-| T6 | 보강 등록 (개별) UI | ⬜ |
+| T5 | TS IPC 래퍼 6종 + 도메인 타입 8 interface | ✅ `6f761f5` |
+| **T6** | **보강 등록 (개별) UI — /attendance 비수업일 셀 클릭 → MakeupRegisterDialog** | ⬜ 다음 세션 |
 | T7 | 보강데이 일괄 + 결석 라벨 (A41) | ⬜ |
 | T8 | 결석 이력 조회 | ⬜ |
 | T9 | 통합 검증 + A39/A40 프로세스 적용 | ⬜ |
 
-검증 상태: `cargo test --lib` cipher off **247 passed** (T3 240 → +7) / cipher on **133 passed** / clippy --lib clean 양쪽.
+검증 상태: `cargo test --lib` cipher off **247 passed** / cipher on **133 passed** / clippy 양쪽 clean / `pnpm lint` clean / `pnpm tsc --noEmit` clean.
 
-## 백엔드 보강 도메인 — 완성 IPC 6종
+## 백엔드 + TS 인터페이스 — 완성 IPC 6종
 
-`src-tauri/src/commands/makeup.rs` (단일 모듈 + lib.rs 등록 완료):
+| IPC (Rust) | TS 래퍼 | 페이로드 / 응답 |
+|-----|---------|---------|
+| `get_pending_absences` | `getPendingAbsences(studentId)` | `PendingAbsence[]` (소멸기한 임박순) |
+| `get_makeup_eligible_dates` | `getMakeupEligibleDates(studentId, yearMonth)` | `EligibleDate[]` |
+| `create_makeup_with_absences` | `createMakeupWithAbsences(payload)` | `MakeupResult` |
+| `cancel_makeup` | `cancelMakeup(makeupId)` | `void` |
+| `mark_makeup_absent` | `markMakeupAbsent(makeupId)` | `void` |
+| `batch_create_makeups` | `batchCreateMakeups(payload)` | `BatchResult` (succeeded/failed) |
 
-| IPC | Session | 책임 |
-|-----|---------|------|
-| `get_pending_absences(student_id)` | T2 | 미처리 결석 임박순 정렬 |
-| `get_makeup_eligible_dates(student_id, year_month)` | T2 | 보강 가능 일자 (학사일정 + 학생 입퇴교) |
-| `create_makeup_with_absences(payload)` | T3 | 보강 등록 + 매칭 (트랜잭션, 검증 5종) |
-| `cancel_makeup(makeup_id)` | T4 | 결석 환원 + makeup DELETE |
-| `mark_makeup_absent(makeup_id)` | T4 | 보강 'makeup_absent' + 결석 재매칭 가능 |
-| `batch_create_makeups(payload)` | T4 | 다중 원생 일괄, 부분 성공 처리 |
+## 다음 세션 (T6) 우선 액션
 
-audit 신규 3 variants (T3 추가): `MakeupCreated/Cancelled/Absent`.
-
-## Session #4 (T4) 핵심 변경
-
-- `cancel_makeup` — FK 위반 회피 위해 UPDATE absences SET NULL → DELETE makeup 순서
-- `mark_makeup_absent` — 보강 status 마킹 + 결석 환원 (재매칭 가능). 멱등성 (이미 미등원이면 0 반환)
-- `batch_create_makeups` — 학생별 독립 트랜잭션 + `create_makeup_with_absences_impl` 재사용. 부분 성공 (`succeeded` / `failed: BatchFailure`) 처리
-- 페이로드 struct 4종 신규 (BatchMakeupEntry/CreateMakeupsPayload/Failure/Result)
-
-## 다음 세션 (T5) 우선 액션
-
-1. 새 대화에서 `/sprint-dev 9` → Session #5 진입 (T5)
-2. T5 작업 (sprint9.md L143~, 예상 2h):
-   - `src/types/makeup.ts` 신규 — PendingAbsence / EligibleDate / CreateMakeupPayload / MakeupResult / BatchEntry / BatchResult 등 백엔드 응답 struct 1:1 매핑
-   - `src/lib/tauri/index.ts` — IPC 래퍼 6종 추가 (`getPendingAbsences`, `getMakeupEligibleDates`, `createMakeupWithAbsences`, `cancelMakeup`, `markMakeupAbsent`, `batchCreateMakeups`)
-   - `pnpm tsc --noEmit` + `pnpm lint` 통과
+1. 새 대화에서 `/sprint-dev 9` → Session #6 진입 (T6)
+2. T6 작업 (sprint9.md L143~, 예상 6h):
+   - `/attendance` 출결표 — 비수업일 셀 클릭 → `MakeupRegisterDialog` 열림
+   - 다이얼로그 흐름:
+     - `getPendingAbsences(studentId)` 호출 → 충당 결석 목록 (소멸기한 임박순) 표시
+     - 결석 N건 체크박스 선택
+     - class_minutes 입력 (defaulter 60 또는 학생 schedule 기본값)
+     - "확정" → `createMakeupWithAbsences(payload)` → 성공 시 그리드 invalidate
+   - 클릭 가능 셀 조건: 비수업일 + `getMakeupEligibleDates` 반환 일자 (사전 검증)
+   - TanStack Query mutation + invalidate (`attendance-grid`, `pending-absences`)
+   - 토스트/알림: 성공 "보강 등록 완료" / 실패 친화 에러 메시지
 
 ## Sprint 9 잔여 마일스톤
 
-- T5 TS 래퍼 (2h) — 누적 21h / 38h (55%)
-- T6 보강 등록 UI (6h)
-- T7 보강데이 일괄 + 라벨 (5h)
+- T6 보강 등록 UI (6h) — 누적 21h / 38h (55%)
+- T7 일괄 + 라벨 (5h)
 - T8 결석 이력 (3h)
 - T9 통합 검증 (3h)
 
