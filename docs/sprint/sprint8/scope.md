@@ -697,3 +697,88 @@ assert!(result.is_ok(), ...);
 
 ### 발견된 이슈
 - R48-b (salt buffer ZeroizeOnDrop) 는 함수 시그니처 광범위 변경 필요 — `load_salt_from`/`migrate_keyring_salt_to`/`generate_salt`/`store_salt_to` 가 모두 `[u8; SALT_LEN]` raw array 시그니처. `Zeroizing<[u8; SALT_LEN]>` 또는 신규 wrapper struct 도입 시 호출 사이트 광범위 영향. T8 범위에서 skip, 별도 후속 task 로 분리. 캐시 진입 후엔 `CachedCredentials.salt` 의 `ZeroizeOnDrop` 으로 이미 보호되므로 잔존 위험은 stack 임시 변수 한정.
+
+---
+
+## Session #9 (T9 — 통합 검증, 2026-05-24)
+
+> Sprint 8 마지막 task — 자동 검증 6항목 + 수동 시각 검증 1h.
+> 코드 변경 없음. 검증 결과 기록 + sprint8.md 완료 기준 일괄 마킹.
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T9** | 자동 검증 6항목 일괄 실행 + AC 마킹 + 수동 검증 위임 | 3h (자동 0.5h + 수동 2.5h) |
+
+### 자동 검증 (Claude 수행)
+
+| 항목 | 명령 | 기대 |
+|------|------|------|
+| Rust 테스트 (cipher off) | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | 221 passed |
+| Rust 테스트 (cipher on) | `cargo test --manifest-path src-tauri/Cargo.toml --lib --features cipher` | 133 passed |
+| Clippy (cipher off) | `cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings` | clean |
+| Clippy (cipher on) | `cargo clippy --manifest-path src-tauri/Cargo.toml --lib --features cipher -- -D warnings` | clean |
+| Frontend lint | `pnpm lint` | clean |
+| TypeScript 타입 | `pnpm tsc --noEmit` | clean |
+| Next.js static build | `pnpm build` | success (out/ 생성) |
+
+> T8 종료 시점에 cargo test/clippy/lint/tsc 는 통과 확인. T9 는 **재검증 + pnpm build 추가** — release-ready 상태 확인.
+
+### 수동 검증 (사용자 시각 검증 1h — Claude 수행 불가)
+
+sprint8.md L353-360 항목별 체크리스트. 사용자가 `pnpm tauri:dev` 로 앱 기동 후 직접 확인 → 결과를 본 scope.md 에 ✅/⬜ 로 기록.
+
+| Task | 검증 항목 | 상태 |
+|------|----------|------|
+| T1 | `sqlx migrate run` 후 `regular_attendances` / `makeup_attendances` 테이블 생성 | ⬜ 사용자 검증 |
+| T2 | 월 선택 → "출결 생성" → 출결 레코드 생성 | ⬜ 사용자 검증 |
+| T3 | 출결표 그리드 렌더링 + 셀 클릭 토글 동작 | ⬜ 사용자 검증 |
+| T4 | 출결표 UI 전체 흐름 (출석/결석/요약 컬럼/Undo) | ⬜ 사용자 검증 |
+| T5 | 보강필요시간이 결석 토글에 정확 반응 | ⬜ 사용자 검증 |
+| T6 | Keychain 다이얼로그 1회 이하 + startup < 3초 | ⬜ 사용자 검증 |
+| T7 | startup 순서 정상 동작 | ⬜ 사용자 검증 |
+| T8 | 교습기간 미확정 overlap 해소 + selection 모드 배지 클릭 무동작 | ⬜ 사용자 검증 |
+| UC-3 | 일일 출결 입력 전체 흐름 완주 | ⬜ 사용자 검증 |
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| docs/sprint/sprint8.md | [10회 ⚠️] | 모든 AC ⬜ → ✅ 마킹 + 검증 결과 |
+| docs/sprint/sprint8/scope.md | [9회 ⚠️] | Session #9 추가 + 자동 검증 결과 기록 |
+
+> 사용자 시각 검증 결과는 본 세션 또는 추후 sprint-close 직전에 동일 scope.md 의 위 표에 마킹.
+
+### 수정하지 않을 파일
+
+- 모든 소스 코드 — T9 는 검증 task. 검증 중 결함 발견 시 별도 hotfix 또는 후속 sprint task
+
+### 완료 기준 (이번 세션) — T9 AC (sprint8.md L363-367)
+
+- ✅ AC-T9-1: 자동 검증 7항목 전수 통과 (아래 결과 표 참조)
+- ⬜ AC-T9-2: 사용자 시각 검증 결과 "정상 동작 확인" (사용자 위임)
+- ⬜ AC-T9-3: 콘솔에 에러/경고 없음 (사용자 위임 — `pnpm tauri:dev` stderr 확인)
+- ⬜ AC-T9-4: UC-3 일일 출결 입력 전체 흐름 완주 가능 (사용자 위임)
+
+### 자동 검증 결과 (2026-05-24)
+
+| 항목 | 결과 |
+|------|------|
+| `cargo test --lib` (cipher off) | ✅ **221 passed** / 3 ignored / 0 failed |
+| `cargo test --lib --features cipher` (cipher on) | ✅ **133 passed** / 3 ignored / 0 failed |
+| `cargo clippy --lib -- -D warnings` (cipher off) | ✅ clean |
+| `cargo clippy --lib --features cipher -- -D warnings` (cipher on) | ✅ clean |
+| `pnpm lint` | ✅ No ESLint warnings or errors |
+| `pnpm tsc --noEmit` | ✅ exit 0 (no output) |
+| `pnpm build` | ✅ static export 성공 — `out/` 에 attendance.html / academic.html 등 정상 생성 |
+
+### 세션 종료 조건
+
+- ✅ Self-verify 결과 본 scope.md 에 기록
+- ✅ sprint8.md 전 AC ✅ 마킹 (T9-2/3/4 는 사용자 위임 ⬜ 유지)
+- ⬜ 단일 커밋 (sprint8.md + scope.md)
+- ⬜ 사용자에게 sprint-close 실행 안내
+
+### 발견된 이슈
+(없음 — 자동 검증 결함 없음. 사용자 시각 검증 결과는 추후 본 표에 ✅ 마킹)
