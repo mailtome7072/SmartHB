@@ -442,10 +442,13 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 - TanStack Query로 출결 데이터 캐싱 + 토글 시 낙관적 업데이트
 - 캘린더 뷰 라이브러리는 ADR 결과에 따라 Sprint 8 후반에서 완성
 
-#### 🔁 차기 sprint 이연 후보 (Sprint 8 시각 검수에서 정리)
+#### 🔁 차기 sprint 이연 후보 (Sprint 8 시각 검수 + sprint-review 에서 정리)
 - ⬜ **R48-b — salt buffer ZeroizeOnDrop 시그니처 변경**: `load_salt_from`/`migrate_keyring_salt_to`/`generate_salt`/`store_salt_to` 가 모두 `[u8; SALT_LEN]` raw array 반환. `Zeroizing<[u8; SALT_LEN]>` 또는 신규 wrapper struct 도입 시 호출 사이트 광범위 영향이라 Sprint 8 범위에서 분리. 캐시 진입 후엔 `CachedCredentials` ZeroizeOnDrop 으로 보호되므로 잔존 위험은 stack 임시 변수 한정.
 - ⬜ **반응형 폰트/셀 너비 — 모니터 해상도 비례 조정**: 현재 `--font-size-body: 18px` 와 h1~h6, `AttendanceGrid` 셀 너비(140/62/84px)가 모두 px 고정. 1024px ↔ 2560px 모니터에서 동일 픽셀. PRD §5.7 "18pt 권장(16pt 하한)" 유지하면서 큰 모니터 확대 — `clamp()` viewport 패턴 또는 html font-size 미디어쿼리 + rem 일괄 전환. 폰트 변경 시 셀 너비도 동기 필요 (텍스트 흘러나옴 방지).
 - ⬜ **원생 검색 한글 자모 부분 일치**: Sprint 8 T9 follow-up 에서 출결관리에 원생 이름 substring 검색 도입 (`/attendance` 헤더). PRD §4.14 "한글 자모 부분 일치 + 영문 대소문자 무관" 중 자모 일치는 미적용 — `ㅈ`(자) 입력으로 "장수민" 매칭 같은 자모 분해 라이브러리(예: `hangul-js`) 또는 직접 분해 알고리즘 도입 필요. 글로벌 검색바(`src/components/layout/global-search.tsx`)도 동일 패턴 점검 대상.
+- ⬜ **F1 (review) — 결석 컬럼 라벨 의미 명확화**: sprint-review 발견. 출결표 헤더 "결석(일)" 이 `status='absent' AND makeup_attendance_id IS NULL` 만 카운트 (보강완료/소멸 제외). 사용자가 "총 결석"으로 오해 가능. 라벨을 "미처리 결석(일)" 로 변경하거나 툴팁/도움말 추가. `AttendanceGrid` + `compute_summary` 둘 다 점검.
+- ⬜ **F3 (review) — get_attendance_grid N+1 쿼리 패턴**: sprint-review 발견. `get_grid_impl` 학생 루프 안에 4쿼리 (day_rows, cell_rows, compute_summary 2건) — 50명 기준 200쿼리. 현재 PRD §5.7 "50명×31일 < 1초" 통과지만 데이터 누적/느린 HDD 환경에서 잠재 위험. JOIN 또는 단일 IN 쿼리로 batch 처리 검토.
+- ⬜ **F5 (review) — validate_year_month 월 범위 검증**: sprint-review 발견. `attendance.rs::validate_year_month` 가 `2026-00` / `2026-13` 같은 의미론적 무효 입력 통과. `next_month_str` 단계에서 `NaiveDate::parse_from_str` 실패로 비친화적 에러 메시지 노출. 정규식/범위 검증 강화로 사용자 친화 메시지 즉시 반환.
 
 ---
 
