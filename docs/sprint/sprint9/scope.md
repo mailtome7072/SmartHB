@@ -483,8 +483,8 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src/components/attendance/MakeupRegisterDialog.tsx | [신규] | 다이얼로그 + AbsenceRow 하위 컴포넌트 + eligibility/pending 두 query + mutation |
-| src/components/attendance/AttendanceGrid.tsx | [4회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
-| src/app/attendance/page.tsx | [3회] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
+| src/components/attendance/AttendanceGrid.tsx | [10회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
+| src/app/attendance/page.tsx | [9회 ⚠️] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
 | docs/sprint/sprint9/scope.md | [6회 ⚠️] | Session #6 추가 |
 
 ### UX 가드
@@ -497,7 +497,70 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 ### 세션 종료 조건
 - ✅ Self-verify: `pnpm lint` clean / `pnpm tsc --noEmit` clean
 - ✅ simplify — 다이얼로그는 단일 책임 (등록 흐름), AbsenceRow 분리로 가독성 유지. 추가 추상화 없음
-- ⬜ 단일 커밋 (3 신규/수정 파일 + scope.md)
+- ✅ 단일 커밋 `76c2ede`
 
 ### 발견된 이슈
 (없음)
+
+---
+
+## Session #7 (T7 — 보강데이 일괄 + 보강 관리 + A41 라벨, 2026-05-24)
+
+> **skill: frontend-design** — UC-4 후속 흐름 + Sprint 8 회고 A41 흡수.
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T7** | A41 라벨 변경 + `MakeupManageDialog` + `BatchMakeupDialog` + page.tsx 통합 | 5h |
+
+### 설계 결정 (T7)
+
+#### A41 (Sprint 8 회고 흡수)
+
+- 헤더 라벨 `"결석"` → `"미처리\n결석"` (text-sm + leading-tight 자동 2줄, width 62px 유지)
+- `title` 속성: "status='absent' AND makeup_attendance_id IS NULL — 보강완료·소멸 결석은 제외"
+
+#### MakeupManageDialog 신규 — `makeup_done` 셀 클릭 분기
+
+- 진입: AttendanceGrid `onMakeupCellClick` prop (StudentRow 내부 분기)
+- 3 모드: `menu` (취소/미등원 선택) → `confirm-cancel` / `confirm-absent`
+- 액션: `cancelMakeup` (취소·DELETE) / `markMakeupAbsent` (미등원 마킹 + 재매칭 가능)
+- ConfirmPanel 하위 — `isDanger` 옵션으로 색상 구분
+
+#### BatchMakeupDialog 신규 — 보강데이 일괄
+
+- 진입: `/attendance` 헤더 "보강데이 일괄" 버튼 (showGrid 시 활성)
+- 학생별 미처리 결석은 grid 데이터에서 **client-side 필터** — IPC 폭증 회피
+- 흐름: date input → 학생 자동 추출 + 체크박스 → `batchCreateMakeups` → BatchResult 표시
+- 단순화: 학생별 entry 의 `classMinutes` 는 첫 결석 값 (학생별 다른 시간은 개별 다이얼로그 fallback)
+- 부분 성공이라도 invalidate (`succeeded.length > 0` 시)
+
+#### AttendanceGrid 확장
+
+- Props: `onMakeupCellClick?: (studentId, cell) => void`
+- StudentRow 내부 `handleCellClick` — `makeup_done` 시 분기, 그 외 일반 토글
+- 책임 분담: 외부 `handleCellClick` 은 토글만, StudentRow 가 makeup_done 분기 (학생 ID 보유 위치)
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src/components/attendance/MakeupManageDialog.tsx | [신규] | 취소/미등원 + ConfirmPanel |
+| src/components/attendance/BatchMakeupDialog.tsx | [신규] | 일괄 등록 — grid client-side 필터 |
+| src/components/attendance/AttendanceGrid.tsx | [5회 ⚠️] | A41 라벨 / `onMakeupCellClick` Props / StudentRow 분기 |
+| src/app/attendance/page.tsx | [4회 ⚠️] | `manageTarget` + `batchOpen` state / 헤더 일괄 버튼 / 다이얼로그 2종 |
+| docs/sprint/sprint9/scope.md | [7회 ⚠️] | Session #7 추가 |
+
+### UX 가드
+- 위험 동작 (취소/미등원) 2단계 확인 (menu → confirm)
+- BatchMakeupDialog 결과 후 재제출 차단
+- ESC / 배경 / 닫기 버튼 일관
+
+### 세션 종료 조건
+- ✅ Self-verify: `pnpm lint` clean / `pnpm tsc --noEmit` clean (백엔드 변경 없음 — cargo 재검증 불요)
+- ✅ simplify — ConfirmPanel 하위 분리, client-side 필터로 IPC 절약, AttendanceGrid 분기 책임 명확
+- ⬜ 단일 커밋 (4 신규/수정 파일 + scope.md)
+
+### 발견된 이슈
+(없음 — `AttendanceCell.makeupAttendanceId` 가 이미 T3 응답에 포함되어 있어 별도 IPC 불필요)

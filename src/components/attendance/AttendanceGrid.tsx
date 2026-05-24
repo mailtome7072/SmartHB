@@ -31,6 +31,8 @@ interface Props {
   grid: AttendanceGridType
   /** Sprint 9 T6 — 비수업일(보강 가능 후보) 셀 클릭 시 호출. */
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
+  /** Sprint 9 T7 — makeup_done 셀 클릭 시 호출 (보강 관리 다이얼로그 진입). */
+  onMakeupCellClick?: (studentId: number, cell: AttendanceCell) => void
 }
 
 interface LastToggle {
@@ -74,7 +76,7 @@ function buildAttendanceByDay(
   return map
 }
 
-export function AttendanceGrid({ grid, onNonClassDayClick }: Props) {
+export function AttendanceGrid({ grid, onNonClassDayClick, onMakeupCellClick }: Props) {
   const queryClient = useQueryClient()
   const [lastToggle, setLastToggle] = useState<LastToggle | null>(null)
   const [memoDialogCell, setMemoDialogCell] = useState<AttendanceCell | null>(null)
@@ -173,11 +175,15 @@ export function AttendanceGrid({ grid, onNonClassDayClick }: Props) {
                 출석
                 <div className="text-xs text-gray-600">(일)</div>
               </th>
+              {/* Sprint 9 T7 (A41 흡수): absent_count 는 status='absent' AND makeup_attendance_id IS NULL
+                  만 카운트 — 보강완료/소멸 제외. "미처리 결석" 으로 의미 명확화. */}
               <th
                 rowSpan={2}
                 className="sticky left-[202px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                title="status='absent' AND makeup_attendance_id IS NULL — 보강완료·소멸 결석은 제외"
               >
-                결석
+                미처리
+                <div>결석</div>
                 <div className="text-xs text-gray-600">(일)</div>
               </th>
               <th
@@ -234,6 +240,7 @@ export function AttendanceGrid({ grid, onNonClassDayClick }: Props) {
                   }
                 }}
                 onNonClassDayClick={onNonClassDayClick}
+                onMakeupCellClick={onMakeupCellClick}
               />
             ))}
           </tbody>
@@ -272,6 +279,8 @@ interface StudentRowProps {
   onCellClick: (cell: AttendanceCell) => void
   onCellContextMenu: (cell: AttendanceCell) => void
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
+  /** Sprint 9 T7 — makeup_done 셀 클릭 시 보강 관리 다이얼로그 호출. */
+  onMakeupCellClick?: (studentId: number, cell: AttendanceCell) => void
 }
 
 const StudentRow = memo(function StudentRow({
@@ -281,7 +290,16 @@ const StudentRow = memo(function StudentRow({
   onCellClick,
   onCellContextMenu,
   onNonClassDayClick,
+  onMakeupCellClick,
 }: StudentRowProps) {
+  // makeup_done 셀 클릭 시 보강 관리 다이얼로그로 분기, 그 외엔 일반 토글.
+  function handleCellClick(cell: AttendanceCell) {
+    if (cell.status === 'makeup_done' && onMakeupCellClick !== undefined) {
+      onMakeupCellClick(student.studentId, cell)
+      return
+    }
+    onCellClick(cell)
+  }
   const byDay = useMemo(
     () => buildAttendanceByDay(student.attendances),
     [student.attendances],
@@ -318,7 +336,7 @@ const StudentRow = memo(function StudentRow({
           <CellView
             key={day}
             cell={cell ?? null}
-            onClick={onCellClick}
+            onClick={handleCellClick}
             onContextMenu={onCellContextMenu}
             onEmptyCellClick={
               onNonClassDayClick === undefined

@@ -24,7 +24,10 @@ import {
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
+import { BatchMakeupDialog } from '@/components/attendance/BatchMakeupDialog'
+import { MakeupManageDialog } from '@/components/attendance/MakeupManageDialog'
 import { MakeupRegisterDialog } from '@/components/attendance/MakeupRegisterDialog'
+import type { AttendanceCell } from '@/types/attendance'
 
 function currentYearMonth(): string {
   const now = new Date()
@@ -50,6 +53,13 @@ interface MakeupDialogTarget {
   eventDate: string
 }
 
+interface MakeupManageTarget {
+  studentId: number
+  studentName: string
+  studentSerialNo: string
+  cell: AttendanceCell
+}
+
 export default function AttendancePage() {
   const [yearMonth, setYearMonth] = useState(currentYearMonth)
   const [error, setError] = useState<string | null>(null)
@@ -60,6 +70,10 @@ export default function AttendancePage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   // Sprint 9 T6: 비수업일 셀 클릭 → 보강 등록 다이얼로그.
   const [makeupTarget, setMakeupTarget] = useState<MakeupDialogTarget | null>(null)
+  // Sprint 9 T7: makeup_done 셀 클릭 → 보강 관리 다이얼로그 (취소/미등원).
+  const [manageTarget, setManageTarget] = useState<MakeupManageTarget | null>(null)
+  // Sprint 9 T7: 헤더 "보강데이 일괄" 버튼 → 일괄 등록 다이얼로그.
+  const [batchOpen, setBatchOpen] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -162,6 +176,16 @@ export default function AttendancePage() {
           </div>
         )}
 
+        {showGrid && (
+          <button
+            type="button"
+            onClick={() => setBatchOpen(true)}
+            className="ml-auto min-h-[44px] rounded-lg border-2 border-[var(--accent)] bg-white px-4 text-base font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+          >
+            보강데이 일괄
+          </button>
+        )}
+
         {showGenerateButton && (
           <button
             type="button"
@@ -218,6 +242,18 @@ export default function AttendancePage() {
                   eventDate,
                 })
               }}
+              onMakeupCellClick={(studentId, cell) => {
+                const student = filteredGrid.students.find(
+                  (s) => s.studentId === studentId,
+                )
+                if (student === undefined) return
+                setManageTarget({
+                  studentId,
+                  studentName: student.name,
+                  studentSerialNo: student.serialNo,
+                  cell,
+                })
+              }}
             />
             {debouncedSearch !== '' && matchedCount === 0 && (
               <p className="mt-4 text-center text-base text-gray-600">
@@ -246,6 +282,32 @@ export default function AttendancePage() {
             void queryClient.invalidateQueries({
               queryKey: ['pending-absences', makeupTarget.studentId],
             })
+          }}
+        />
+      )}
+
+      {manageTarget !== null && (
+        <MakeupManageDialog
+          cell={manageTarget.cell}
+          studentName={manageTarget.studentName}
+          studentSerialNo={manageTarget.studentSerialNo}
+          onClose={() => setManageTarget(null)}
+          onSuccess={() => {
+            setManageTarget(null)
+            void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+            void queryClient.invalidateQueries({
+              queryKey: ['pending-absences', manageTarget.studentId],
+            })
+          }}
+        />
+      )}
+
+      {batchOpen && gridQuery.data !== undefined && (
+        <BatchMakeupDialog
+          grid={gridQuery.data}
+          onClose={() => setBatchOpen(false)}
+          onSuccess={() => {
+            void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
           }}
         />
       )}
