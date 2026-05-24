@@ -166,28 +166,28 @@ export function AttendanceGrid({ grid }: Props) {
               </th>
               <th
                 rowSpan={2}
-                className="sticky left-[140px] z-20 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[140px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 출석
                 <div className="text-xs text-gray-600">(일)</div>
               </th>
               <th
                 rowSpan={2}
-                className="sticky left-[228px] z-20 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[202px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 결석
                 <div className="text-xs text-gray-600">(일)</div>
               </th>
               <th
                 rowSpan={2}
-                className="sticky left-[316px] z-20 w-[120px] min-w-[120px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[264px] z-20 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강필요
                 <div className="text-xs text-gray-600">(시간)</div>
               </th>
               <th
                 rowSpan={2}
-                className="sticky left-[436px] z-20 w-[120px] min-w-[120px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[348px] z-20 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강완료
                 <div className="text-xs text-gray-600">(시간)</div>
@@ -290,16 +290,16 @@ const StudentRow = memo(function StudentRow({
         <div>{student.name}</div>
         <div className="text-xs text-gray-500">#{student.serialNo}</div>
       </th>
-      <td className="sticky left-[140px] z-10 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[140px] z-10 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {student.summary.presentCount}
       </td>
-      <td className="sticky left-[228px] z-10 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[202px] z-10 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {student.summary.absentCount}
       </td>
-      <td className="sticky left-[316px] z-10 w-[120px] min-w-[120px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[264px] z-10 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {minutesToHours(student.summary.makeupNeededMinutes)}
       </td>
-      <td className="sticky left-[436px] z-10 w-[120px] min-w-[120px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[348px] z-10 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {minutesToHours(student.summary.makeupCompletedMinutes)}
       </td>
       {days.map((day) => {
