@@ -153,37 +153,41 @@ export function AttendanceGrid({ grid }: Props) {
       <div className="overflow-auto rounded-lg border border-[var(--border)]">
         <table className="border-collapse text-base">
           <thead className="sticky top-0 z-10 bg-gray-100">
+            {/* Sprint 8 T9 follow-up: 원생 + 요약 4컬럼 모두 sticky left 누적.
+                좌측 가로 스크롤 시 일자 영역만 이동하고 원생/요약 컬럼은 시야 유지.
+                너비는 헤더 텍스트 기준 ~120% — 출석/결석(2글자) 88px, 보강필요/완료(4글자) 120px.
+                offset 누적: 0 → 140 → 228 → 316 → 436 (총 sticky 너비 556px). */}
             <tr>
               <th
                 rowSpan={2}
-                className="sticky left-0 z-20 min-w-[140px] border-b border-r border-[var(--border)] bg-amber-100 px-3 py-2 text-left"
+                className="sticky left-0 z-20 w-[140px] min-w-[140px] border-b border-r border-[var(--border)] bg-amber-100 px-3 py-2 text-left"
               >
                 원생
               </th>
               <th
                 rowSpan={2}
-                className="min-w-[80px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[140px] z-20 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 출석
                 <div className="text-xs text-gray-600">(일)</div>
               </th>
               <th
                 rowSpan={2}
-                className="min-w-[80px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[228px] z-20 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 결석
                 <div className="text-xs text-gray-600">(일)</div>
               </th>
               <th
                 rowSpan={2}
-                className="min-w-[100px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[316px] z-20 w-[120px] min-w-[120px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강필요
                 <div className="text-xs text-gray-600">(시간)</div>
               </th>
               <th
                 rowSpan={2}
-                className="min-w-[100px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[436px] z-20 w-[120px] min-w-[120px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강완료
                 <div className="text-xs text-gray-600">(시간)</div>
@@ -277,23 +281,25 @@ const StudentRow = memo(function StudentRow({
 
   return (
     <tr className="hover:bg-gray-50">
+      {/* Sprint 8 T9 follow-up: 데이터 셀도 헤더와 동일한 sticky left offset 적용.
+          z-10 (헤더 z-20 보다 낮음) — 가로 스크롤 시 일자 셀 위로 덮이고, 헤더 행 아래로 숨음. */}
       <th
         scope="row"
-        className="sticky left-0 z-10 min-w-[140px] border-b border-r border-[var(--border)] bg-amber-50 px-3 py-2 text-left text-base font-medium"
+        className="sticky left-0 z-10 w-[140px] min-w-[140px] border-b border-r border-[var(--border)] bg-amber-50 px-3 py-2 text-left text-base font-medium"
       >
         <div>{student.name}</div>
         <div className="text-xs text-gray-500">#{student.serialNo}</div>
       </th>
-      <td className="border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[140px] z-10 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {student.summary.presentCount}
       </td>
-      <td className="border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[228px] z-10 w-[88px] min-w-[88px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {student.summary.absentCount}
       </td>
-      <td className="border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[316px] z-10 w-[120px] min-w-[120px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {minutesToHours(student.summary.makeupNeededMinutes)}
       </td>
-      <td className="border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
+      <td className="sticky left-[436px] z-10 w-[120px] min-w-[120px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {minutesToHours(student.summary.makeupCompletedMinutes)}
       </td>
       {days.map((day) => {

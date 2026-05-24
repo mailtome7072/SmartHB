@@ -307,7 +307,7 @@ ToggleResult {
 |------|------|------|
 | src/components/layout/sidebar.tsx | [2회] | `shrink-0` |
 | src/components/layout/app-shell.tsx | [신규-follow-up] | `min-w-0` |
-| src/components/attendance/AttendanceGrid.tsx | [2회] | 요일 행/시간 변환/컬럼 재배치/배경색 |
+| src/components/attendance/AttendanceGrid.tsx | [4회 ⚠️] | 요일 행/시간 변환/컬럼 재배치/배경색 |
 | src/lib/menu-config.ts | [8회 ⚠️] | 보강 관리 추가 + 순서 재배치 |
 | src/app/attendance/page.tsx | [3회 ⚠️] | (이번 세션에서 직접 수정은 없으나 git status에 잡혀 확인 필요) |
 
@@ -781,4 +781,42 @@ sprint8.md L353-360 항목별 체크리스트. 사용자가 `pnpm tauri:dev` 로
 - ⬜ 사용자에게 sprint-close 실행 안내
 
 ### 발견된 이슈
-(없음 — 자동 검증 결함 없음. 사용자 시각 검증 결과는 추후 본 표에 ✅ 마킹)
+(자동 검증 결함 없음 — 사용자 시각 검증에서 발견된 결함은 Session #9 follow-up 에 정리)
+
+---
+
+## Session #9 follow-up (T9 출결표 sticky 컬럼 + 너비 조정, 2026-05-24)
+
+### 사용자 시각 검수 피드백 반영
+좌측 가로 스크롤 시 요약 4컬럼(출석/결석/보강필요/보강완료)이 원생 컬럼처럼 시야에 고정되어야 하고, 셀 너비는 헤더 텍스트가 모두 보이는 최소 너비의 약 120% 적용.
+
+### 수정 내용
+
+| 컬럼 | 기존 | 변경 |
+|------|------|------|
+| 원생 (sticky) | `sticky left-0 min-w-[140px]` | `w-[140px]` 명시 (offset 계산 기준) |
+| 출석 (일) | `min-w-[80px]` 일반 셀 | `sticky left-[140px] z-20 w-[88px]` (헤더 텍스트 2글자 기준 ~110%) |
+| 결석 (일) | `min-w-[80px]` | `sticky left-[228px] z-20 w-[88px]` |
+| 보강필요 (시간) | `min-w-[100px]` | `sticky left-[316px] z-20 w-[120px]` (헤더 텍스트 4글자 기준 ~120%) |
+| 보강완료 (시간) | `min-w-[100px]` | `sticky left-[436px] z-20 w-[120px]` |
+| 데이터 셀 (요약 4종) | 일반 셀 (bg-amber-50) | 헤더와 동일한 sticky offset + width, z-10 (헤더 z-20 보다 낮음) |
+
+### 누적 sticky 너비
+- 원생(140) + 출석(88) + 결석(88) + 보강필요(120) + 보강완료(120) = **556px**
+- 화면 폭 1024px 이상에서 우측 일자 영역 표시 충분
+
+### z-index 위계
+- 헤더 sticky-top + sticky-left 교차점: `z-20`
+- 데이터 sticky-left 셀: `z-10` (일자 셀 위로 덮이고, 헤더 행 아래로 숨음)
+
+### 수정 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src/components/attendance/AttendanceGrid.tsx | [3회] | 헤더 4개 + 데이터 셀 4개 sticky/width 변경 |
+| docs/sprint/sprint8/scope.md | [10회 ⚠️] | Session #9 follow-up 추가 |
+
+### AC 영향
+- AC-T4-4/5/9 모두 유지 (시각적 sticky 추가는 기능 변경 아님)
+- AC-T4-8 (50명×31일 1초 렌더링) — 사용자 재검증 시 함께 확인
+- 신규 회귀 없음 — `pnpm lint` clean / `pnpm tsc --noEmit` clean
