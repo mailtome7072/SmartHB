@@ -1,4 +1,4 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
-- [Sprint 다음 세션](sprint-next-session.md) — Sprint 9 Session #6 완료 (T1~T6, 6/9). UC-4 핵심 흐름 (비수업일 클릭 → 보강 등록) UI 완성. 다음: `/sprint-dev 9` → Session #7 (T7 보강데이 일괄 + 라벨 A41)
+- [Sprint 다음 세션](sprint-next-session.md) — Sprint 9 Session #7 완료 (T1~T7, 7/9). 보강 UI 완성 (등록/취소/미등원/일괄/A41 라벨). 다음: `/sprint-dev 9` → Session #8 (T8 결석 이력 조회)
 - [NTFS power-loss 패턴](ntfs-power-loss-pattern.md) — fs::write+rename 후 데이터가 NULL로 손상, atomic write 헬퍼에 손상 감지+fallback 필수
 - [keyring v3 features 트랩](keyring-v3-features-trap.md) — `keyring = "3"`만 적으면 backend 미연결로 silent set fail. `features = ["apple-native", "windows-native"]` 필수
