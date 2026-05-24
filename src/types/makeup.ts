@@ -64,3 +64,18 @@ export interface BatchResult {
   succeeded: MakeupResult[]
   failed: BatchFailure[]
 }
+
+/** 결석 이력 1건 — `get_absence_history` 응답 요소 (T8). */
+export interface AbsenceHistoryItem {
+  id: number
+  eventDate: string // YYYY-MM-DD
+  classMinutes: number
+  /** 'absent' | 'makeup_done' | 'makeup_expired' */
+  status: 'absent' | 'makeup_done' | 'makeup_expired'
+  makeupDeadline: string | null
+  absenceMemo: string | null
+  /** makeup_done 인 경우 매칭된 보강 일자. */
+  makeupEventDate: string | null
+  /** 매칭된 보강의 수업 시간 (분). */
+  makeupClassMinutes: number | null
+}

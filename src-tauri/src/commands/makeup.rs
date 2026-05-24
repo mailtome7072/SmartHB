@@ -104,6 +104,24 @@ pub struct BatchResult {
     pub failed: Vec<BatchFailure>,
 }
 
+/// 결석 이력 1건 (T8) — `regular_attendances WHERE status IN ('absent', 'makeup_done', 'makeup_expired')`
+/// + LEFT JOIN `makeup_attendances` 로 보강 일자/시간 포함.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbsenceHistoryItem {
+    pub id: i64,
+    pub event_date: String,
+    pub class_minutes: i64,
+    /// 'absent' / 'makeup_done' / 'makeup_expired'
+    pub status: String,
+    pub makeup_deadline: Option<String>,
+    pub absence_memo: Option<String>,
+    /// `makeup_done` 인 경우 매칭된 보강의 event_date.
+    pub makeup_event_date: Option<String>,
+    /// 매칭된 보강의 class_minutes.
+    pub makeup_class_minutes: Option<i64>,
+}
+
 // ────────────────────────────────────────────────────────────────────
 // IPC: 미처리 결석 조회
 // ────────────────────────────────────────────────────────────────────
@@ -666,6 +684,60 @@ async fn batch_create_makeups_impl(
     }
 
     Ok(BatchResult { succeeded, failed })
+}
+
+// ────────────────────────────────────────────────────────────────────
+// IPC: 결석 이력 조회 (Sprint 9 T8)
+// ────────────────────────────────────────────────────────────────────
+
+/// 원생의 결석 이력 — 미처리/보강완료/보강소멸 모두 포함. PRD §4.5.10.
+///
+/// `LEFT JOIN makeup_attendances` 로 `makeup_done` 행의 보강 일자/시간 포함.
+/// 정렬: `event_date DESC` (최신순). 출석/`makeup_attended` 단순 보강 등록 행은 제외.
+#[tauri::command]
+pub async fn get_absence_history(student_id: i64) -> Result<Vec<AbsenceHistoryItem>, String> {
+    let pool = db::pool().map_err(String::from)?;
+    get_absence_history_impl(pool, student_id).await
+}
+
+async fn get_absence_history_impl(
+    pool: &SqlitePool,
+    student_id: i64,
+) -> Result<Vec<AbsenceHistoryItem>, String> {
+    let rows = sqlx::query(
+        "SELECT r.id, r.event_date, r.class_minutes, r.status, \
+                r.makeup_deadline, r.absence_memo, \
+                m.event_date AS makeup_event_date, \
+                m.class_minutes AS makeup_class_minutes \
+         FROM regular_attendances r \
+         LEFT JOIN makeup_attendances m ON r.makeup_attendance_id = m.id \
+         WHERE r.student_id = ? \
+           AND r.status IN ('absent', 'makeup_done', 'makeup_expired') \
+         ORDER BY r.event_date DESC",
+    )
+    .bind(student_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("결석 이력 조회 실패: {}", e))?;
+
+    let mut result = Vec::with_capacity(rows.len());
+    for r in rows {
+        result.push(AbsenceHistoryItem {
+            id: r.try_get("id").map_err(|e| e.to_string())?,
+            event_date: r.try_get("event_date").map_err(|e| e.to_string())?,
+            class_minutes: r.try_get("class_minutes").map_err(|e| e.to_string())?,
+            status: r.try_get("status").map_err(|e| e.to_string())?,
+            makeup_deadline: r.try_get("makeup_deadline").map_err(|e| e.to_string())?,
+            absence_memo: r.try_get("absence_memo").map_err(|e| e.to_string())?,
+            makeup_event_date: r
+                .try_get("makeup_event_date")
+                .map_err(|e| e.to_string())?,
+            makeup_class_minutes: r
+                .try_get("makeup_class_minutes")
+                .map_err(|e| e.to_string())?,
+        });
+    }
+    Ok(result)
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1360,5 +1432,94 @@ mod tests {
         .await
         .expect_err("빈 entries 거부");
         assert!(err.contains("1명 이상"));
+    }
+
+    // ─────────────── T8: get_absence_history ───────────────
+
+    /// 결석 이력 — absent/makeup_done/makeup_expired 모두 포함, 출석은 제외.
+    /// event_date DESC 정렬.
+    #[tokio::test]
+    async fn absence_history_includes_three_states_in_desc_order() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        // 출석 (제외 대상)
+        sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes, status) \
+             VALUES (?, '2026-06-10', '2026-06', 60, 'present')",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
+        // 미처리 결석 + 보강소멸 — JOIN 대상 아님
+        insert_absence(&pool, sid, "2026-06-15", "2026-06", 60, Some("2026-07")).await;
+        sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes, status, makeup_deadline) \
+             VALUES (?, '2026-06-05', '2026-06', 60, 'makeup_expired', '2026-06')",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
+        // 보강완료 — JOIN으로 makeup 정보 포함
+        let aid =
+            insert_absence(&pool, sid, "2026-06-20", "2026-06", 60, Some("2026-07")).await;
+        let mid: (i64,) = sqlx::query_as(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-06-25', '2026-06', 90) RETURNING id",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE regular_attendances SET status='makeup_done', makeup_attendance_id=? WHERE id=?",
+        )
+        .bind(mid.0)
+        .bind(aid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let history = get_absence_history_impl(&pool, sid).await.expect("이력");
+        // 출석 제외 → 3건. DESC 정렬: 06-20, 06-15, 06-05
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0].event_date, "2026-06-20");
+        assert_eq!(history[0].status, "makeup_done");
+        assert_eq!(history[0].makeup_event_date, Some("2026-06-25".to_string()));
+        assert_eq!(history[0].makeup_class_minutes, Some(90));
+
+        assert_eq!(history[1].event_date, "2026-06-15");
+        assert_eq!(history[1].status, "absent");
+        assert_eq!(history[1].makeup_event_date, None);
+
+        assert_eq!(history[2].event_date, "2026-06-05");
+        assert_eq!(history[2].status, "makeup_expired");
+    }
+
+    /// 결석 이력이 없는 학생 — 빈 vec.
+    #[tokio::test]
+    async fn absence_history_returns_empty_when_no_absences() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let history = get_absence_history_impl(&pool, sid).await.expect("빈 이력");
+        assert!(history.is_empty());
+    }
+
+    /// 다른 학생의 결석은 제외 (student_id 필터 확인).
+    #[tokio::test]
+    async fn absence_history_filters_by_student_id() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let s1 = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let s2 = seed_student(&pool, "S002", "2026-01-01", None, &[]).await;
+        insert_absence(&pool, s1, "2026-06-15", "2026-06", 60, Some("2026-07")).await;
+        insert_absence(&pool, s2, "2026-06-16", "2026-06", 60, Some("2026-07")).await;
+
+        let h1 = get_absence_history_impl(&pool, s1).await.expect("s1");
+        let h2 = get_absence_history_impl(&pool, s2).await.expect("s2");
+        assert_eq!(h1.len(), 1);
+        assert_eq!(h1[0].event_date, "2026-06-15");
+        assert_eq!(h2.len(), 1);
+        assert_eq!(h2[0].event_date, "2026-06-16");
     }
 }

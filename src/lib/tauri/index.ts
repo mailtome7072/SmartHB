@@ -33,6 +33,7 @@ import type {
   ToggleResult,
 } from '@/types/attendance'
 import type {
+  AbsenceHistoryItem,
   BatchCreateMakeupsPayload,
   BatchResult,
   CreateMakeupPayload,
@@ -1085,4 +1086,13 @@ export async function batchCreateMakeups(
     return { succeeded: [], failed: [] }
   }
   return inv('batch_create_makeups', { payload }) as Promise<BatchResult>
+}
+
+/** 원생 결석 이력 — absent/makeup_done/makeup_expired 모두 포함, event_date DESC (T8). */
+export async function getAbsenceHistory(
+  studentId: number,
+): Promise<AbsenceHistoryItem[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_absence_history', { studentId }) as Promise<AbsenceHistoryItem[]>
 }

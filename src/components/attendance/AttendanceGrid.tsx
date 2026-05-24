@@ -33,6 +33,8 @@ interface Props {
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
   /** Sprint 9 T7 — makeup_done 셀 클릭 시 호출 (보강 관리 다이얼로그 진입). */
   onMakeupCellClick?: (studentId: number, cell: AttendanceCell) => void
+  /** Sprint 9 T8 — 학생명 클릭 시 호출 (결석 이력 다이얼로그 진입). */
+  onStudentNameClick?: (studentId: number) => void
 }
 
 interface LastToggle {
@@ -76,7 +78,12 @@ function buildAttendanceByDay(
   return map
 }
 
-export function AttendanceGrid({ grid, onNonClassDayClick, onMakeupCellClick }: Props) {
+export function AttendanceGrid({
+  grid,
+  onNonClassDayClick,
+  onMakeupCellClick,
+  onStudentNameClick,
+}: Props) {
   const queryClient = useQueryClient()
   const [lastToggle, setLastToggle] = useState<LastToggle | null>(null)
   const [memoDialogCell, setMemoDialogCell] = useState<AttendanceCell | null>(null)
@@ -241,6 +248,7 @@ export function AttendanceGrid({ grid, onNonClassDayClick, onMakeupCellClick }: 
                 }}
                 onNonClassDayClick={onNonClassDayClick}
                 onMakeupCellClick={onMakeupCellClick}
+                onStudentNameClick={onStudentNameClick}
               />
             ))}
           </tbody>
@@ -281,6 +289,8 @@ interface StudentRowProps {
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
   /** Sprint 9 T7 — makeup_done 셀 클릭 시 보강 관리 다이얼로그 호출. */
   onMakeupCellClick?: (studentId: number, cell: AttendanceCell) => void
+  /** Sprint 9 T8 — 학생명 클릭 시 결석 이력 다이얼로그 호출. */
+  onStudentNameClick?: (studentId: number) => void
 }
 
 const StudentRow = memo(function StudentRow({
@@ -291,6 +301,7 @@ const StudentRow = memo(function StudentRow({
   onCellContextMenu,
   onNonClassDayClick,
   onMakeupCellClick,
+  onStudentNameClick,
 }: StudentRowProps) {
   // makeup_done 셀 클릭 시 보강 관리 다이얼로그로 분기, 그 외엔 일반 토글.
   function handleCellClick(cell: AttendanceCell) {
@@ -313,8 +324,22 @@ const StudentRow = memo(function StudentRow({
         scope="row"
         className="sticky left-0 z-10 w-[140px] min-w-[140px] border-b border-r border-[var(--border)] bg-amber-50 px-3 py-2 text-left text-base font-medium"
       >
-        <div>{student.name}</div>
-        <div className="text-xs text-gray-500">#{student.serialNo}</div>
+        {onStudentNameClick === undefined ? (
+          <>
+            <div>{student.name}</div>
+            <div className="text-xs text-gray-500">#{student.serialNo}</div>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onStudentNameClick(student.studentId)}
+            className="block w-full text-left hover:text-[var(--accent)] hover:underline"
+            title="결석 이력 보기"
+          >
+            <div>{student.name}</div>
+            <div className="text-xs text-gray-500">#{student.serialNo}</div>
+          </button>
+        )}
       </th>
       <td className="sticky left-[140px] z-10 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {student.summary.presentCount}

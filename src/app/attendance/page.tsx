@@ -23,6 +23,7 @@ import {
 } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { AbsenceHistoryDialog } from '@/components/attendance/AbsenceHistoryDialog'
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
 import { BatchMakeupDialog } from '@/components/attendance/BatchMakeupDialog'
 import { MakeupManageDialog } from '@/components/attendance/MakeupManageDialog'
@@ -74,6 +75,12 @@ export default function AttendancePage() {
   const [manageTarget, setManageTarget] = useState<MakeupManageTarget | null>(null)
   // Sprint 9 T7: 헤더 "보강데이 일괄" 버튼 → 일괄 등록 다이얼로그.
   const [batchOpen, setBatchOpen] = useState(false)
+  // Sprint 9 T8: 학생명 클릭 → 결석 이력 다이얼로그. 학생 ID + 표시용 이름/일련번호.
+  const [historyTarget, setHistoryTarget] = useState<{
+    studentId: number
+    studentName: string
+    studentSerialNo: string
+  } | null>(null)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -254,6 +261,17 @@ export default function AttendancePage() {
                   cell,
                 })
               }}
+              onStudentNameClick={(studentId) => {
+                const student = filteredGrid.students.find(
+                  (s) => s.studentId === studentId,
+                )
+                if (student === undefined) return
+                setHistoryTarget({
+                  studentId,
+                  studentName: student.name,
+                  studentSerialNo: student.serialNo,
+                })
+              }}
             />
             {debouncedSearch !== '' && matchedCount === 0 && (
               <p className="mt-4 text-center text-base text-gray-600">
@@ -309,6 +327,15 @@ export default function AttendancePage() {
           onSuccess={() => {
             void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
           }}
+        />
+      )}
+
+      {historyTarget !== null && (
+        <AbsenceHistoryDialog
+          studentId={historyTarget.studentId}
+          studentName={historyTarget.studentName}
+          studentSerialNo={historyTarget.studentSerialNo}
+          onClose={() => setHistoryTarget(null)}
         />
       )}
       </main>

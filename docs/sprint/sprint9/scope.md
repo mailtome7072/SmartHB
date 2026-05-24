@@ -224,7 +224,7 @@ if !(1..=12).contains(&m) {
 | src-tauri/src/commands/makeup.rs | [신규] | IPC 2종 + `_impl` 분리 + 응답 구조체 2종 + 단위 테스트 8건 |
 | src-tauri/src/commands/attendance.rs | [1회] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
 | src-tauri/src/commands/mod.rs | [1회] | `pub mod makeup;` 추가 |
-| src-tauri/src/lib.rs | [3회 ⚠️] | invoke_handler 에 IPC 2개 등록 |
+| src-tauri/src/lib.rs | [4회 ⚠️] | invoke_handler 에 IPC 2개 등록 |
 | docs/sprint/sprint9/scope.md | [2회] | Session #2 추가 |
 
 ### 단위 테스트 (T2 AC 매핑)
@@ -301,7 +301,7 @@ MakeupResult { makeup_id, student_id, event_date, matched_count }
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src-tauri/src/commands/audit.rs | [1회] | MakeupCreated/Cancelled/Absent 3 variants + as_code 매핑 |
-| src-tauri/src/commands/makeup.rs | [5회 ⚠️] | 응답 struct 2종 + create_makeup_with_absences IPC + 단위 테스트 9건. 기존 `seed_student` 에 schedules 인자 확장 (effective_from 포함) |
+| src-tauri/src/commands/makeup.rs | [8회 ⚠️] | 응답 struct 2종 + create_makeup_with_absences IPC + 단위 테스트 9건. 기존 `seed_student` 에 schedules 인자 확장 (effective_from 포함) |
 | src-tauri/src/lib.rs | [3회 ⚠️] | invoke_handler 에 `create_makeup_with_absences` 등록 |
 | docs/sprint/sprint9/scope.md | [3회] | Session #3 추가 |
 
@@ -421,7 +421,7 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src/types/makeup.ts | [신규] | 8 interface 1:1 매핑 |
-| src/lib/tauri/index.ts | [1회] | makeup 타입 import + 래퍼 6종 추가 |
+| src/lib/tauri/index.ts | [3회 ⚠️] | makeup 타입 import + 래퍼 6종 추가 |
 | docs/sprint/sprint9/scope.md | [5회 ⚠️] | Session #5 추가 |
 
 ### 세션 종료 조건
@@ -483,8 +483,8 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src/components/attendance/MakeupRegisterDialog.tsx | [신규] | 다이얼로그 + AbsenceRow 하위 컴포넌트 + eligibility/pending 두 query + mutation |
-| src/components/attendance/AttendanceGrid.tsx | [10회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
-| src/app/attendance/page.tsx | [9회 ⚠️] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
+| src/components/attendance/AttendanceGrid.tsx | [16회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
+| src/app/attendance/page.tsx | [13회 ⚠️] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
 | docs/sprint/sprint9/scope.md | [6회 ⚠️] | Session #6 추가 |
 
 ### UX 가드
@@ -560,7 +560,67 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 ### 세션 종료 조건
 - ✅ Self-verify: `pnpm lint` clean / `pnpm tsc --noEmit` clean (백엔드 변경 없음 — cargo 재검증 불요)
 - ✅ simplify — ConfirmPanel 하위 분리, client-side 필터로 IPC 절약, AttendanceGrid 분기 책임 명확
-- ⬜ 단일 커밋 (4 신규/수정 파일 + scope.md)
+- ✅ 단일 커밋 `ef06b43`
 
 ### 발견된 이슈
 (없음 — `AttendanceCell.makeupAttendanceId` 가 이미 T3 응답에 포함되어 있어 별도 IPC 불필요)
+
+---
+
+## Session #8 (T8 — 결석 이력 조회, 2026-05-24)
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T8** | `get_absence_history` IPC + TS 래퍼 + `AbsenceHistoryDialog` + 학생명 클릭 | 3h |
+
+### 설계 결정 (T8)
+
+#### IPC + 응답 struct
+
+- `get_absence_history(student_id) -> Vec<AbsenceHistoryItem>`
+- SQL: `LEFT JOIN makeup_attendances` — `makeup_done` 행의 보강 일자/시간 포함
+- 정렬: `event_date DESC` / WHERE: `status IN ('absent', 'makeup_done', 'makeup_expired')` (출석 제외)
+
+#### 배치 위치 결정
+
+- `/students/[id]` 동적 라우트 **미존재** → 차기 sprint 작업으로 분리
+- **출결표 학생명 클릭 → `AbsenceHistoryDialog`** 패턴 (sprint9.md L211 대안)
+- 차기 sprint 라우트 도입 시 본 다이얼로그 컨텐츠 재사용 가능
+
+#### 시각 구분 (AC-4.5-7)
+
+| 상태 | 배경 | 라벨 |
+|------|------|------|
+| `absent` | bg-red-50 | "미처리" (red-700) |
+| `makeup_done` | bg-green-50 | "보강완료" (green-700) + 보강일/분 |
+| `makeup_expired` | bg-gray-100 | "소멸" (gray-600) |
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/makeup.rs | [4회 ⚠️] | AbsenceHistoryItem struct + IPC + 테스트 3건 |
+| src-tauri/src/lib.rs | [5회 ⚠️] | invoke_handler 등록 |
+| src/types/makeup.ts | [1회] | AbsenceHistoryItem |
+| src/lib/tauri/index.ts | [1회] | getAbsenceHistory 래퍼 |
+| src/components/attendance/AbsenceHistoryDialog.tsx | [신규] | 다이얼로그 + HistoryRow + statusRowClass |
+| src/components/attendance/AttendanceGrid.tsx | [6회 ⚠️] | `onStudentNameClick` Props + 학생명 button 분기 |
+| src/app/attendance/page.tsx | [5회 ⚠️] | `historyTarget` state + 다이얼로그 렌더링 |
+| docs/sprint/sprint9/scope.md | [8회 ⚠️] | Session #8 추가 |
+
+### 단위 테스트 (T8 AC, 3건 신규)
+
+- ✅ `absence_history_includes_three_states_in_desc_order` — 3상태 + 출석 제외 + DESC + makeup JOIN
+- ✅ `absence_history_returns_empty_when_no_absences` — 빈 vec
+- ✅ `absence_history_filters_by_student_id` — student_id 필터
+
+### 세션 종료 조건
+- ✅ Self-verify: cargo test cipher off **250 passed** (T7 247 → +3) / cipher on **133 passed** / pnpm lint clean / pnpm tsc clean
+- ✅ Clippy `--lib -- -D warnings` 양쪽 clean
+- ✅ simplify — HistoryRow + statusRowClass 분리, 학생명 분기 단일 책임
+- ⬜ 단일 커밋
+
+### 발견된 이슈
+(없음)
