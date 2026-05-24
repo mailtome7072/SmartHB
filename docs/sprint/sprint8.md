@@ -362,9 +362,9 @@ CREATE INDEX idx_makeup_att_yearmonth ON makeup_attendances(year_month);
 **예상 소요**: 3시간
 **AC (Acceptance Criteria)**:
 - ✅ AC-T9-1: 자동 검증 7항목 전수 통과 — cargo test cipher off **221 passed** / on **133 passed**, clippy off+on clean, pnpm lint/tsc/build clean (out/ 정상)
-- ⬜ AC-T9-2: 사용자 시각 검증 결과 "정상 동작 확인" (사용자 위임 — `pnpm tauri:dev` 후 scope.md Session #9 표에 결과 기록)
-- ⬜ AC-T9-3: 콘솔에 에러/경고 없음 (사용자 위임 — `pnpm tauri:dev` stderr 확인)
-- ⬜ AC-T9-4: UC-3(일일 출결 입력) 전체 흐름 완주 가능 (사용자 위임)
+- ✅ AC-T9-2: 사용자 시각 검증 결과 "정상 동작 확인" (2026-05-24, T9 follow-up 3건 — sticky 4컬럼, 셀 너비 30% 감소, 원생 검색 필터 — 포함 전수 통과)
+- ✅ AC-T9-3: 콘솔에 에러/경고 없음 (사용자 확인)
+- ✅ AC-T9-4: UC-3(일일 출결 입력) 전체 흐름 완주 가능 (사용자 확인)
 
 ---
 

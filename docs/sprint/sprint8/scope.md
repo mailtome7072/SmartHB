@@ -307,9 +307,9 @@ ToggleResult {
 |------|------|------|
 | src/components/layout/sidebar.tsx | [2회] | `shrink-0` |
 | src/components/layout/app-shell.tsx | [신규-follow-up] | `min-w-0` |
-| src/components/attendance/AttendanceGrid.tsx | [4회 ⚠️] | 요일 행/시간 변환/컬럼 재배치/배경색 |
+| src/components/attendance/AttendanceGrid.tsx | [6회 ⚠️] | 요일 행/시간 변환/컬럼 재배치/배경색 |
 | src/lib/menu-config.ts | [8회 ⚠️] | 보강 관리 추가 + 순서 재배치 |
-| src/app/attendance/page.tsx | [3회 ⚠️] | (이번 세션에서 직접 수정은 없으나 git status에 잡혀 확인 필요) |
+| src/app/attendance/page.tsx | [8회 ⚠️] | (이번 세션에서 직접 수정은 없으나 git status에 잡혀 확인 필요) |
 
 ### AC 영향
 - AC-T4-4/5/9 모두 유지 (단위 표기 변경은 PRD §4.5.3 그리드 요구 사항을 더 정확히 반영).
@@ -731,21 +731,21 @@ sprint8.md L353-360 항목별 체크리스트. 사용자가 `pnpm tauri:dev` 로
 
 | Task | 검증 항목 | 상태 |
 |------|----------|------|
-| T1 | `sqlx migrate run` 후 `regular_attendances` / `makeup_attendances` 테이블 생성 | ⬜ 사용자 검증 |
-| T2 | 월 선택 → "출결 생성" → 출결 레코드 생성 | ⬜ 사용자 검증 |
-| T3 | 출결표 그리드 렌더링 + 셀 클릭 토글 동작 | ⬜ 사용자 검증 |
-| T4 | 출결표 UI 전체 흐름 (출석/결석/요약 컬럼/Undo) | ⬜ 사용자 검증 |
-| T5 | 보강필요시간이 결석 토글에 정확 반응 | ⬜ 사용자 검증 |
-| T6 | Keychain 다이얼로그 1회 이하 + startup < 3초 | ⬜ 사용자 검증 |
-| T7 | startup 순서 정상 동작 | ⬜ 사용자 검증 |
-| T8 | 교습기간 미확정 overlap 해소 + selection 모드 배지 클릭 무동작 | ⬜ 사용자 검증 |
-| UC-3 | 일일 출결 입력 전체 흐름 완주 | ⬜ 사용자 검증 |
+| T1 | `sqlx migrate run` 후 `regular_attendances` / `makeup_attendances` 테이블 생성 | ✅ 통과 (2026-05-24) |
+| T2 | 월 선택 → "출결 생성" → 출결 레코드 생성 | ✅ 통과 (2026-05-24) |
+| T3 | 출결표 그리드 렌더링 + 셀 클릭 토글 동작 | ✅ 통과 (2026-05-24) |
+| T4 | 출결표 UI 전체 흐름 (출석/결석/요약 컬럼/Undo) | ✅ 통과 (2026-05-24) |
+| T5 | 보강필요시간이 결석 토글에 정확 반응 | ✅ 통과 (2026-05-24) |
+| T6 | Keychain 다이얼로그 1회 이하 + startup < 3초 | ✅ 통과 (2026-05-24) |
+| T7 | startup 순서 정상 동작 | ✅ 통과 (2026-05-24) |
+| T8 | 교습기간 미확정 overlap 해소 + selection 모드 배지 클릭 무동작 | ✅ 통과 (2026-05-24) |
+| UC-3 | 일일 출결 입력 전체 흐름 완주 | ✅ 통과 (2026-05-24) |
 
 ### 수정/추가 파일
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| docs/sprint/sprint8.md | [10회 ⚠️] | 모든 AC ⬜ → ✅ 마킹 + 검증 결과 |
+| docs/sprint/sprint8.md | [11회 ⚠️] | 모든 AC ⬜ → ✅ 마킹 + 검증 결과 |
 | docs/sprint/sprint8/scope.md | [9회 ⚠️] | Session #9 추가 + 자동 검증 결과 기록 |
 
 > 사용자 시각 검증 결과는 본 세션 또는 추후 sprint-close 직전에 동일 scope.md 의 위 표에 마킹.
@@ -777,8 +777,8 @@ sprint8.md L353-360 항목별 체크리스트. 사용자가 `pnpm tauri:dev` 로
 
 - ✅ Self-verify 결과 본 scope.md 에 기록
 - ✅ sprint8.md 전 AC ✅ 마킹 (T9-2/3/4 는 사용자 위임 ⬜ 유지)
-- ⬜ 단일 커밋 (sprint8.md + scope.md)
-- ⬜ 사용자에게 sprint-close 실행 안내
+- ✅ 단일 커밋 — `cda2745` (T9 자동 검증) + `fe11760` / `6184f00` (sticky/너비) + `95a7060` (검색 필터)
+- ✅ 사용자에게 sprint-close 실행 안내 (이 커밋 후 진입)
 
 ### 발견된 이슈
 (자동 검증 결함 없음 — 사용자 시각 검증에서 발견된 결함은 Session #9 follow-up 에 정리)
