@@ -620,7 +620,87 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 - ✅ Self-verify: cargo test cipher off **250 passed** (T7 247 → +3) / cipher on **133 passed** / pnpm lint clean / pnpm tsc clean
 - ✅ Clippy `--lib -- -D warnings` 양쪽 clean
 - ✅ simplify — HistoryRow + statusRowClass 분리, 학생명 분기 단일 책임
-- ⬜ 단일 커밋
+- ✅ 단일 커밋 `f2a5689`
 
 ### 발견된 이슈
 (없음)
+
+---
+
+## Session #9 (T9 — 통합 검증 + A39/A40 프로세스 적용, 2026-05-24)
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T9** | 자동 검증 7항목 + A39 마이그레이션 self-check + A40 산출물 경로 명시 + sprint9.md AC 일괄 마킹 + 사용자 시각 검증 위임 | 3h |
+
+### 자동 검증 7항목 (전수 통과)
+
+| # | 명령 | 결과 |
+|---|------|------|
+| 1 | `cargo test --lib --manifest-path src-tauri/Cargo.toml` (cipher off) | ✅ **250 passed** / 0 failed / 3 ignored (27.39s) |
+| 2 | `cargo test --lib --manifest-path src-tauri/Cargo.toml --features cipher` (cipher on) | ✅ **133 passed** / 0 failed / 3 ignored (26.02s) |
+| 3 | `cargo clippy --lib --manifest-path src-tauri/Cargo.toml -- -D warnings` (cipher off) | ✅ clean |
+| 4 | `cargo clippy --lib --manifest-path src-tauri/Cargo.toml --features cipher -- -D warnings` (cipher on) | ✅ clean |
+| 5 | `pnpm lint` | ✅ "No ESLint warnings or errors" |
+| 6 | `pnpm tsc --noEmit` | ✅ clean (출력 없음) |
+| 7 | `pnpm build` | ✅ static export 12개 라우트 — `/attendance` (9.85 kB), `/students/*` 3종, `/academic`, `/settings/*` 4종, `/setup`, `/lock` |
+
+> **테스트 누적 추이**: T1 222 (cipher off baseline) → T2 +9 (231) → T3 +9 (240) → T4 +7 (247) → T8 +3 (250). T9 코드 변경 없음 → 250 유지. cipher on 133 동일.
+
+### A39 — 마이그레이션 self-check
+
+**결과**: ✅ 통과. Sprint 9에서 신규 마이그레이션 없음.
+
+| 확인 항목 | 결과 |
+|----------|------|
+| scope.md Session #1 결정 ("V108 신규 마이그레이션 불필요") | 일치 |
+| `src-tauri/migrations/` 디렉토리 마지막 파일 | `107__add_makeup_attendance_fk.sql` (Sprint 8 산출물) |
+| `git log develop..HEAD -- 'src-tauri/migrations/*'` | 빈 결과 (신규 마이그레이션 0건) |
+
+→ scope.md 검증 매트릭스(L40~L49)에 명시된 대로 V106/V107/V102/V301 + audit::AuditEventType 3 variant 신규(코드 변경)로 보강 도메인 전체 흐름 커버됨.
+
+### A40 — sprint-review 산출물 4종 경로 명시
+
+sprint-review 에이전트 호출 시 다음 4종 산출물 작성을 강제한다 (sprint9.md L364~L369 일치):
+
+1. `docs/test-reports/sprint9.md` — 자동 검증 결과 + 사용자 시각 검증 결과 + UC-4 흐름별 상세
+2. `docs/risk-register/2026-05-24.md` (또는 sprint-review 실행 일자) — Sprint 9 잔여 리스크 (R58~R62)
+3. `docs/sprint-retrospectives/sprint9-retrospective.md` — Sprint 9 회고 (Capacity 38h / Velocity / 잘된 점 / 개선 점)
+4. `docs/code-reviews/sprint9.md` — Sprint 9 코드 리뷰 (보강 IPC 7종 + UI 4 다이얼로그 중심)
+
+### sprint9.md AC 일괄 마킹
+
+T1~T8 각 작업 항목 + Definition of Done 의 자동 검증/단위 테스트/프로세스 항목 ⬜ → ✅ 전환. **사용자 시각 검증 의존 항목은 ⬜ 유지** — 사용자 응답 후 별도 마킹.
+
+### 사용자 시각 검증 위임 (Sprint 8 A38 패턴)
+
+`pnpm tauri:dev` 로 앱 기동 후 아래 5가지 흐름을 사용자가 직접 확인:
+
+1. **보강 등록(개별)**: 비수업일 셀 클릭 → 결석 선택 → 확정 → 그리드에 "보강완료" 반영
+2. **보강데이 일괄**: 보강데이 셀 → 원생 선택 → 확정 → 부분 성공/실패 결과 표시
+3. **보강 취소**: 등록된 보강 셀 클릭 → "취소" → 결석 환원 확인
+4. **보강결석(미등원)**: 등록된 보강 셀 클릭 → "미등원" → 결석 상태 유지 + 보강 status 변경
+5. **결석 이력**: 출결표 학생명 클릭 → `AbsenceHistoryDialog` 3종 상태(미처리/보강완료/소멸) 시각 구분 + 헤더 라벨 "미처리\n결석"
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| docs/sprint/sprint9.md | [11회 ⚠️] | T1~T8 AC + DoD 일괄 마킹 (시각 검증 제외) |
+| docs/sprint/sprint9/scope.md | [9회 ⚠️] | Session #9 추가 |
+| src-tauri/Cargo.lock | [—] | 버전 0.3.2 → 0.4.0 (Cargo.toml 기준 정상 동기화) |
+
+> scope.md 9회는 세션마다 누적된 패턴이라 loop-detection 의도(버그 루프)와 무관.
+
+### 세션 종료 조건
+- ✅ 자동 검증 7항목 전수 통과
+- ✅ A39 self-check 통과 (V108 없음 결정 일치)
+- ✅ A40 산출물 4종 경로 명시
+- ✅ sprint9.md AC 일괄 마킹 (자동 검증/단위 테스트 범위)
+- ⬜ 사용자 시각 검증 5종 흐름 (별도 진행)
+- ⬜ 단일 커밋
+
+### 발견된 이슈
+(없음 — Cargo.lock 의 smarthb 버전 0.3.2 → 0.4.0 변경은 Cargo.toml 의 `version = "0.4.0"` 과 동기화 결과로 정상)
