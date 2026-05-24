@@ -117,10 +117,11 @@ pub async fn create_study_period(
 ) -> Result<StudyPeriod, String> {
     let pool = db::pool().map_err(String::from)?;
 
-    // 일자 중첩 검증
+    // 일자 중첩 검증 — Sprint 8 T8 (R39 / A28): 미확정(is_confirmed=0) 교습기간은
+    // 임시 작성 중 상태로 간주하여 overlap 차단 대상에서 제외. 확정된 교습기간만 충돌 검사.
     let overlap = sqlx::query(
         "SELECT COUNT(*) AS cnt FROM study_periods \
-         WHERE start_date <= ? AND end_date >= ?",
+         WHERE is_confirmed = 1 AND start_date <= ? AND end_date >= ?",
     )
     .bind(&payload.end_date)
     .bind(&payload.start_date)
@@ -179,10 +180,10 @@ pub async fn update_study_period(
         return Err("지난 달의 교습기간은 수정할 수 없습니다.".to_string());
     }
 
-    // 일자 중첩 검증 — 자기 자신 제외
+    // 일자 중첩 검증 — 자기 자신 + 미확정 교습기간 제외 (R39 / A28).
     let overlap = sqlx::query(
         "SELECT COUNT(*) AS cnt FROM study_periods \
-         WHERE id != ? AND start_date <= ? AND end_date >= ?",
+         WHERE id != ? AND is_confirmed = 1 AND start_date <= ? AND end_date >= ?",
     )
     .bind(id)
     .bind(&payload.end_date)
@@ -1235,6 +1236,45 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(closed, 1, "마감 플래그가 조회 시 그대로 반영");
+    }
+
+    /// Sprint 8 T8 (R39 / A28): 미확정(`is_confirmed = 0`) 교습기간은 overlap 검사 대상에서
+    /// 제외 — `create_study_period` / `update_study_period` 쿼리가 `AND is_confirmed = 1` 을
+    /// 포함하는지 SQL 단위로 검증. 임시 작성 중인 미확정 행은 신규 등록을 차단하지 않아야 한다.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn overlap_skips_unconfirmed_periods() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        // 미확정 (is_confirmed=0, default) 교습기간 — 2099-05 전체
+        insert_period(&pool, "2099-05", "2099-05-01", "2099-05-31", 0).await;
+
+        // T8 적용 쿼리 — `AND is_confirmed = 1` 분기
+        let cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM study_periods \
+             WHERE is_confirmed = 1 AND start_date <= ? AND end_date >= ?",
+        )
+        .bind("2099-05-31")
+        .bind("2099-05-01")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cnt, 0, "미확정 교습기간은 overlap 카운트에서 제외");
+
+        // 확정 후엔 overlap 으로 잡혀야 함
+        sqlx::query("UPDATE study_periods SET is_confirmed = 1 WHERE year_month = '2099-05'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM study_periods \
+             WHERE is_confirmed = 1 AND start_date <= ? AND end_date >= ?",
+        )
+        .bind("2099-05-31")
+        .bind("2099-05-01")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cnt, 1, "확정 후엔 overlap 카운트에 포함");
     }
 
     /// AC-T5-3 — 확정 후 is_confirmed 가 1 로 변경되는지 직접 검증.

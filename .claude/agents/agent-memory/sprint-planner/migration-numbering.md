@@ -1,0 +1,15 @@
+---
+name: migration-numbering
+description: DB 마이그레이션 번호 정책 -- 3자리 zero-pad, 도메인 블록 100단위. 현재 사용 범위 추적.
+metadata:
+  type: project
+---
+
+번호 정책 (3자리 zero-pad, 도메인 블록 100단위):
+- V001~V099: 인프라 (코드 테이블, 감사 로그, 앱 설정) -- V001, V008 사용
+- V101~V199: 핵심 도메인 -- V101~V106 사용 (V106 = Sprint 8 출결 테이블)
+- V200~V299: 시드 데이터 -- V200~V201 사용
+- V301~V399: Sprint 6/7 패치 -- V301~V302 사용
+
+**Why:** ROADMAP의 Sprint 8 항목에 `V005`로 표기되어 있으나 이는 구 번호 체계. 실제로는 V106이 올바른 번호.
+**How to apply:** 다음 도메인 마이그레이션은 V107. Sprint 6/7 계열 패치 추가 시 V303.

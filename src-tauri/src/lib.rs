@@ -98,6 +98,12 @@ pub fn run() {
             commands::academic::delete_schedule_event,
             commands::academic::list_schedule_events,
             commands::academic::auto_place_assessment_dates,
+            commands::attendance::check_attendance_exists,
+            commands::attendance::generate_attendances,
+            commands::attendance::get_attendance_grid,
+            commands::attendance::toggle_attendance,
+            commands::attendance::update_absence_memo,
+            commands::attendance::get_attendance_summary,
             startup::app_startup_sequence,
         ])
         .on_window_event(|_window, event| {

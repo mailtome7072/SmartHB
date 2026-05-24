@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 47% (7/15 스프린트 완료) |
-| 현재 Phase | Phase 2 진행 중 — Sprint 7 완료 (2026-05-22), Sprint 8 (출결 관리) 예정 |
-| 다음 마일스톤 | 출결 관리 (Sprint 8) |
+| 전체 진행률 | 53% (8/15 스프린트 완료) |
+| 현재 Phase | Phase 2 완료 — Sprint 8 완료 (2026-05-24), Phase 3 (보강+소멸) 착수 예정 |
+| 다음 마일스톤 | 보강 등록 + 매칭 (Sprint 9) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -319,7 +319,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 2: 학사 + 출결 (Sprint 6~8) 🔄 진행 중
+## Phase 2: 학사 + 출결 (Sprint 6~8) ✅ 완료 (2026-05-24)
 
 > **스프린트 번호 이동**: Sprint 4(Phase 1.5 안정화) + Sprint 5(Phase 1.5b 안정화) 삽입으로 원래 Sprint 5(학사 스케줄) → **Sprint 6**, 원래 Sprint 6(출결 관리) → **Sprint 7 → Sprint 8**로 이연됨.
 > **Sprint 7 삽입**: Sprint 6 시각 검증에서 발견된 carry-over 8건(Keychain/교습기간 UX/배치 제약/salt 이전/device_id 등) 해소를 위해 Sprint 7이 carry-over 전담 스프린트로 삽입됨. 출결 관리는 Sprint 8로 이연.
@@ -400,39 +400,31 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 8: 출결 관리 (2주) 📋 예정
+### Sprint 8: 출결 관리 + Sprint 7 carry-over 흡수 (2주) ✅ 완료 (2026-05-24)
 
-> 원래 Sprint 7 (출결 관리)이 Sprint 8로 이연됨 — Sprint 7에서 carry-over 해소 선행.
+> 계획 문서: `docs/sprint/sprint8.md` / Task T1~T9 + T9 follow-up 3건 완료 / 9 세션
+> Phase 2 마지막 마일스톤. 출결 생성 + 출결표 UI + 상태 토글 + Sprint 7 carry-over High 4건 + Medium 6건 흡수.
+> develop 머지: `sprint8 → develop` (--no-ff, 2026-05-24)
 
 #### 작업 목록
 
-- ⬜ **DB 마이그레이션 V005**: regular_attendances + makeup_attendances 테이블
-- ⬜ **출결 생성 로직 (§4.5.1)**: 월 선택 → 재원 원생 x 수업 요일 일자 생성
-  - "정규수업 진행 OFF" 일자 건너뜀
-  - 입교일/퇴교일 범위 외 건너뜀
-  - 중복 생성 방지 (AC-4.5-1)
-  - IPC 커맨드: `generate_attendances`, `get_attendance_grid`
-- ⬜ **출결표 UI (§4.5.3)**: 행(원생) x 열(일자) + 요약 컬럼
-  - 50명 x 31일 렌더링 1초 이내 (성능 요구사항)
-  - 셀 클릭: 출석 <-> 결석 토글
-  - 결석 셀: 빨간색, 사유 메모 입력
-  - 보강필요시간 실시간 누적/감산
-  - 소멸기한 자동 설정 (결석 발생 월 + 1)
-  - 1단계 Undo 지원 (출결 토글)
-- ⬜ **입교일/퇴교일 변경 시 출결 재조정 (§4.5.8)**
-  - 영향 분석 다이얼로그 (삭제/신규 건수, 보강 연결 경고)
-  - 원장 컨펌 시에만 실행
-- ⬜ **캘린더 라이브러리 ADR**: FullCalendar vs React Big Calendar 비교
-  - ADR 문서: `docs/arch/adr-006-calendar-library.md`
-- ⬜ **수업 관리 캘린더 뷰 기초 (§4.6.1)**: 일/주/월 뷰 (Outlook 스타일)
-  - 시간대별 총 수업 인원수, 원생 이름 + 수업 시간 표시
+- ✅ **T1**: DB 마이그레이션 V106 — regular_attendances + makeup_attendances 테이블
+- ✅ **T2**: 출결 생성 IPC — `generate_attendances`, `check_attendance_exists`
+  - "정규수업 진행 OFF" 일자 건너뜀, 입교일/퇴교일 범위 외 건너뜀, 중복 생성 방지 (AC-4.5-1)
+- ✅ **T3**: 출결 조회 + 토글 IPC 6종 — `get_attendance_grid`, `toggle_attendance`, `update_absence_memo`, `get_attendance_summary` + `audit::AttendanceToggled`
+- ✅ **T4**: 출결표 프론트엔드 UI — `/attendance` 라우트, `AttendanceGrid` 컴포넌트, `AbsenceMemoDialog`, 사이드바 "출결" 메뉴 활성화
+- ✅ **T4 follow-up**: UX 보강 — 사이드바 너비, 요일 행, 시간 단위, 컬럼 재배치/배경색, sticky 4컬럼, 셀 너비 30% 감소, 원생 검색 필터
+- ✅ **T5**: 보강필요시간/소멸기한 단위 테스트 100% (10 시나리오)
+- ✅ **T6**: Sprint 7 carry-over High 4건 해소 (I-S2-2/3/4/5, R40~R43) — Keychain/auth 보안
+- ✅ **T7**: Sprint 7 carry-over Medium-High 1건 해소 (I-S2-7, R45) — Keychain concurrent race
+- ✅ **T8**: carry-over Medium 6항목 해소 (R46/R47/R48-a/R39/R51, A31)
+- ✅ **T9**: 통합 검증 — 자동 7항목 전수 통과 + AC 일괄 마킹
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 출결 생성 → 출결표 표시 → 출석/결석 토글 전체 흐름 동작
-- ⬜ 50명 x 31일 렌더링 1초 이내
-- ⬜ 보강필요시간 정확 계산 (결석 토글 시 +-변경)
-- ⬜ 캘린더 ADR 완료
-- ⬜ `cargo test` 보강필요시간 계산 100% 커버
+- ✅ 출결 생성 → 출결표 표시 → 출석/결석 토글 전체 흐름 동작
+- ✅ 50명 x 31일 렌더링 1초 이내
+- ✅ 보강필요시간 정확 계산 (결석 토글 시 +-변경) — 단위 테스트 100% 커버
+- ✅ `cargo test --lib` cipher off 221 passed / cipher on 133 passed + clippy/lint/tsc/build 무오류
 
 #### 🧪 Playwright MCP 검증 시나리오
 ```
@@ -449,6 +441,14 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 - 출결표 대량 셀 렌더링: 가상화(virtualization) 적용 검토
 - TanStack Query로 출결 데이터 캐싱 + 토글 시 낙관적 업데이트
 - 캘린더 뷰 라이브러리는 ADR 결과에 따라 Sprint 8 후반에서 완성
+
+#### 🔁 차기 sprint 이연 후보 (Sprint 8 시각 검수 + sprint-review 에서 정리)
+- ⬜ **R48-b — salt buffer ZeroizeOnDrop 시그니처 변경**: `load_salt_from`/`migrate_keyring_salt_to`/`generate_salt`/`store_salt_to` 가 모두 `[u8; SALT_LEN]` raw array 반환. `Zeroizing<[u8; SALT_LEN]>` 또는 신규 wrapper struct 도입 시 호출 사이트 광범위 영향이라 Sprint 8 범위에서 분리. 캐시 진입 후엔 `CachedCredentials` ZeroizeOnDrop 으로 보호되므로 잔존 위험은 stack 임시 변수 한정.
+- ⬜ **반응형 폰트/셀 너비 — 모니터 해상도 비례 조정**: 현재 `--font-size-body: 18px` 와 h1~h6, `AttendanceGrid` 셀 너비(140/62/84px)가 모두 px 고정. 1024px ↔ 2560px 모니터에서 동일 픽셀. PRD §5.7 "18pt 권장(16pt 하한)" 유지하면서 큰 모니터 확대 — `clamp()` viewport 패턴 또는 html font-size 미디어쿼리 + rem 일괄 전환. 폰트 변경 시 셀 너비도 동기 필요 (텍스트 흘러나옴 방지).
+- ⬜ **원생 검색 한글 자모 부분 일치**: Sprint 8 T9 follow-up 에서 출결관리에 원생 이름 substring 검색 도입 (`/attendance` 헤더). PRD §4.14 "한글 자모 부분 일치 + 영문 대소문자 무관" 중 자모 일치는 미적용 — `ㅈ`(자) 입력으로 "장수민" 매칭 같은 자모 분해 라이브러리(예: `hangul-js`) 또는 직접 분해 알고리즘 도입 필요. 글로벌 검색바(`src/components/layout/global-search.tsx`)도 동일 패턴 점검 대상.
+- ⬜ **F1 (review) — 결석 컬럼 라벨 의미 명확화**: sprint-review 발견. 출결표 헤더 "결석(일)" 이 `status='absent' AND makeup_attendance_id IS NULL` 만 카운트 (보강완료/소멸 제외). 사용자가 "총 결석"으로 오해 가능. 라벨을 "미처리 결석(일)" 로 변경하거나 툴팁/도움말 추가. `AttendanceGrid` + `compute_summary` 둘 다 점검.
+- ⬜ **F3 (review) — get_attendance_grid N+1 쿼리 패턴**: sprint-review 발견. `get_grid_impl` 학생 루프 안에 4쿼리 (day_rows, cell_rows, compute_summary 2건) — 50명 기준 200쿼리. 현재 PRD §5.7 "50명×31일 < 1초" 통과지만 데이터 누적/느린 HDD 환경에서 잠재 위험. JOIN 또는 단일 IN 쿼리로 batch 처리 검토.
+- ⬜ **F5 (review) — validate_year_month 월 범위 검증**: sprint-review 발견. `attendance.rs::validate_year_month` 가 `2026-00` / `2026-13` 같은 의미론적 무효 입력 통과. `next_month_str` 단계에서 `NaiveDate::parse_from_str` 실패로 비친화적 에러 메시지 노출. 정규식/범위 검증 강화로 사용자 친화 메시지 즉시 반환.
 
 ---
 

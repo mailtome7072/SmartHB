@@ -3,11 +3,16 @@
 이 파일은 sprint-planner 에이전트의 영구 메모리입니다.
 프로젝트 진행 상황, 기술 스택, 패턴 등을 기록합니다.
 
+- [Sprint 현황](sprint-status.md) -- Sprint 8 계획 수립 완료, Phase 2 마지막 마일스톤
+- [마이그레이션 번호 정책](migration-numbering.md) -- V106 다음은 V107, 도메인 블록 V101~V199
+- [Capacity 패턴](capacity-pattern.md) -- Sprint 6(45h 초과) / Sprint 7(33h 여유) / Sprint 8(41h 적정)
+
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 7 (2026-05-22)
-- 다음 스프린트 번호: 8
+- 마지막 완료 스프린트: Sprint 8 (2026-05-24)
+- 다음 스프린트 번호: 9
+- Sprint 8 계획 수립: 2026-05-23 (Phase 2 출결 관리 + Sprint 7 carry-over 흡수 — V106 마이그레이션 + 출결 생성/토글 IPC + 그리드 UI + High 4건 + Medium 5건)
 - Sprint 7 계획 수립: 2026-05-22 (Phase 2 carry-over 해소 — Keychain 캐싱 + salt 이전 + device_id 영속화 + 교습기간 UX + 배치 제약)
 - Sprint 6 계획 수립: 2026-05-22 (Phase 2 학사 스케줄 — 3개월 캘린더 + 교습기간 + 일정 코드 + 배치)
 - Sprint 5 계획 수립: 2026-05-22 (Phase 1.5b — Node 25 호환 + single-instance + 시드)

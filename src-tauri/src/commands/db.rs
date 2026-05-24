@@ -236,4 +236,187 @@ mod tests {
             assert!(msg.contains("설정") || msg.contains("잠금"));
         }
     }
+
+    // ─── Sprint 8 T1: V106 출결 도메인 마이그레이션 검증 (PRD §6.2) ───
+
+    /// 테스트용 더미 원생 1건 INSERT — FK 충족 후 출결 테스트.
+    #[cfg(not(feature = "cipher"))]
+    async fn insert_test_student(pool: &SqlitePool) -> i64 {
+        let row: (i64,) = sqlx::query_as(
+            "INSERT INTO students (serial_no, name, gender, school_level, grade, enroll_date) \
+             VALUES ('TEST-001', '테스트', 'male', 'elementary', 3, '2026-01-01') RETURNING id",
+        )
+        .fetch_one(pool)
+        .await
+        .expect("students 삽입 성공");
+        row.0
+    }
+
+    /// AC-T1-1: V106 적용 후 두 테이블 존재 확인.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn v106_creates_attendance_tables() {
+        let pool = test_pool_in_memory().await.expect("인메모리 pool");
+        let regular: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM regular_attendances")
+            .fetch_one(&pool)
+            .await
+            .expect("regular_attendances 테이블 존재");
+        assert_eq!(regular.0, 0, "초기 0건");
+        let makeup: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM makeup_attendances")
+            .fetch_one(&pool)
+            .await
+            .expect("makeup_attendances 테이블 존재");
+        assert_eq!(makeup.0, 0);
+    }
+
+    /// AC-T1-2: regular_attendances (student_id, event_date) UNIQUE 제약 동작.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn regular_attendances_unique_student_date() {
+        let pool = test_pool_in_memory().await.expect("인메모리 pool");
+        let sid = insert_test_student(&pool).await;
+        sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-03-15', '2026-03', 90)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .expect("첫 INSERT 성공");
+
+        let dup_result = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-03-15', '2026-03', 90)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(
+            dup_result.is_err(),
+            "동일 (student_id, event_date) 두 번째 INSERT 는 UNIQUE 위반"
+        );
+    }
+
+    /// AC-T1-3: makeup_attendances UNIQUE 없음 — 동일 (student_id, event_date) 다중 INSERT 가능.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn makeup_attendances_allows_multiple_same_date() {
+        let pool = test_pool_in_memory().await.expect("인메모리 pool");
+        let sid = insert_test_student(&pool).await;
+        for _ in 0..3 {
+            sqlx::query(
+                "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
+                 VALUES (?, '2026-03-15', '2026-03', 60)",
+            )
+            .bind(sid)
+            .execute(&pool)
+            .await
+            .expect("makeup 다중 INSERT 허용");
+        }
+        let count: (i32,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM makeup_attendances WHERE student_id = ? AND event_date = '2026-03-15'",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 3, "동일 (student_id, event_date) 보강 3건 누적");
+    }
+
+    /// AC-T1-4: status CHECK 제약 위반 시 INSERT 실패 (regular + makeup 양쪽).
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn attendances_status_check_rejects_invalid() {
+        let pool = test_pool_in_memory().await.expect("인메모리 pool");
+        let sid = insert_test_student(&pool).await;
+
+        let regular_invalid = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes) \
+             VALUES (?, '2026-03-15', '2026-03', 'invalid', 90)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(
+            regular_invalid.is_err(),
+            "regular_attendances status='invalid' CHECK 위반"
+        );
+
+        let makeup_invalid = sqlx::query(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) \
+             VALUES (?, '2026-03-15', '2026-03', 'present', 60)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(
+            makeup_invalid.is_err(),
+            "makeup_attendances status='present' CHECK 위반 (보강은 makeup_attended/makeup_absent 만 허용)"
+        );
+    }
+
+    /// AC-T1-4 보강: year_month/event_date GLOB 패턴 위반 + class_minutes 양수 검증.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn attendances_format_checks() {
+        let pool = test_pool_in_memory().await.expect("인메모리 pool");
+        let sid = insert_test_student(&pool).await;
+
+        // year_month 형식 위반 ('2026-3' — 한 자리 month)
+        let bad_ym = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-03-15', '2026-3', 90)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(bad_ym.is_err(), "year_month GLOB 위반");
+
+        // class_minutes 0 또는 음수
+        let bad_minutes = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-03-15', '2026-03', 0)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(bad_minutes.is_err(), "class_minutes > 0 CHECK 위반");
+    }
+
+    /// V107 (Sprint 8 review F2): regular_attendances.makeup_attendance_id → makeup_attendances(id)
+    /// FK 제약. PRAGMA foreign_keys=ON 환경에서 무효 id 참조 시 INSERT 실패해야 한다.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn regular_attendances_makeup_fk_enforced() {
+        let pool = test_pool_in_memory().await.expect("인메모리 pool");
+        // 인메모리 SQLite 는 기본 foreign_keys=OFF — V107 동작 검증을 위해 명시적으로 ON.
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&pool)
+            .await
+            .expect("foreign_keys ON");
+        let sid = insert_test_student(&pool).await;
+
+        // makeup_attendances 에 존재하지 않는 id (9999) 참조 → FK 위반으로 실패해야 함.
+        let bad_fk = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes, status, makeup_attendance_id) \
+             VALUES (?, '2026-03-15', '2026-03', 90, 'makeup_done', 9999)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(
+            bad_fk.is_err(),
+            "무효 makeup_attendance_id 참조는 FK 위반 — V107 적용 확인"
+        );
+
+        // NULL 은 허용 (보강 미매칭 결석 상태).
+        let null_ok = sqlx::query(
+            "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes, makeup_attendance_id) \
+             VALUES (?, '2026-03-16', '2026-03', 90, NULL)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await;
+        assert!(null_ok.is_ok(), "NULL makeup_attendance_id 는 허용");
+    }
 }

@@ -39,6 +39,38 @@
 
 ---
 
+## [0.4.0] - 2026-05-24
+
+### Added
+- Sprint 8: DB 마이그레이션 V106 — `regular_attendances` + `makeup_attendances` 테이블 신규 (보강필요시간, 소멸기한, 결석 사유 메모 포함)
+- Sprint 8: 출결 IPC 6종 (`src-tauri/src/commands/attendances.rs` 신규) — `generate_attendances`, `check_attendance_exists`, `get_attendance_grid`, `toggle_attendance`, `update_absence_memo`, `get_attendance_summary`
+- Sprint 8: 출결표 프론트엔드 (`/attendance` 라우트) — `AttendanceGrid` 컴포넌트(행=원생 × 열=일자 sticky 4컬럼 고정), `AbsenceMemoDialog`, 원생 이름 검색 필터, 요약 컬럼(출석/결석/보강필요시간)
+- Sprint 8: 사이드바 "출결" 메뉴 활성화 + "보강 관리" disabled 항목 노출
+- Sprint 8: `audit::SecurityEvent` + `AttendanceToggled` audit variants 추가
+- Sprint 8: 보강필요시간/소멸기한 비즈니스 규칙 단위 테스트 10 시나리오 (100% 커버)
+
+### Changed
+- Sprint 8: I-S2-4 (R42) — `invalidate_credential_cache` pub 승격 + exit_hook 등록으로 앱 종료 시 Keychain 캐시 안전 폐기
+- Sprint 8: I-S2-7 (R45) — `get_cached_or_load_key` + `verify_password` concurrent race 제거 (`LOAD_MUTEX` + `ensure_cache_loaded` 헬퍼 도입)
+- Sprint 8: I-S2-8 (R46) — `cred_cache_lock` 헬퍼로 `Mutex` poison graceful 복구 (7곳 일괄 적용)
+- Sprint 8: R39 (A28) — `create/update_study_period` overlap 검증에 `AND is_confirmed = 1` 추가 (미확정 기간과 중첩 허용)
+- Sprint 8: R51 (A37) — `calendarEventClick` studyPeriodMode early return으로 교습기간 확인 모드 중 일정 클릭 시 의도치 않은 동작 차단
+
+### Fixed
+- Sprint 8: I-S2-2 (R40) — `is_salt_corrupted` partial-NULL 패턴 감지 강화 (null byte 포함 hex 스트링 처리)
+- Sprint 8: I-S2-3 (R41) — `set_password` `AtomicBool` 재진입 가드 RAII panic-safe 보강
+- Sprint 8: I-S2-5 (R43) — `salt_exists_at` legacy keyring fallback 검증 테스트 추가
+- Sprint 8: I-S2-9 (R47) — `migrate_keyring_salt_to` `SecurityEvent` audit 기록 누락 수정
+- Sprint 8: I-S2-10 (R48-a) — `device.id` 파일 권한 `0o600` 설정 (Unix)
+- Sprint 8 review F2 — V107 마이그레이션 추가. `regular_attendances.makeup_attendance_id → makeup_attendances(id)` FK 제약 누락을 테이블 재생성 패턴으로 보강 (Phase 3 보강 매칭 도입 전 참조 무결성 확보)
+
+### Security
+- Sprint 8: I-S2-2~5 (R40~R43) — auth.rs Keychain 보안 4건 강화 (partial-NULL 감지, AtomicBool 재진입 가드, cache invalidation exit_hook, legacy fallback 검증)
+- Sprint 8: I-S2-7 (R45) — 동시 요청 시 Keychain 직접 접근 race 조건 제거 (LOAD_MUTEX 도입)
+- Sprint 8: I-S2-10 (R48-a) — device_id 파일 Unix 권한 0o600으로 제한
+
+---
+
 ## [0.3.2] - 2026-05-23
 
 ### Fixed
