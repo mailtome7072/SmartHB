@@ -15,9 +15,10 @@
 //! - 분 단위 전환은 T3 검증 3 활성/비활성 1줄 토글로 가능 (R58 추적).
 
 use crate::commands::attendance::validate_year_month;
+use crate::commands::audit::{self, AuditEventType};
 use crate::commands::db;
-use chrono::NaiveDate;
-use serde::Serialize;
+use chrono::{Datelike, NaiveDate};
+use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::collections::BTreeMap;
 
@@ -43,6 +44,28 @@ pub struct PendingAbsence {
 pub struct EligibleDate {
     pub event_date: String,
     pub schedule_code_name: String,
+}
+
+/// 보강 등록 페이로드 — `create_makeup_with_absences` IPC 입력.
+///
+/// 단일 구조체로 묶어 Tauri IPC argument 직렬화 안정성 확보 (다중 i64 + Vec).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMakeupPayload {
+    pub student_id: i64,
+    pub event_date: String,
+    pub class_minutes: i64,
+    pub absence_ids: Vec<i64>,
+}
+
+/// 보강 등록 결과 — IPC 응답.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MakeupResult {
+    pub makeup_id: i64,
+    pub student_id: i64,
+    pub event_date: String,
+    pub matched_count: usize,
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -200,6 +223,218 @@ async fn get_makeup_eligible_dates_impl(
 }
 
 // ────────────────────────────────────────────────────────────────────
+// IPC: 보강 등록 + 매칭 (Sprint 9 T3 핵심 트랜잭션)
+// ────────────────────────────────────────────────────────────────────
+
+/// 보강 1건을 등록하고 미처리 결석 N건을 "보강완료" 로 매칭한다.
+///
+/// 트랜잭션 내 검증 5종:
+/// 1. **이벤트 일자 보강 가능** — `event_date` 에 `allows_makeup_class=1` 학사일정 존재
+/// 2. **학생 일관성** — 학생 존재 + 입퇴교 범위 내 `event_date`
+/// 3. **정규 수업 요일 차단** — `event_date` 가 학생의 정규 수업 요일이면 거부
+///    (해당 요일은 정규 출결 대상이므로 보강 등록은 비수업일 한정 — PRD §4.5.4)
+/// 4. **결석 유효성** — `absence_ids` 모두 해당 학생 + `status='absent'` + 미매칭
+/// 5. **PI-02 시간값** — 옵션 A (일 단위) 채택: 검증 생략. 분 단위 전환 시 본 함수 내
+///    "PI-02 분 단위 활성 위치" 주석 위치에서 1줄 추가만으로 활성화 가능.
+///
+/// 실행 순서 (단일 트랜잭션):
+/// - INSERT makeup_attendances → makeup_id 발급
+/// - UPDATE regular_attendances SET status='makeup_done', makeup_attendance_id=makeup_id
+///   WHERE id IN absence_ids
+///
+/// audit `MakeupCreated` 기록 (트랜잭션 커밋 후 fire-and-forget — pool 의존이라 silent skip
+/// 가능, 그러나 본 IPC 는 unlock 후 호출되므로 정상 기록).
+#[tauri::command]
+pub async fn create_makeup_with_absences(
+    payload: CreateMakeupPayload,
+) -> Result<MakeupResult, String> {
+    let pool = db::pool().map_err(String::from)?;
+    let result = create_makeup_with_absences_impl(pool, &payload).await?;
+    audit::try_record(
+        AuditEventType::MakeupCreated,
+        Some(&result.makeup_id.to_string()),
+        Some(&format!(
+            r#"{{"studentId":{},"eventDate":"{}","matchedCount":{}}}"#,
+            result.student_id, result.event_date, result.matched_count
+        )),
+    )
+    .await;
+    Ok(result)
+}
+
+async fn create_makeup_with_absences_impl(
+    pool: &SqlitePool,
+    payload: &CreateMakeupPayload,
+) -> Result<MakeupResult, String> {
+    if payload.absence_ids.is_empty() {
+        return Err("충당할 결석을 1건 이상 선택해야 합니다.".to_string());
+    }
+    if payload.class_minutes <= 0 {
+        return Err("수업 시간(분)은 양수여야 합니다.".to_string());
+    }
+
+    let event_d = NaiveDate::parse_from_str(&payload.event_date, "%Y-%m-%d")
+        .map_err(|e| format!("이벤트 일자 파싱 실패 ({}): {}", payload.event_date, e))?;
+    let year_month = format!("{}-{:02}", event_d.year(), event_d.month());
+
+    // 검증 1: event_date 가 보강 가능 학사일정 일자인지 (allows_makeup_class=1 + 기간 매칭).
+    let makeup_eligible: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM schedule_events e \
+         JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE c.allows_makeup_class = 1 \
+           AND e.event_date <= ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+    )
+    .bind(&payload.event_date)
+    .bind(&payload.event_date)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("보강 가능 일자 검증 실패: {}", e))?;
+    if makeup_eligible.0 == 0 {
+        return Err(format!(
+            "{} 은 보강 가능 일자가 아닙니다 (학사일정에서 '보강 진행 가능' 코드가 활성된 일자에만 등록 가능합니다).",
+            payload.event_date
+        ));
+    }
+
+    // 검증 2: 학생 존재 + 입퇴교 범위.
+    let student_row = sqlx::query("SELECT enroll_date, withdraw_date FROM students WHERE id = ?")
+        .bind(payload.student_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("학생 조회 실패: {}", e))?
+        .ok_or_else(|| "학생을 찾을 수 없습니다.".to_string())?;
+    let enroll: String = student_row
+        .try_get("enroll_date")
+        .map_err(|e| e.to_string())?;
+    let withdraw: Option<String> = student_row
+        .try_get("withdraw_date")
+        .map_err(|e| e.to_string())?;
+    let enroll_d = NaiveDate::parse_from_str(&enroll, "%Y-%m-%d")
+        .map_err(|e| format!("입교일 파싱 실패: {}", e))?;
+    if event_d < enroll_d {
+        return Err("입교일 이전 일자에는 보강을 등록할 수 없습니다.".to_string());
+    }
+    if let Some(wd_str) = withdraw.as_deref() {
+        let wd = NaiveDate::parse_from_str(wd_str, "%Y-%m-%d")
+            .map_err(|e| format!("퇴교일 파싱 실패: {}", e))?;
+        if event_d > wd {
+            return Err("퇴교일 이후 일자에는 보강을 등록할 수 없습니다.".to_string());
+        }
+    }
+
+    // 검증 3: 정규 수업 요일 차단 — 학생의 student_schedules.day_of_week 와 일치하면 거부.
+    let weekday = event_d.weekday().number_from_monday() as i64;
+    let regular_match: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM student_schedules WHERE student_id = ? AND day_of_week = ?",
+    )
+    .bind(payload.student_id)
+    .bind(weekday)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("정규 수업 요일 검증 실패: {}", e))?;
+    if regular_match.0 > 0 {
+        return Err("학생의 정규 수업 요일에는 보강을 등록할 수 없습니다 (비수업일에만 가능).".to_string());
+    }
+
+    // 검증 4: 결석 유효성 — 모두 본 학생 + status='absent' + 미매칭.
+    // SQL IN 절은 동적 placeholder 가 sqlx 에서 까다로워 — Rust 측 루프로 단건 검증.
+    for &aid in &payload.absence_ids {
+        let row = sqlx::query(
+            "SELECT student_id, status, makeup_attendance_id \
+             FROM regular_attendances WHERE id = ?",
+        )
+        .bind(aid)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("결석 조회 실패 (id={}): {}", aid, e))?;
+        let row = row.ok_or_else(|| format!("결석을 찾을 수 없습니다 (id={}).", aid))?;
+        let sid: i64 = row.try_get("student_id").map_err(|e| e.to_string())?;
+        let status: String = row.try_get("status").map_err(|e| e.to_string())?;
+        let matched: Option<i64> = row
+            .try_get("makeup_attendance_id")
+            .map_err(|e| e.to_string())?;
+        if sid != payload.student_id {
+            return Err(format!("결석 id={} 가 다른 학생의 것입니다.", aid));
+        }
+        // matched 체크를 status 보다 먼저 — 정상 매칭된 결석(status='makeup_done', matched=Some)
+        // 케이스에 "이미 다른 보강" 메시지가 더 정확. status 분기는 makeup_expired 같은
+        // 예외 상태(matched=None) 케이스를 잡는다.
+        if matched.is_some() {
+            return Err(format!(
+                "결석 id={} 는 이미 다른 보강에 매칭되어 있습니다.",
+                aid
+            ));
+        }
+        if status != "absent" {
+            return Err(format!(
+                "결석 id={} 의 상태가 '{}' 입니다 — 미처리 결석(absent) 만 매칭 가능합니다.",
+                aid, status
+            ));
+        }
+    }
+
+    // 검증 5 (PI-02 분 단위 활성 위치): 옵션 A 일 단위 채택으로 생략.
+    // 분 단위 전환 시 아래 주석 해제:
+    // let total: (i64,) = sqlx::query_as(
+    //     "SELECT COALESCE(SUM(class_minutes),0) FROM regular_attendances WHERE id IN (...)"
+    // ).fetch_one(pool).await...;
+    // if payload.class_minutes < total.0 { return Err("보강 시간이 결석 합계보다 적습니다."); }
+
+    // 실행: 단일 트랜잭션 — INSERT makeup → UPDATE absences.
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
+
+    let makeup_row: (i64,) = sqlx::query_as(
+        "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes, status) \
+         VALUES (?, ?, ?, ?, 'makeup_attended') RETURNING id",
+    )
+    .bind(payload.student_id)
+    .bind(&payload.event_date)
+    .bind(&year_month)
+    .bind(payload.class_minutes)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| format!("보강 INSERT 실패: {}", e))?;
+    let makeup_id = makeup_row.0;
+
+    let mut matched_count = 0usize;
+    for &aid in &payload.absence_ids {
+        let res = sqlx::query(
+            "UPDATE regular_attendances \
+             SET status = 'makeup_done', makeup_attendance_id = ?, \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+             WHERE id = ? AND status = 'absent' AND makeup_attendance_id IS NULL",
+        )
+        .bind(makeup_id)
+        .bind(aid)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("결석 매칭 UPDATE 실패 (id={}): {}", aid, e))?;
+        if res.rows_affected() != 1 {
+            // 검증 4 통과 후 race 가 발생한 경우 — 트랜잭션 롤백.
+            return Err(format!(
+                "결석 id={} 매칭 실패 (검증 후 상태 변경 추정). 트랜잭션 롤백.",
+                aid
+            ));
+        }
+        matched_count += 1;
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
+
+    Ok(MakeupResult {
+        makeup_id,
+        student_id: payload.student_id,
+        event_date: payload.event_date.clone(),
+        matched_count,
+    })
+}
+
+// ────────────────────────────────────────────────────────────────────
 // 단위 테스트 (cipher off 인메모리 풀)
 // ────────────────────────────────────────────────────────────────────
 
@@ -208,12 +443,16 @@ async fn get_makeup_eligible_dates_impl(
 mod tests {
     use super::*;
 
-    /// 테스트 학생 1명 삽입 — attendance.rs::seed_student 의 students 컬럼 규약 동일.
+    /// 테스트 학생 1명 + 정규 수업 스케줄 N 요일 삽입.
+    ///
+    /// schedules: `&[(day_of_week 1~7, duration_hours)]` — 비어있으면 student_schedules 미삽입
+    /// (T2 IPC 들은 schedules 의존성 없음). T3 정규 수업 요일 차단 검증에는 schedules 필요.
     async fn seed_student(
         pool: &SqlitePool,
         serial_no: &str,
         enroll: &str,
         withdraw: Option<&str>,
+        schedules: &[(i64, i64)],
     ) -> i64 {
         let row: (i64,) = sqlx::query_as(
             "INSERT INTO students (serial_no, name, gender, school_level, grade, \
@@ -227,7 +466,22 @@ mod tests {
         .fetch_one(pool)
         .await
         .expect("학생 INSERT");
-        row.0
+        let sid = row.0;
+        for &(dow, hours) in schedules {
+            sqlx::query(
+                "INSERT INTO student_schedules \
+                 (student_id, day_of_week, start_time, duration_hours, effective_from) \
+                 VALUES (?, ?, '15:00', ?, ?)",
+            )
+            .bind(sid)
+            .bind(dow)
+            .bind(hours)
+            .bind(enroll)
+            .execute(pool)
+            .await
+            .expect("schedule INSERT");
+        }
+        sid
     }
 
     /// 보강 가능 학사일정 코드 id 조회 (V102 시드 사용).
@@ -288,7 +542,7 @@ mod tests {
     #[tokio::test]
     async fn pending_absences_sorts_by_makeup_deadline_nulls_last() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "S001", "2026-01-01", None).await;
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
 
         // 3건 결석: 6/15(deadline=07), 6/10(deadline=NULL), 6/20(deadline=07)
         // 기대 순서: 6/15(07), 6/20(07), 6/10(NULL)
@@ -311,7 +565,7 @@ mod tests {
     #[tokio::test]
     async fn pending_absences_excludes_matched_absences() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "S001", "2026-01-01", None).await;
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
         let aid = insert_absence(&pool, sid, "2026-06-15", "2026-06", 90, Some("2026-07")).await;
 
         // 보강 행 + 매칭 설정 — V107 FK 강제로 실제 makeup_id 필요.
@@ -340,7 +594,7 @@ mod tests {
     #[tokio::test]
     async fn pending_absences_excludes_present_status() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "S001", "2026-01-01", None).await;
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
         sqlx::query(
             "INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes, status) \
              VALUES (?, '2026-06-15', '2026-06', 90, 'present')",
@@ -361,7 +615,7 @@ mod tests {
     #[tokio::test]
     async fn eligible_dates_returns_makeup_class_dates() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "S001", "2026-01-01", None).await;
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
         let makeup_code = schedule_code_id(&pool, "공휴수업일").await;
         insert_schedule_event(&pool, makeup_code, "2026-06-15", None).await;
         insert_schedule_event(&pool, makeup_code, "2026-06-22", None).await;
@@ -377,7 +631,7 @@ mod tests {
     #[tokio::test]
     async fn eligible_dates_excludes_makeup_off_codes() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "S001", "2026-01-01", None).await;
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
         // 방학 코드: allows_makeup_class=0 (V102 시드)
         let vac_code = schedule_code_id(&pool, "방학").await;
         insert_schedule_event(&pool, vac_code, "2026-06-15", None).await;
@@ -393,7 +647,7 @@ mod tests {
     async fn eligible_dates_excludes_before_enroll() {
         let pool = db::test_pool_in_memory().await.expect("pool");
         // 6/20 입교 학생 — 6/15 학사일정은 입교 전이라 제외
-        let sid = seed_student(&pool, "S001", "2026-06-20", None).await;
+        let sid = seed_student(&pool, "S001", "2026-06-20", None, &[]).await;
         let makeup_code = schedule_code_id(&pool, "공휴수업일").await;
         insert_schedule_event(&pool, makeup_code, "2026-06-15", None).await;
         insert_schedule_event(&pool, makeup_code, "2026-06-22", None).await;
@@ -409,7 +663,7 @@ mod tests {
     #[tokio::test]
     async fn eligible_dates_excludes_after_withdraw() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "S001", "2026-01-01", Some("2026-06-18")).await;
+        let sid = seed_student(&pool, "S001", "2026-01-01", Some("2026-06-18"), &[]).await;
         let makeup_code = schedule_code_id(&pool, "공휴수업일").await;
         insert_schedule_event(&pool, makeup_code, "2026-06-15", None).await;
         insert_schedule_event(&pool, makeup_code, "2026-06-22", None).await;
@@ -426,7 +680,7 @@ mod tests {
     #[tokio::test]
     async fn eligible_dates_expands_period_codes() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "S001", "2026-01-01", None).await;
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
         let makeup_code = schedule_code_id(&pool, "공휴수업일").await;
         // 6/14 ~ 6/16 (3일) 기간성 보강 가능일
         insert_schedule_event(&pool, makeup_code, "2026-06-14", Some("2026-06-16")).await;
@@ -440,4 +694,219 @@ mod tests {
 
     // validate_year_month 자체 검증은 attendance.rs 의 단위 테스트
     // (`validate_year_month_rejects_out_of_range_month`) 에서 보장됨. 본 모듈은 호출만 위임.
+
+    // ─────────────── T3: create_makeup_with_absences (트랜잭션 매칭) ───────────────
+
+    /// T3 픽스처 — 학생 1명 (월~금 정규 수업 5요일) + 보강 가능 코드 (공휴수업일) 일자
+    /// + 미처리 결석 N건. event_date 는 토요일(2026-06-13) 또는 일요일(2026-06-14)로
+    /// 정규 수업 요일 아닌 일자.
+    async fn fixture_student_with_absences(
+        pool: &SqlitePool,
+        absence_dates: &[&str],
+    ) -> (i64, Vec<i64>) {
+        let sid = seed_student(
+            &pool,
+            "S001",
+            "2026-01-01",
+            None,
+            // 월(1)~금(5) 정규 수업
+            &[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)],
+        )
+        .await;
+        let mut absence_ids = Vec::with_capacity(absence_dates.len());
+        for date in absence_dates {
+            let aid = insert_absence(&pool, sid, date, "2026-06", 60, Some("2026-07")).await;
+            absence_ids.push(aid);
+        }
+        (sid, absence_ids)
+    }
+
+    /// T3 픽스처 — event_date 에 보강 가능 학사일정 1건 등록 (공휴수업일).
+    async fn fixture_makeup_eligible_date(pool: &SqlitePool, event_date: &str) {
+        let code = schedule_code_id(&pool, "공휴수업일").await;
+        insert_schedule_event(&pool, code, event_date, None).await;
+    }
+
+    fn payload(student_id: i64, event_date: &str, absence_ids: Vec<i64>) -> CreateMakeupPayload {
+        CreateMakeupPayload {
+            student_id,
+            event_date: event_date.to_string(),
+            class_minutes: 60,
+            absence_ids,
+        }
+    }
+
+    /// AC-T3-1: 정상 매칭 — 결석 2건 → makeup_id 발급 + 2건 모두 makeup_done 전이.
+    #[tokio::test]
+    async fn create_makeup_matches_absences_atomically() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) =
+            fixture_student_with_absences(&pool, &["2026-06-15", "2026-06-16"]).await;
+        // 2026-06-13 = 토요일 (정규 수업 요일 아님)
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        let result = create_makeup_with_absences_impl(
+            &pool,
+            &payload(sid, "2026-06-13", absences.clone()),
+        )
+        .await
+        .expect("정상 매칭");
+        assert_eq!(result.matched_count, 2);
+        assert_eq!(result.student_id, sid);
+        assert!(result.makeup_id > 0);
+
+        // 결석 2건 모두 makeup_done + makeup_attendance_id 설정 확인
+        for aid in absences {
+            let row: (String, Option<i64>) = sqlx::query_as(
+                "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id=?",
+            )
+            .bind(aid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(row.0, "makeup_done");
+            assert_eq!(row.1, Some(result.makeup_id));
+        }
+    }
+
+    /// AC-T3-2: 빈 absence_ids 거부.
+    #[tokio::test]
+    async fn create_makeup_rejects_empty_absences() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, _) = fixture_student_with_absences(&pool, &[]).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+        let err = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", vec![]))
+            .await
+            .expect_err("빈 absence_ids 거부");
+        assert!(err.contains("1건 이상"), "친화 메시지: {}", err);
+    }
+
+    /// AC-T3-3: 보강 불가 일자 차단 — event_date 에 allows_makeup_class 학사일정 없음.
+    #[tokio::test]
+    async fn create_makeup_blocks_when_event_date_not_makeup_eligible() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
+        // 학사일정 미등록 → 2026-06-13 은 보강 가능 아님
+        let err = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", absences))
+            .await
+            .expect_err("보강 불가 일자 차단");
+        assert!(err.contains("보강 가능 일자가 아닙니다"), "친화 메시지: {}", err);
+    }
+
+    /// AC-T3-4: 정규 수업 요일 차단 — 학생의 월(1) 수업일에 보강 등록 시도.
+    #[tokio::test]
+    async fn create_makeup_blocks_regular_class_weekday() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
+        // 2026-06-15 는 월요일 (정규 수업) — 학사일정도 등록해서 검증 1 통과 후 검증 3 차단 확인
+        fixture_makeup_eligible_date(&pool, "2026-06-15").await;
+
+        let err = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-15", absences))
+            .await
+            .expect_err("정규 수업 요일 차단");
+        assert!(err.contains("정규 수업 요일"), "친화 메시지: {}", err);
+    }
+
+    /// AC-T3-5: 무효 absence_id (미존재) 거부.
+    #[tokio::test]
+    async fn create_makeup_rejects_nonexistent_absence_id() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, _) = fixture_student_with_absences(&pool, &[]).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+        let err =
+            create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", vec![99999]))
+                .await
+                .expect_err("미존재 결석 거부");
+        assert!(err.contains("찾을 수 없습니다"));
+    }
+
+    /// AC-T3-6: 다른 학생의 결석 거부 — 학생 일관성 검증.
+    #[tokio::test]
+    async fn create_makeup_rejects_other_students_absence() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (s1, _) = fixture_student_with_absences(&pool, &[]).await;
+        let s2 = seed_student(&pool, "S002", "2026-01-01", None, &[]).await;
+        let other_aid = insert_absence(&pool, s2, "2026-06-15", "2026-06", 60, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        let err = create_makeup_with_absences_impl(
+            &pool,
+            &payload(s1, "2026-06-13", vec![other_aid]),
+        )
+        .await
+        .expect_err("다른 학생 결석 거부");
+        assert!(err.contains("다른 학생"));
+    }
+
+    /// AC-T3-7: 이미 매칭된 결석 거부 — makeup_attendance_id NOT NULL.
+    #[tokio::test]
+    async fn create_makeup_rejects_already_matched_absence() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+        fixture_makeup_eligible_date(&pool, "2026-06-20").await;
+
+        // 첫 보강 등록 — 정상 매칭
+        let r1 =
+            create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", absences.clone()))
+                .await
+                .expect("첫 매칭");
+        assert_eq!(r1.matched_count, 1);
+
+        // 같은 결석으로 두 번째 보강 시도 → 이미 매칭됨 거부
+        let err = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-20", absences))
+            .await
+            .expect_err("이미 매칭된 결석 거부");
+        assert!(err.contains("이미 다른 보강"));
+    }
+
+    /// AC-T3-8: 트랜잭션 원자성 — 일부 결석 유효성 검증 실패 시 makeup INSERT 도 롤백.
+    #[tokio::test]
+    async fn create_makeup_rolls_back_on_validation_failure() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        // 유효한 결석 + 미존재 id 혼합 → 트랜잭션 전체 롤백
+        let mut mixed = absences.clone();
+        mixed.push(99999);
+
+        let err =
+            create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", mixed)).await;
+        assert!(err.is_err(), "혼합 입력 거부");
+
+        // 검증 4 가 트랜잭션 시작 전에 실행되므로 makeup_attendances 도 0건
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM makeup_attendances")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count.0, 0, "롤백 후 makeup_attendances 0건");
+
+        // 유효 결석도 여전히 absent 상태 유지 (UPDATE 안 됨)
+        let row: (String,) =
+            sqlx::query_as("SELECT status FROM regular_attendances WHERE id=?")
+                .bind(absences[0])
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.0, "absent");
+    }
+
+    /// AC-T3-9: 입교일 이전 event_date 거부.
+    #[tokio::test]
+    async fn create_makeup_rejects_before_enroll_date() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-06-20", None, &[(1, 1)]).await;
+        let aid =
+            insert_absence(&pool, sid, "2026-06-22", "2026-06", 60, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        let err = create_makeup_with_absences_impl(
+            &pool,
+            &payload(sid, "2026-06-13", vec![aid]),
+        )
+        .await
+        .expect_err("입교일 이전 거부");
+        assert!(err.contains("입교일 이전"));
+    }
 }

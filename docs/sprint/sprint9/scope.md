@@ -224,7 +224,7 @@ if !(1..=12).contains(&m) {
 | src-tauri/src/commands/makeup.rs | [신규] | IPC 2종 + `_impl` 분리 + 응답 구조체 2종 + 단위 테스트 8건 |
 | src-tauri/src/commands/attendance.rs | [1회] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
 | src-tauri/src/commands/mod.rs | [1회] | `pub mod makeup;` 추가 |
-| src-tauri/src/lib.rs | [1회] | invoke_handler 에 IPC 2개 등록 |
+| src-tauri/src/lib.rs | [2회] | invoke_handler 에 IPC 2개 등록 |
 | docs/sprint/sprint9/scope.md | [2회] | Session #2 추가 |
 
 ### 단위 테스트 (T2 AC 매핑)
@@ -247,3 +247,83 @@ if !(1..=12).contains(&m) {
 
 ### 발견된 이슈
 (없음 — 기존 attendance.rs::seed_student 패턴 재사용으로 students 컬럼 규약 일관 유지)
+
+---
+
+## Session #3 (T3 — 보강 등록 + 매칭 트랜잭션, 2026-05-24)
+
+> **skill: karpathy-guidelines** 자동 배정 (sprint9.md L104) — 트랜잭션 원자성 핵심.
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T3** | `create_makeup_with_absences` IPC 트랜잭션 + audit `MakeupCreated/Cancelled/Absent` 3종 추가 | 6h |
+
+### 설계 결정 (T3)
+
+#### IPC 본체 — 단일 페이로드 + 단일 응답
+
+```rust
+CreateMakeupPayload { student_id, event_date, class_minutes, absence_ids }
+MakeupResult { makeup_id, student_id, event_date, matched_count }
+```
+
+다중 i64 + `Vec<i64>` 를 페이로드 struct 로 통일 — Tauri IPC 직렬화 안정성 + 향후 필드 추가 용이.
+
+#### 트랜잭션 검증 5종 (순서 중요)
+
+1. **이벤트 일자 보강 가능** — `schedule_events JOIN schedule_codes WHERE allows_makeup_class=1 AND event_date <= ? AND COALESCE(period_end_date, event_date) >= ?`
+2. **학생 일관성** — 학생 존재 + 입퇴교 범위 내 event_date
+3. **정규 수업 요일 차단** — `student_schedules.day_of_week` 일치 시 거부 (보강은 비수업일 한정)
+4. **결석 유효성** — 학생 일치 → matched 체크 → status 체크 (matched 가 먼저 — 이미 매칭된 결석에 "이미 다른 보강" 메시지 정확)
+5. **PI-02 시간값** — 옵션 A 일 단위 채택으로 검증 생략. 분 단위 전환 시 주석 활성 위치에서 1줄 SUM 비교 추가
+
+#### audit::AuditEventType 신규 variants
+
+`MakeupCreated/Cancelled/Absent` 3종 — kebab-case `"makeup-created/cancelled/absent"`. T3 (Created) + T4 (Cancelled/Absent) 양쪽 진입점 대비 한 번에 추가.
+
+#### 트랜잭션 구조
+
+```text
+검증 5종 (pool 직접) → tx = pool.begin()
+   → INSERT makeup_attendances (status='makeup_attended') → makeup_id
+   → for each absence_id: UPDATE regular_attendances SET makeup_done + makeup_attendance_id
+      (WHERE status='absent' AND makeup_attendance_id IS NULL 재확인 → rows_affected=1 검증으로 race 차단)
+   → COMMIT
+   → audit::MakeupCreated (커밋 후 fire-and-forget)
+```
+
+검증 4가 검증 시점과 UPDATE 시점 사이 race 가능성 — UPDATE WHERE 절에 `AND status='absent' AND makeup_attendance_id IS NULL` 재차 적용 + `rows_affected() != 1` 검출로 트랜잭션 롤백.
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/audit.rs | [1회] | MakeupCreated/Cancelled/Absent 3 variants + as_code 매핑 |
+| src-tauri/src/commands/makeup.rs | [2회] | 응답 struct 2종 + create_makeup_with_absences IPC + 단위 테스트 9건. 기존 `seed_student` 에 schedules 인자 확장 (effective_from 포함) |
+| src-tauri/src/lib.rs | [3회 ⚠️] | invoke_handler 에 `create_makeup_with_absences` 등록 |
+| docs/sprint/sprint9/scope.md | [3회] | Session #3 추가 |
+
+### 단위 테스트 (T3 AC 매핑, 9건 신규)
+
+- ✅ AC-T3-1: `create_makeup_matches_absences_atomically` — 결석 2건 → makeup_id 발급 + 양쪽 makeup_done 전이
+- ✅ AC-T3-2: `create_makeup_rejects_empty_absences` — 빈 absence_ids 거부
+- ✅ AC-T3-3: `create_makeup_blocks_when_event_date_not_makeup_eligible` — 보강 불가 일자 차단
+- ✅ AC-T3-4: `create_makeup_blocks_regular_class_weekday` — 정규 수업 요일 차단
+- ✅ AC-T3-5: `create_makeup_rejects_nonexistent_absence_id` — 미존재 id 거부
+- ✅ AC-T3-6: `create_makeup_rejects_other_students_absence` — 학생 일관성
+- ✅ AC-T3-7: `create_makeup_rejects_already_matched_absence` — 이미 매칭된 결석 거부 (matched 체크 우선)
+- ✅ AC-T3-8: `create_makeup_rolls_back_on_validation_failure` — 검증 4 실패 시 makeup_attendances 0건 + 유효 결석 absent 유지
+- ✅ AC-T3-9: `create_makeup_rejects_before_enroll_date` — 입교일 이전 거부
+
+### 발견된 이슈
+
+- `seed_student` 의 `student_schedules` INSERT 에서 `effective_from` NOT NULL 누락 → 첫 실행 시 9 테스트 모두 panic. attendance.rs::seed_student 패턴 대조하여 즉시 보완 (`enroll_date` 값 재사용).
+- 검증 4 의 matched/status 순서 — 처음엔 status 먼저였으나 매칭된 결석에 "상태가 makeup_done" 메시지 노출이 부정확. matched 체크를 먼저로 변경하여 "이미 다른 보강" 메시지 노출.
+
+### 세션 종료 조건
+- ✅ Self-verify: cargo test cipher off **240 passed** (T2 231 → +9) / cipher on **133 passed**
+- ✅ Clippy `--lib -- -D warnings` cipher off + on clean
+- ✅ simplify — 검증 5단계 명확 분리, 픽스처 헬퍼 3종(fixture_*) 단일 책임, PI-02 분 단위 활성 위치 주석 명시. 추가 단순화 없음
+- ⬜ 단일 커밋 (audit.rs + makeup.rs + lib.rs + scope.md)
