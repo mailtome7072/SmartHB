@@ -427,7 +427,77 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 ### 세션 종료 조건
 - ✅ Self-verify: `pnpm lint` clean / `pnpm tsc --noEmit` clean
 - ✅ simplify — 단순 1:1 래퍼라 추가 단순화 없음
-- ⬜ 단일 커밋 (types/makeup.ts + lib/tauri/index.ts + scope.md)
+- ✅ 단일 커밋 `6f761f5`
+
+### 발견된 이슈
+(없음)
+
+---
+
+## Session #6 (T6 — 보강 등록 (개별) UI, 2026-05-24)
+
+> **skill: frontend-design** — UC-4 핵심 흐름의 첫 UI.
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T6** | `MakeupRegisterDialog` 신규 + AttendanceGrid 비수업일 클릭 핸들러 + page.tsx 통합 | 6h |
+
+### 설계 결정 (T6)
+
+#### 다이얼로그 흐름 — 옵션 F (절충)
+
+1. **비수업일 셀 클릭** → 즉시 다이얼로그 오픈 (로딩 상태)
+2. **eligibility query** (`getMakeupEligibleDates`) 마운트 시 호출 → eventDate 매칭 검사
+3. 매칭 없으면: "보강 가능 일자 아님" 안내 + 닫기만 가능
+4. 매칭 시: **`getPendingAbsences`** 조회 → 결석 다중 체크박스 선택 → class_minutes 입력 → "확정"
+5. mutation 성공 시: `attendance-grid` + `pending-absences` invalidate → 다이얼로그 닫힘
+
+**옵션 F 채택 이유**: 그리드 진입 시 N명 학생별 eligibility 미리 호출은 IPC 폭증 (50명 × 1IPC). 다이얼로그 마운트 시 1회 호출이 합리적 + UX 명확 (사용자가 어디 클릭해도 다이얼로그가 결과를 알려줌).
+
+#### 비수업일 셀 UX
+
+- 기존: `cell === null` → 단순 placeholder (`bg-gray-50`)
+- 신규: `onEmptyCellClick` prop 있으면 클릭 가능 셀 + 호버 시 `bg-amber-50` + `+` 표시
+- prop 없으면 기존 placeholder 유지 (다른 호출처 호환)
+
+#### TanStack Query 통합
+
+- `useQuery(['makeup-eligibility', sid, ym])` — eligibility 일자 목록
+- `useQuery(['pending-absences', sid])` — 결석 목록 (eligibility=true 시 enabled)
+- `useMutation(createMakeupWithAbsences)` — 성공 시 onSuccess → invalidate
+
+#### MakeupDialogTarget 구조
+
+```ts
+{
+  studentId, studentName, studentSerialNo, eventDate
+}
+```
+
+학생 정보를 grid.students 에서 lookup 후 다이얼로그에 전달 — 별도 학생 IPC 호출 회피.
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src/components/attendance/MakeupRegisterDialog.tsx | [신규] | 다이얼로그 + AbsenceRow 하위 컴포넌트 + eligibility/pending 두 query + mutation |
+| src/components/attendance/AttendanceGrid.tsx | [4회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
+| src/app/attendance/page.tsx | [3회] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
+| docs/sprint/sprint9/scope.md | [6회 ⚠️] | Session #6 추가 |
+
+### UX 가드
+
+- 다이얼로그 ESC / 배경 클릭 / 취소 버튼 모두 닫기
+- eligibility 미충족 시 "확정" 버튼 비표시 (취소만)
+- 결석 0건 선택 시 확정 버튼 disabled
+- mutation 진행 중 "등록 중..." 라벨
+
+### 세션 종료 조건
+- ✅ Self-verify: `pnpm lint` clean / `pnpm tsc --noEmit` clean
+- ✅ simplify — 다이얼로그는 단일 책임 (등록 흐름), AbsenceRow 분리로 가독성 유지. 추가 추상화 없음
+- ⬜ 단일 커밋 (3 신규/수정 파일 + scope.md)
 
 ### 발견된 이슈
 (없음)

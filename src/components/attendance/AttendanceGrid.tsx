@@ -29,6 +29,8 @@ import { AbsenceMemoDialog } from './AbsenceMemoDialog'
 
 interface Props {
   grid: AttendanceGridType
+  /** Sprint 9 T6 — 비수업일(보강 가능 후보) 셀 클릭 시 호출. */
+  onNonClassDayClick?: (studentId: number, eventDate: string) => void
 }
 
 interface LastToggle {
@@ -72,7 +74,7 @@ function buildAttendanceByDay(
   return map
 }
 
-export function AttendanceGrid({ grid }: Props) {
+export function AttendanceGrid({ grid, onNonClassDayClick }: Props) {
   const queryClient = useQueryClient()
   const [lastToggle, setLastToggle] = useState<LastToggle | null>(null)
   const [memoDialogCell, setMemoDialogCell] = useState<AttendanceCell | null>(null)
@@ -224,12 +226,14 @@ export function AttendanceGrid({ grid }: Props) {
                 key={student.studentId}
                 student={student}
                 days={days}
+                yearMonth={grid.yearMonth}
                 onCellClick={handleCellClick}
                 onCellContextMenu={(cell) => {
                   if (cell.status === 'absent') {
                     setMemoDialogCell(cell)
                   }
                 }}
+                onNonClassDayClick={onNonClassDayClick}
               />
             ))}
           </tbody>
@@ -264,15 +268,19 @@ export function AttendanceGrid({ grid }: Props) {
 interface StudentRowProps {
   student: AttendanceGridType['students'][number]
   days: number[]
+  yearMonth: string
   onCellClick: (cell: AttendanceCell) => void
   onCellContextMenu: (cell: AttendanceCell) => void
+  onNonClassDayClick?: (studentId: number, eventDate: string) => void
 }
 
 const StudentRow = memo(function StudentRow({
   student,
   days,
+  yearMonth,
   onCellClick,
   onCellContextMenu,
+  onNonClassDayClick,
 }: StudentRowProps) {
   const byDay = useMemo(
     () => buildAttendanceByDay(student.attendances),
@@ -305,12 +313,18 @@ const StudentRow = memo(function StudentRow({
       {days.map((day) => {
         const dayKey = String(day).padStart(2, '0')
         const cell = byDay.get(dayKey)
+        const eventDate = `${yearMonth}-${dayKey}`
         return (
           <CellView
             key={day}
             cell={cell ?? null}
             onClick={onCellClick}
             onContextMenu={onCellContextMenu}
+            onEmptyCellClick={
+              onNonClassDayClick === undefined
+                ? undefined
+                : () => onNonClassDayClick(student.studentId, eventDate)
+            }
           />
         )
       })}
@@ -322,16 +336,36 @@ interface CellViewProps {
   cell: AttendanceCell | null
   onClick: (cell: AttendanceCell) => void
   onContextMenu: (cell: AttendanceCell) => void
+  /** Sprint 9 T6 — 비수업일(=cell null) 클릭 시 호출 (보강 등록 진입). */
+  onEmptyCellClick?: () => void
 }
 
-/** 출결 셀 — 클릭 토글 + 우클릭 메모. 비수업일은 회색 placeholder. */
-function CellView({ cell, onClick, onContextMenu }: CellViewProps) {
+/** 출결 셀 — 클릭 토글 + 우클릭 메모. 비수업일은 회색 placeholder.
+ *  Sprint 9 T6: 비수업일 셀에 클릭 핸들러가 주어지면 보강 등록 진입점이 된다. */
+function CellView({ cell, onClick, onContextMenu, onEmptyCellClick }: CellViewProps) {
   if (cell === null) {
+    if (onEmptyCellClick === undefined) {
+      return (
+        <td
+          aria-label="수업일 아님"
+          className="min-w-[44px] border-b border-r border-[var(--border)] bg-gray-50"
+        />
+      )
+    }
     return (
       <td
-        aria-label="수업일 아님"
-        className="min-w-[44px] border-b border-r border-[var(--border)] bg-gray-50"
-      />
+        className="min-w-[44px] cursor-pointer border-b border-r border-[var(--border)] bg-gray-50 p-0 text-center align-middle hover:bg-amber-50"
+        onClick={onEmptyCellClick}
+        title="비수업일 — 클릭하여 보강 등록"
+      >
+        <button
+          type="button"
+          aria-label="보강 등록"
+          className="block h-[44px] w-full min-w-[44px] text-base text-gray-400 hover:text-amber-700"
+        >
+          +
+        </button>
+      </td>
     )
   }
 

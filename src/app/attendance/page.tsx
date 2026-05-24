@@ -24,6 +24,7 @@ import {
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
+import { MakeupRegisterDialog } from '@/components/attendance/MakeupRegisterDialog'
 
 function currentYearMonth(): string {
   const now = new Date()
@@ -42,6 +43,13 @@ function previousYearMonths(count: number, from: string): string[] {
   return result
 }
 
+interface MakeupDialogTarget {
+  studentId: number
+  studentName: string
+  studentSerialNo: string
+  eventDate: string
+}
+
 export default function AttendancePage() {
   const [yearMonth, setYearMonth] = useState(currentYearMonth)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +58,8 @@ export default function AttendancePage() {
   // 자모 부분 일치는 별도 라이브러리 필요로 추후 task 로 분리, 본 구현은 substring 만.
   const [searchInput, setSearchInput] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Sprint 9 T6: 비수업일 셀 클릭 → 보강 등록 다이얼로그.
+  const [makeupTarget, setMakeupTarget] = useState<MakeupDialogTarget | null>(null)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -194,7 +204,21 @@ export default function AttendancePage() {
 
         {showGrid && filteredGrid !== undefined && (
           <>
-            <AttendanceGrid grid={filteredGrid} />
+            <AttendanceGrid
+              grid={filteredGrid}
+              onNonClassDayClick={(studentId, eventDate) => {
+                const student = filteredGrid.students.find(
+                  (s) => s.studentId === studentId,
+                )
+                if (student === undefined) return
+                setMakeupTarget({
+                  studentId,
+                  studentName: student.name,
+                  studentSerialNo: student.serialNo,
+                  eventDate,
+                })
+              }}
+            />
             {debouncedSearch !== '' && matchedCount === 0 && (
               <p className="mt-4 text-center text-base text-gray-600">
                 &ldquo;{searchInput}&rdquo; 검색 결과가 없습니다.
@@ -207,6 +231,24 @@ export default function AttendancePage() {
           <p className="text-gray-600">출결 데이터 불러오는 중...</p>
         )}
       </section>
+
+      {makeupTarget !== null && (
+        <MakeupRegisterDialog
+          studentId={makeupTarget.studentId}
+          studentName={makeupTarget.studentName}
+          studentSerialNo={makeupTarget.studentSerialNo}
+          eventDate={makeupTarget.eventDate}
+          yearMonth={yearMonth}
+          onClose={() => setMakeupTarget(null)}
+          onSuccess={() => {
+            setMakeupTarget(null)
+            void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+            void queryClient.invalidateQueries({
+              queryKey: ['pending-absences', makeupTarget.studentId],
+            })
+          }}
+        />
+      )}
       </main>
     </AppShell>
   )
