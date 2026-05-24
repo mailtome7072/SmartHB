@@ -1,66 +1,59 @@
 ---
 name: sprint-next-session
-description: "Sprint 8 Session #9 완료 (T1~T9 자동 검증, 9/9). 다음: 사용자 시각 검증 후 sprint-close 실행"
+description: "Sprint 9 Session #2 완료 (T1+T2, 2/9). 다음: T3 보강 등록 + 매칭 트랜잭션"
 metadata: 
   node_type: memory
   type: project
-  originSessionId: sprint8-session9-t9
+  originSessionId: sprint9-session2-t2
 ---
 
-Sprint 8 출결 관리 — **모든 T1~T9 자동 작업 완료**. 사용자 시각 검증 + sprint-close 대기.
+Sprint 9 (Phase 3 보강 + 소멸) — T1+T2 완료, T3~T9 다음 세션.
 
-## Sprint 8 진행 현황
+## Sprint 9 진행 현황
 
 | Task | 내용 | 상태 |
 |------|------|------|
-| T1 | V106 마이그레이션 | ✅ `f72778b` |
-| T2 | 출결 생성 IPC | ✅ `366f880` |
-| T3 | 출결 조회 + 토글 IPC | ✅ `4efc570` |
-| T4 | 출결표 프론트엔드 UI | ✅ `0a20c18` |
-| T4 follow-up | UX 보강 | ✅ `516758c` |
-| T5 | 보강필요시간/소멸기한 단위 테스트 100% | ✅ `5f2f0fd` |
-| T6 | carry-over High 4건 (R40~R43) | ✅ `14b9bfb` |
-| T7 | carry-over Medium-High (R45) Keychain race | ✅ `e89c3a8` |
-| T8 | carry-over Medium 6항목 | ✅ `069f435` |
-| T9 | 통합 검증 (자동 7항목 통과) | ✅ `cda2745` |
+| T1 | PI-02 확정 + 스키마 검증 + scope.md | ✅ `6494f2b` |
+| T2 | 백엔드 IPC — 미처리 결석 + 보강 가능 일자 + A43 validate 강화 | ✅ `14f583e` |
+| **T3** | **백엔드 IPC — 보강 등록 + 매칭 (트랜잭션)** | ⬜ 다음 세션 |
+| T4 | 백엔드 IPC — 취소 + 미등원 + 일괄 | ⬜ |
+| T5 | TS IPC 래퍼 + 도메인 타입 | ⬜ |
+| T6 | 보강 등록 (개별) UI | ⬜ |
+| T7 | 보강데이 일괄 + 결석 라벨 (A41) | ⬜ |
+| T8 | 결석 이력 조회 | ⬜ |
+| T9 | 통합 검증 + A39/A40 프로세스 적용 | ⬜ |
 
-검증 상태: cargo test cipher off **221 passed** / cipher on **133 passed** / clippy clean / pnpm lint/tsc/build clean.
+검증 상태: `cargo test --lib` cipher off **231 passed** (T1 222 → +9) / cipher on **133 passed** / clippy --lib clean 양쪽.
 
-## Session #9 (T9) 검증 결과
+## Session #2 (T2) 핵심 변경
 
-| 항목 | 결과 |
-|------|------|
-| cargo test cipher off | ✅ 221 passed |
-| cargo test cipher on | ✅ 133 passed |
-| clippy off + on | ✅ clean |
-| pnpm lint | ✅ clean |
-| pnpm tsc --noEmit | ✅ clean |
-| pnpm build | ✅ static export 성공 (out/ 정상) |
+- `src-tauri/src/commands/makeup.rs` 신규 모듈 — IPC 2종 + 응답 구조체 2종 + 테스트 8건
+- `get_pending_absences(student_id)` — 미처리 결석 임박순 정렬
+- `get_makeup_eligible_dates(student_id, year_month)` — `allows_makeup_class=1` 일자 + 학생 입퇴교 범위 필터 (정규 수업 요일은 T3 검증에서)
+- `validate_year_month` 월 범위(01-12) 강화 + `pub(crate)` 노출 (A43)
+- audit::AuditEventType 변경 없음 — T3/T4 에서 MakeupCreated/Cancelled/Absent 추가 예정
 
-## 다음 액션 (선택)
+## 다음 세션 (T3) 우선 액션
 
-### A. 사용자 시각 검증 후 sprint-close
-1. `pnpm tauri:dev` 로 앱 기동 → sprint8.md L353-360 항목별 확인
-2. `docs/sprint/sprint8/scope.md` Session #9 사용자 검증 표에 ✅ 마킹
-3. sprint8.md AC-T9-2/T9-3/T9-4 도 ✅ 마킹
-4. 사용자 명령: `"sprint8 구현 완료했어. sprint-close 실행해줘."`
+1. 새 대화에서 `/sprint-dev 9` → Session #3 진입 (T3)
+2. **T3 skill: karpathy-guidelines** — 보강 등록의 트랜잭션 원자성 핵심
+3. T3 작업:
+   - `create_makeup_with_absences(student_id, event_date, class_minutes, absence_ids: Vec<i64>) -> MakeupResult` IPC
+   - 트랜잭션 내 5종 검증: 보강 가능 일자 / 결석 유효성 / 학생 일관성 / 시간값(PI-02 일 단위 — 생략) / 학생 정규 수업 요일 검사
+   - audit::AuditEventType::MakeupCreated variant 추가 + `try_record`
+   - 단위 테스트: 정상 매칭 / 무효 id 거부 / 이미 매칭된 결석 거부 / 트랜잭션 롤백 / 보강 불가 일자 차단
 
-### B. 시각 검증 생략하고 바로 sprint-close
-시각 검증을 다음 세션으로 미루고 문서화 + PR 생성만 진행.
+## Sprint 9 잔여 마일스톤
 
-## sprint-close 후 흐름
-
-1. **sprint-close**: ROADMAP 업데이트 + (PR 단계 생략 정책상 PR 미생성 — 직접 머지) + CHANGELOG / DEPLOY.md 업데이트
-2. **sprint-review**: 코드 리뷰 + 자동 검증 + 회고 작성
-3. **deploy-prod**: develop QA 통과 후 main merge + `v{version}` 태그 push
-
-## 잔여 후속 task (Sprint 8 범위 외)
-
-- **R48-b**: salt buffer ZeroizeOnDrop 시그니처 광범위 변경 — `Zeroizing<[u8; SALT_LEN]>` 또는 wrapper struct 도입. 별도 후속 sprint task
-- **반응형 폰트/셀 너비**: `--font-size-body: 18px` + h1~h6 + `AttendanceGrid` 셀(140/62/84px) 모두 px 고정 → 모니터 해상도 비례 조정 안 됨. `clamp()` viewport 또는 html font-size 미디어쿼리 + rem 전환. 폰트 변경 시 셀 너비도 동기 필요. ROADMAP.md Sprint 8 "차기 sprint 이연 후보" 에 기록됨
+- T3~T4 백엔드 (11h 예상)
+- T5~T8 프론트엔드 (16h 예상)
+- T9 통합 검증 (3h)
+- 누적: 13h / 38h 진행 (34%)
 
 ## 정책 (재확인)
 
-- **PR 단계 생략** — 단일 개발자, 직접 머지 (`gh pr create` 금지)
+- **PR 단계 생략** — 단일 개발자, 직접 머지
 - **`/sprint-dev` 사용자 직접 입력** — 에이전트 호출 금지
-- **사용자 메모리 미러 동기화 필수** — `.claude/memory/sprint-next-session.md` 동시 갱신
+- **A39 sprint-close 마이그레이션 self-check** — V108 불필요 결정을 scope.md L24-37 매트릭스에 명시 (sprint-close 통과 대비)
+- **A40 sprint-review 산출물 강제** — T9 종료 후 sprint-review 가 4종 산출물 self-check
+- **사용자 메모리 미러 동기화 필수**
