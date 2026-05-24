@@ -1,59 +1,62 @@
 ---
 name: sprint-next-session
-description: "Sprint 9 Session #2 완료 (T1+T2, 2/9). 다음: T3 보강 등록 + 매칭 트랜잭션"
+description: "Sprint 9 Session #3 완료 (T1+T2+T3, 3/9). 다음: T4 보강 취소 + 미등원 + 일괄"
 metadata: 
   node_type: memory
   type: project
-  originSessionId: sprint9-session2-t2
+  originSessionId: sprint9-session3-t3
 ---
 
-Sprint 9 (Phase 3 보강 + 소멸) — T1+T2 완료, T3~T9 다음 세션.
+Sprint 9 (Phase 3 보강 + 소멸) — T1+T2+T3 완료, T4~T9 다음 세션.
 
 ## Sprint 9 진행 현황
 
 | Task | 내용 | 상태 |
 |------|------|------|
 | T1 | PI-02 확정 + 스키마 검증 + scope.md | ✅ `6494f2b` |
-| T2 | 백엔드 IPC — 미처리 결석 + 보강 가능 일자 + A43 validate 강화 | ✅ `14f583e` |
-| **T3** | **백엔드 IPC — 보강 등록 + 매칭 (트랜잭션)** | ⬜ 다음 세션 |
-| T4 | 백엔드 IPC — 취소 + 미등원 + 일괄 | ⬜ |
+| T2 | 백엔드 IPC — 미처리 결석 + 보강 가능 일자 + A43 | ✅ `14f583e` |
+| T3 | 백엔드 IPC — 보강 등록 + 매칭 트랜잭션 (karpathy-guidelines) | ✅ `e0e3659` |
+| **T4** | **백엔드 IPC — 취소 + 미등원 + 일괄** | ⬜ 다음 세션 |
 | T5 | TS IPC 래퍼 + 도메인 타입 | ⬜ |
 | T6 | 보강 등록 (개별) UI | ⬜ |
 | T7 | 보강데이 일괄 + 결석 라벨 (A41) | ⬜ |
 | T8 | 결석 이력 조회 | ⬜ |
 | T9 | 통합 검증 + A39/A40 프로세스 적용 | ⬜ |
 
-검증 상태: `cargo test --lib` cipher off **231 passed** (T1 222 → +9) / cipher on **133 passed** / clippy --lib clean 양쪽.
+검증 상태: `cargo test --lib` cipher off **240 passed** (T2 231 → +9) / cipher on **133 passed** / clippy --lib clean 양쪽.
 
-## Session #2 (T2) 핵심 변경
+## Session #3 (T3) 핵심 변경
 
-- `src-tauri/src/commands/makeup.rs` 신규 모듈 — IPC 2종 + 응답 구조체 2종 + 테스트 8건
-- `get_pending_absences(student_id)` — 미처리 결석 임박순 정렬
-- `get_makeup_eligible_dates(student_id, year_month)` — `allows_makeup_class=1` 일자 + 학생 입퇴교 범위 필터 (정규 수업 요일은 T3 검증에서)
-- `validate_year_month` 월 범위(01-12) 강화 + `pub(crate)` 노출 (A43)
-- audit::AuditEventType 변경 없음 — T3/T4 에서 MakeupCreated/Cancelled/Absent 추가 예정
+- `create_makeup_with_absences` IPC — 트랜잭션 내 5종 검증 + INSERT makeup + UPDATE absences
+  - 검증 5종: 이벤트 일자 보강 가능 / 학생 일관성 / 정규 수업 요일 차단 / 결석 유효성 (matched 우선) / PI-02 시간값 (옵션 A 일 단위로 생략)
+  - race 차단: UPDATE WHERE 절에 `status='absent' AND makeup_attendance_id IS NULL` 재차 + `rows_affected=1` 검출
+- `audit::AuditEventType` 신규 3 variants — `MakeupCreated/Cancelled/Absent`
+- `CreateMakeupPayload` + `MakeupResult` 응답 구조체
+- 테스트 9건 신규 (정상/empty/보강 불가/정규 요일/미존재/타 학생/매칭됨/롤백/입교일)
 
-## 다음 세션 (T3) 우선 액션
+발견 사항:
+- `seed_student` 의 `student_schedules.effective_from` NOT NULL 누락 → enroll_date 재사용
+- 검증 4 의 matched/status 순서 — matched 우선으로 조정 (메시지 정확도)
 
-1. 새 대화에서 `/sprint-dev 9` → Session #3 진입 (T3)
-2. **T3 skill: karpathy-guidelines** — 보강 등록의 트랜잭션 원자성 핵심
-3. T3 작업:
-   - `create_makeup_with_absences(student_id, event_date, class_minutes, absence_ids: Vec<i64>) -> MakeupResult` IPC
-   - 트랜잭션 내 5종 검증: 보강 가능 일자 / 결석 유효성 / 학생 일관성 / 시간값(PI-02 일 단위 — 생략) / 학생 정규 수업 요일 검사
-   - audit::AuditEventType::MakeupCreated variant 추가 + `try_record`
-   - 단위 테스트: 정상 매칭 / 무효 id 거부 / 이미 매칭된 결석 거부 / 트랜잭션 롤백 / 보강 불가 일자 차단
+## 다음 세션 (T4) 우선 액션
+
+1. 새 대화에서 `/sprint-dev 9` → Session #4 진입 (T4)
+2. T4 작업 (sprint9.md L122~141, 예상 5h):
+   - `cancel_makeup(makeup_id)` — 결석 환원 트랜잭션 (`makeup_attendance_id=NULL`, `status='absent'` + `DELETE makeup_attendances`)
+   - `mark_makeup_absent(makeup_id)` — 결석 상태 유지하며 보강만 'makeup_absent' 마킹
+   - `batch_create_makeups(event_date, entries)` — 다중 원생 일괄 등록 + `BatchResult { succeeded, failed }` 부분 성공 처리
+   - audit `MakeupCancelled` + `MakeupAbsent` 호출 (variant 는 T3 에서 이미 추가됨)
+   - 단위 테스트: 취소 → 결석 환원 / 미등원 → 상태 유지 / 일괄 부분 성공/실패
 
 ## Sprint 9 잔여 마일스톤
 
-- T3~T4 백엔드 (11h 예상)
-- T5~T8 프론트엔드 (16h 예상)
+- T4 백엔드 (5h) — 누적 19h / 38h (50%)
+- T5~T8 프론트엔드 (16h)
 - T9 통합 검증 (3h)
-- 누적: 13h / 38h 진행 (34%)
 
 ## 정책 (재확인)
 
 - **PR 단계 생략** — 단일 개발자, 직접 머지
-- **`/sprint-dev` 사용자 직접 입력** — 에이전트 호출 금지
-- **A39 sprint-close 마이그레이션 self-check** — V108 불필요 결정을 scope.md L24-37 매트릭스에 명시 (sprint-close 통과 대비)
-- **A40 sprint-review 산출물 강제** — T9 종료 후 sprint-review 가 4종 산출물 self-check
+- **A39 sprint-close 마이그레이션 self-check** — V108 불필요 결정은 scope.md 매트릭스에 명시 (sprint-close 통과 대비)
+- **A40 sprint-review 산출물 강제** — T9 후 4종 산출물 self-check
 - **사용자 메모리 미러 동기화 필수**
