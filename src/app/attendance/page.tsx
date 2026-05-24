@@ -14,7 +14,7 @@
  * - mutation 성공 시 두 쿼리 모두 invalidate
  */
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkAttendanceExists,
@@ -45,7 +45,17 @@ function previousYearMonths(count: number, from: string): string[] {
 export default function AttendancePage() {
   const [yearMonth, setYearMonth] = useState(currentYearMonth)
   const [error, setError] = useState<string | null>(null)
+  // Sprint 8 T9 follow-up: 원생 이름 인플레이스 필터.
+  // 글로벌 검색바(PRD §4.14)는 페이지 이동용 — 본 입력은 현 그리드 행 좁히기용.
+  // 자모 부분 일치는 별도 라이브러리 필요로 추후 task 로 분리, 본 구현은 substring 만.
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchInput.trim().toLowerCase()), 200)
+    return () => clearTimeout(handle)
+  }, [searchInput])
 
   // 출결 존재 여부 (생성 버튼 활성 조건)
   const existsQuery = useQuery({
@@ -79,6 +89,23 @@ export default function AttendancePage() {
   const showGenerateButton = existsQuery.data === false
   const showGrid = existsQuery.data === true && gridQuery.data !== undefined
 
+  // 검색어 적용 — 빈 입력 시 전체. 새 grid 객체를 만들어 AttendanceGrid 에 전달.
+  // students 외 다른 필드는 그대로 spread.
+  const filteredGrid = useMemo(() => {
+    if (gridQuery.data === undefined) return undefined
+    if (debouncedSearch === '') return gridQuery.data
+    const q = debouncedSearch
+    return {
+      ...gridQuery.data,
+      students: gridQuery.data.students.filter((s) =>
+        s.name.toLowerCase().includes(q),
+      ),
+    }
+  }, [gridQuery.data, debouncedSearch])
+
+  const matchedCount = filteredGrid?.students.length ?? 0
+  const totalCount = gridQuery.data?.students.length ?? 0
+
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <main className="flex h-full flex-col">
@@ -102,6 +129,28 @@ export default function AttendancePage() {
             ))}
           </select>
         </div>
+
+        {showGrid && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="student-search" className="text-base text-gray-700">
+              원생 검색:
+            </label>
+            <input
+              id="student-search"
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="이름 입력"
+              aria-label="원생 이름 검색"
+              className="min-h-[44px] w-48 rounded-md border-2 border-[var(--border)] px-3 text-base"
+            />
+            {debouncedSearch !== '' && (
+              <span className="text-sm text-gray-600" aria-live="polite">
+                {matchedCount} / {totalCount} 명
+              </span>
+            )}
+          </div>
+        )}
 
         {showGenerateButton && (
           <button
@@ -143,8 +192,15 @@ export default function AttendancePage() {
           </div>
         )}
 
-        {showGrid && gridQuery.data !== undefined && (
-          <AttendanceGrid grid={gridQuery.data} />
+        {showGrid && filteredGrid !== undefined && (
+          <>
+            <AttendanceGrid grid={filteredGrid} />
+            {debouncedSearch !== '' && matchedCount === 0 && (
+              <p className="mt-4 text-center text-base text-gray-600">
+                &ldquo;{searchInput}&rdquo; 검색 결과가 없습니다.
+              </p>
+            )}
+          </>
         )}
 
         {existsQuery.data === true && gridQuery.isLoading && (
