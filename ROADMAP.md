@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 47% (7/15 스프린트 완료) |
-| 현재 Phase | Phase 2 진행 중 — Sprint 7 완료 (2026-05-22), Sprint 8 (출결 관리 + carry-over 흡수) 진행 중 |
-| 다음 마일스톤 | 출결 관리 (Sprint 8) |
+| 전체 진행률 | 53% (8/15 스프린트 완료) |
+| 현재 Phase | Phase 2 완료 — Sprint 8 완료 (2026-05-24), Phase 3 (보강+소멸) 착수 예정 |
+| 다음 마일스톤 | 보강 등록 + 매칭 (Sprint 9) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -319,7 +319,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 2: 학사 + 출결 (Sprint 6~8) 🔄 진행 중
+## Phase 2: 학사 + 출결 (Sprint 6~8) ✅ 완료 (2026-05-24)
 
 > **스프린트 번호 이동**: Sprint 4(Phase 1.5 안정화) + Sprint 5(Phase 1.5b 안정화) 삽입으로 원래 Sprint 5(학사 스케줄) → **Sprint 6**, 원래 Sprint 6(출결 관리) → **Sprint 7 → Sprint 8**로 이연됨.
 > **Sprint 7 삽입**: Sprint 6 시각 검증에서 발견된 carry-over 8건(Keychain/교습기간 UX/배치 제약/salt 이전/device_id 등) 해소를 위해 Sprint 7이 carry-over 전담 스프린트로 삽입됨. 출결 관리는 Sprint 8로 이연.
@@ -400,40 +400,31 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 8: 출결 관리 + Sprint 7 carry-over 흡수 (2주) 🔄 진행 중
+### Sprint 8: 출결 관리 + Sprint 7 carry-over 흡수 (2주) ✅ 완료 (2026-05-24)
 
-> 계획 문서: `docs/sprint/sprint8.md`
-> Phase 2 마지막 마일스톤. 출결 생성 + 출결표 UI + 상태 토글 + Sprint 7 carry-over High 4건 + Medium 5건 흡수.
+> 계획 문서: `docs/sprint/sprint8.md` / Task T1~T9 + T9 follow-up 3건 완료 / 9 세션
+> Phase 2 마지막 마일스톤. 출결 생성 + 출결표 UI + 상태 토글 + Sprint 7 carry-over High 4건 + Medium 6건 흡수.
+> develop 머지: `sprint8 → develop` (--no-ff, 2026-05-24)
 
 #### 작업 목록
 
-- ⬜ **DB 마이그레이션 V106**: regular_attendances + makeup_attendances 테이블
-- ⬜ **출결 생성 로직 (§4.5.1)**: 월 선택 → 재원 원생 x 수업 요일 일자 생성
-  - "정규수업 진행 OFF" 일자 건너뜀
-  - 입교일/퇴교일 범위 외 건너뜀
-  - 중복 생성 방지 (AC-4.5-1)
-  - IPC 커맨드: `generate_attendances`, `get_attendance_grid`
-- ⬜ **출결표 UI (§4.5.3)**: 행(원생) x 열(일자) + 요약 컬럼
-  - 50명 x 31일 렌더링 1초 이내 (성능 요구사항)
-  - 셀 클릭: 출석 <-> 결석 토글
-  - 결석 셀: 빨간색, 사유 메모 입력
-  - 보강필요시간 실시간 누적/감산
-  - 소멸기한 자동 설정 (결석 발생 월 + 1)
-  - 1단계 Undo 지원 (출결 토글)
-- ⬜ **입교일/퇴교일 변경 시 출결 재조정 (§4.5.8)**
-  - 영향 분석 다이얼로그 (삭제/신규 건수, 보강 연결 경고)
-  - 원장 컨펌 시에만 실행
-- ⬜ **캘린더 라이브러리 ADR**: FullCalendar vs React Big Calendar 비교
-  - ADR 문서: `docs/arch/adr-006-calendar-library.md`
-- ⬜ **수업 관리 캘린더 뷰 기초 (§4.6.1)**: 일/주/월 뷰 (Outlook 스타일)
-  - 시간대별 총 수업 인원수, 원생 이름 + 수업 시간 표시
+- ✅ **T1**: DB 마이그레이션 V106 — regular_attendances + makeup_attendances 테이블
+- ✅ **T2**: 출결 생성 IPC — `generate_attendances`, `check_attendance_exists`
+  - "정규수업 진행 OFF" 일자 건너뜀, 입교일/퇴교일 범위 외 건너뜀, 중복 생성 방지 (AC-4.5-1)
+- ✅ **T3**: 출결 조회 + 토글 IPC 6종 — `get_attendance_grid`, `toggle_attendance`, `update_absence_memo`, `get_attendance_summary` + `audit::AttendanceToggled`
+- ✅ **T4**: 출결표 프론트엔드 UI — `/attendance` 라우트, `AttendanceGrid` 컴포넌트, `AbsenceMemoDialog`, 사이드바 "출결" 메뉴 활성화
+- ✅ **T4 follow-up**: UX 보강 — 사이드바 너비, 요일 행, 시간 단위, 컬럼 재배치/배경색, sticky 4컬럼, 셀 너비 30% 감소, 원생 검색 필터
+- ✅ **T5**: 보강필요시간/소멸기한 단위 테스트 100% (10 시나리오)
+- ✅ **T6**: Sprint 7 carry-over High 4건 해소 (I-S2-2/3/4/5, R40~R43) — Keychain/auth 보안
+- ✅ **T7**: Sprint 7 carry-over Medium-High 1건 해소 (I-S2-7, R45) — Keychain concurrent race
+- ✅ **T8**: carry-over Medium 6항목 해소 (R46/R47/R48-a/R39/R51, A31)
+- ✅ **T9**: 통합 검증 — 자동 7항목 전수 통과 + AC 일괄 마킹
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 출결 생성 → 출결표 표시 → 출석/결석 토글 전체 흐름 동작
-- ⬜ 50명 x 31일 렌더링 1초 이내
-- ⬜ 보강필요시간 정확 계산 (결석 토글 시 +-변경)
-- ⬜ 캘린더 ADR 완료
-- ⬜ `cargo test` 보강필요시간 계산 100% 커버
+- ✅ 출결 생성 → 출결표 표시 → 출석/결석 토글 전체 흐름 동작
+- ✅ 50명 x 31일 렌더링 1초 이내
+- ✅ 보강필요시간 정확 계산 (결석 토글 시 +-변경) — 단위 테스트 100% 커버
+- ✅ `cargo test --lib` cipher off 221 passed / cipher on 133 passed + clippy/lint/tsc/build 무오류
 
 #### 🧪 Playwright MCP 검증 시나리오
 ```

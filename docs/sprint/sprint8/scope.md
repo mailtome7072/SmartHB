@@ -745,7 +745,7 @@ sprint8.md L353-360 항목별 체크리스트. 사용자가 `pnpm tauri:dev` 로
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| docs/sprint/sprint8.md | [11회 ⚠️] | 모든 AC ⬜ → ✅ 마킹 + 검증 결과 |
+| docs/sprint/sprint8.md | [12회 ⚠️] | 모든 AC ⬜ → ✅ 마킹 + 검증 결과 |
 | docs/sprint/sprint8/scope.md | [9회 ⚠️] | Session #9 추가 + 자동 검증 결과 기록 |
 
 > 사용자 시각 검증 결과는 본 세션 또는 추후 sprint-close 직전에 동일 scope.md 의 위 표에 마킹.
