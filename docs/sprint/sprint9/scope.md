@@ -301,7 +301,7 @@ MakeupResult { makeup_id, student_id, event_date, matched_count }
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src-tauri/src/commands/audit.rs | [1회] | MakeupCreated/Cancelled/Absent 3 variants + as_code 매핑 |
-| src-tauri/src/commands/makeup.rs | [8회 ⚠️] | 응답 struct 2종 + create_makeup_with_absences IPC + 단위 테스트 9건. 기존 `seed_student` 에 schedules 인자 확장 (effective_from 포함) |
+| src-tauri/src/commands/makeup.rs | [19회 ⚠️] | 응답 struct 2종 + create_makeup_with_absences IPC + 단위 테스트 9건. 기존 `seed_student` 에 schedules 인자 확장 (effective_from 포함) |
 | src-tauri/src/lib.rs | [3회 ⚠️] | invoke_handler 에 `create_makeup_with_absences` 등록 |
 | docs/sprint/sprint9/scope.md | [3회] | Session #3 추가 |
 
@@ -688,7 +688,7 @@ T1~T8 각 작업 항목 + Definition of Done 의 자동 검증/단위 테스트/
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| docs/sprint/sprint9.md | [11회 ⚠️] | T1~T8 AC + DoD 일괄 마킹 (시각 검증 제외) |
+| docs/sprint/sprint9.md | [12회 ⚠️] | T1~T8 AC + DoD 일괄 마킹 (시각 검증 제외) |
 | docs/sprint/sprint9/scope.md | [9회 ⚠️] | Session #9 추가 |
 | src-tauri/Cargo.lock | [—] | 버전 0.3.2 → 0.4.0 (Cargo.toml 기준 정상 동기화) |
 
@@ -699,8 +699,156 @@ T1~T8 각 작업 항목 + Definition of Done 의 자동 검증/단위 테스트/
 - ✅ A39 self-check 통과 (V108 없음 결정 일치)
 - ✅ A40 산출물 4종 경로 명시
 - ✅ sprint9.md AC 일괄 마킹 (자동 검증/단위 테스트 범위)
-- ⬜ 사용자 시각 검증 5종 흐름 (별도 진행)
-- ⬜ 단일 커밋
+- ✅ 사용자 시각 검증 진행 — 8건 이슈 발견 (Session #10 으로 carry)
+- ✅ 단일 커밋 `70c856a`
 
 ### 발견된 이슈
-(없음 — Cargo.lock 의 smarthb 버전 0.3.2 → 0.4.0 변경은 Cargo.toml 의 `version = "0.4.0"` 과 동기화 결과로 정상)
+사용자 시각 검증 중 8건 발견 → Sprint 9 확장 결정 (사용자 2026-05-24, "Sprint 9 확장 — T10~T11 신규, 전부 흡수 +10h"). Session #10 으로 carry-over.
+
+---
+
+## Session #10 (T10/T11 — 시각 검증 이슈 8건 흡수, 2026-05-24)
+
+> **Re-planning 트리거** 발동: T9 시각 검증 중 백엔드 정의/UI UX 8건 신규 요구 발견. Harness 원칙 1 (Planning First) 에 따라 사용자 결정 ("Sprint 9 확장 +10h") 후 본 세션 진입.
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T10** | 백엔드 — `get_makeup_eligible_dates` 재설계 + T3 검증 3(정규 수업 요일 차단) 폐기 + 테스트 정책 전환 | 3h |
+| **T11** | 프론트 — 시간 단위 변환(I1) + 일괄 버튼 버그(I2) + 충당 결석 필터(I4) + 자동 합산/min 차감(I5+I6) + 보강데이 헤더 강조(I7) + 비수업일 셀 사전 판단(I8) | 7h |
+
+> 누적 capacity 35h + 10h = **45h** (원래 38h 대비 18% 초과). 사용자 승인.
+
+### 시각 검증 발견 이슈 8건
+
+| # | 이슈 | T10/T11 |
+|---|------|---------|
+| I1 | 보강수업시간 단위 분 → 시간(hours) | T11 |
+| I2 | "보강데이 일괄" 버튼 활성화 버그 | T11 |
+| I3 | 보강 가능일 정의 확장 | **T10** |
+| I4 | 충당 결석 = 선택한 보강 일자 이전 + 소멸기한 미도래 | T11 (클라이언트 필터) |
+| I5 | 결석 체크 시 보강수업시간 자동 합산 | T11 |
+| I6 | 수동 변경 후 해제 시 차감 양 = min(결석시간, 현재 표시값) | T11 |
+| I7 | 출결표 일자 헤더에 보강데이 시각 강조 | T11 |
+| I8 | 비수업일 셀 사전 판단 — "+" 자체 비표시 | T11 |
+
+### I3 정의 확정 (사용자 답변 2026-05-24)
+
+| 케이스 | 가능 여부 | 비고 |
+|--------|----------|------|
+| `study_periods` 범위 **외** 평일 (보강불가 코드 없음) | ✅ **가능** | 보강 만료일 도래 전 월 구분 없이 가능 |
+| `study_periods` 범위 내 토/일 (보강데이 코드 없음) | ❌ 불가 | |
+| `study_periods` 범위 내 평일 + 보강불가 코드(공휴일/방학/휴원일) | ❌ 불가 | |
+| `study_periods` 범위 내 평일 + 학사코드 없음 | ✅ 가능 | |
+| `allows_makeup_class=1` 명시 일자 (보강데이/단원평가 응시일) | ✅ 가능 | 요일 무관 |
+
+**확정 룰**:
+```
+보강 가능일 = 
+  ( 평일(월~금) AND NO (allows_regular_class=0 AND allows_makeup_class=0 인 schedule_code) )
+  OR
+  ( EXISTS schedule_event WHERE schedule_code.allows_makeup_class=1 )
+  AND 학생 입퇴교 범위 내
+```
+
+→ `study_periods` 범위 제약 **완전 제거**. 소멸기한 기준 + 학생 입퇴교 범위만 필터.
+
+### T3 검증 3 정책 변경 (파급)
+
+사용자 부연: "수업 요일에도 추가 시간 써서 수업 완료 후 보강 진행 가능".
+
+| 항목 | 기존 (T3) | 변경 |
+|------|----------|------|
+| 검증 3 (정규 수업 요일 차단) | 정규 수업 요일이면 보강 거부 | **검증 3 폐기** — 같은 요일에도 보강 등록 허용 |
+| 테스트 `create_makeup_blocks_regular_class_weekday` | "거부" 검증 | **"허용" 으로 전환** (정책 반영) |
+| audit `MakeupCreated` 페이로드 | 변동 없음 | 변동 없음 |
+
+> **PI-02 영향**: 옵션 A(일 단위 매칭) 의 검증 정책이 사용자 요구에 따라 완화. 검증 1·2·4·5 는 유지.
+
+### T10 쿼리 설계 (재설계)
+
+```sql
+SELECT DISTINCT se.event_date AS event_date, sc_makeup.code_name AS schedule_code_name
+FROM (
+  -- 학생 입퇴교 범위 내 모든 후보 일자
+  SELECT date FROM possible_dates  -- 연 단위 캘린더 (or generate_series 대체)
+) candidates
+LEFT JOIN schedule_events se ON se.event_date = candidates.date
+LEFT JOIN schedule_codes sc ON se.code_id = sc.id
+WHERE candidates.date BETWEEN ? AND ?  -- 학생 입퇴교 범위
+  AND (
+    -- 케이스 A: 평일 + 보강불가 코드 없음
+    (
+      strftime('%w', candidates.date) NOT IN ('0', '6')
+      AND NOT EXISTS (
+        SELECT 1 FROM schedule_events se2
+        JOIN schedule_codes sc2 ON se2.code_id = sc2.id
+        WHERE se2.event_date = candidates.date
+          AND sc2.allows_regular_class = 0
+          AND sc2.allows_makeup_class = 0
+      )
+    )
+    OR
+    -- 케이스 B: 보강 가능 코드 명시
+    (sc.allows_makeup_class = 1)
+  )
+```
+
+> 실제 구현은 SQLite 의 calendar table 가용성에 따라 — `recursive CTE` 로 일자 생성 또는 `schedule_events` UNION + 학생 입퇴교 범위 평일 generate. **year_month 파라미터 폐기 검토** (월 구분 없이 가능) — 단, 다이얼로그 UX 상 month 단위 표시는 유지 → year_month 파라미터는 유지하되 백엔드는 해당 월 내 가능 일자만 반환.
+
+### T10 테스트 갱신/신규 (예상 8건)
+
+- ✅ 갱신: `eligible_dates_returns_makeup_class_dates` (보강데이) — 기존 동작 유지
+- ✅ 갱신: `eligible_dates_excludes_makeup_off_codes` (방학) — 기존 동작 유지
+- 🆕 신규: `eligible_dates_includes_weekdays_without_schedule_code` — 평일 + 학사코드 없음 → 가능
+- 🆕 신규: `eligible_dates_excludes_weekends_without_makeup_code` — 토/일 + 보강데이 없음 → 불가
+- 🆕 신규: `eligible_dates_excludes_holiday_code` — 공휴일 코드 → 불가
+- 🆕 신규: `eligible_dates_includes_weekends_with_makeup_code` — 토/일 + 보강데이 코드 → 가능
+- ✅ 갱신: `eligible_dates_expands_period_codes` (기간성 코드) — 기존 동작 유지
+- ✅ 갱신: `eligible_dates_excludes_before_enroll/after_withdraw` — 기존 동작 유지
+
+### T11 작업 분해
+
+| # | 작업 | 파일 | 예상 |
+|---|------|------|------|
+| I1 | 시간 단위 변환 헬퍼 `minutesToHours(m)/hoursToMinutes(h)` + 4 다이얼로그/AbsenceHistory 적용 | `src/lib/time.ts` (신규) + Dialog 4종 | 2h |
+| I2 | "보강데이 일괄" 버튼 활성화 조건 디버그 | `/attendance/page.tsx` 헤더 | 0.5h |
+| I4 | `MakeupRegisterDialog` — `pending_absences` 결과를 `event_date < target` + `makeup_deadline >= target.year_month` 클라이언트 필터 | `MakeupRegisterDialog.tsx` | 1h |
+| I5+I6 | 결석 체크 시 합산 + 해제 시 `min(absenceHours, currentHours)` 차감 | `MakeupRegisterDialog.tsx` | 2h |
+| I7 | `AttendanceGrid` 일자 헤더에 보강데이 시각 강조 (sky-100/sky-700 등) | `AttendanceGrid.tsx` | 1h |
+| I8 | 비수업일 셀 사전 판단 — 클라이언트 측 `isMakeupEligible(date, student)` 로 "+" 표시 조건 분기 | `AttendanceGrid.tsx` | 0.5h |
+
+→ T11 합계 7h.
+
+### 수정/추가 파일 (Session #10 예상)
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/makeup.rs | [5회 ⚠️] | get_makeup_eligible_dates SQL 재설계 + T3 검증 3 제거 + 테스트 갱신/신규 |
+| src-tauri/src/commands/attendance.rs | [—] | 변경 없음 |
+| src/lib/time.ts | [신규] | minutesToHours / hoursToMinutes |
+| src/components/attendance/MakeupRegisterDialog.tsx | [—] | I1/I4/I5/I6 |
+| src/components/attendance/BatchMakeupDialog.tsx | [—] | I1 (시간 표시) |
+| src/components/attendance/MakeupManageDialog.tsx | [—] | I1 (취소/미등원 확인 다이얼로그 시간 표시) |
+| src/components/attendance/AbsenceHistoryDialog.tsx | [—] | I1 (이력 시간 표시) |
+| src/components/attendance/AttendanceGrid.tsx | [7회 ⚠️] | I7 헤더 강조 + I8 셀 사전 판단 |
+| src/app/attendance/page.tsx | [6회 ⚠️] | I2 일괄 버튼 활성화 |
+| docs/sprint/sprint9.md | [2회] | T10/T11 작업 항목 추가 + AC |
+| docs/sprint/sprint9/scope.md | [10회 ⚠️] | Session #10 추가 |
+
+> AttendanceGrid 7회 / page.tsx 6회 / makeup.rs 5회 — Session 별 누적 패턴, loop-detection 의도(버그 루프)와 무관.
+
+### 다음 단계 진입
+
+1. T10 백엔드 진입 — `get_makeup_eligible_dates_impl` SQL 재설계 + 테스트 갱신/신규 + T3 검증 3 제거
+2. Self-verify: cargo test cipher off/on + clippy
+3. 단일 커밋 (T10)
+4. T11 프론트엔드 진입 — I1~I8 (I3 제외) 순서 적용
+5. Self-verify: pnpm lint + tsc
+6. 단일 커밋 (T11)
+7. 사용자 2차 시각 검증 → 이상없음 시 sprint9.md DoD 시각 검증 항목 ✅ → sprint-close
+
+### carry-over (Sprint 10 으로 명시 이연)
+
+(없음 — 사용자 결정으로 8건 전부 흡수)

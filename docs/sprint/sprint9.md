@@ -249,6 +249,36 @@
 
 ---
 
+### T10: 보강 가능일 정의 확장 + T3 검증 3 폐기 (3h, 시각 검증 carry-over)
+> 배경: T9 시각 검증 중 사용자 정의 발견 — `study_periods` 범위 제약 제거 + 정규 수업 요일에도 보강 허용. scope.md Session #10.
+
+- ⬜ `get_makeup_eligible_dates` SQL 재설계 — 평일+보강불가코드없음 OR `allows_makeup_class=1`. `study_periods` 제약 제거. 학생 입퇴교 범위만 필터
+- ⬜ T3 `create_makeup_with_absences_impl` 검증 3 (정규 수업 요일 차단) 제거 — 사용자 결정 반영
+- ⬜ `create_makeup_blocks_regular_class_weekday` 테스트 → "허용" 정책 전환
+- ⬜ 신규 단위 테스트 4종 — 평일+학사코드없음 가능 / 토일+보강데이없음 불가 / 공휴일코드 불가 / 토일+보강데이코드 가능
+
+**예상 변경 파일**: `src-tauri/src/commands/makeup.rs`
+**예상 소요**: 3h
+**AC**: 재설계 쿼리 + 정책 전환 테스트 + 신규 4종 테스트 통과
+
+---
+
+### T11: 프론트엔드 시간 단위 + UX 보강 (7h, 시각 검증 carry-over)
+> 배경: T9 시각 검증 발견 7건 (I1·I2·I4·I5+I6·I7·I8). 보강 UX 완성도.
+
+- ⬜ (I1) `src/lib/time.ts` 신규 — `minutesToHours(m)/hoursToMinutes(h)` + 모든 다이얼로그/이력 화면 적용
+- ⬜ (I2) 헤더 "보강데이 일괄" 버튼 활성화 조건 디버그 — 대상자 있을 때 활성
+- ⬜ (I4) `MakeupRegisterDialog` — 결석 목록을 선택 보강 일자 이전 + 소멸기한 미도래로 클라이언트 필터
+- ⬜ (I5+I6) 결석 체크 시 보강시간 자동 합산 + 해제 시 `min(absenceHours, currentHours)` 차감
+- ⬜ (I7) `AttendanceGrid` 일자 헤더에 보강데이 시각 강조
+- ⬜ (I8) 비수업일 셀 사전 판단 — 입교 전/퇴교 후/공휴일/주말+보강데이없음 일자는 "+" 자체 비표시
+
+**예상 변경 파일**: `src/lib/time.ts` (신규), `src/components/attendance/{MakeupRegisterDialog,BatchMakeupDialog,MakeupManageDialog,AbsenceHistoryDialog,AttendanceGrid}.tsx`, `src/app/attendance/page.tsx`
+**예상 소요**: 7h
+**AC**: I1~I8 (I3 제외) 7건 시각 검증 통과
+
+---
+
 ## 작업 요약 및 Capacity
 
 | Task | 설명 | 예상 소요 | 스킬 |

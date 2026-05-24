@@ -168,17 +168,20 @@ async fn get_pending_absences_impl(
 // IPC: 보강 가능 일자 조회
 // ────────────────────────────────────────────────────────────────────
 
-/// 원생의 보강 가능 일자 조회 — year_month 내 `allows_makeup_class=1` 학사일정 일자.
+/// 원생의 보강 가능 일자 조회 — year_month 내 보강이 가능한 일자.
 ///
-/// 알고리즘:
-/// 1. year_month 의 모든 일자 펼침
-/// 2. `schedule_events JOIN schedule_codes WHERE allows_makeup_class=1` 의 단일/기간 일자 펼침
-/// 3. 학생 입교일 이전 / 퇴교일 이후 일자 제외
-/// 4. 동일 일자 중복 학사일정은 첫 코드명으로 통합 (BTreeMap)
+/// 사용자 룰 (Session #10, 2026-05-24):
+/// - 케이스 A: 평일(월~금) AND 보강불가 코드 없음
+///   (보강불가 코드 = `allows_regular_class=0 AND allows_makeup_class=0` — 공휴일/방학/휴원일)
+/// - OR 케이스 B: `allows_makeup_class=1` 명시 코드 (보강데이/단원평가 응시일/공휴수업일)
+///   — 요일 무관
 ///
-/// 정규 수업 요일 필터는 본 IPC 가 아닌 T3 `create_makeup_with_absences` 트랜잭션 검증
-/// 단계에서 적용 — 책임 분담 단순화 (학생이 이미 결석한 정규 수업일에 같은 학생의 보강을
-/// 등록하는 시나리오는 드물고, 본 IPC 는 "후보 일자" 목록 제공이 책임).
+/// `study_periods` 범위 제약은 없음 (소멸기한 기준 + 학생 입퇴교 범위만 제약).
+/// 학생의 정규 수업 요일에도 보강 등록 가능 (사용자 결정 — Session #10).
+///
+/// 응답 `schedule_code_name`:
+/// - 케이스 B 우선 — 보강 가능 코드명 (예: "보강데이")
+/// - 케이스 A — "정규수업일" (학사코드 없는 평일)
 #[tauri::command]
 pub async fn get_makeup_eligible_dates(
     student_id: i64,
@@ -194,7 +197,7 @@ async fn get_makeup_eligible_dates_impl(
     student_id: i64,
     year_month: &str,
 ) -> Result<Vec<EligibleDate>, String> {
-    // 1. 학생 입퇴교 범위 조회 (정규 수업 요일은 본 IPC 책임 외).
+    // 1. 학생 입퇴교 범위 조회.
     let student_row = sqlx::query("SELECT enroll_date, withdraw_date FROM students WHERE id = ?")
         .bind(student_id)
         .fetch_optional(pool)
@@ -228,43 +231,83 @@ async fn get_makeup_eligible_dates_impl(
     }
     .ok_or_else(|| "다음 월 일자 생성 실패".to_string())?;
 
-    // 3. 학사일정 중 allows_makeup_class=1 인 일자/기간을 month 와 겹치는 범위로 조회.
-    // attendance.rs::load_off_dates 와 동일 패턴 — 단일 쿼리 + Rust 측 펼침.
-    let makeup_rows = sqlx::query(
-        "SELECT e.event_date, COALESCE(e.period_end_date, e.event_date) AS end_d, c.code_name \
+    // 3. month 와 겹치는 모든 schedule_events + 코드 속성 조회 — 단일 쿼리.
+    let rows = sqlx::query(
+        "SELECT e.event_date, COALESCE(e.period_end_date, e.event_date) AS end_d, \
+                c.code_name, c.allows_regular_class, c.allows_makeup_class \
          FROM schedule_events e \
          JOIN schedule_codes c ON c.id = e.code_id \
-         WHERE c.allows_makeup_class = 1 \
-           AND e.event_date < ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+         WHERE e.event_date < ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
     )
     .bind(next_month_first.to_string())
     .bind(first.to_string())
     .fetch_all(pool)
     .await
-    .map_err(|e| format!("보강 가능 학사일정 조회 실패: {}", e))?;
+    .map_err(|e| format!("학사일정 조회 실패: {}", e))?;
 
-    // 4. 일자 펼침 + month 범위 내만 + 학생 입퇴교 범위 필터.
-    // BTreeMap 으로 동일 일자 중복 코드 회피 + event_date 정렬 자동.
-    let mut eligible: BTreeMap<String, String> = BTreeMap::new();
-    for r in makeup_rows {
+    // 4. 일자별 학사코드 매핑 펼침 (한 일자에 다중 코드 가능).
+    // 튜플: (code_name, allows_regular=1, allows_makeup=1)
+    let mut codes_by_date: BTreeMap<String, Vec<(String, bool, bool)>> = BTreeMap::new();
+    for r in rows {
         let s: String = r.try_get("event_date").map_err(|e| e.to_string())?;
         let e_str: String = r.try_get("end_d").map_err(|e| e.to_string())?;
         let code_name: String = r.try_get("code_name").map_err(|e| e.to_string())?;
+        let allows_reg: i64 = r.try_get("allows_regular_class").map_err(|e| e.to_string())?;
+        let allows_mk: i64 = r.try_get("allows_makeup_class").map_err(|e| e.to_string())?;
         let mut d = NaiveDate::parse_from_str(&s, "%Y-%m-%d")
             .map_err(|e| format!("이벤트 일자 파싱 실패: {}", e))?;
         let ed = NaiveDate::parse_from_str(&e_str, "%Y-%m-%d")
             .map_err(|e| format!("이벤트 종료일 파싱 실패: {}", e))?;
         while d <= ed {
-            if d >= first && d < next_month_first && d >= enroll_d {
-                let in_withdraw_range = withdraw_d.is_none_or(|wd| d <= wd);
-                if in_withdraw_range {
-                    eligible
-                        .entry(d.to_string())
-                        .or_insert_with(|| code_name.clone());
-                }
+            if d >= first && d < next_month_first {
+                codes_by_date
+                    .entry(d.to_string())
+                    .or_default()
+                    .push((code_name.clone(), allows_reg == 1, allows_mk == 1));
             }
             d = d.succ_opt().expect("date succ");
         }
+    }
+
+    // 5. month 의 모든 일자를 순회하면서 룰 적용.
+    let mut eligible: BTreeMap<String, String> = BTreeMap::new();
+    let mut d = first;
+    while d < next_month_first {
+        // 학생 입퇴교 범위 외 제외.
+        if d < enroll_d {
+            d = d.succ_opt().expect("date succ");
+            continue;
+        }
+        if let Some(wd) = withdraw_d {
+            if d > wd {
+                d = d.succ_opt().expect("date succ");
+                continue;
+            }
+        }
+
+        let date_str = d.to_string();
+        let codes = codes_by_date.get(&date_str);
+
+        // 케이스 B: allows_makeup_class=1 코드 우선.
+        let case_b = codes.and_then(|cs| {
+            cs.iter()
+                .find(|(_, _, mk)| *mk)
+                .map(|(name, _, _)| name.clone())
+        });
+
+        if let Some(name) = case_b {
+            eligible.insert(date_str, name);
+        } else {
+            // 케이스 A: 평일(월~금=1~5) + 보강불가 코드 없음.
+            let weekday = d.weekday().number_from_monday(); // 1..=7
+            let is_weekday = weekday <= 5;
+            let has_block = codes.is_some_and(|cs| cs.iter().any(|(_, reg, mk)| !*reg && !*mk));
+            if is_weekday && !has_block {
+                eligible.insert(date_str, "정규수업일".to_string());
+            }
+        }
+
+        d = d.succ_opt().expect("date succ");
     }
 
     Ok(eligible
@@ -282,14 +325,15 @@ async fn get_makeup_eligible_dates_impl(
 
 /// 보강 1건을 등록하고 미처리 결석 N건을 "보강완료" 로 매칭한다.
 ///
-/// 트랜잭션 내 검증 5종:
-/// 1. **이벤트 일자 보강 가능** — `event_date` 에 `allows_makeup_class=1` 학사일정 존재
+/// 트랜잭션 내 검증 4종 (Session #10 — 검증 3 정규 수업 요일 차단 폐기):
+/// 1. **이벤트 일자 보강 가능** — Session #10 룰: 평일+보강불가코드없음 OR `allows_makeup_class=1`
 /// 2. **학생 일관성** — 학생 존재 + 입퇴교 범위 내 `event_date`
-/// 3. **정규 수업 요일 차단** — `event_date` 가 학생의 정규 수업 요일이면 거부
-///    (해당 요일은 정규 출결 대상이므로 보강 등록은 비수업일 한정 — PRD §4.5.4)
-/// 4. **결석 유효성** — `absence_ids` 모두 해당 학생 + `status='absent'` + 미매칭
-/// 5. **PI-02 시간값** — 옵션 A (일 단위) 채택: 검증 생략. 분 단위 전환 시 본 함수 내
+/// 3. **결석 유효성** — `absence_ids` 모두 해당 학생 + `status='absent'` + 미매칭
+/// 4. **PI-02 시간값** — 옵션 A (일 단위) 채택: 검증 생략. 분 단위 전환 시 본 함수 내
 ///    "PI-02 분 단위 활성 위치" 주석 위치에서 1줄 추가만으로 활성화 가능.
+///
+/// 정규 수업 요일에도 보강 등록 허용 — 사용자 결정 Session #10 ("수업 요일에 추가
+/// 시간 써서 수업 완료 후 보강 진행 가능"). 기존 차단 정책 폐기.
 ///
 /// 실행 순서 (단일 트랜잭션):
 /// - INSERT makeup_attendances → makeup_id 발급
@@ -331,21 +375,28 @@ async fn create_makeup_with_absences_impl(
         .map_err(|e| format!("이벤트 일자 파싱 실패 ({}): {}", payload.event_date, e))?;
     let year_month = format!("{}-{:02}", event_d.year(), event_d.month());
 
-    // 검증 1: event_date 가 보강 가능 학사일정 일자인지 (allows_makeup_class=1 + 기간 매칭).
-    let makeup_eligible: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM schedule_events e \
+    // 검증 1: event_date 가 보강 가능 일자인지 (Session #10 룰).
+    // - 케이스 B: allows_makeup_class=1 코드가 명시된 일자 (요일 무관)
+    // - 케이스 A: 평일(월~금) + 보강불가 코드(allows_regular=0 AND allows_makeup=0) 없음
+    let codes: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT c.allows_regular_class, c.allows_makeup_class \
+         FROM schedule_events e \
          JOIN schedule_codes c ON c.id = e.code_id \
-         WHERE c.allows_makeup_class = 1 \
-           AND e.event_date <= ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+         WHERE e.event_date <= ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
     )
     .bind(&payload.event_date)
     .bind(&payload.event_date)
-    .fetch_one(pool)
+    .fetch_all(pool)
     .await
     .map_err(|e| format!("보강 가능 일자 검증 실패: {}", e))?;
-    if makeup_eligible.0 == 0 {
+    let case_b = codes.iter().any(|(_, mk)| *mk == 1);
+    let weekday = event_d.weekday().number_from_monday();
+    let is_weekday = weekday <= 5;
+    let has_block = codes.iter().any(|(reg, mk)| *reg == 0 && *mk == 0);
+    let case_a = is_weekday && !has_block;
+    if !case_b && !case_a {
         return Err(format!(
-            "{} 은 보강 가능 일자가 아닙니다 (학사일정에서 '보강 진행 가능' 코드가 활성된 일자에만 등록 가능합니다).",
+            "{} 은 보강 가능 일자가 아닙니다 (공휴일/방학/휴원일 또는 주말+보강데이 미설정 일자입니다).",
             payload.event_date
         ));
     }
@@ -376,21 +427,9 @@ async fn create_makeup_with_absences_impl(
         }
     }
 
-    // 검증 3: 정규 수업 요일 차단 — 학생의 student_schedules.day_of_week 와 일치하면 거부.
-    let weekday = event_d.weekday().number_from_monday() as i64;
-    let regular_match: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM student_schedules WHERE student_id = ? AND day_of_week = ?",
-    )
-    .bind(payload.student_id)
-    .bind(weekday)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("정규 수업 요일 검증 실패: {}", e))?;
-    if regular_match.0 > 0 {
-        return Err("학생의 정규 수업 요일에는 보강을 등록할 수 없습니다 (비수업일에만 가능).".to_string());
-    }
+    // 검증 3 폐기 (Session #10) — 정규 수업 요일에도 보강 등록 허용.
 
-    // 검증 4: 결석 유효성 — 모두 본 학생 + status='absent' + 미매칭.
+    // 검증 4(舊) → 3: 결석 유효성 — 모두 본 학생 + status='absent' + 미매칭.
     // SQL IN 절은 동적 placeholder 가 sqlx 에서 까다로워 — Rust 측 루프로 단건 검증.
     for &aid in &payload.absence_ids {
         let row = sqlx::query(
@@ -427,7 +466,7 @@ async fn create_makeup_with_absences_impl(
         }
     }
 
-    // 검증 5 (PI-02 분 단위 활성 위치): 옵션 A 일 단위 채택으로 생략.
+    // 검증 4 (PI-02 분 단위 활성 위치): 옵션 A 일 단위 채택으로 생략.
     // 분 단위 전환 시 아래 주석 해제:
     // let total: (i64,) = sqlx::query_as(
     //     "SELECT COALESCE(SUM(class_minutes),0) FROM regular_attendances WHERE id IN (...)"
@@ -467,7 +506,7 @@ async fn create_makeup_with_absences_impl(
         .await
         .map_err(|e| format!("결석 매칭 UPDATE 실패 (id={}): {}", aid, e))?;
         if res.rows_affected() != 1 {
-            // 검증 4 통과 후 race 가 발생한 경우 — 트랜잭션 롤백.
+            // 검증 3 통과 후 race 가 발생한 경우 — 트랜잭션 롤백.
             return Err(format!(
                 "결석 id={} 매칭 실패 (검증 후 상태 변경 추정). 트랜잭션 롤백.",
                 aid
@@ -632,7 +671,7 @@ async fn mark_makeup_absent_impl(pool: &SqlitePool, makeup_id: i64) -> Result<us
 /// 단일 트랜잭션이 아닌 이유: PRD §4.5.5 "실패 원생은 건너뛰고 성공/실패 결과 반환".
 /// 한 학생 실패 (예: 정규 수업 요일) 가 다른 학생들의 정상 등록을 차단하면 UX 손상.
 ///
-/// 학생별로 `create_makeup_with_absences_impl` 재사용 — 검증 5종 동일 적용.
+/// 학생별로 `create_makeup_with_absences_impl` 재사용 — 검증 4종 동일 적용.
 /// 실패 시 사용자 친화 메시지를 `BatchFailure.reason` 에 누적.
 #[tauri::command]
 pub async fn batch_create_makeups(
@@ -916,8 +955,8 @@ mod tests {
 
     // ─────────────── get_makeup_eligible_dates ───────────────
 
-    /// AC-T2-2: allows_makeup_class=1 인 학사일정이 있는 일자만 반환.
-    /// V301 시드 — "공휴수업일" 코드(allows_makeup_class=1).
+    /// AC-T2-2: allows_makeup_class=1 인 학사일정이 있는 일자는 케이스 B 로 반환 (요일 무관).
+    /// V301 보정 후 "공휴수업일" 코드도 allows_makeup_class=1.
     #[tokio::test]
     async fn eligible_dates_returns_makeup_class_dates() {
         let pool = db::test_pool_in_memory().await.expect("pool");
@@ -929,40 +968,61 @@ mod tests {
         let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
             .await
             .expect("조회");
-        let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
-        assert_eq!(dates, vec!["2026-06-15", "2026-06-22"]);
+        let by_date: BTreeMap<String, String> = list
+            .into_iter()
+            .map(|e| (e.event_date, e.schedule_code_name))
+            .collect();
+        // 케이스 B 우선 — 코드명 노출
+        assert_eq!(by_date.get("2026-06-15"), Some(&"공휴수업일".to_string()));
+        assert_eq!(by_date.get("2026-06-22"), Some(&"공휴수업일".to_string()));
     }
 
-    /// AC-T2-2 보강: allows_makeup_class=0 인 학사일정은 제외.
+    /// AC-T2-2 보강: allows_regular=0 AND allows_makeup=0 (방학) 인 일자는 케이스 A 차단.
     #[tokio::test]
     async fn eligible_dates_excludes_makeup_off_codes() {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
-        // 방학 코드: allows_makeup_class=0 (V102 시드)
+        // 방학 코드: allows_regular=0 AND allows_makeup=0
         let vac_code = schedule_code_id(&pool, "방학").await;
-        insert_schedule_event(&pool, vac_code, "2026-06-15", None).await;
+        insert_schedule_event(&pool, vac_code, "2026-06-15", None).await; // 월요일
 
         let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
             .await
             .expect("조회");
-        assert!(list.is_empty(), "방학(allows_makeup_class=0)은 보강 가능 아님");
+        let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
+        assert!(
+            !dates.contains(&"2026-06-15".to_string()),
+            "방학(보강불가) 일자 미포함"
+        );
+        // 다른 평일은 케이스 A 로 정상 가능 — Session #10 새 룰
+        assert!(
+            dates.contains(&"2026-06-16".to_string()),
+            "다른 평일은 정상 포함"
+        );
     }
 
     /// AC-T2-3: 학생 입교일 이전 일자 제외.
     #[tokio::test]
     async fn eligible_dates_excludes_before_enroll() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        // 6/20 입교 학생 — 6/15 학사일정은 입교 전이라 제외
+        // 6/20 입교 학생 — 6/15(월) 학사코드 있어도 입교 전이라 제외
         let sid = seed_student(&pool, "S001", "2026-06-20", None, &[]).await;
         let makeup_code = schedule_code_id(&pool, "공휴수업일").await;
         insert_schedule_event(&pool, makeup_code, "2026-06-15", None).await;
-        insert_schedule_event(&pool, makeup_code, "2026-06-22", None).await;
 
         let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
             .await
             .expect("조회");
         let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
-        assert_eq!(dates, vec!["2026-06-22"], "입교 전 6/15 제외");
+        assert!(
+            !dates.contains(&"2026-06-15".to_string()),
+            "입교 전 6/15 제외"
+        );
+        // 입교 후 평일은 케이스 A 로 정상 가능
+        assert!(
+            dates.contains(&"2026-06-22".to_string()),
+            "입교 후 평일 포함"
+        );
     }
 
     /// AC-T2-3 보강: 학생 퇴교일 이후 일자 제외.
@@ -971,14 +1031,20 @@ mod tests {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let sid = seed_student(&pool, "S001", "2026-01-01", Some("2026-06-18"), &[]).await;
         let makeup_code = schedule_code_id(&pool, "공휴수업일").await;
-        insert_schedule_event(&pool, makeup_code, "2026-06-15", None).await;
         insert_schedule_event(&pool, makeup_code, "2026-06-22", None).await;
 
         let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
             .await
             .expect("조회");
         let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
-        assert_eq!(dates, vec!["2026-06-15"], "퇴교 후 6/22 제외");
+        assert!(
+            !dates.contains(&"2026-06-22".to_string()),
+            "퇴교 후 6/22 제외"
+        );
+        assert!(
+            dates.contains(&"2026-06-15".to_string()),
+            "퇴교 전 평일 포함"
+        );
     }
 
     /// AC-T2-2 기간성 코드: period_end_date 가 있으면 시작~종료 모든 일자 펼침.
@@ -995,7 +1061,98 @@ mod tests {
             .await
             .expect("조회");
         let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
-        assert_eq!(dates, vec!["2026-06-14", "2026-06-15", "2026-06-16"]);
+        // 6/14(일)도 보강데이 코드라 케이스 B 로 가능 / 6/15(월)·6/16(화)도 평일이라 케이스 A 로 가능
+        assert!(dates.contains(&"2026-06-14".to_string()));
+        assert!(dates.contains(&"2026-06-15".to_string()));
+        assert!(dates.contains(&"2026-06-16".to_string()));
+    }
+
+    // ─────────────── Session #10 신규: 케이스 A/B 분리 검증 ───────────────
+
+    /// Session #10: 평일 + 학사코드 없음 → 케이스 A 로 가능 (정규수업일 라벨).
+    /// 2026-06-15 = 월요일.
+    #[tokio::test]
+    async fn eligible_dates_includes_weekdays_without_schedule_code() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
+            .await
+            .expect("조회");
+        let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
+        // 모든 평일이 반환되어야 함 — 22개 평일 (2026-06)
+        assert!(
+            dates.contains(&"2026-06-15".to_string()),
+            "월요일 평일 포함"
+        );
+        assert!(
+            dates.contains(&"2026-06-16".to_string()),
+            "화요일 평일 포함"
+        );
+        assert!(
+            !dates.contains(&"2026-06-13".to_string()),
+            "토요일 미포함 (학사코드 없는 주말 불가)"
+        );
+        // 라벨 — "정규수업일"
+        let mon = list.iter().find(|e| e.event_date == "2026-06-15").unwrap();
+        assert_eq!(mon.schedule_code_name, "정규수업일");
+    }
+
+    /// Session #10: 토/일 + 보강데이 코드 없음 → 불가.
+    /// 2026-06-13(토)/14(일).
+    #[tokio::test]
+    async fn eligible_dates_excludes_weekends_without_makeup_code() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
+            .await
+            .expect("조회");
+        let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
+        assert!(
+            !dates.contains(&"2026-06-13".to_string()),
+            "토요일 미포함"
+        );
+        assert!(
+            !dates.contains(&"2026-06-14".to_string()),
+            "일요일 미포함"
+        );
+    }
+
+    /// Session #10: 평일 + 공휴일 코드 → 케이스 A 차단 (보강불가 코드).
+    #[tokio::test]
+    async fn eligible_dates_excludes_holiday_code() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        // 2026-06-15(월)에 "공휴일" 코드 (allows_regular=0, allows_makeup=0)
+        let holiday = schedule_code_id(&pool, "공휴일").await;
+        insert_schedule_event(&pool, holiday, "2026-06-15", None).await;
+
+        let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
+            .await
+            .expect("조회");
+        let dates: Vec<String> = list.iter().map(|e| e.event_date.clone()).collect();
+        assert!(
+            !dates.contains(&"2026-06-15".to_string()),
+            "공휴일 코드 평일 미포함"
+        );
+        assert!(
+            dates.contains(&"2026-06-16".to_string()),
+            "화요일은 정상 평일"
+        );
+    }
+
+    /// Session #10: 토/일 + 보강데이 코드 명시 → 케이스 B 로 가능 (요일 무관).
+    #[tokio::test]
+    async fn eligible_dates_includes_weekends_with_makeup_code() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let makeup_day = schedule_code_id(&pool, "보강데이").await;
+        insert_schedule_event(&pool, makeup_day, "2026-06-13", None).await; // 토요일
+
+        let list = get_makeup_eligible_dates_impl(&pool, sid, "2026-06")
+            .await
+            .expect("조회");
+        let sat = list.iter().find(|e| e.event_date == "2026-06-13").unwrap();
+        assert_eq!(sat.schedule_code_name, "보강데이");
     }
 
     // validate_year_month 자체 검증은 attendance.rs 의 단위 테스트
@@ -1099,18 +1256,28 @@ mod tests {
         assert!(err.contains("보강 가능 일자가 아닙니다"), "친화 메시지: {}", err);
     }
 
-    /// AC-T3-4: 정규 수업 요일 차단 — 학생의 월(1) 수업일에 보강 등록 시도.
+    /// AC-T3-4 (Session #10 정책 전환): 정규 수업 요일에도 보강 등록 허용.
+    /// 사용자 결정 — "수업 요일에 추가 시간 써서 수업 완료 후 보강 진행 가능".
     #[tokio::test]
-    async fn create_makeup_blocks_regular_class_weekday() {
+    async fn create_makeup_allows_regular_class_weekday() {
         let pool = db::test_pool_in_memory().await.expect("pool");
-        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
-        // 2026-06-15 는 월요일 (정규 수업) — 학사일정도 등록해서 검증 1 통과 후 검증 3 차단 확인
-        fixture_makeup_eligible_date(&pool, "2026-06-15").await;
-
-        let err = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-15", absences))
+        // 2026-06-15 는 월요일 — 학생의 정규 수업 요일이지만 보강 허용
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-16"]).await;
+        // 학사일정 없어도 평일이라 케이스 A 로 가능 — 다만 결석일과 다른 일자여야 함
+        let r = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-15", absences.clone()))
             .await
-            .expect_err("정규 수업 요일 차단");
-        assert!(err.contains("정규 수업 요일"), "친화 메시지: {}", err);
+            .expect("정규 수업 요일에도 보강 허용");
+        assert_eq!(r.matched_count, 1);
+        // 결석 → makeup_done 전이 확인
+        let row: (String, Option<i64>) = sqlx::query_as(
+            "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id=?",
+        )
+        .bind(absences[0])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "makeup_done");
+        assert_eq!(row.1, Some(r.makeup_id));
     }
 
     /// AC-T3-5: 무효 absence_id (미존재) 거부.
