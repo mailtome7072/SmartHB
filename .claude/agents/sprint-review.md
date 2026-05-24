@@ -93,6 +93,35 @@ Critical 이슈 발견 시 3단계(자동 검증) 이후 단계를 중단하고 
 
 ### 4단계: 결과 기록
 
+본 단계에서 작성하는 산출물은 **5단계 최종 보고 직전 self-check 에서 존재 여부가 강제 검증**됩니다 (A40). 작성을 누락하지 마세요.
+
+**코드 리뷰 결과** (`docs/code-reviews/sprint{n}.md`) — A40 (Sprint 8 회고):
+
+> 5건 이상 finding 발견 또는 Critical/High 등급 발견 시 **필수 작성**. Low 만 있고 finding 0~2건이면 생략 가능. 본 파일은 영역별 점검 (`backend.md`/`frontend.md` rules) 결과까지 포함합니다.
+
+```markdown
+# Sprint {n} 코드 리뷰
+
+> 대상: Sprint {n} ({커밋 범위}) — {한 줄 요약}
+> 리뷰 일자: YYYY-MM-DD
+> 자동 검증 결과: cargo test (cipher off N / on M passed) / clippy / lint / tsc / build
+
+## 발견 사항 ({총 건수}건)
+
+### 🔴 F{x} — {제목} ({등급}, {조치 상태})
+- 위치: {파일:line}
+- 실패 시나리오: {구체적}
+- 조치: V{NNN} hotfix / ROADMAP 이연 / 무시
+
+## 영역별 추가 점검
+- 보안 (backend.md Critical) — {확인 결과}
+- 보안 (backend.md High) — ...
+- 프론트엔드 (frontend.md Critical/High) — ...
+- AI 생성 코드 추가 체크 — ...
+
+## 결론
+```
+
 **테스트 결과** (`docs/test-reports/YYYY-MM-DD.md`):
 
 ```markdown
@@ -155,10 +184,32 @@ git diff develop...HEAD -- '*.rs' '*.ts' '*.tsx' | \
 
 > 이 확인은 deploy-prod의 전체 harness-ci-gate 실행을 대체하지 않습니다. 문제를 조기에 발견하여 배포 직전에 차단되는 상황을 예방하는 사전 점검입니다.
 
+**산출물 파일 작성 self-check (필수)** — A40 (Sprint 8 회고):
+
+최종 보고 직전, 본 sprint-review 가 생성해야 하는 산출물이 실제로 파일로 존재하는지 확인합니다. **JSON/markdown 응답만 보고하고 파일 작성을 누락하는 사례를 차단**합니다.
+
+```bash
+# 4종 산출물 존재 여부 확인 (sprint 번호 = {n})
+ls docs/test-reports/$(date +%Y-%m-%d)*.md 2>/dev/null && echo "✅ test-report" || echo "❌ test-report 미작성"
+ls docs/risk-register/$(date +%Y-%m-%d).md 2>/dev/null && echo "✅ risk-register (Medium/High 있음)" || echo "ℹ️  risk-register 생략 (Medium/High 없음 시 정상)"
+ls docs/sprint-retrospectives/sprint{n}-retrospective.md 2>/dev/null && echo "✅ retrospective" || echo "❌ retrospective 미작성"
+ls docs/code-reviews/sprint{n}.md 2>/dev/null && echo "✅ code-review" || echo "ℹ️  code-review (finding 3+ 또는 High 있을 때 필수, 외엔 생략 가능)"
+```
+
+각 항목 결과:
+- `❌` 표시된 필수 산출물이 있으면 **즉시 해당 파일 작성 후 재확인**. 작성 없이 최종 보고 진입 금지.
+- `ℹ️` 는 조건부 생략 — 본 sprint 의 발견 사항 분포를 보고 작성 여부 판단.
+
+최종 보고에 "산출물 self-check" 결과를 포함:
+```
+산출물: test-report ✅ / risk-register ✅(Medium 2) / retrospective ✅ / code-review ✅(finding 5건)
+```
+
 **최종 보고 내용**:
 - 코드 리뷰 결과 요약 (발견된 이슈 등급별 개수)
 - 자동 검증 결과 (통과/실패 항목)
 - 배포 준비도 사전 확인 결과 (CHANGELOG, 시크릿)
+- 산출물 self-check 결과 (위 4종 파일 작성 확인)
 - 남은 수동 검증 항목 (`DEPLOY.md`의 `⬜` 항목 목록)
 - Notion 업데이트 필요 여부 (DB 스키마 변경, API 변경, 새 기능 여부 확인)
 - 프로덕션 배포 준비가 되면:
