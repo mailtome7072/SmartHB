@@ -162,7 +162,11 @@ struct StudentRow {
     withdraw_date: Option<String>,
 }
 
-fn validate_year_month(ym: &str) -> Result<(), String> {
+/// Sprint 9 T2 (A43): 월 범위(01-12) 검증 추가. `2026-00` / `2026-13` 같은 의미론적
+/// 무효 입력을 GLOB 패턴 통과 후 `NaiveDate::parse_from_str` 실패로 비친화적 에러
+/// 노출되던 문제 해소. `pub(crate)` 로 노출하여 `makeup.rs` 등 동일 crate 의 다른
+/// 도메인 모듈에서 재사용.
+pub(crate) fn validate_year_month(ym: &str) -> Result<(), String> {
     if ym.len() != 7 || ym.as_bytes()[4] != b'-' {
         return Err("year_month 는 YYYY-MM 형식이어야 합니다.".to_string());
     }
@@ -170,6 +174,13 @@ fn validate_year_month(ym: &str) -> Result<(), String> {
     let month = &ym[5..];
     if !year.chars().all(|c| c.is_ascii_digit()) || !month.chars().all(|c| c.is_ascii_digit()) {
         return Err("year_month 에 숫자가 아닌 문자가 포함되어 있습니다.".to_string());
+    }
+    let m: u8 = month.parse().expect("digits checked above");
+    if !(1..=12).contains(&m) {
+        return Err(format!(
+            "year_month 의 월은 01~12 사이여야 합니다 (입력: {}).",
+            ym
+        ));
     }
     Ok(())
 }
@@ -974,10 +985,24 @@ mod tests {
     #[tokio::test]
     async fn validate_year_month_rejects_invalid_formats() {
         assert!(validate_year_month("2026-06").is_ok());
+        assert!(validate_year_month("2026-01").is_ok());
+        assert!(validate_year_month("2026-12").is_ok());
         assert!(validate_year_month("2026/06").is_err());
         assert!(validate_year_month("2026-6").is_err());
         assert!(validate_year_month("YYYY-MM").is_err());
         assert!(validate_year_month("").is_err());
+    }
+
+    /// Sprint 9 T2 (A43): 월 범위(01-12) 검증 — GLOB 패턴은 통과하지만 의미론적
+    /// 무효 입력 차단. 사용자 친화 에러 메시지 제공.
+    #[tokio::test]
+    async fn validate_year_month_rejects_out_of_range_month() {
+        let err00 = validate_year_month("2026-00").expect_err("월 0은 무효");
+        assert!(err00.contains("01~12"), "친화 메시지: {}", err00);
+        let err13 = validate_year_month("2026-13").expect_err("월 13은 무효");
+        assert!(err13.contains("01~12"), "친화 메시지: {}", err13);
+        // 99 같은 명확히 잘못된 케이스도 차단 (이전엔 GLOB 통과로 NaiveDate 파싱 실패)
+        assert!(validate_year_month("2026-99").is_err());
     }
 
     // ─────────────── T3 단위 테스트 ───────────────

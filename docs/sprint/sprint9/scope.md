@@ -166,3 +166,84 @@ Sprint: 9  |  Date: 2026-05-24  |  Session: #1
 
 - A39/A40 프로세스 개선이 본 sprint 부터 강제 — T9 통합 검증에서 검증
 - T1 코드 변경 없음으로 self-verify 단계 생략 가능 (scope.md 단일 커밋)
+
+---
+
+## Session #2 (T2 — 보강 IPC 백엔드 미처리 결석 + 보강 가능 일자 + A43, 2026-05-24)
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T2** | `makeup.rs` 신규 + `get_pending_absences` + `get_makeup_eligible_dates` + A43 validate 강화 | 6h |
+
+### 설계 결정 (T2)
+
+#### IPC 2종 — `makeup.rs` 신규 모듈
+
+- `get_pending_absences(student_id) -> Vec<PendingAbsence>`
+- `get_makeup_eligible_dates(student_id, year_month) -> Vec<EligibleDate>`
+
+#### 응답 구조 (camelCase)
+```ts
+PendingAbsence {
+  id, eventDate, yearMonth, classMinutes,
+  makeupDeadline?, absenceMemo?,
+}
+EligibleDate {
+  eventDate, scheduleCodeName,
+}
+```
+
+#### 정렬 규칙 — `get_pending_absences`
+- `ORDER BY (makeup_deadline IS NULL), makeup_deadline ASC, event_date ASC`
+- NULL 마지막, 임박순, 동일 deadline 내 event_date 오름차순
+
+#### 책임 분담 — `get_makeup_eligible_dates`
+- 학사일정 기반 (`schedule_codes.allows_makeup_class=1`) + 학생 입퇴교 범위 필터
+- **정규 수업 요일 필터는 본 IPC 가 아닌 T3 트랜잭션 검증에서** — 책임 단순화
+- `class_minutes` 응답 제거 — 학생 스케줄 다중 가능성 + 다이얼로그에서 직접 입력이 명확
+
+#### A43 — `validate_year_month` 강화
+
+```rust
+// 신규 검증 추가
+let m: u8 = month.parse().expect("digits checked above");
+if !(1..=12).contains(&m) {
+    return Err(format!("year_month 의 월은 01~12 사이여야 합니다 (입력: {}).", ym));
+}
+```
+
+- `pub(crate)` 노출 — `makeup.rs` 등 동일 crate 의 다른 도메인 모듈에서 재사용
+- 사용자 친화 한글 에러 메시지 + 입력값 echo
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/makeup.rs | [신규] | IPC 2종 + `_impl` 분리 + 응답 구조체 2종 + 단위 테스트 8건 |
+| src-tauri/src/commands/attendance.rs | [1회] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
+| src-tauri/src/commands/mod.rs | [1회] | `pub mod makeup;` 추가 |
+| src-tauri/src/lib.rs | [1회] | invoke_handler 에 IPC 2개 등록 |
+| docs/sprint/sprint9/scope.md | [2회] | Session #2 추가 |
+
+### 단위 테스트 (T2 AC 매핑)
+
+- ✅ AC-T2-1: `pending_absences_sorts_by_makeup_deadline_nulls_last` — 소멸기한 임박순 + NULL 마지막
+- ✅ AC-T2-1 보강: `pending_absences_excludes_matched_absences` — 이미 매칭된 결석 제외
+- ✅ AC-T2-1 보강: `pending_absences_excludes_present_status` — 출석 상태 제외
+- ✅ AC-T2-2: `eligible_dates_returns_makeup_class_dates` — allows_makeup_class=1 만 반환
+- ✅ AC-T2-2 보강: `eligible_dates_excludes_makeup_off_codes` — 방학(=0) 제외
+- ✅ AC-T2-2 보강: `eligible_dates_expands_period_codes` — 기간성 코드 일자 펼침
+- ✅ AC-T2-3: `eligible_dates_excludes_before_enroll` — 입교일 이전 제외
+- ✅ AC-T2-3 보강: `eligible_dates_excludes_after_withdraw` — 퇴교일 이후 제외
+- ✅ A43: `validate_year_month_rejects_out_of_range_month` — 월 00/13/99 거부 + 친화 메시지
+
+### 세션 종료 조건
+- ✅ Self-verify: cargo test cipher off **231 passed** (T1 222 → +9) / cipher on **133 passed** (변동 없음)
+- ✅ Clippy `--lib -- -D warnings` cipher off + on clean
+- ✅ simplify — `_impl` 분리 + BTreeMap 으로 동일 일자 중복 회피 자동 정렬. 추가 추상화 없음
+- ⬜ 단일 커밋 (makeup.rs 신규 + attendance.rs validate 강화 + mod/lib 등록 + scope.md)
+
+### 발견된 이슈
+(없음 — 기존 attendance.rs::seed_student 패턴 재사용으로 students 컬럼 규약 일관 유지)
