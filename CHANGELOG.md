@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] - 2026-05-24
+
 ### Added
 - Sprint 8: DB 마이그레이션 V106 — `regular_attendances` + `makeup_attendances` 테이블 신규 (보강필요시간, 소멸기한, 결석 사유 메모 포함)
 - Sprint 8: 출결 IPC 6종 (`src-tauri/src/commands/attendances.rs` 신규) — `generate_attendances`, `check_attendance_exists`, `get_attendance_grid`, `toggle_attendance`, `update_absence_memo`, `get_attendance_summary`
