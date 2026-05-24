@@ -342,8 +342,26 @@ pub struct AttendanceGridStudent {
     pub name: String,
     pub serial_no: String,
     pub schedule_days: Vec<i64>,
+    /// Sprint 9 Session #10 I8 — 클라이언트가 비수업일 셀 "+" 표시 조건 판단에 사용.
+    pub enroll_date: String,
+    /// Sprint 9 Session #10 I8 — 퇴교일 없으면 null.
+    pub withdraw_date: Option<String>,
     pub attendances: Vec<AttendanceCell>,
     pub summary: AttendanceSummary,
+}
+
+/// 학사일정 매핑 — 해당 월 일자별 코드 속성.
+/// Sprint 9 Session #10 I7 (헤더 보강데이 시각 강조) + I8 (셀 사전 판단).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DaySchedule {
+    pub event_date: String,
+    /// 보강 가능 코드 명시 (보강데이/단원평가/공휴수업일).
+    pub allows_makeup: bool,
+    /// 보강 불가 코드 명시 (공휴일/방학/휴원일).
+    pub is_block: bool,
+    /// 표시용 코드명 (우선순위: allows_makeup > is_block > 일반).
+    pub label: String,
 }
 
 /// 그리드 응답 전체.
@@ -352,6 +370,8 @@ pub struct AttendanceGridStudent {
 pub struct AttendanceGrid {
     pub year_month: String,
     pub students: Vec<AttendanceGridStudent>,
+    /// 해당 월 일자별 학사일정 코드 정보 — 일자 헤더 강조 + 비수업일 셀 사전 판단.
+    pub day_schedules: Vec<DaySchedule>,
 }
 
 /// 토글 결과.
@@ -400,9 +420,9 @@ pub async fn get_attendance_summary(
 async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<AttendanceGrid, String> {
     validate_year_month(year_month)?;
 
-    // 1) 해당 월 출결이 있는 원생들 (정렬: serial_no)
+    // 1) 해당 월 출결이 있는 원생들 (정렬: serial_no) — Session #10 I8 위해 enroll/withdraw 동봉.
     let student_rows = sqlx::query(
-        "SELECT DISTINCT s.id, s.name, s.serial_no \
+        "SELECT DISTINCT s.id, s.name, s.serial_no, s.enroll_date, s.withdraw_date \
          FROM students s \
          JOIN regular_attendances a ON a.student_id = s.id \
          WHERE a.year_month = ? \
@@ -418,6 +438,9 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
         let student_id: i64 = srow.try_get("id").map_err(|e| e.to_string())?;
         let name: String = srow.try_get("name").map_err(|e| e.to_string())?;
         let serial_no: String = srow.try_get("serial_no").map_err(|e| e.to_string())?;
+        let enroll_date: String = srow.try_get("enroll_date").map_err(|e| e.to_string())?;
+        let withdraw_date: Option<String> =
+            srow.try_get("withdraw_date").map_err(|e| e.to_string())?;
 
         // 수업 요일 (현행 스케줄)
         let day_rows = sqlx::query(
@@ -477,15 +500,100 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
             name,
             serial_no,
             schedule_days,
+            enroll_date,
+            withdraw_date,
             attendances,
             summary,
         });
     }
 
+    let day_schedules = build_day_schedules(pool, year_month).await?;
+
     Ok(AttendanceGrid {
         year_month: year_month.to_string(),
         students,
+        day_schedules,
     })
+}
+
+/// 월의 일자별 학사일정 코드 매핑을 생성한다 (Session #10 I7/I8).
+///
+/// 동일 일자에 다중 코드 가능 — 우선순위: `allows_makeup=1` > `is_block` > 일반.
+/// 기간성 코드 (period_end_date) 는 시작~종료 모든 일자로 펼친다.
+async fn build_day_schedules(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<Vec<DaySchedule>, String> {
+    let parts: Vec<&str> = year_month.split('-').collect();
+    let year: i32 = parts[0].parse().expect("validated");
+    let month: u32 = parts[1].parse().expect("validated");
+    let first = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+        .ok_or_else(|| format!("일자 생성 실패: {}-{:02}-01", year, month))?;
+    let next_month_first = if month == 12 {
+        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+    }
+    .ok_or_else(|| "다음 월 일자 생성 실패".to_string())?;
+
+    // month 와 겹치는 모든 schedule_events + 속성 조회.
+    let rows = sqlx::query(
+        "SELECT e.event_date, COALESCE(e.period_end_date, e.event_date) AS end_d, \
+                c.code_name, c.allows_regular_class, c.allows_makeup_class \
+         FROM schedule_events e \
+         JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE e.event_date < ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+    )
+    .bind(next_month_first.to_string())
+    .bind(first.to_string())
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("학사일정 조회 실패: {}", e))?;
+
+    use std::collections::BTreeMap;
+    // 일자별 코드 후보 — (allows_makeup, is_block, label) 우선순위로 reduce.
+    let mut by_date: BTreeMap<String, (bool, bool, String)> = BTreeMap::new();
+    for r in rows {
+        let s: String = r.try_get("event_date").map_err(|e| e.to_string())?;
+        let e_str: String = r.try_get("end_d").map_err(|e| e.to_string())?;
+        let code_name: String = r.try_get("code_name").map_err(|e| e.to_string())?;
+        let allows_reg: i64 = r.try_get("allows_regular_class").map_err(|e| e.to_string())?;
+        let allows_mk: i64 = r.try_get("allows_makeup_class").map_err(|e| e.to_string())?;
+        let is_block = allows_reg == 0 && allows_mk == 0;
+        let mut d = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+            .map_err(|e| format!("이벤트 일자 파싱 실패: {}", e))?;
+        let ed = chrono::NaiveDate::parse_from_str(&e_str, "%Y-%m-%d")
+            .map_err(|e| format!("이벤트 종료일 파싱 실패: {}", e))?;
+        while d <= ed {
+            if d >= first && d < next_month_first {
+                let key = d.to_string();
+                let entry = by_date.entry(key).or_insert((false, false, String::new()));
+                // 우선순위: allows_makeup 가 우세 — 한 일자에 보강데이 + 공휴일 동시 등록 시 보강데이로 표시.
+                let new_makeup = allows_mk == 1;
+                let new_block = is_block;
+                if new_makeup && !entry.0 {
+                    *entry = (true, entry.1 || new_block, code_name.clone());
+                } else if !entry.0 && new_block && !entry.1 {
+                    *entry = (false, true, code_name.clone());
+                } else if entry.2.is_empty() {
+                    entry.2 = code_name.clone();
+                }
+                entry.0 = entry.0 || new_makeup;
+                entry.1 = entry.1 || new_block;
+            }
+            d = d.succ_opt().expect("date succ");
+        }
+    }
+
+    Ok(by_date
+        .into_iter()
+        .map(|(event_date, (allows_makeup, is_block, label))| DaySchedule {
+            event_date,
+            allows_makeup,
+            is_block,
+            label,
+        })
+        .collect())
 }
 
 async fn toggle_impl(

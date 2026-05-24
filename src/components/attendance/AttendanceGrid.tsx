@@ -23,9 +23,41 @@ import { toggleAttendance, updateAbsenceMemo } from '@/lib/tauri'
 import type {
   AttendanceCell,
   AttendanceGrid as AttendanceGridType,
+  AttendanceGridStudent,
   AttendanceStatus,
+  DaySchedule,
 } from '@/types/attendance'
 import { AbsenceMemoDialog } from './AbsenceMemoDialog'
+
+/**
+ * 비수업일 셀의 "+" 표시 여부 — Sprint 9 Session #10 I8.
+ *
+ * 사용자 룰 (T10 백엔드 get_makeup_eligible_dates 와 일치):
+ * - 학생 입퇴교 범위 내
+ * - 케이스 A: 평일(월~금) + 보강불가 코드(is_block) 없음
+ * - 케이스 B: allowsMakeup 코드 명시 (요일 무관)
+ */
+function isMakeupEligibleForCell(
+  student: AttendanceGridStudent,
+  eventDate: string,
+  yearMonth: string,
+  daySchedule: DaySchedule | undefined,
+): boolean {
+  // 학생 입퇴교 범위 외 → 차단
+  if (eventDate < student.enrollDate) return false
+  if (student.withdrawDate !== null && eventDate > student.withdrawDate) {
+    return false
+  }
+  // 케이스 B 우선 — allowsMakeup 코드 명시
+  if (daySchedule !== undefined && daySchedule.allowsMakeup) return true
+  // 보강불가 코드 차단
+  if (daySchedule !== undefined && daySchedule.isBlock) return false
+  // 케이스 A — 평일 + 보강불가 코드 없음
+  const [year, month] = yearMonth.split('-').map(Number)
+  const day = Number(eventDate.slice(8, 10))
+  const dow = new Date(year, month - 1, day).getDay() // 0=일, 6=토
+  return dow >= 1 && dow <= 5
+}
 
 interface Props {
   grid: AttendanceGridType
@@ -90,6 +122,13 @@ export function AttendanceGrid({
   const [error, setError] = useState<string | null>(null)
 
   const days = useMemo(() => daysOfMonth(grid.yearMonth), [grid.yearMonth])
+
+  // Session #10 I7/I8 — 일자별 학사일정 매핑 (event_date → DaySchedule).
+  const dayScheduleMap = useMemo(() => {
+    const map = new Map<string, DaySchedule>()
+    for (const d of grid.daySchedules) map.set(d.eventDate, d)
+    return map
+  }, [grid.daySchedules])
 
   const toggleMutation = useMutation({
     mutationFn: async ({
@@ -210,11 +249,19 @@ export function AttendanceGrid({
               {days.map((d) => {
                 const wd = weekdayLabel(grid.yearMonth, d)
                 const isWeekend = wd === '토' || wd === '일'
+                const eventDate = `${grid.yearMonth}-${String(d).padStart(2, '0')}`
+                const sched = dayScheduleMap.get(eventDate)
+                const isMakeupDay = sched?.allowsMakeup === true
                 return (
                   <th
                     key={`wd-${d}`}
+                    title={sched?.label}
                     className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-xs ${
-                      isWeekend ? 'text-red-600' : 'text-gray-600'
+                      isMakeupDay
+                        ? 'bg-sky-100 text-sky-800 font-semibold'
+                        : isWeekend
+                          ? 'text-red-600'
+                          : 'text-gray-600'
                     }`}
                   >
                     {wd}
@@ -223,14 +270,22 @@ export function AttendanceGrid({
               })}
             </tr>
             <tr>
-              {days.map((d) => (
-                <th
-                  key={`d-${d}`}
-                  className="min-w-[44px] border-b border-r border-[var(--border)] px-1 py-2 text-center text-sm"
-                >
-                  {d}
-                </th>
-              ))}
+              {days.map((d) => {
+                const eventDate = `${grid.yearMonth}-${String(d).padStart(2, '0')}`
+                const sched = dayScheduleMap.get(eventDate)
+                const isMakeupDay = sched?.allowsMakeup === true
+                return (
+                  <th
+                    key={`d-${d}`}
+                    title={sched?.label}
+                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-2 text-center text-sm ${
+                      isMakeupDay ? 'bg-sky-100 text-sky-800 font-semibold' : ''
+                    }`}
+                  >
+                    {d}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -240,6 +295,7 @@ export function AttendanceGrid({
                 student={student}
                 days={days}
                 yearMonth={grid.yearMonth}
+                dayScheduleMap={dayScheduleMap}
                 onCellClick={handleCellClick}
                 onCellContextMenu={(cell) => {
                   if (cell.status === 'absent') {
@@ -284,6 +340,8 @@ interface StudentRowProps {
   student: AttendanceGridType['students'][number]
   days: number[]
   yearMonth: string
+  /** Sprint 9 Session #10 I7/I8 — 일자별 학사일정 매핑. */
+  dayScheduleMap: Map<string, DaySchedule>
   onCellClick: (cell: AttendanceCell) => void
   onCellContextMenu: (cell: AttendanceCell) => void
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
@@ -297,6 +355,7 @@ const StudentRow = memo(function StudentRow({
   student,
   days,
   yearMonth,
+  dayScheduleMap,
   onCellClick,
   onCellContextMenu,
   onNonClassDayClick,
@@ -357,6 +416,16 @@ const StudentRow = memo(function StudentRow({
         const dayKey = String(day).padStart(2, '0')
         const cell = byDay.get(dayKey)
         const eventDate = `${yearMonth}-${dayKey}`
+        // I8: 비수업일 셀 사전 판단 — 보강 불가 일자는 "+" 자체 비표시.
+        const isEligible =
+          onNonClassDayClick !== undefined &&
+          cell === undefined &&
+          isMakeupEligibleForCell(
+            student,
+            eventDate,
+            yearMonth,
+            dayScheduleMap.get(eventDate),
+          )
         return (
           <CellView
             key={day}
@@ -364,9 +433,9 @@ const StudentRow = memo(function StudentRow({
             onClick={handleCellClick}
             onContextMenu={onCellContextMenu}
             onEmptyCellClick={
-              onNonClassDayClick === undefined
-                ? undefined
-                : () => onNonClassDayClick(student.studentId, eventDate)
+              isEligible
+                ? () => onNonClassDayClick!(student.studentId, eventDate)
+                : undefined
             }
           />
         )

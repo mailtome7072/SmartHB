@@ -222,7 +222,7 @@ if !(1..=12).contains(&m) {
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src-tauri/src/commands/makeup.rs | [신규] | IPC 2종 + `_impl` 분리 + 응답 구조체 2종 + 단위 테스트 8건 |
-| src-tauri/src/commands/attendance.rs | [1회] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
+| src-tauri/src/commands/attendance.rs | [4회 ⚠️] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
 | src-tauri/src/commands/mod.rs | [1회] | `pub mod makeup;` 추가 |
 | src-tauri/src/lib.rs | [4회 ⚠️] | invoke_handler 에 IPC 2개 등록 |
 | docs/sprint/sprint9/scope.md | [2회] | Session #2 추가 |
@@ -421,7 +421,7 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src/types/makeup.ts | [신규] | 8 interface 1:1 매핑 |
-| src/lib/tauri/index.ts | [3회 ⚠️] | makeup 타입 import + 래퍼 6종 추가 |
+| src/lib/tauri/index.ts | [4회 ⚠️] | makeup 타입 import + 래퍼 6종 추가 |
 | docs/sprint/sprint9/scope.md | [5회 ⚠️] | Session #5 추가 |
 
 ### 세션 종료 조건
@@ -483,8 +483,8 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src/components/attendance/MakeupRegisterDialog.tsx | [신규] | 다이얼로그 + AbsenceRow 하위 컴포넌트 + eligibility/pending 두 query + mutation |
-| src/components/attendance/AttendanceGrid.tsx | [16회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
-| src/app/attendance/page.tsx | [13회 ⚠️] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
+| src/components/attendance/AttendanceGrid.tsx | [22회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
+| src/app/attendance/page.tsx | [15회 ⚠️] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
 | docs/sprint/sprint9/scope.md | [6회 ⚠️] | Session #6 추가 |
 
 ### UX 가드
@@ -688,7 +688,7 @@ T1~T8 각 작업 항목 + Definition of Done 의 자동 검증/단위 테스트/
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| docs/sprint/sprint9.md | [12회 ⚠️] | T1~T8 AC + DoD 일괄 마킹 (시각 검증 제외) |
+| docs/sprint/sprint9.md | [13회 ⚠️] | T1~T8 AC + DoD 일괄 마킹 (시각 검증 제외) |
 | docs/sprint/sprint9/scope.md | [9회 ⚠️] | Session #9 추가 |
 | src-tauri/Cargo.lock | [—] | 버전 0.3.2 → 0.4.0 (Cargo.toml 기준 정상 동기화) |
 

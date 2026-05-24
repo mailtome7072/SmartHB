@@ -16,6 +16,7 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getAbsenceHistory } from '@/lib/tauri'
+import { minutesToHoursText } from '@/lib/time'
 import type { AbsenceHistoryItem } from '@/types/makeup'
 
 interface Props {
@@ -89,7 +90,7 @@ export function AbsenceHistoryDialog({
               <thead className="sticky top-0 bg-gray-100">
                 <tr>
                   <th className="border-b border-r border-[var(--border)] px-3 py-2 text-left">결석일</th>
-                  <th className="border-b border-r border-[var(--border)] px-3 py-2 text-center">수업(분)</th>
+                  <th className="border-b border-r border-[var(--border)] px-3 py-2 text-center">수업(시간)</th>
                   <th className="border-b border-r border-[var(--border)] px-3 py-2 text-center">상태</th>
                   <th className="border-b border-r border-[var(--border)] px-3 py-2 text-center">보강 정보</th>
                   <th className="border-b border-[var(--border)] px-3 py-2 text-left">사유 메모</th>
@@ -130,7 +131,7 @@ function HistoryRow({ item }: HistoryRowProps) {
         {item.eventDate}
       </td>
       <td className="border-b border-r border-[var(--border)] px-3 py-2 text-center">
-        {item.classMinutes}
+        {minutesToHoursText(item.classMinutes)}
       </td>
       <td className="border-b border-r border-[var(--border)] px-3 py-2 text-center font-semibold">
         <span className={cls.label}>{cls.text}</span>
@@ -140,7 +141,9 @@ function HistoryRow({ item }: HistoryRowProps) {
           <>
             <span className="font-semibold">{item.makeupEventDate}</span>
             {item.makeupClassMinutes !== null && (
-              <span className="ml-1 text-gray-600">({item.makeupClassMinutes}분)</span>
+              <span className="ml-1 text-gray-600">
+                ({minutesToHoursText(item.makeupClassMinutes)}시간)
+              </span>
             )}
           </>
         ) : item.status === 'absent' && item.makeupDeadline !== null ? (

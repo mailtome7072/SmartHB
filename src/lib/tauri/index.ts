@@ -988,7 +988,7 @@ export async function generateAttendances(yearMonth: string): Promise<GenerateRe
 /** 출결표 그리드 — 원생 × 일자 + 월간 요약. 50명×31일 < 1초 (PRD §5.7). */
 export async function getAttendanceGrid(yearMonth: string): Promise<AttendanceGrid> {
   const inv = await getInvoke()
-  if (!inv) return { yearMonth, students: [] }
+  if (!inv) return { yearMonth, students: [], daySchedules: [] }
   return inv('get_attendance_grid', { yearMonth }) as Promise<AttendanceGrid>
 }
 

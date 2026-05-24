@@ -42,14 +42,25 @@ export interface AttendanceGridStudent {
   name: string
   serialNo: string
   scheduleDays: number[] // ISO 요일 1=월~7=일
+  enrollDate: string // YYYY-MM-DD — Sprint 9 Session #10 I8
+  withdrawDate: string | null // Sprint 9 Session #10 I8
   attendances: AttendanceCell[]
   summary: AttendanceSummary
+}
+
+/** 일자별 학사일정 매핑 — Sprint 9 Session #10 I7/I8. */
+export interface DaySchedule {
+  eventDate: string // YYYY-MM-DD
+  allowsMakeup: boolean // 보강데이/단원평가/공휴수업일
+  isBlock: boolean // 공휴일/방학/휴원일
+  label: string // 표시용 코드명
 }
 
 /** 그리드 응답 전체. */
 export interface AttendanceGrid {
   yearMonth: string
   students: AttendanceGridStudent[]
+  daySchedules: DaySchedule[]
 }
 
 /** 토글 결과 — 낙관적 업데이트의 권위적 응답. */

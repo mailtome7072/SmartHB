@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { batchCreateMakeups } from '@/lib/tauri'
+import { minutesToHoursText } from '@/lib/time'
 import type {
   AttendanceCell,
   AttendanceGrid as AttendanceGridType,
@@ -214,7 +215,7 @@ export function BatchMakeupDialog({ grid, onClose, onSuccess }: Props) {
                       미처리 {s.pending.length}건
                     </span>
                     <span className="ml-2 text-sm text-gray-500">
-                      ({s.pending[0].classMinutes}분/회)
+                      ({minutesToHoursText(s.pending[0].classMinutes)}시간/회)
                     </span>
                   </button>
                 </li>

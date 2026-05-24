@@ -137,6 +137,16 @@ export default function AttendancePage() {
   const matchedCount = filteredGrid?.students.length ?? 0
   const totalCount = gridQuery.data?.students.length ?? 0
 
+  // 미처리 결석이 있는 학생 수 — "보강데이 일괄" 버튼 활성화 조건 + 카운트 표시 (Session #10 I2).
+  const pendingStudentsCount = useMemo(() => {
+    if (gridQuery.data === undefined) return 0
+    return gridQuery.data.students.filter((s) =>
+      s.attendances.some(
+        (a) => a.status === 'absent' && a.makeupAttendanceId === null,
+      ),
+    ).length
+  }, [gridQuery.data])
+
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <main className="flex h-full flex-col">
@@ -187,9 +197,15 @@ export default function AttendancePage() {
           <button
             type="button"
             onClick={() => setBatchOpen(true)}
-            className="ml-auto min-h-[44px] rounded-lg border-2 border-[var(--accent)] bg-white px-4 text-base font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+            disabled={pendingStudentsCount === 0}
+            title={
+              pendingStudentsCount === 0
+                ? '미처리 결석이 있는 원생이 없습니다.'
+                : `미처리 결석 ${pendingStudentsCount}명 일괄 보강`
+            }
+            className="ml-auto min-h-[44px] rounded-lg border-2 border-[var(--accent)] bg-white px-4 text-base font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-white"
           >
-            보강데이 일괄
+            보강데이 일괄 ({pendingStudentsCount}명)
           </button>
         )}
 

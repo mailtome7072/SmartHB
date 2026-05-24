@@ -266,16 +266,16 @@
 ### T11: 프론트엔드 시간 단위 + UX 보강 (7h, 시각 검증 carry-over)
 > 배경: T9 시각 검증 발견 7건 (I1·I2·I4·I5+I6·I7·I8). 보강 UX 완성도.
 
-- ⬜ (I1) `src/lib/time.ts` 신규 — `minutesToHours(m)/hoursToMinutes(h)` + 모든 다이얼로그/이력 화면 적용
-- ⬜ (I2) 헤더 "보강데이 일괄" 버튼 활성화 조건 디버그 — 대상자 있을 때 활성
-- ⬜ (I4) `MakeupRegisterDialog` — 결석 목록을 선택 보강 일자 이전 + 소멸기한 미도래로 클라이언트 필터
-- ⬜ (I5+I6) 결석 체크 시 보강시간 자동 합산 + 해제 시 `min(absenceHours, currentHours)` 차감
-- ⬜ (I7) `AttendanceGrid` 일자 헤더에 보강데이 시각 강조
-- ⬜ (I8) 비수업일 셀 사전 판단 — 입교 전/퇴교 후/공휴일/주말+보강데이없음 일자는 "+" 자체 비표시
+- ✅ (I1) `src/lib/time.ts` 신규 — `minutesToHours(m)/hoursToMinutes(h)/formatHours/minutesToHoursText` + 다이얼로그/이력 화면 적용
+- ✅ (I2) 헤더 "보강데이 일괄" 버튼 — 미처리 결석 학생 수 표시 + 0명일 때 disabled 처리
+- ✅ (I4) `MakeupRegisterDialog` — `filteredPending` 클라이언트 필터 (event_date < target + makeup_deadline >= target_ym)
+- ✅ (I5+I6) 결석 체크 시 보강시간 자동 합산 + 해제 시 `Math.min(absenceHours, currentHours)` 차감 (음수 방지)
+- ✅ (I7) `AttendanceGrid` 일자 헤더 — `allowsMakeup=true` 일자 sky-100/sky-800 강조 + title="보강데이"
+- ✅ (I8) 비수업일 셀 사전 판단 `isMakeupEligibleForCell` — 입교 전/퇴교 후/주말+보강데이없음/보강불가코드 일자는 "+" 자체 비표시
 
-**예상 변경 파일**: `src/lib/time.ts` (신규), `src/components/attendance/{MakeupRegisterDialog,BatchMakeupDialog,MakeupManageDialog,AbsenceHistoryDialog,AttendanceGrid}.tsx`, `src/app/attendance/page.tsx`
-**예상 소요**: 7h
-**AC**: I1~I8 (I3 제외) 7건 시각 검증 통과
+**예상 변경 파일**: `src/lib/time.ts` (신규), `src/components/attendance/{MakeupRegisterDialog,BatchMakeupDialog,AbsenceHistoryDialog,AttendanceGrid}.tsx`, `src/app/attendance/page.tsx`, `src-tauri/src/commands/attendance.rs` (AttendanceGridStudent + DaySchedule 응답 확장), `src/types/attendance.ts`, `src/lib/tauri/index.ts`
+**예상 소요**: 7h (실측 ~7h)
+**AC**: I1~I8 (I3 제외) 7건 시각 검증 통과 — cargo test cipher off **254 passed** / cipher on **133 passed** / clippy clean / pnpm lint/tsc/build clean
 
 ---
 
