@@ -224,7 +224,7 @@ if !(1..=12).contains(&m) {
 | src-tauri/src/commands/makeup.rs | [신규] | IPC 2종 + `_impl` 분리 + 응답 구조체 2종 + 단위 테스트 8건 |
 | src-tauri/src/commands/attendance.rs | [1회] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
 | src-tauri/src/commands/mod.rs | [1회] | `pub mod makeup;` 추가 |
-| src-tauri/src/lib.rs | [2회] | invoke_handler 에 IPC 2개 등록 |
+| src-tauri/src/lib.rs | [3회 ⚠️] | invoke_handler 에 IPC 2개 등록 |
 | docs/sprint/sprint9/scope.md | [2회] | Session #2 추가 |
 
 ### 단위 테스트 (T2 AC 매핑)
@@ -301,7 +301,7 @@ MakeupResult { makeup_id, student_id, event_date, matched_count }
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src-tauri/src/commands/audit.rs | [1회] | MakeupCreated/Cancelled/Absent 3 variants + as_code 매핑 |
-| src-tauri/src/commands/makeup.rs | [2회] | 응답 struct 2종 + create_makeup_with_absences IPC + 단위 테스트 9건. 기존 `seed_student` 에 schedules 인자 확장 (effective_from 포함) |
+| src-tauri/src/commands/makeup.rs | [5회 ⚠️] | 응답 struct 2종 + create_makeup_with_absences IPC + 단위 테스트 9건. 기존 `seed_student` 에 schedules 인자 확장 (effective_from 포함) |
 | src-tauri/src/lib.rs | [3회 ⚠️] | invoke_handler 에 `create_makeup_with_absences` 등록 |
 | docs/sprint/sprint9/scope.md | [3회] | Session #3 추가 |
 
@@ -326,4 +326,73 @@ MakeupResult { makeup_id, student_id, event_date, matched_count }
 - ✅ Self-verify: cargo test cipher off **240 passed** (T2 231 → +9) / cipher on **133 passed**
 - ✅ Clippy `--lib -- -D warnings` cipher off + on clean
 - ✅ simplify — 검증 5단계 명확 분리, 픽스처 헬퍼 3종(fixture_*) 단일 책임, PI-02 분 단위 활성 위치 주석 명시. 추가 단순화 없음
-- ⬜ 단일 커밋 (audit.rs + makeup.rs + lib.rs + scope.md)
+- ✅ 단일 커밋 `e0e3659`
+
+---
+
+## Session #4 (T4 — 보강 취소 + 미등원 + 일괄, 2026-05-24)
+
+### 이번 세션 Task
+
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T4** | `cancel_makeup` + `mark_makeup_absent` + `batch_create_makeups` IPC 3종 + 테스트 7건 | 5h |
+
+### 설계 결정 (T4)
+
+#### IPC 3종
+
+- **`cancel_makeup(makeup_id)`** — 결석 환원 + makeup DELETE
+  - 트랜잭션 순서 (FK 위반 회피): UPDATE absences SET NULL → DELETE makeup
+  - 환원 결석 수를 audit details 에 기록
+- **`mark_makeup_absent(makeup_id)`** — 결석 상태 유지, 보강만 'makeup_absent' 마킹
+  - 멱등성: 이미 makeup_absent 면 0 반환, 트랜잭션 미실행
+  - 연결된 결석은 absent 환원 (재매칭 가능 상태)
+- **`batch_create_makeups(event_date, entries)`** — 다중 원생 일괄
+  - **학생별 독립 트랜잭션** — 한 학생 실패가 다른 학생을 차단하지 않음 (PRD §4.5.5 "실패 원생은 건너뛰고")
+  - `create_makeup_with_absences_impl` 재사용 — T3 검증 5종 동일 적용
+  - 결과: `BatchResult { succeeded: Vec<MakeupResult>, failed: Vec<BatchFailure {student_id, reason}> }`
+
+#### 페이로드 struct 신규
+
+```ts
+BatchMakeupEntry { studentId, classMinutes, absenceIds }
+BatchCreateMakeupsPayload { eventDate, entries }
+BatchFailure { studentId, reason }
+BatchResult { succeeded, failed }
+```
+
+학생별로 `class_minutes` 다를 수 있어 entry 에 포함. `event_date` 는 batch 공통.
+
+#### audit 활용
+
+T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내부 성공도 학생별로 `MakeupCreated` fire-and-forget 기록 (`"batch":true` 표식).
+
+### 수정/추가 파일
+
+| 파일 | 횟수 | 비고 |
+|------|------|------|
+| src-tauri/src/commands/makeup.rs | [3회 ⚠️] | 페이로드 struct 4종 + IPC 3종 + `_impl` + 단위 테스트 7건 |
+| src-tauri/src/lib.rs | [4회 ⚠️] | invoke_handler 에 IPC 3개 등록 |
+| docs/sprint/sprint9/scope.md | [4회] | Session #4 추가 |
+
+> makeup.rs 3회 / lib.rs 4회 — Session 별 IPC 누적 추가 패턴이라 loop-detection 의 "동일 파일 3회 이상 반복 수정" 의도(버그 루프)와 무관.
+
+### 단위 테스트 (T4 AC 매핑, 7건 신규)
+
+- ✅ `cancel_makeup_reverts_absences_and_deletes_makeup` — 결석 2건 환원 + makeup 0건
+- ✅ `cancel_makeup_rejects_nonexistent_id` — 미존재 친화 에러
+- ✅ `mark_makeup_absent_preserves_makeup_but_reverts_absence` — 보강 status='makeup_absent' + 결석 absent + 재매칭 가능
+- ✅ `mark_makeup_absent_is_idempotent` — 이미 미등원 상태 시 0 반환, 추가 변경 없음
+- ✅ `batch_create_all_succeed` — 2명 모두 정상 → succeeded 2, failed 0
+- ✅ `batch_create_partial_failure` — s2 무효 absence_id → s1 정상 / s2 failed 분리. s1 의 결석은 makeup_done
+- ✅ `batch_create_rejects_empty_entries` — 빈 entries 거부
+
+### 세션 종료 조건
+- ✅ Self-verify: cargo test cipher off **247 passed** (T3 240 → +7) / cipher on **133 passed**
+- ✅ Clippy `--lib -- -D warnings` cipher off + on clean
+- ✅ simplify — IPC 3종 단일 책임, cancel/absent 트랜잭션 순서 주석 명시 (FK 위반 회피), 멱등성 사전 체크로 간결, batch 학생별 독립 트랜잭션 명시. 추가 단순화 없음
+- ⬜ 단일 커밋 (makeup.rs + lib.rs + scope.md)
+
+### 발견된 이슈
+(없음 — T3 의 `create_makeup_with_absences_impl` 재사용으로 batch 검증 로직 일관성 자동 확보)
