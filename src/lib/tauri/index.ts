@@ -27,6 +27,12 @@ import type {
   StandardFee,
 } from '@/types/fee'
 import type {
+  AttendanceGrid,
+  AttendanceSummary,
+  GenerateResult,
+  ToggleResult,
+} from '@/types/attendance'
+import type {
   CascadeDeletePreview,
   CreateScheduleCodePayload,
   CreateScheduleEventPayload,
@@ -950,4 +956,70 @@ export async function autoPlaceAssessmentDates(yearMonth: string): Promise<Sched
   const inv = await getInvoke()
   if (!inv) return []
   return inv('auto_place_assessment_dates', { yearMonth }) as Promise<ScheduleEvent[]>
+}
+
+// ──────────────────── 출결 도메인 (Sprint 8 T2·T3) ────────────────────
+
+/** 해당 월에 정규 출결이 이미 생성되어 있는지 확인. */
+export async function checkAttendanceExists(yearMonth: string): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('check_attendance_exists', { yearMonth }) as Promise<boolean>
+}
+
+/** 해당 월 재원 원생 × 수업 요일 일자에 정규 출결 일괄 생성 (AC-4.5-1). */
+export async function generateAttendances(yearMonth: string): Promise<GenerateResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { yearMonth, studentCount: 0, attendanceCount: 0 }
+  }
+  return inv('generate_attendances', { yearMonth }) as Promise<GenerateResult>
+}
+
+/** 출결표 그리드 — 원생 × 일자 + 월간 요약. 50명×31일 < 1초 (PRD §5.7). */
+export async function getAttendanceGrid(yearMonth: string): Promise<AttendanceGrid> {
+  const inv = await getInvoke()
+  if (!inv) return { yearMonth, students: [] }
+  return inv('get_attendance_grid', { yearMonth }) as Promise<AttendanceGrid>
+}
+
+/** 출석↔결석 토글. 보강필요시간/소멸기한 자동 갱신, audit 기록. */
+export async function toggleAttendance(
+  attendanceId: number,
+  newStatus: 'present' | 'absent',
+): Promise<ToggleResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('toggle_attendance', { attendanceId, newStatus }) as Promise<ToggleResult>
+}
+
+/** 결석 사유 메모 set/clear. memo=null 이면 NULL 로 환원. */
+export async function updateAbsenceMemo(
+  attendanceId: number,
+  memo: string | null,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('update_absence_memo', { attendanceId, memo })
+}
+
+/** 원생 월간 요약 단일 조회. */
+export async function getAttendanceSummary(
+  studentId: number,
+  yearMonth: string,
+): Promise<AttendanceSummary> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      studentId,
+      yearMonth,
+      presentCount: 0,
+      absentCount: 0,
+      makeupNeededMinutes: 0,
+      makeupCompletedMinutes: 0,
+    }
+  }
+  return inv('get_attendance_summary', { studentId, yearMonth }) as Promise<AttendanceSummary>
 }

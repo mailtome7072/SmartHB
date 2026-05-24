@@ -1,47 +1,66 @@
 ---
 name: sprint-next-session
-description: "v0.3.1 배포 완료 (2026-05-23). 다음: /sprint-dev 8 → Sprint 8 (출결 관리 — Phase 2 나머지)"
+description: "Sprint 8 Session #9 완료 (T1~T9 자동 검증, 9/9). 다음: 사용자 시각 검증 후 sprint-close 실행"
 metadata: 
   node_type: memory
   type: project
-  originSessionId: deploy-prod-v0.3.1
+  originSessionId: sprint8-session9-t9
 ---
 
-v0.3.1 배포 완료 (2026-05-23). **develop → master 직접 머지 + v0.3.1 태그 push 완료**.
+Sprint 8 출결 관리 — **모든 T1~T9 자동 작업 완료**. 사용자 시각 검증 + sprint-close 대기.
 
-## v0.3.1 배포 현황
+## Sprint 8 진행 현황
 
-| 항목 | 내용 |
+| Task | 내용 | 상태 |
+|------|------|------|
+| T1 | V106 마이그레이션 | ✅ `f72778b` |
+| T2 | 출결 생성 IPC | ✅ `366f880` |
+| T3 | 출결 조회 + 토글 IPC | ✅ `4efc570` |
+| T4 | 출결표 프론트엔드 UI | ✅ `0a20c18` |
+| T4 follow-up | UX 보강 | ✅ `516758c` |
+| T5 | 보강필요시간/소멸기한 단위 테스트 100% | ✅ `5f2f0fd` |
+| T6 | carry-over High 4건 (R40~R43) | ✅ `14b9bfb` |
+| T7 | carry-over Medium-High (R45) Keychain race | ✅ `e89c3a8` |
+| T8 | carry-over Medium 6항목 | ✅ `069f435` |
+| T9 | 통합 검증 (자동 7항목 통과) | ✅ `cda2745` |
+
+검증 상태: cargo test cipher off **221 passed** / cipher on **133 passed** / clippy clean / pnpm lint/tsc/build clean.
+
+## Session #9 (T9) 검증 결과
+
+| 항목 | 결과 |
 |------|------|
-| 배포일 | 2026-05-23 |
-| 버전 | v0.3.1 |
-| 포함 스프린트 | Sprint 6 (학사 스케줄) + Sprint 7 (carry-over 해소 + 38건 fix) |
-| master 머지 | 6bf7cd5 (--no-ff) |
-| 태그 | v0.3.1 push 완료 → GitHub Actions CD 트리거 |
-| cargo test | cipher off 187 passed / cipher on 127 passed |
+| cargo test cipher off | ✅ 221 passed |
+| cargo test cipher on | ✅ 133 passed |
+| clippy off + on | ✅ clean |
+| pnpm lint | ✅ clean |
+| pnpm tsc --noEmit | ✅ clean |
+| pnpm build | ✅ static export 성공 (out/ 정상) |
 
-## Sprint 8 진입 시 우선 액션
+## 다음 액션 (선택)
 
-1. `/sprint-dev 8` 입력하여 Sprint 8 구현 시작
-2. Sprint 8: 출결 관리 (Phase 2 나머지) — Phase 2 마일스톤(M3)
-3. sprint-planner agent로 Sprint 8 계획 수립 먼저 (docs/sprint/sprint8.md)
+### A. 사용자 시각 검증 후 sprint-close
+1. `pnpm tauri:dev` 로 앱 기동 → sprint8.md L353-360 항목별 확인
+2. `docs/sprint/sprint8/scope.md` Session #9 사용자 검증 표에 ✅ 마킹
+3. sprint8.md AC-T9-2/T9-3/T9-4 도 ✅ 마킹
+4. 사용자 명령: `"sprint8 구현 완료했어. sprint-close 실행해줘."`
 
-## Sprint 8 핵심 작업 (참고)
+### B. 시각 검증 생략하고 바로 sprint-close
+시각 검증을 다음 세션으로 미루고 문서화 + PR 생성만 진행.
 
-- DB 마이그레이션: regular_attendances + makeup_attendances 테이블
-- 출결 생성 로직 (`generate_attendances`, `get_attendance_grid`)
-- 출결표 UI (행×원생, 열×일자, 50명×31일 렌더링 1초 이내)
-- 캘린더 라이브러리 ADR (FullCalendar vs React Big Calendar) — `docs/arch/adr-006-calendar-library.md`
-- 수업 관리 캘린더 뷰 기초 (§4.6.1)
+## sprint-close 후 흐름
 
-## 후속 처리 필요 항목 (risk-register 등록됨)
+1. **sprint-close**: ROADMAP 업데이트 + (PR 단계 생략 정책상 PR 미생성 — 직접 머지) + CHANGELOG / DEPLOY.md 업데이트
+2. **sprint-review**: 코드 리뷰 + 자동 검증 + 회고 작성
+3. **deploy-prod**: develop QA 통과 후 main merge + `v{version}` 태그 push
 
-- **R40~R44 (High)**: I-S2-2 ~ I-S2-6 — partial-NULL 손상, set_password 재진입 가드, CRED_CACHE static drop, check_auth_status 마이그레이션, test→Keychain 사이드이펙트
-- **R45~R48 (Medium~High)**: concurrent race, mutex poison, migration audit, 잡다 low
-- **R39**: StudyPeriodEditor create+confirm 원자성 (hotfix 후보)
+## 잔여 후속 task (Sprint 8 범위 외)
+
+- **R48-b**: salt buffer ZeroizeOnDrop 시그니처 광범위 변경 — `Zeroizing<[u8; SALT_LEN]>` 또는 wrapper struct 도입. 별도 후속 sprint task
+- **반응형 폰트/셀 너비**: `--font-size-body: 18px` + h1~h6 + `AttendanceGrid` 셀(140/62/84px) 모두 px 고정 → 모니터 해상도 비례 조정 안 됨. `clamp()` viewport 또는 html font-size 미디어쿼리 + rem 전환. 폰트 변경 시 셀 너비도 동기 필요. ROADMAP.md Sprint 8 "차기 sprint 이연 후보" 에 기록됨
 
 ## 정책 (재확인)
 
-- **PR 단계 생략** — 단일 개발자, 직접 머지
-- **`/sprint-dev` 사용자 직접 입력** — 에이전트 호출 금지 (CLAUDE.md)
-- **v0.3.1 인스톨러**: GitHub Release에서 Windows .msi / macOS .dmg 다운로드 가능 (Actions 완료 후)
+- **PR 단계 생략** — 단일 개발자, 직접 머지 (`gh pr create` 금지)
+- **`/sprint-dev` 사용자 직접 입력** — 에이전트 호출 금지
+- **사용자 메모리 미러 동기화 필수** — `.claude/memory/sprint-next-session.md` 동시 갱신

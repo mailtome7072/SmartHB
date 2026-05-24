@@ -10,8 +10,8 @@
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 7 (2026-05-22)
-- 다음 스프린트 번호: 8 (계획 수립 완료)
+- 마지막 완료 스프린트: Sprint 8 (2026-05-24)
+- 다음 스프린트 번호: 9
 - Sprint 8 계획 수립: 2026-05-23 (Phase 2 출결 관리 + Sprint 7 carry-over 흡수 — V106 마이그레이션 + 출결 생성/토글 IPC + 그리드 UI + High 4건 + Medium 5건)
 - Sprint 7 계획 수립: 2026-05-22 (Phase 2 carry-over 해소 — Keychain 캐싱 + salt 이전 + device_id 영속화 + 교습기간 UX + 배치 제약)
 - Sprint 6 계획 수립: 2026-05-22 (Phase 2 학사 스케줄 — 3개월 캘린더 + 교습기간 + 일정 코드 + 배치)

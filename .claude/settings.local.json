@@ -26,7 +26,10 @@
       "Bash(DATABASE_URL=sqlite:./SmartHB-dev.db sqlx migrate run --source src-tauri/migrations)",
       "Bash(DATABASE_URL=sqlite:./SmartHB-dev.db sqlx migrate run --source ./src-tauri/migrations)",
       "Bash(DATABASE_URL=sqlite:../SmartHB-dev.db cargo sqlx prepare)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(cp /Users/skyang/.claude/projects/-Users-skyang-Projects-SmartHB/memory/MEMORY.md .claude/memory/MEMORY.md)",
+      "Bash(cp /Users/skyang/.claude/projects/-Users-skyang-Projects-SmartHB/memory/sprint-next-session.md .claude/memory/sprint-next-session.md)",
+      "Bash(echo \"=== EXIT=$? ===\")"
     ]
   },
   "enableAllProjectMcpServers": true,

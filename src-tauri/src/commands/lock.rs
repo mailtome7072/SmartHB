@@ -123,6 +123,14 @@ fn write_device_id_atomic(path: &Path, uuid: &Uuid) -> std::io::Result<()> {
         f.write_all(uuid.to_string().as_bytes())?;
         f.sync_all()?;
     }
+    // Sprint 8 T8 (R48-a / I-S2-10): 소유자 read/write 만 허용 (0o600). Unix 전용 — Windows 는
+    // NTFS ACL 모델이라 별도 처리 불필요. set_permissions 실패는 best-effort 로 무시 (파일
+    // 자체는 정상 저장된 후의 보강 단계).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
     if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
@@ -573,6 +581,23 @@ mod tests {
         let tmp = path.with_extension("id.tmp");
         assert!(path.exists());
         assert!(!tmp.exists(), "tmp 파일이 rename 후 잔존하면 안 됨");
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    /// Sprint 8 T8 (R48-a / I-S2-10): device.id 권한 0o600 (Unix 전용).
+    /// Windows 는 NTFS ACL 모델이라 본 테스트 대상 외.
+    #[cfg(unix)]
+    #[test]
+    fn device_id_file_has_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = unique_device_id_path("perm-0600");
+        let _uuid = load_or_create_device_id_at(&path);
+        let mode = std::fs::metadata(&path)
+            .expect("device.id 메타데이터")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "소유자 read/write 전용: {:o}", mode);
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 

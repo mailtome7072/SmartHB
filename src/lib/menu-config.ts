@@ -17,11 +17,12 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: '원생 관리', href: '/students' },
   { label: '학사 스케줄', href: '/academic' },
   { label: '수업 관리', href: '/schedules', disabledHint: 'Phase 2 에서 제공' },
-  { label: '출결 관리', href: '/attendance', disabledHint: 'Phase 2 에서 제공' },
-  { label: '청구 관리', href: '/billing', disabledHint: 'Phase 4 에서 제공' },
+  { label: '출결 관리', href: '/attendance' },
+  { label: '보강 관리', href: '/makeups', disabledHint: 'Phase 3 에서 제공' },
   { label: '단원 평가', href: '/exams', disabledHint: 'Phase 5 에서 제공' },
-  { label: '학습 보고서', href: '/reports', disabledHint: 'Phase 5 에서 제공' },
+  { label: '청구 관리', href: '/billing', disabledHint: 'Phase 4 에서 제공' },
   { label: '공지문', href: '/notices', disabledHint: 'Phase 4 에서 제공' },
+  { label: '학습 보고서', href: '/reports', disabledHint: 'Phase 5 에서 제공' },
   { label: '설정', href: '/settings' },
 ]
 

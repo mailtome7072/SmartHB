@@ -24,6 +24,7 @@ use rand::RngCore;
 use serde::Serialize;
 use sha2::Sha256;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
@@ -78,24 +79,64 @@ fn cred_cache() -> &'static Mutex<Option<CachedCredentials>> {
     CRED_CACHE.get_or_init(|| Mutex::new(None))
 }
 
+/// poisoned Mutex 도 graceful 복구 — `PoisonError::into_inner()` 로 inner guard 회수.
+///
+/// Sprint 8 T8 (R46 / I-S2-8): `cred_cache().lock().expect("cred_cache poisoned")` 패턴은
+/// poison 발생 시 앱 crash. 본 헬퍼는 panic 흔적이 남았어도 캐시 자체는 무결할 가능성이
+/// 높다는 가정 아래 graceful 복구한다. 7곳의 lock 호출을 일괄 단순화.
+fn cred_cache_lock() -> std::sync::MutexGuard<'static, Option<CachedCredentials>> {
+    cred_cache().lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// 캐시에 자격증명 저장 (set_password 또는 reset_password_with_code 호출 후).
 pub(crate) fn cache_credentials(salt: [u8; SALT_LEN], key: DerivedKey) {
-    *cred_cache().lock().expect("cred_cache poisoned") =
-        Some(CachedCredentials { salt, key });
+    *cred_cache_lock() = Some(CachedCredentials { salt, key });
 }
 
 /// 캐시 무효화 (delete_key_from_keyring 또는 로그아웃 시).
-pub(crate) fn invalidate_credential_cache() {
-    *cred_cache().lock().expect("cred_cache poisoned") = None;
+///
+/// Sprint 8 T6 (I-S2-4): `startup::exit_hook()` 에서도 명시적으로 호출되어 종료 시점에
+/// 프로세스 메모리의 키 잔류를 최소화한다. `pub` 노출은 cross-module 호출용.
+pub fn invalidate_credential_cache() {
+    *cred_cache_lock() = None;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// set_password 재진입 가드 (Sprint 8 T6 / I-S2-3)
+// ────────────────────────────────────────────────────────────────────
+//
+// `set_password` 가 concurrent 하게 호출되면 keyring 저장과 salt 파일 저장 사이에 race 가
+// 발생해 (1) keyring 키와 salt 파일이 서로 다른 비밀번호 기준으로 저장되거나, (2) rollback
+// 경합으로 양쪽 모두 일관성을 잃을 수 있다. AtomicBool + RAII 가드로 진입을 직렬화한다.
+//
+// 정상 흐름: 첫 호출이 가드를 잡고 작업 완료 → Drop 으로 해제 → 다음 호출 진입 가능.
+// 동시 호출: 두 번째 호출은 즉시 사용자 친화 에러 반환 (UI 가 "잠시 후 재시도" 안내).
+// panic 안전: `_guard` 가 stack 에 있으므로 panic unwinding 중에도 Drop 호출됨.
+
+static SET_PASSWORD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+/// RAII 가드 — `set_password` 진입 시 `try_acquire`, scope 종료 시 자동 해제.
+struct SetPasswordGuard;
+
+impl SetPasswordGuard {
+    /// 가드 획득 시도 — 이미 진행 중이면 `None` 반환.
+    fn try_acquire() -> Option<Self> {
+        SET_PASSWORD_IN_PROGRESS
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for SetPasswordGuard {
+    fn drop(&mut self) {
+        SET_PASSWORD_IN_PROGRESS.store(false, Ordering::Release);
+    }
 }
 
 /// 캐시에서 salt 조회 — 캐시 미스면 None.
 fn cached_salt() -> Option<[u8; SALT_LEN]> {
-    cred_cache()
-        .lock()
-        .expect("cred_cache poisoned")
-        .as_ref()
-        .map(|c| c.salt)
+    cred_cache_lock().as_ref().map(|c| c.salt)
 }
 
 /// 캐시 미스 시 salt(파일) + key(keyring) 동시 로드.
@@ -109,19 +150,47 @@ fn load_credentials_to_cache() -> Result<(), AppError> {
     Ok(())
 }
 
+/// load 작업 직렬화용 Mutex (Sprint 8 T6 / I-S2-7 / R45).
+///
+/// `cred_cache().lock()` 만으로는 fast-path 캐시 hit 만 race-free — slow-path 의
+/// `load_credentials_to_cache()` 호출 사이에 lock 이 해제되어 두 스레드가 동시 진입 시
+/// keyring 을 2회 호출하는 race 가 가능했다. 본 Mutex 로 load 자체를 직렬화하여
+/// macOS Keychain 다이얼로그가 startup 동안 정확히 1회만 표시되도록 보장한다.
+///
+/// 락 순서: 항상 `LOAD_MUTEX` → `cred_cache` (deadlock 회피). fast-path 는 `cred_cache`
+/// 만 사용하므로 `LOAD_MUTEX` 를 잡지 않아 다른 fast-path 호출과 경합하지 않는다.
+static LOAD_MUTEX: Mutex<()> = Mutex::new(());
+
+/// 캐시 미스 시 keyring + salt 를 정확히 1회만 로드한다 (Sprint 8 T7 / R45).
+///
+/// double-checked locking 패턴: fast-path 캐시 hit → slow-path LOAD_MUTEX 직렬화
+/// → double-check (다른 스레드가 이미 로드 완료했을 수 있음) → load.
+fn ensure_cache_loaded() -> Result<(), AppError> {
+    // Fast path — 캐시 hit (대다수 호출).
+    if cred_cache_lock().is_some() {
+        return Ok(());
+    }
+    // Slow path — load 직렬화. 첫 진입자가 keyring/salt 1회 로드, 후속 진입자는 대기 후 hit.
+    // poison 복구는 cred_cache_lock 과 동일 패턴 (Sprint 8 T8 / R46).
+    let _load_guard = LOAD_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    if cred_cache_lock().is_some() {
+        return Ok(());
+    }
+    load_credentials_to_cache()
+}
+
 /// 캐시 우선 조회, 미스 시 keyring 1회 로드 후 캐시 → DerivedKey 복제 반환.
 ///
 /// cipher feature on 빌드의 db.rs / backup.rs / integrity.rs 가 사용. 매 호출마다 keyring
 /// 다이얼로그를 띄우던 기존 패턴을 1회로 통합.
+///
+/// Sprint 8 T7 (R45): double-checked locking 누락 race 제거 — `ensure_cache_loaded` 헬퍼로
+/// 통합. `tokio::join!` 안의 integrity check + 후속 verify_password 가 동시 진입해도 keyring
+/// 은 정확히 1회만 호출된다.
 #[cfg_attr(not(feature = "cipher"), allow(dead_code))]
 pub fn get_cached_or_load_key() -> Result<DerivedKey, AppError> {
-    let guard = cred_cache().lock().expect("cred_cache poisoned");
-    if let Some(c) = guard.as_ref() {
-        return Ok(DerivedKey(c.key.0));
-    }
-    drop(guard);
-    load_credentials_to_cache()?;
-    let guard = cred_cache().lock().expect("cred_cache poisoned");
+    ensure_cache_loaded()?;
+    let guard = cred_cache_lock();
     Ok(DerivedKey(guard.as_ref().expect("just loaded").key.0))
 }
 
@@ -301,9 +370,22 @@ pub fn delete_key_from_keyring() -> Result<(), AppError> {
 // 손상 복구: NTFS power-loss 패턴 (fs::write + rename 후 NULL 페이지 잔존) 방어 —
 // setup.rs `is_corrupted` 패턴을 답습하여 길이/NULL 검증.
 
-/// salt.bin 의 32바이트 외 입력은 손상으로 간주한다 (NULL-만 케이스 포함).
+/// salt.bin 의 32바이트 외 입력은 손상으로 간주한다.
+///
+/// 손상 판정 조건 (Sprint 8 T6 / I-S2-2 강화):
+/// 1. 길이 불일치 (`!= SALT_LEN`)
+/// 2. 전체 NULL (NTFS power-loss 시 페이지 전체가 0x00 잔존)
+/// 3. 첫 8바이트가 모두 동일한 단일 바이트 (NTFS partial-write 시 페이지가 0x00/0xFF/특정 패턴으로 잔존)
+///    — 정상 random salt 가 8연속 동일 바이트일 확률 = 256^-7 ≈ 1.4e-17, 무시 가능.
 fn is_salt_corrupted(bytes: &[u8]) -> bool {
-    bytes.len() != SALT_LEN || bytes.iter().all(|&b| b == 0)
+    if bytes.len() != SALT_LEN {
+        return true;
+    }
+    if bytes.iter().all(|&b| b == 0) {
+        return true;
+    }
+    let first = bytes[0];
+    bytes[..8].iter().all(|&b| b == first)
 }
 
 /// salt 를 cloud 폴더 파일에 atomic 쓰기 (tmp → rename).
@@ -431,6 +513,20 @@ fn migrate_keyring_salt_to(path: &Path) -> Result<[u8; SALT_LEN], AppError> {
             e
         );
     }
+
+    // Sprint 8 T8 (R47 / I-S2-9): salt 마이그레이션은 1회 이벤트이므로 audit 추적.
+    // 본 함수는 sync 이고 try_record 는 async — tokio runtime 이 활성일 때만 fire-and-forget.
+    // verify_password 경로에서 호출되므로 runtime 은 항상 있지만, 테스트/단위 호출 경로 보호.
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async {
+            audit::try_record(
+                AuditEventType::SecurityEvent,
+                Some("salt-migration"),
+                Some(r#"{"detail":"legacy keyring salt → cloud file"}"#),
+            )
+            .await;
+        });
+    }
     Ok(salt)
 }
 
@@ -507,6 +603,12 @@ pub async fn check_auth_status() -> Result<AuthStatus, String> {
 /// `store_key_in_keyring` → `store_salt` 순서 + salt 실패 시 keyring rollback.
 #[tauri::command]
 pub async fn set_password(password: String) -> Result<(), String> {
+    // Sprint 8 T6 (I-S2-3): 재진입 가드. `_guard` 는 함수 종료 시 Drop 으로 자동 해제.
+    let _guard = SetPasswordGuard::try_acquire().ok_or_else(|| {
+        String::from(AppError::Auth(
+            "비밀번호 설정이 이미 진행 중입니다. 잠시 후 다시 시도하세요.".to_string(),
+        ))
+    })?;
     let password = Zeroizing::new(password);
     if password.is_empty() {
         return Err(AppError::Auth("비밀번호가 비어있습니다.".to_string()).into());
@@ -556,12 +658,9 @@ pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), 
     );
 
     // 캐시 미스 시 한 번에 salt + key 로드 (keyring 2회 → 통합 호출).
-    if cred_cache().lock().expect("cred_cache poisoned").is_none() {
-        load_credentials_to_cache()?;
-        eprintln!("[auth] verify_password: 캐시 미스 → salt+key 통합 로드 완료");
-    } else {
-        eprintln!("[auth] verify_password: 캐시 hit — keyring 호출 0회");
-    }
+    // Sprint 8 T7 (R45): `ensure_cache_loaded` 가 LOAD_MUTEX 로 직렬화 — `tokio::join!` 안의
+    // integrity check 와 동시 진입해도 keyring 은 정확히 1회만 호출된다.
+    ensure_cache_loaded()?;
 
     let salt = cached_salt().expect("just loaded into cache");
     let candidate = derive_key_async(password.clone(), salt).await?;
@@ -569,7 +668,7 @@ pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), 
 
     // 캐시에서 stored key 비교 (Mutex guard 내에서 직접 비교 — 별도 복사 회피).
     let matches = {
-        let guard = cred_cache().lock().expect("cred_cache poisoned");
+        let guard = cred_cache_lock();
         let stored_key = &guard.as_ref().expect("just loaded into cache").key;
         candidate.matches(stored_key)
     };
@@ -765,7 +864,7 @@ mod tests {
     fn store_and_load_salt_round_trip() {
         let dir = unique_test_dir("roundtrip");
         let path = dir.join("salt.bin");
-        let salt = [33u8; SALT_LEN];
+        let salt = varied_salt(33);
         store_salt_to(&path, &salt).expect("store_salt_to must succeed");
         let loaded = load_salt_from(&path).expect("load_salt_from must succeed");
         assert_eq!(loaded, salt);
@@ -778,12 +877,23 @@ mod tests {
     fn store_salt_creates_parent_directory() {
         let dir = unique_test_dir("parent-create");
         let path = dir.join("nested").join("more").join("salt.bin");
-        let salt = [7u8; SALT_LEN];
+        let salt = varied_salt(7);
         store_salt_to(&path, &salt).expect("부모 디렉토리 자동 생성");
         assert!(path.exists());
         let loaded = load_salt_from(&path).expect("저장 후 로드");
         assert_eq!(loaded, salt);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 테스트용 다양성 salt — `seed ^ (i*7)` 로 첫 8바이트가 단일 값 도배되지 않도록 한다.
+    /// I-S2-2 강화 후 단일 바이트 도배 salt 는 손상으로 판정되므로, store/load 라운드트립
+    /// 테스트는 이 헬퍼로 정상 salt 를 생성한다.
+    fn varied_salt(seed: u8) -> [u8; SALT_LEN] {
+        let mut s = [0u8; SALT_LEN];
+        for (i, b) in s.iter_mut().enumerate() {
+            *b = seed ^ (i as u8).wrapping_mul(7);
+        }
+        s
     }
 
     #[test]
@@ -792,7 +902,46 @@ mod tests {
         assert!(is_salt_corrupted(&[0u8; 0]), "빈 파일은 손상");
         assert!(is_salt_corrupted(&[1u8; 31]), "31바이트는 손상 (길이 불일치)");
         assert!(is_salt_corrupted(&[1u8; 33]), "33바이트는 손상");
-        assert!(!is_salt_corrupted(&[1u8; SALT_LEN]), "32바이트 비-NULL 정상");
+        assert!(
+            !is_salt_corrupted(&varied_salt(42)),
+            "다양한 바이트 salt 는 정상"
+        );
+    }
+
+    /// I-S2-2 (R40): partial-NULL / 단일 바이트 도배 패턴 감지.
+    /// NTFS power-loss 시 페이지가 0x00 / 0xFF / 임의 단일 값으로 잔존하는 사례를 손상으로 판정.
+    #[test]
+    fn is_salt_corrupted_detects_partial_null_patterns() {
+        // 32바이트 모두 0xFF 도배 → 손상
+        assert!(
+            is_salt_corrupted(&[0xFFu8; SALT_LEN]),
+            "0xFF 32바이트 도배는 손상"
+        );
+        // 32바이트 모두 0x42 도배 → 손상 (단일 바이트 fill)
+        assert!(
+            is_salt_corrupted(&[0x42u8; SALT_LEN]),
+            "임의 단일 바이트 32 도배는 손상"
+        );
+        // 첫 8바이트만 동일 + 이후 다양 → 손상 (partial-write fill 시그니처)
+        let mut partial = [0u8; SALT_LEN];
+        partial[..8].fill(0x55);
+        for (i, b) in partial.iter_mut().enumerate().skip(8) {
+            *b = (i as u8).wrapping_mul(13);
+        }
+        assert!(
+            is_salt_corrupted(&partial),
+            "첫 8바이트 단일 바이트 도배는 손상"
+        );
+        // 첫 8바이트가 다양 + 이후 NULL → 본 휴리스틱은 감지 안 함 (한계 명시).
+        // 정상 random salt 의 첫 8바이트 동일 확률은 256^-7 ≈ 1.4e-17 이므로 false positive 무시 가능.
+        let mut head_diverse = [0u8; SALT_LEN];
+        for (i, b) in head_diverse.iter_mut().enumerate().take(8) {
+            *b = (i as u8).wrapping_mul(31).wrapping_add(7);
+        }
+        assert!(
+            !is_salt_corrupted(&head_diverse),
+            "첫 8바이트 다양하면 뒤가 NULL 이어도 본 휴리스틱은 정상 판정 (감지 한계)"
+        );
     }
 
     /// ⚠️ I-S2-6 (Sprint 7 hotfix): 본 테스트는 `load_salt_from` 호출 시 내부적으로
@@ -834,7 +983,7 @@ mod tests {
     fn salt_exists_at_returns_true_when_file_present() {
         let dir = unique_test_dir("exists-file");
         let path = dir.join("salt.bin");
-        std::fs::write(&path, [9u8; SALT_LEN]).unwrap();
+        std::fs::write(&path, varied_salt(9)).unwrap();
         assert!(salt_exists_at(&path).expect("파일 존재 확인"));
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -845,7 +994,7 @@ mod tests {
     fn load_salt_is_deterministic_for_two_machines() {
         let dir = unique_test_dir("two-pc");
         let path = dir.join("salt.bin");
-        let salt_a = [123u8; SALT_LEN];
+        let salt_a = varied_salt(123);
         store_salt_to(&path, &salt_a).unwrap();
         let pc_a = load_salt_from(&path).unwrap();
         let pc_b = load_salt_from(&path).unwrap();
@@ -862,7 +1011,7 @@ mod tests {
     fn store_salt_to_does_not_leak_tmp_on_success() {
         let dir = unique_test_dir("no-tmp-leak");
         let path = dir.join("salt.bin");
-        let salt = [55u8; SALT_LEN];
+        let salt = varied_salt(55);
         store_salt_to(&path, &salt).unwrap();
         assert!(path.exists(), "salt.bin 존재");
         assert!(
@@ -879,7 +1028,7 @@ mod tests {
         // 작업 디렉토리 격리 — 절대 경로로 변환해 PWD 변화 없이 검증.
         let dir = unique_test_dir("relative");
         let path = dir.join("salt.bin");
-        let salt = [77u8; SALT_LEN];
+        let salt = varied_salt(77);
         store_salt_to(&path, &salt).unwrap();
         assert_eq!(load_salt_from(&path).unwrap(), salt);
         std::fs::remove_dir_all(&dir).ok();
@@ -892,5 +1041,153 @@ mod tests {
         // 함수가 pub 로 노출 + 시그니처 변경 없이 호출 가능한지 확인.
         // 실제 keyring 효과 검증은 통합 테스트 영역.
         let _f: fn() -> Result<(), AppError> = delete_key_from_keyring;
+    }
+
+    // ─── Sprint 8 T6 (I-S2-3): set_password 재진입 가드 ───
+
+    /// 동일 process 내 다른 테스트가 가드를 잡고 있을 가능성 차단 — 명시적 reset.
+    /// 가드는 RAII 라 정상 시 자동 해제되지만, 직전 테스트가 panic 했을 가능성 방어.
+    fn reset_set_password_guard_for_test() {
+        SET_PASSWORD_IN_PROGRESS.store(false, Ordering::Release);
+    }
+
+    #[test]
+    fn set_password_guard_blocks_concurrent_entry() {
+        reset_set_password_guard_for_test();
+        let first = SetPasswordGuard::try_acquire().expect("첫 진입 성공");
+        // 두 번째 진입은 가드가 잡혀있어 실패
+        assert!(
+            SetPasswordGuard::try_acquire().is_none(),
+            "두 번째 진입은 즉시 차단"
+        );
+        // 첫 가드 drop 후 재진입 가능
+        drop(first);
+        let _second = SetPasswordGuard::try_acquire().expect("drop 후 재진입 성공");
+    }
+
+    #[test]
+    fn set_password_guard_releases_on_drop() {
+        reset_set_password_guard_for_test();
+        {
+            let _g = SetPasswordGuard::try_acquire().expect("진입");
+            assert!(SET_PASSWORD_IN_PROGRESS.load(Ordering::Acquire));
+        }
+        assert!(
+            !SET_PASSWORD_IN_PROGRESS.load(Ordering::Acquire),
+            "scope 종료 시 자동 해제"
+        );
+    }
+
+    #[test]
+    fn set_password_guard_releases_on_panic_unwind() {
+        reset_set_password_guard_for_test();
+        // catch_unwind: panic 이 발생해도 stack 의 Drop 은 호출되어 가드 해제 보장.
+        let result = std::panic::catch_unwind(|| {
+            let _g = SetPasswordGuard::try_acquire().expect("진입");
+            panic!("의도된 panic — 가드 RAII 검증");
+        });
+        assert!(result.is_err(), "panic 캐치");
+        assert!(
+            !SET_PASSWORD_IN_PROGRESS.load(Ordering::Acquire),
+            "panic unwind 후에도 가드 자동 해제"
+        );
+    }
+
+    // ─── Sprint 8 T6 (I-S2-5): salt_exists_at 정상/부재 경로 검증 ───
+
+    /// 파일도 부재하고 legacy keyring 도 부재한 환경에서 false 반환 확인 (NotInitialized 분기).
+    /// 실제 keyring 부재를 가정하려면 OS Keychain 에 `db_password_salt` 항목이 없어야 한다.
+    /// dev 머신에 SmartHB 가 설정되어 있으면 legacy 항목이 남아있을 가능성 → `#[ignore]` 처리.
+    #[test]
+    #[ignore = "I-S2-5: dev keychain 잔존 salt 부수효과 방지 — 명시적 --ignored 시에만 실행"]
+    fn salt_exists_at_returns_false_when_neither_file_nor_keyring() {
+        let dir = unique_test_dir("absent-both");
+        let path = dir.join("salt.bin");
+        assert!(!path.exists(), "파일 부재 전제 확인");
+        // keyring 잔존 항목이 없어야 false. 잔존 시 본 테스트는 의미 없음 (그래서 #[ignore]).
+        let result = salt_exists_at(&path).expect("keyring 조회 성공");
+        // 결과는 keyring 상태에 의존 — 본 테스트는 "예외 없이 bool 반환" 만 단언.
+        let _ = result;
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `check_auth_status` 가 `Unlocked` 캐시 적중 시 즉시 Locked 반환 — keyring 조회 0회 보장.
+    /// 이는 AC-T6-5 의 핵심 — 캐시 적중 경로에서 salt_exists 호출이 발생하지 않아야 함.
+    #[tokio::test]
+    async fn check_auth_status_returns_locked_on_cache_hit() {
+        reset_credential_cache_for_tests();
+        let salt = varied_salt(33);
+        let key = derive_key("p", &salt);
+        cache_credentials(salt, key);
+        let status = check_auth_status().await.expect("성공");
+        assert_eq!(status, AuthStatus::Locked, "캐시 적중 시 Locked");
+        reset_credential_cache_for_tests();
+    }
+
+    // ─── Sprint 8 T7 (R45): ensure_cache_loaded 직렬화 ───
+
+    /// 캐시 hit 상태에서 N 스레드가 동시 진입해도 모두 fast path 로 같은 결과 반환.
+    /// keyring/salt 파일 호출 없음 — `get_cached_or_load_key` 가 즉시 캐시 값 반환.
+    #[test]
+    fn ensure_cache_loaded_fast_path_is_concurrent_safe() {
+        reset_credential_cache_for_tests();
+        let salt = varied_salt(101);
+        let key = derive_key("concurrent", &salt);
+        let expected_bytes = *key.as_bytes();
+        cache_credentials(salt, key);
+
+        const THREADS: usize = 16;
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    get_cached_or_load_key().expect("fast path 캐시 hit 성공")
+                })
+            })
+            .collect();
+
+        for h in handles {
+            let k = h.join().expect("thread panic 없음");
+            assert_eq!(
+                k.as_bytes(),
+                &expected_bytes,
+                "모든 스레드가 동일 캐시 값 반환"
+            );
+        }
+        reset_credential_cache_for_tests();
+    }
+
+    /// 캐시 미스 상태에서 `ensure_cache_loaded` 다중 스레드 진입 시 LOAD_MUTEX 가 직렬화하는지
+    /// 검증한다. 실제 keyring/salt 호출은 OS 의존이므로 본 테스트는 다음만 단언:
+    /// (1) deadlock 발생 안 함 (모든 스레드가 정해진 시간 내 종료),
+    /// (2) 결과는 일관 — 모두 Err 또는 모두 Ok (race 로 일부 Ok, 일부 Err 가 섞이지 않음).
+    /// load_credentials_to_cache 가 dev 환경 keyring/salt 부재로 Err 반환할 가능성이 높으므로
+    /// 결과 자체보다 race 없음에 집중. macOS dev 환경 keychain 부수효과 방지를 위해 #[ignore].
+    #[test]
+    #[ignore = "T7: dev keychain 부수효과 방지 — 명시적 --ignored 시에만 실행"]
+    fn ensure_cache_loaded_serializes_slow_path() {
+        reset_credential_cache_for_tests();
+
+        const THREADS: usize = 8;
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| std::thread::spawn(ensure_cache_loaded))
+            .collect();
+
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|h| h.join().expect("thread panic 없음"))
+            .collect();
+
+        // race 없음: 모든 결과가 같은 variant. Ok 면 모두 Ok, Err 면 모두 Err.
+        let all_ok = results.iter().all(|r| r.is_ok());
+        let all_err = results.iter().all(|r| r.is_err());
+        assert!(
+            all_ok || all_err,
+            "race 발생 — 일부 Ok 일부 Err 섞임: {:?}",
+            results
+                .iter()
+                .map(|r| r.is_ok())
+                .collect::<Vec<_>>()
+        );
+        reset_credential_cache_for_tests();
     }
 }
