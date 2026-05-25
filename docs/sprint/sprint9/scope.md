@@ -222,7 +222,7 @@ if !(1..=12).contains(&m) {
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src-tauri/src/commands/makeup.rs | [신규] | IPC 2종 + `_impl` 분리 + 응답 구조체 2종 + 단위 테스트 8건 |
-| src-tauri/src/commands/attendance.rs | [4회 ⚠️] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
+| src-tauri/src/commands/attendance.rs | [6회 ⚠️] | `validate_year_month` 강화 + `pub(crate)` 노출 + 신규 단위 테스트 1건 |
 | src-tauri/src/commands/mod.rs | [1회] | `pub mod makeup;` 추가 |
 | src-tauri/src/lib.rs | [4회 ⚠️] | invoke_handler 에 IPC 2개 등록 |
 | docs/sprint/sprint9/scope.md | [2회] | Session #2 추가 |
@@ -421,7 +421,7 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src/types/makeup.ts | [신규] | 8 interface 1:1 매핑 |
-| src/lib/tauri/index.ts | [4회 ⚠️] | makeup 타입 import + 래퍼 6종 추가 |
+| src/lib/tauri/index.ts | [6회 ⚠️] | makeup 타입 import + 래퍼 6종 추가 |
 | docs/sprint/sprint9/scope.md | [5회 ⚠️] | Session #5 추가 |
 
 ### 세션 종료 조건
@@ -483,8 +483,8 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 | 파일 | 횟수 | 비고 |
 |------|------|------|
 | src/components/attendance/MakeupRegisterDialog.tsx | [신규] | 다이얼로그 + AbsenceRow 하위 컴포넌트 + eligibility/pending 두 query + mutation |
-| src/components/attendance/AttendanceGrid.tsx | [22회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
-| src/app/attendance/page.tsx | [15회 ⚠️] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
+| src/components/attendance/AttendanceGrid.tsx | [49회 ⚠️] | Props onNonClassDayClick 추가 / StudentRow yearMonth+onNonClassDayClick 전파 / CellView onEmptyCellClick 추가 / 비수업일 클릭 가능 분기 |
+| src/app/attendance/page.tsx | [24회 ⚠️] | MakeupDialogTarget state + 다이얼로그 렌더링 + 학생 lookup + invalidate |
 | docs/sprint/sprint9/scope.md | [6회 ⚠️] | Session #6 추가 |
 
 ### UX 가드
@@ -603,7 +603,7 @@ T3 에서 추가한 `MakeupCancelled` / `MakeupAbsent` variant 사용. batch 내
 |------|------|------|
 | src-tauri/src/commands/makeup.rs | [4회 ⚠️] | AbsenceHistoryItem struct + IPC + 테스트 3건 |
 | src-tauri/src/lib.rs | [5회 ⚠️] | invoke_handler 등록 |
-| src/types/makeup.ts | [1회] | AbsenceHistoryItem |
+| src/types/makeup.ts | [2회] | AbsenceHistoryItem |
 | src/lib/tauri/index.ts | [1회] | getAbsenceHistory 래퍼 |
 | src/components/attendance/AbsenceHistoryDialog.tsx | [신규] | 다이얼로그 + HistoryRow + statusRowClass |
 | src/components/attendance/AttendanceGrid.tsx | [6회 ⚠️] | `onStudentNameClick` Props + 학생명 button 분기 |
@@ -688,7 +688,7 @@ T1~T8 각 작업 항목 + Definition of Done 의 자동 검증/단위 테스트/
 
 | 파일 | 횟수 | 비고 |
 |------|------|------|
-| docs/sprint/sprint9.md | [13회 ⚠️] | T1~T8 AC + DoD 일괄 마킹 (시각 검증 제외) |
+| docs/sprint/sprint9.md | [14회 ⚠️] | T1~T8 AC + DoD 일괄 마킹 (시각 검증 제외) |
 | docs/sprint/sprint9/scope.md | [9회 ⚠️] | Session #9 추가 |
 | src-tauri/Cargo.lock | [—] | 버전 0.3.2 → 0.4.0 (Cargo.toml 기준 정상 동기화) |
 
@@ -852,3 +852,76 @@ WHERE candidates.date BETWEEN ? AND ?  -- 학생 입퇴교 범위
 ### carry-over (Sprint 10 으로 명시 이연)
 
 (없음 — 사용자 결정으로 8건 전부 흡수)
+
+---
+
+## Session #11 (T12 — 2/3차 시각 검증 J1~J10 흡수, 2026-05-25~26)
+
+> T10/T11 완료 후 사용자 시각 검증 추가 라운드 — 작은 UX 보완 + 도메인 모델 정제(미등원 폐기, 진입점 이동, 일괄 기능 제거).
+
+### J 시리즈 변경 8건 (2/3차 시각 검증)
+
+| # | 발견 | 해결 |
+|---|------|------|
+| J1 | "보강데이 일괄" 버튼 비활성 | 일괄 기능 자체 폐기 (J7) — 헤더 버튼/Dialog/래퍼 모두 삭제 |
+| J2 | 보강데이 헤더 강조 색상 약함 | sky-100 원복 (사용자 결정 — amber 강조 시도 후 되돌림) |
+| J3-1 | 시간 입력 step 0.5 → **1** |
+| J3-2 | 1시간 결석 체크 시 3시간 표시 | React Strict Mode 더블 실행 — `setSelected` 콜백 내부 `setClassHours` 호출 → 외부 분리. 초기값 0 |
+| J4 | 보강일 셀에 보강 표기 누락 | `AttendanceGridStudent.makeups` 백엔드 응답 추가 + emerald 라벨 표시 |
+| J5 | 보강 미등원 개념 폐기 | `MakeupManageDialog` "미등원" 옵션 + `markMakeupAbsent` 호출 제거. status='makeup_absent' 사실상 미사용 (백엔드 IPC 유지 — 마이그레이션 회피) |
+| J6 | 보강 삭제 진입점 결석 셀 → **보강 셀**로 이동 | `onMakeupCellClick`(결석셀) → `onMakeupDayCellClick`(보강셀). MakeupManageDialog props (cell → makeupId/eventDate/classMinutes) |
+| J7 | 결석 셀 라벨 통일 + 보강매칭 배경 emerald | `statusCellClass`: absent '×' → '결석', makeup_done bg-red-50 → bg-emerald-100 (보강 셀과 동일) |
+| J8 | 셀 hover 시 매칭 정보 노출 | 결석 셀 → 매칭 보강일자 / 보강 셀 → 충당 결석일자(들). StudentRow 양방향 매핑 (`absenceDatesByMakeupId` + `makeupEventDateById`) |
+| J9 | tooltip 줄바꿈 | `parts.join(' · ')` → `\n` (HTML title 줄바꿈 native 지원) |
+| J10 | 충당 결석 다건 줄바꿈 | 다건 시 라인 분리 (`길이 === 1` 분기) |
+
+### 보강데이 일괄 기능 폐기 영향
+
+- 삭제: `BatchMakeupDialog.tsx` (283줄), `batchCreateMakeups` 래퍼, `BatchMakeupEntry/BatchCreateMakeupsPayload/BatchFailure/BatchResult` 타입
+- 헤더 "보강데이 일괄" 버튼 + `batchOpen` state + `pendingStudentsCount` 제거
+- 백엔드 `batch_create_makeups` IPC 는 유지 (마이그레이션 회피, dead code) — Sprint 10 이후 정리
+
+### 도메인 모델 정제
+
+| 개념 | 변경 |
+|------|------|
+| 보강 미등원 (`mark_makeup_absent`) | UI 폐기 — 보강 등록은 "결과 기록" 의미 (사용자 결정 2026-05-25) |
+| 결석 표기 | makeup_done 셀이 보강 후에도 "결석" 표기 유지 — 결석은 불변 사실 |
+| 보강 셀 의미 | 결석일과 다른 일자에 표시 (J4) — 보강 진행 사실의 별도 기록 |
+
+### 자동 검증
+- ✅ cargo test cipher off **254** / cipher on **133** (T10/T11 동일 — J 시리즈는 UI 위주)
+- ✅ cargo clippy cipher off/on clean
+- ✅ pnpm lint/tsc clean
+
+### 시각 검증 (사용자, 2026-05-26)
+- ✅ 7차 라운드까지 누적 검증 — J10 까지 모든 흡수 완료 후 "검증완료" 보고
+
+### 수정 파일 누적 (Session #11)
+
+| 파일 | 변동 |
+|------|------|
+| src-tauri/src/commands/attendance.rs | +42 — `GridMakeupCell` struct + `makeups` 응답 + `build_day_schedules` (Session #10 잔여) |
+| src/app/attendance/page.tsx | -55+0 — 일괄 버튼/state/Dialog 렌더링 제거, manageTarget 시그니처 변경 |
+| src/components/attendance/AttendanceGrid.tsx | +168 — J4/J6/J7/J8/J9/J10 |
+| src/components/attendance/BatchMakeupDialog.tsx | **DELETE** -283 |
+| src/components/attendance/MakeupManageDialog.tsx | -113 (재작성) — props 변경 + 미등원 제거 |
+| src/components/attendance/MakeupRegisterDialog.tsx | +26 — J3 strict mode + step 1 + 초기값 0 |
+| src/lib/tauri/index.ts | -20 — `batchCreateMakeups`/`markMakeupAbsent` 래퍼 제거 |
+| src/types/attendance.ts | +9 — `GridMakeupCell` interface |
+| src/types/makeup.ts | -26 — Batch 4종 타입 제거 |
+| docs/sprint/sprint9/scope.md | Session #11 추가 |
+
+### DB 클린업 (2026-05-26)
+- 사용자 시각 검증을 위해 prod DB (`~/Documents/smarthb/app.db`) 의 보강 3건 삭제 + 매칭 결석 1건 환원 (총 결석 2건 미처리)
+
+### Session 종료 조건
+- ✅ 사용자 시각 검증 "검증완료" (2026-05-26)
+- ✅ 자동 검증 7항목 통과
+- ⬜ 단일 커밋 (Session #11)
+- ⬜ sprint9.md DoD 시각 검증 마킹 + sprint-close 진입
+
+### Sprint 10 carry-over (정리용)
+- `mark_makeup_absent` 백엔드 IPC + `markMakeupAbsent` audit variant 정리 (dead code)
+- `batch_create_makeups` 백엔드 IPC + 관련 audit/payload 정리 (dead code)
+- `makeup_attendances.status='makeup_absent'` CHECK 제약 마이그레이션 정리 (선택적)

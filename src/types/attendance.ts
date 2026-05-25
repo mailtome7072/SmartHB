@@ -36,6 +36,14 @@ export interface AttendanceSummary {
   makeupCompletedMinutes: number
 }
 
+/** 보강 출결 1건 — 그리드 비수업일 셀에 표시 (Sprint 9 Session #10 J4). */
+export interface GridMakeupCell {
+  id: number
+  eventDate: string // YYYY-MM-DD
+  status: MakeupStatus
+  classMinutes: number
+}
+
 /** 그리드 한 원생 행. */
 export interface AttendanceGridStudent {
   studentId: number
@@ -45,6 +53,7 @@ export interface AttendanceGridStudent {
   enrollDate: string // YYYY-MM-DD — Sprint 9 Session #10 I8
   withdrawDate: string | null // Sprint 9 Session #10 I8
   attendances: AttendanceCell[]
+  makeups: GridMakeupCell[] // Sprint 9 Session #10 J4 — 보강일 셀 표기
   summary: AttendanceSummary
 }
 

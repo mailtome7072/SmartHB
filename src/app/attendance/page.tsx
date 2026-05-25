@@ -25,10 +25,8 @@ import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { AbsenceHistoryDialog } from '@/components/attendance/AbsenceHistoryDialog'
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
-import { BatchMakeupDialog } from '@/components/attendance/BatchMakeupDialog'
 import { MakeupManageDialog } from '@/components/attendance/MakeupManageDialog'
 import { MakeupRegisterDialog } from '@/components/attendance/MakeupRegisterDialog'
-import type { AttendanceCell } from '@/types/attendance'
 
 function currentYearMonth(): string {
   const now = new Date()
@@ -58,7 +56,9 @@ interface MakeupManageTarget {
   studentId: number
   studentName: string
   studentSerialNo: string
-  cell: AttendanceCell
+  makeupId: number
+  eventDate: string
+  classMinutes: number
 }
 
 export default function AttendancePage() {
@@ -71,10 +71,8 @@ export default function AttendancePage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   // Sprint 9 T6: 비수업일 셀 클릭 → 보강 등록 다이얼로그.
   const [makeupTarget, setMakeupTarget] = useState<MakeupDialogTarget | null>(null)
-  // Sprint 9 T7: makeup_done 셀 클릭 → 보강 관리 다이얼로그 (취소/미등원).
+  // Sprint 9 Session #10 J6: 보강일 셀 클릭 → 보강 관리(삭제) 다이얼로그.
   const [manageTarget, setManageTarget] = useState<MakeupManageTarget | null>(null)
-  // Sprint 9 T7: 헤더 "보강데이 일괄" 버튼 → 일괄 등록 다이얼로그.
-  const [batchOpen, setBatchOpen] = useState(false)
   // Sprint 9 T8: 학생명 클릭 → 결석 이력 다이얼로그. 학생 ID + 표시용 이름/일련번호.
   const [historyTarget, setHistoryTarget] = useState<{
     studentId: number
@@ -137,16 +135,6 @@ export default function AttendancePage() {
   const matchedCount = filteredGrid?.students.length ?? 0
   const totalCount = gridQuery.data?.students.length ?? 0
 
-  // 미처리 결석이 있는 학생 수 — "보강데이 일괄" 버튼 활성화 조건 + 카운트 표시 (Session #10 I2).
-  const pendingStudentsCount = useMemo(() => {
-    if (gridQuery.data === undefined) return 0
-    return gridQuery.data.students.filter((s) =>
-      s.attendances.some(
-        (a) => a.status === 'absent' && a.makeupAttendanceId === null,
-      ),
-    ).length
-  }, [gridQuery.data])
-
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <main className="flex h-full flex-col">
@@ -191,22 +179,6 @@ export default function AttendancePage() {
               </span>
             )}
           </div>
-        )}
-
-        {showGrid && (
-          <button
-            type="button"
-            onClick={() => setBatchOpen(true)}
-            disabled={pendingStudentsCount === 0}
-            title={
-              pendingStudentsCount === 0
-                ? '미처리 결석이 있는 원생이 없습니다.'
-                : `미처리 결석 ${pendingStudentsCount}명 일괄 보강`
-            }
-            className="ml-auto min-h-[44px] rounded-lg border-2 border-[var(--accent)] bg-white px-4 text-base font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-white"
-          >
-            보강데이 일괄 ({pendingStudentsCount}명)
-          </button>
         )}
 
         {showGenerateButton && (
@@ -265,7 +237,7 @@ export default function AttendancePage() {
                   eventDate,
                 })
               }}
-              onMakeupCellClick={(studentId, cell) => {
+              onMakeupDayCellClick={(studentId, makeup) => {
                 const student = filteredGrid.students.find(
                   (s) => s.studentId === studentId,
                 )
@@ -274,7 +246,9 @@ export default function AttendancePage() {
                   studentId,
                   studentName: student.name,
                   studentSerialNo: student.serialNo,
-                  cell,
+                  makeupId: makeup.id,
+                  eventDate: makeup.eventDate,
+                  classMinutes: makeup.classMinutes,
                 })
               }}
               onStudentNameClick={(studentId) => {
@@ -322,9 +296,11 @@ export default function AttendancePage() {
 
       {manageTarget !== null && (
         <MakeupManageDialog
-          cell={manageTarget.cell}
+          makeupId={manageTarget.makeupId}
           studentName={manageTarget.studentName}
           studentSerialNo={manageTarget.studentSerialNo}
+          eventDate={manageTarget.eventDate}
+          classMinutes={manageTarget.classMinutes}
           onClose={() => setManageTarget(null)}
           onSuccess={() => {
             setManageTarget(null)
@@ -336,15 +312,6 @@ export default function AttendancePage() {
         />
       )}
 
-      {batchOpen && gridQuery.data !== undefined && (
-        <BatchMakeupDialog
-          grid={gridQuery.data}
-          onClose={() => setBatchOpen(false)}
-          onSuccess={() => {
-            void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
-          }}
-        />
-      )}
 
       {historyTarget !== null && (
         <AbsenceHistoryDialog

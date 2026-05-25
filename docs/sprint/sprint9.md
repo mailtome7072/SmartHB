@@ -236,13 +236,15 @@
   - `docs/risk-register/2026-05-24.md`
   - `docs/sprint-retrospectives/sprint9-retrospective.md`
   - `docs/code-reviews/sprint9.md`
-- ⬜ 사용자 시각 검증 세션 (1h) — Sprint 8 A38 패턴 — **사용자 응답 대기 중**
+- ✅ 사용자 시각 검증 (7라운드 누적, 2026-05-24~26) — Sprint 8 A38 패턴
+  - 1차 발견 I1~I8 (8건) → Sprint 9 확장 → T10/T11 흡수
+  - 2/3차 발견 J1~J10 (10건) → Session #11 (T12) 흡수
   - 보강 등록(개별): 비수업일 셀 → 결석 선택 → 확정 → 그리드 반영
-  - 보강데이 일괄: 헤더 "보강데이 일괄" → 원생 선택 → 확정 → 결과 표시
-  - 보강 취소: `makeup_done` 셀 → 취소 → 결석 환원 확인
-  - 보강결석: `makeup_done` 셀 → 미등원 → 결석 상태 유지 확인
+  - 보강 삭제: **보강일(emerald) 셀 클릭** → 보강 관리 → 삭제 → 결석 환원
   - 결석 이력: 출결표 학생명 클릭 → `AbsenceHistoryDialog` 3종 상태 시각 구분
   - 출결표 라벨: "미처리\n결석" 변경 확인
+  - 보강 미등원 / 보강데이 일괄 — Session #11 폐기 (사용자 결정)
+  - 사용자 "검증완료" 보고 (2026-05-26)
 
 **예상 소요**: 3h (자동 1h + 시각 검증 1h + self-check/AC 마킹 1h)
 **AC**: 자동 7항목 전수 통과 + 시각 검증 "이상없음" + self-check 통과

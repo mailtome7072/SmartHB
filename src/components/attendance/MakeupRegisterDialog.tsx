@@ -50,7 +50,8 @@ export function MakeupRegisterDialog({
 }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   // 보강 수업 시간 (시간 단위, decimal). 백엔드 전송 시 hoursToMinutes 변환.
-  const [classHours, setClassHours] = useState(1)
+  // 초기 0 — 결석 체크 시 자동 합산 (사용자 시각 검증 J3 정책: 선택만으로 시간 결정).
+  const [classHours, setClassHours] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   // ESC 키 닫기
@@ -97,20 +98,25 @@ export function MakeupRegisterDialog({
   }, [pendingQuery.data, eventDate])
 
   // I5+I6: 결석 체크 토글 + 시간 자동 합산/차감
+  // React Strict Mode 에서 setState 콜백 안의 또 다른 setState 호출은 중복 실행됨
+  // (J3-2 시각 검증 발견 — 1시간 결석 체크 시 3시간 표시 버그). 두 setState 를 분리.
   function toggleAbsence(absence: PendingAbsence) {
     const absenceHours = minutesToHours(absence.classMinutes)
+    const isCurrentlySelected = selected.has(absence.id)
+
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(absence.id)) {
-        next.delete(absence.id)
-        // 해제: min(absenceHours, currentHours) 만큼 차감 — 음수 방지
-        setClassHours((h) => Math.max(0, h - Math.min(absenceHours, h)))
-      } else {
-        next.add(absence.id)
-        setClassHours((h) => h + absenceHours)
-      }
+      if (isCurrentlySelected) next.delete(absence.id)
+      else next.add(absence.id)
       return next
     })
+
+    if (isCurrentlySelected) {
+      // 해제: min(absenceHours, currentHours) 만큼 차감 — 음수 방지
+      setClassHours((h) => Math.max(0, h - Math.min(absenceHours, h)))
+    } else {
+      setClassHours((h) => h + absenceHours)
+    }
   }
 
   // 3. 등록 mutation
@@ -219,7 +225,7 @@ export function MakeupRegisterDialog({
                 id="makeup-class-hours"
                 type="number"
                 min={0}
-                step={0.5}
+                step={1}
                 max={10}
                 value={classHours}
                 onChange={(e) => setClassHours(Number(e.target.value) || 0)}

@@ -334,6 +334,17 @@ pub struct AttendanceSummary {
     pub makeup_completed_minutes: i64,
 }
 
+/// 보강 출결 1건 — 그리드에서 비수업일 셀에 표시.
+/// Sprint 9 Session #10 J4 — "결석일과 보강일이 다른 경우 보강일 셀에 표기".
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GridMakeupCell {
+    pub id: i64,
+    pub event_date: String,
+    pub status: String, // makeup_attended | makeup_absent
+    pub class_minutes: i64,
+}
+
 /// 그리드 한 원생 행.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -347,6 +358,8 @@ pub struct AttendanceGridStudent {
     /// Sprint 9 Session #10 I8 — 퇴교일 없으면 null.
     pub withdraw_date: Option<String>,
     pub attendances: Vec<AttendanceCell>,
+    /// Sprint 9 Session #10 J4 — month 내 보강 출결 (비수업일 셀에 표기).
+    pub makeups: Vec<GridMakeupCell>,
     pub summary: AttendanceSummary,
 }
 
@@ -495,6 +508,34 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
 
         let summary = compute_summary(pool, student_id, year_month).await?;
 
+        // J4: 학생별 보강 출결 조회 — 비수업일 셀에 "보강" 표기.
+        let makeup_rows = sqlx::query(
+            "SELECT id, event_date, status, class_minutes \
+             FROM makeup_attendances \
+             WHERE student_id = ? AND year_month = ? \
+             ORDER BY event_date",
+        )
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("보강 출결 조회 실패: {}", e))?;
+        let makeups: Vec<GridMakeupCell> = makeup_rows
+            .into_iter()
+            .map(|r| {
+                Ok(GridMakeupCell {
+                    id: r.try_get("id").map_err(|e: sqlx::Error| e.to_string())?,
+                    event_date: r
+                        .try_get("event_date")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                    status: r.try_get("status").map_err(|e: sqlx::Error| e.to_string())?,
+                    class_minutes: r
+                        .try_get("class_minutes")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
         students.push(AttendanceGridStudent {
             student_id,
             name,
@@ -503,6 +544,7 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
             enroll_date,
             withdraw_date,
             attendances,
+            makeups,
             summary,
         });
     }

@@ -26,7 +26,9 @@ import type {
   AttendanceGridStudent,
   AttendanceStatus,
   DaySchedule,
+  GridMakeupCell,
 } from '@/types/attendance'
+import { minutesToHoursText } from '@/lib/time'
 import { AbsenceMemoDialog } from './AbsenceMemoDialog'
 
 /**
@@ -63,8 +65,9 @@ interface Props {
   grid: AttendanceGridType
   /** Sprint 9 T6 — 비수업일(보강 가능 후보) 셀 클릭 시 호출. */
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
-  /** Sprint 9 T7 — makeup_done 셀 클릭 시 호출 (보강 관리 다이얼로그 진입). */
-  onMakeupCellClick?: (studentId: number, cell: AttendanceCell) => void
+  /** Sprint 9 Session #10 J6 — 보강일 셀 클릭 시 호출 (보강 관리 다이얼로그 진입).
+   *  기존 onMakeupCellClick (결석 셀 진입) 은 J6 정책으로 폐기 — 보강일 셀에서만 진입. */
+  onMakeupDayCellClick?: (studentId: number, makeup: GridMakeupCell) => void
   /** Sprint 9 T8 — 학생명 클릭 시 호출 (결석 이력 다이얼로그 진입). */
   onStudentNameClick?: (studentId: number) => void
 }
@@ -90,13 +93,6 @@ function weekdayLabel(yearMonth: string, day: number): string {
   return WEEKDAY_LABEL[new Date(year, month - 1, day).getDay()]
 }
 
-/** 분 → 시간 (소수점 1자리, 정수면 정수로). 0 → '0'. */
-function minutesToHours(minutes: number): string {
-  if (minutes === 0) return '0'
-  const hours = minutes / 60
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
-}
-
 /** 일자에 해당하는 출결 셀 검색 (Map). */
 function buildAttendanceByDay(
   attendances: AttendanceCell[],
@@ -113,7 +109,7 @@ function buildAttendanceByDay(
 export function AttendanceGrid({
   grid,
   onNonClassDayClick,
-  onMakeupCellClick,
+  onMakeupDayCellClick,
   onStudentNameClick,
 }: Props) {
   const queryClient = useQueryClient()
@@ -303,7 +299,7 @@ export function AttendanceGrid({
                   }
                 }}
                 onNonClassDayClick={onNonClassDayClick}
-                onMakeupCellClick={onMakeupCellClick}
+                onMakeupDayCellClick={onMakeupDayCellClick}
                 onStudentNameClick={onStudentNameClick}
               />
             ))}
@@ -345,8 +341,8 @@ interface StudentRowProps {
   onCellClick: (cell: AttendanceCell) => void
   onCellContextMenu: (cell: AttendanceCell) => void
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
-  /** Sprint 9 T7 — makeup_done 셀 클릭 시 보강 관리 다이얼로그 호출. */
-  onMakeupCellClick?: (studentId: number, cell: AttendanceCell) => void
+  /** Sprint 9 Session #10 J6 — 보강일 셀 클릭 시 보강 관리 다이얼로그 호출. */
+  onMakeupDayCellClick?: (studentId: number, makeup: GridMakeupCell) => void
   /** Sprint 9 T8 — 학생명 클릭 시 결석 이력 다이얼로그 호출. */
   onStudentNameClick?: (studentId: number) => void
 }
@@ -359,21 +355,43 @@ const StudentRow = memo(function StudentRow({
   onCellClick,
   onCellContextMenu,
   onNonClassDayClick,
-  onMakeupCellClick,
+  onMakeupDayCellClick,
   onStudentNameClick,
 }: StudentRowProps) {
-  // makeup_done 셀 클릭 시 보강 관리 다이얼로그로 분기, 그 외엔 일반 토글.
+  // Session #10 J6: 결석 셀(makeup_done 포함) 은 일반 토글 / 보강일 셀 클릭은 별도.
+  // handleCellClick 은 makeup_done 분기 없음 — 백엔드가 차단 메시지 반환.
   function handleCellClick(cell: AttendanceCell) {
-    if (cell.status === 'makeup_done' && onMakeupCellClick !== undefined) {
-      onMakeupCellClick(student.studentId, cell)
-      return
-    }
     onCellClick(cell)
   }
   const byDay = useMemo(
     () => buildAttendanceByDay(student.attendances),
     [student.attendances],
   )
+  // J4: 학생별 보강 출결 매핑 (event_date → GridMakeupCell). 비수업일 셀에 표시.
+  const makeupsByDay = useMemo(() => {
+    const map = new Map<string, GridMakeupCell>()
+    for (const m of student.makeups) {
+      map.set(m.eventDate.slice(8, 10), m)
+    }
+    return map
+  }, [student.makeups])
+  // J8: 보강 ID → 매칭된 결석 일자 목록 (보강 셀 hover 시 결석일자 표시용).
+  const absenceDatesByMakeupId = useMemo(() => {
+    const map = new Map<number, string[]>()
+    for (const a of student.attendances) {
+      if (a.makeupAttendanceId === null) continue
+      const list = map.get(a.makeupAttendanceId) ?? []
+      list.push(a.eventDate)
+      map.set(a.makeupAttendanceId, list)
+    }
+    return map
+  }, [student.attendances])
+  // J8: 결석 셀(makeup_done) → 보강 일자 lookup (id → eventDate).
+  const makeupEventDateById = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const m of student.makeups) map.set(m.id, m.eventDate)
+    return map
+  }, [student.makeups])
 
   return (
     <tr className="hover:bg-gray-50">
@@ -407,34 +425,55 @@ const StudentRow = memo(function StudentRow({
         {student.summary.absentCount}
       </td>
       <td className="sticky left-[264px] z-10 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
-        {minutesToHours(student.summary.makeupNeededMinutes)}
+        {minutesToHoursText(student.summary.makeupNeededMinutes)}
       </td>
       <td className="sticky left-[348px] z-10 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
-        {minutesToHours(student.summary.makeupCompletedMinutes)}
+        {minutesToHoursText(student.summary.makeupCompletedMinutes)}
       </td>
       {days.map((day) => {
         const dayKey = String(day).padStart(2, '0')
         const cell = byDay.get(dayKey)
         const eventDate = `${yearMonth}-${dayKey}`
+        // J4: 비수업일 셀에 보강 진행 정보 (해당 일자 makeup 등록 시).
+        const makeupOnThisDay = cell === undefined ? makeupsByDay.get(dayKey) : undefined
         // I8: 비수업일 셀 사전 판단 — 보강 불가 일자는 "+" 자체 비표시.
+        // J4 보강이 있는 비수업일에는 "+" 대신 보강 표기.
         const isEligible =
           onNonClassDayClick !== undefined &&
           cell === undefined &&
+          makeupOnThisDay === undefined &&
           isMakeupEligibleForCell(
             student,
             eventDate,
             yearMonth,
             dayScheduleMap.get(eventDate),
           )
+        // J8: hint — 결석 셀에는 매칭된 보강일, 보강 셀에는 충당 결석일자 목록.
+        const cellMakeupHintDate =
+          cell?.status === 'makeup_done' && cell.makeupAttendanceId !== null
+            ? makeupEventDateById.get(cell.makeupAttendanceId)
+            : undefined
+        const makeupAbsenceHintDates =
+          makeupOnThisDay !== undefined
+            ? absenceDatesByMakeupId.get(makeupOnThisDay.id)
+            : undefined
         return (
           <CellView
             key={day}
             cell={cell ?? null}
+            makeup={makeupOnThisDay}
+            cellMakeupHintDate={cellMakeupHintDate}
+            makeupAbsenceHintDates={makeupAbsenceHintDates}
             onClick={handleCellClick}
             onContextMenu={onCellContextMenu}
             onEmptyCellClick={
               isEligible
                 ? () => onNonClassDayClick!(student.studentId, eventDate)
+                : undefined
+            }
+            onMakeupClick={
+              makeupOnThisDay !== undefined && onMakeupDayCellClick !== undefined
+                ? () => onMakeupDayCellClick(student.studentId, makeupOnThisDay)
                 : undefined
             }
           />
@@ -446,16 +485,71 @@ const StudentRow = memo(function StudentRow({
 
 interface CellViewProps {
   cell: AttendanceCell | null
+  /** Sprint 9 Session #10 J4 — 비수업일에 보강이 등록된 경우 표시할 보강 정보. */
+  makeup?: GridMakeupCell
+  /** Sprint 9 Session #10 J8 — 결석(makeup_done) 셀 hover 시 매칭된 보강일자. */
+  cellMakeupHintDate?: string
+  /** Sprint 9 Session #10 J8 — 보강 셀 hover 시 충당 결석 일자 목록. */
+  makeupAbsenceHintDates?: string[]
   onClick: (cell: AttendanceCell) => void
   onContextMenu: (cell: AttendanceCell) => void
   /** Sprint 9 T6 — 비수업일(=cell null) 클릭 시 호출 (보강 등록 진입). */
   onEmptyCellClick?: () => void
+  /** Sprint 9 Session #10 J6 — 보강 셀 클릭 시 보강 관리 다이얼로그 진입. */
+  onMakeupClick?: () => void
 }
 
 /** 출결 셀 — 클릭 토글 + 우클릭 메모. 비수업일은 회색 placeholder.
- *  Sprint 9 T6: 비수업일 셀에 클릭 핸들러가 주어지면 보강 등록 진입점이 된다. */
-function CellView({ cell, onClick, onContextMenu, onEmptyCellClick }: CellViewProps) {
+ *  Sprint 9 T6: 비수업일 셀에 클릭 핸들러가 주어지면 보강 등록 진입점이 된다.
+ *  Sprint 9 Session #10 J4: 비수업일에 보강이 등록된 경우 보강 정보 표시.
+ *  Sprint 9 Session #10 J6: 보강 셀 클릭 시 보강 관리(삭제) 다이얼로그 진입. */
+function CellView({
+  cell,
+  makeup,
+  cellMakeupHintDate,
+  makeupAbsenceHintDates,
+  onClick,
+  onContextMenu,
+  onEmptyCellClick,
+  onMakeupClick,
+}: CellViewProps) {
   if (cell === null) {
+    // J4 — 보강 진행 표기 (보강 미등원 개념 삭제 — Session #10 J5).
+    // J6 — 클릭 시 onMakeupClick 호출 (보강 관리 다이얼로그 진입).
+    // J8 — hover 시 충당 결석 일자 표시.
+    if (makeup !== undefined) {
+      const clickable = onMakeupClick !== undefined
+      // Session #10 J9 — 보강 셀 tooltip 줄바꿈 적용.
+      const tooltipLines: string[] = [
+        makeup.eventDate,
+        `보강 (${minutesToHoursText(makeup.classMinutes)}시간)`,
+      ]
+      if (
+        makeupAbsenceHintDates !== undefined &&
+        makeupAbsenceHintDates.length > 0
+      ) {
+        // Session #10 J10 — 충당 결석 다건일 경우 줄바꿈.
+        if (makeupAbsenceHintDates.length === 1) {
+          tooltipLines.push(`충당 결석: ${makeupAbsenceHintDates[0]}`)
+        } else {
+          tooltipLines.push('충당 결석:')
+          for (const d of makeupAbsenceHintDates) tooltipLines.push(`  ${d}`)
+        }
+      }
+      if (clickable) tooltipLines.push('클릭하여 관리')
+      return (
+        <td
+          aria-label="보강 진행"
+          title={tooltipLines.join('\n')}
+          onClick={onMakeupClick}
+          className={`min-w-[44px] border-b border-r border-[var(--border)] bg-emerald-100 p-0 text-center align-middle text-base font-bold text-emerald-800 ${
+            clickable ? 'cursor-pointer hover:bg-emerald-200' : ''
+          }`}
+        >
+          보강
+        </td>
+      )
+    }
     if (onEmptyCellClick === undefined) {
       return (
         <td
@@ -490,7 +584,7 @@ function CellView({ cell, onClick, onContextMenu, onEmptyCellClick }: CellViewPr
         e.preventDefault()
         onContextMenu(cell)
       }}
-      title={cellTooltip(cell)}
+      title={cellTooltip(cell, cellMakeupHintDate)}
     >
       <button
         type="button"
@@ -514,17 +608,33 @@ function statusCellClass(status: AttendanceStatus): {
     case 'present':
       return { cell: 'bg-white hover:bg-gray-100', label: '○' }
     case 'absent':
-      return { cell: 'bg-red-100 text-red-900 font-bold hover:bg-red-200', label: '×' }
+      // Session #10 J7 — 라벨 '×' → '결석'.
+      return { cell: 'bg-red-100 text-red-900 font-bold hover:bg-red-200', label: '결석' }
     case 'makeup_done':
-      return { cell: 'bg-red-50 text-red-700 font-bold', label: '보강' }
+      // Session #10 J5/J7 — 결석일 셀은 보강 후에도 "결석" 표기 + 배경은 보강 셀과 동일(emerald).
+      return {
+        cell: 'bg-emerald-100 text-emerald-800 font-bold',
+        label: '결석',
+      }
     case 'makeup_expired':
       return { cell: 'bg-gray-200 text-gray-600', label: '소멸' }
   }
 }
 
-function cellTooltip(cell: AttendanceCell): string {
-  const parts = [cell.eventDate, statusCellClass(cell.status).label]
+function cellTooltip(cell: AttendanceCell, makeupHintDate?: string): string {
+  // Session #10 J5/J8 — makeup_done 셀은 "결석" 표시 + hover 시 매칭 보강일자 노출.
+  // Session #10 J9 — 줄바꿈으로 가독성 향상.
+  const parts: string[] = [cell.eventDate]
+  if (cell.status === 'makeup_done') {
+    parts.push(
+      makeupHintDate !== undefined
+        ? `결석 (보강일: ${makeupHintDate})`
+        : '결석 (보강 매칭됨)',
+    )
+  } else {
+    parts.push(statusCellClass(cell.status).label)
+  }
   if (cell.absenceMemo !== null) parts.push(`메모: ${cell.absenceMemo}`)
   if (cell.makeupDeadline !== null) parts.push(`소멸기한: ${cell.makeupDeadline}`)
-  return parts.join(' · ')
+  return parts.join('\n')
 }

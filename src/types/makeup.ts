@@ -39,32 +39,6 @@ export interface MakeupResult {
   matchedCount: number
 }
 
-/** 보강데이 일괄 — 학생 1명분 입력. */
-export interface BatchMakeupEntry {
-  studentId: number
-  classMinutes: number
-  absenceIds: number[]
-}
-
-/** 보강데이 일괄 페이로드. */
-export interface BatchCreateMakeupsPayload {
-  eventDate: string
-  entries: BatchMakeupEntry[]
-}
-
-/** 일괄 등록 실패 1건. */
-export interface BatchFailure {
-  studentId: number
-  /** 사용자 친화 한글 에러 메시지. */
-  reason: string
-}
-
-/** 일괄 등록 결과 — 학생별 독립 트랜잭션의 부분 성공 처리. */
-export interface BatchResult {
-  succeeded: MakeupResult[]
-  failed: BatchFailure[]
-}
-
 /** 결석 이력 1건 — `get_absence_history` 응답 요소 (T8). */
 export interface AbsenceHistoryItem {
   id: number

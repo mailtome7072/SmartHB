@@ -34,8 +34,6 @@ import type {
 } from '@/types/attendance'
 import type {
   AbsenceHistoryItem,
-  BatchCreateMakeupsPayload,
-  BatchResult,
   CreateMakeupPayload,
   EligibleDate,
   MakeupResult,
@@ -1068,24 +1066,6 @@ export async function cancelMakeup(makeupId: number): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('cancel_makeup', { makeupId })
-}
-
-/** 보강 미등원 — 보강 status='makeup_absent' 마킹 + 결석 재매칭 가능 상태로 환원. */
-export async function markMakeupAbsent(makeupId: number): Promise<void> {
-  const inv = await getInvoke()
-  if (!inv) return
-  await inv('mark_makeup_absent', { makeupId })
-}
-
-/** 보강데이 일괄 등록 — 학생별 독립 트랜잭션, 부분 성공 (`succeeded`/`failed`). */
-export async function batchCreateMakeups(
-  payload: BatchCreateMakeupsPayload,
-): Promise<BatchResult> {
-  const inv = await getInvoke()
-  if (!inv) {
-    return { succeeded: [], failed: [] }
-  }
-  return inv('batch_create_makeups', { payload }) as Promise<BatchResult>
 }
 
 /** 원생 결석 이력 — absent/makeup_done/makeup_expired 모두 포함, event_date DESC (T8). */

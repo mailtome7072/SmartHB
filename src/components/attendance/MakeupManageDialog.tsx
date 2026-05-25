@@ -1,41 +1,47 @@
 'use client'
 
 /**
- * 보강 관리 다이얼로그 — Sprint 9 T7 (PRD §4.5.6).
+ * 보강 관리 다이얼로그 — Sprint 9 T7 (PRD §4.5.6) + Session #10 J5/J6.
  *
- * `makeup_done` 셀 클릭 시 진입. 보강 정보 표시 + "취소" / "미등원" 2가지 액션:
- * - 취소: `cancelMakeup` → 매칭된 결석을 absent 환원 + makeup_attendances DELETE
- * - 미등원: `markMakeupAbsent` → 보강 상태 'makeup_absent' 마킹 + 결석 absent 환원 (재매칭 가능)
+ * 보강일 셀(J4 emerald) 클릭 시 진입. 보강 정보 표시 + "보강 삭제" 단일 액션.
+ * - 삭제: `cancelMakeup` → 매칭된 결석을 absent 환원 + makeup_attendances DELETE
  *
- * 각 액션은 명시적 확인 다이얼로그 (CLAUDE.md: 위험 동작 확인 필수, PRD §5.7).
+ * Session #10 J5 (2026-05-25): 보강 미등원 개념 삭제 — 보강은 결과 기록.
+ * Session #10 J6 (2026-05-25): 삭제 진입점을 결석일 셀 → 보강일 셀로 이동.
+ *
+ * 위험 동작 (삭제) 명시적 확인 다이얼로그 (PRD §5.7).
  */
 
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { cancelMakeup, markMakeupAbsent } from '@/lib/tauri'
-import type { AttendanceCell } from '@/types/attendance'
+import { cancelMakeup } from '@/lib/tauri'
+import { minutesToHoursText } from '@/lib/time'
 
 interface Props {
-  cell: AttendanceCell
+  makeupId: number
   studentName: string
   studentSerialNo: string
+  /** 보강일자 (YYYY-MM-DD). */
+  eventDate: string
+  /** 보강 수업 시간 (분). UI 에서 시간 단위 변환. */
+  classMinutes: number
   onClose: () => void
   onSuccess: () => void
 }
 
-type Mode = 'menu' | 'confirm-cancel' | 'confirm-absent'
+type Mode = 'menu' | 'confirm-cancel'
 
 export function MakeupManageDialog({
-  cell,
+  makeupId,
   studentName,
   studentSerialNo,
+  eventDate,
+  classMinutes,
   onClose,
   onSuccess,
 }: Props) {
   const [mode, setMode] = useState<Mode>('menu')
   const [error, setError] = useState<string | null>(null)
-
-  const makeupId = cell.makeupAttendanceId
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -49,12 +55,7 @@ export function MakeupManageDialog({
   }, [onClose])
 
   const cancelMutation = useMutation({
-    mutationFn: () => {
-      if (makeupId === null) {
-        throw new Error('보강 정보가 없습니다.')
-      }
-      return cancelMakeup(makeupId)
-    },
+    mutationFn: () => cancelMakeup(makeupId),
     onSuccess: () => {
       setError(null)
       onSuccess()
@@ -63,24 +64,6 @@ export function MakeupManageDialog({
       setError(typeof e === 'string' ? e : (e as Error).message)
     },
   })
-
-  const absentMutation = useMutation({
-    mutationFn: () => {
-      if (makeupId === null) {
-        throw new Error('보강 정보가 없습니다.')
-      }
-      return markMakeupAbsent(makeupId)
-    },
-    onSuccess: () => {
-      setError(null)
-      onSuccess()
-    },
-    onError: (e) => {
-      setError(typeof e === 'string' ? e : (e as Error).message)
-    },
-  })
-
-  const isPending = cancelMutation.isPending || absentMutation.isPending
 
   return (
     <div
@@ -101,19 +84,12 @@ export function MakeupManageDialog({
           <span className="font-semibold">{studentName}</span>
           <span className="ml-1 text-gray-500">#{studentSerialNo}</span>
           <span className="mx-2">·</span>
-          <span>{cell.eventDate} 결석에 매칭된 보강</span>
+          <span>
+            {eventDate} 보강 ({minutesToHoursText(classMinutes)}시간)
+          </span>
         </p>
 
-        {makeupId === null && (
-          <p
-            role="alert"
-            className="mt-4 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-base text-[var(--danger)]"
-          >
-            보강 정보가 없습니다 (출결 데이터 새로고침이 필요할 수 있습니다).
-          </p>
-        )}
-
-        {makeupId !== null && mode === 'menu' && (
+        {mode === 'menu' && (
           <div className="mt-6 space-y-3">
             <p className="text-base text-gray-700">처리 방법을 선택하세요:</p>
             <button
@@ -121,44 +97,22 @@ export function MakeupManageDialog({
               onClick={() => setMode('confirm-cancel')}
               className="block w-full min-h-[44px] rounded-md border border-[var(--border)] bg-white px-4 py-3 text-left text-base text-gray-700 hover:bg-gray-50"
             >
-              <span className="font-semibold">보강 약속 취소</span>
+              <span className="font-semibold">보강 삭제</span>
               <span className="ml-2 text-sm text-gray-500">
                 — 보강 기록 삭제 + 결석으로 환원
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('confirm-absent')}
-              className="block w-full min-h-[44px] rounded-md border border-[var(--border)] bg-white px-4 py-3 text-left text-base text-gray-700 hover:bg-gray-50"
-            >
-              <span className="font-semibold">보강 미등원 (보강결석)</span>
-              <span className="ml-2 text-sm text-gray-500">
-                — 보강 기록 유지(미등원 마킹) + 결석 재매칭 가능
               </span>
             </button>
           </div>
         )}
 
-        {mode === 'confirm-cancel' && makeupId !== null && (
+        {mode === 'confirm-cancel' && (
           <ConfirmPanel
-            title="보강 약속을 취소하시겠습니까?"
-            description={`보강 기록이 삭제되고, 매칭된 결석은 다시 '미처리 결석' 상태로 환원됩니다.`}
-            confirmLabel={cancelMutation.isPending ? '취소 중...' : '보강 취소'}
-            isDanger
+            title="보강 기록을 삭제하시겠습니까?"
+            description="보강 기록이 삭제되고, 매칭된 결석은 다시 '미처리 결석' 상태로 환원됩니다."
+            confirmLabel={cancelMutation.isPending ? '삭제 중...' : '보강 삭제'}
             onCancel={() => setMode('menu')}
             onConfirm={() => cancelMutation.mutate()}
-            disabled={isPending}
-          />
-        )}
-
-        {mode === 'confirm-absent' && makeupId !== null && (
-          <ConfirmPanel
-            title="이 보강을 미등원으로 처리하시겠습니까?"
-            description="보강 기록은 '미등원(보강결석)' 으로 마킹되어 보존되며, 결석은 다시 '미처리 결석' 상태로 환원됩니다 (다음 보강 매칭 가능)."
-            confirmLabel={absentMutation.isPending ? '처리 중...' : '미등원 처리'}
-            onCancel={() => setMode('menu')}
-            onConfirm={() => absentMutation.mutate()}
-            disabled={isPending}
+            disabled={cancelMutation.isPending}
           />
         )}
 
@@ -175,7 +129,7 @@ export function MakeupManageDialog({
           <button
             type="button"
             onClick={onClose}
-            disabled={isPending}
+            disabled={cancelMutation.isPending}
             className="min-h-[44px] rounded-md border border-[var(--border)] bg-white px-4 text-base text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             닫기
@@ -190,7 +144,6 @@ interface ConfirmPanelProps {
   title: string
   description: string
   confirmLabel: string
-  isDanger?: boolean
   onCancel: () => void
   onConfirm: () => void
   disabled: boolean
@@ -200,14 +153,10 @@ function ConfirmPanel({
   title,
   description,
   confirmLabel,
-  isDanger,
   onCancel,
   onConfirm,
   disabled,
 }: ConfirmPanelProps) {
-  const confirmClass = isDanger === true
-    ? 'bg-[var(--danger)] hover:bg-red-700'
-    : 'bg-[var(--accent)] hover:bg-[var(--accent-hover)]'
   return (
     <div className="mt-6 rounded-md border-2 border-amber-300 bg-amber-50 p-4">
       <p className="text-base font-semibold text-gray-800">{title}</p>
@@ -225,7 +174,7 @@ function ConfirmPanel({
           type="button"
           onClick={onConfirm}
           disabled={disabled}
-          className={`min-h-[44px] rounded-md px-4 text-base font-semibold text-white disabled:opacity-50 ${confirmClass}`}
+          className="min-h-[44px] rounded-md bg-[var(--danger)] px-4 text-base font-semibold text-white hover:bg-red-700 disabled:opacity-50"
         >
           {confirmLabel}
         </button>
