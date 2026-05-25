@@ -10,8 +10,8 @@
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 8 (2026-05-24)
-- 다음 스프린트 번호: 9 (계획 수립 완료)
+- 마지막 완료 스프린트: Sprint 9 (2026-05-26)
+- 다음 스프린트 번호: 10
 - Sprint 9 계획 수립: 2026-05-24 (Phase 3 보강 등록 + 매칭 — T1~T9 9개 Task, 38h 예상, PI-02 사용자 결정 대기)
 - Sprint 8 계획 수립: 2026-05-23 (Phase 2 출결 관리 + Sprint 7 carry-over 흡수 — V106 마이그레이션 + 출결 생성/토글 IPC + 그리드 UI + High 4건 + Medium 5건)
 - Sprint 7 계획 수립: 2026-05-22 (Phase 2 carry-over 해소 — Keychain 캐싱 + salt 이전 + device_id 영속화 + 교습기간 UX + 배치 제약)

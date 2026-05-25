@@ -1,13 +1,13 @@
 ---
 name: sprint-next-session
-description: "Sprint 9 구현 완료 (T1~T12). 다음: sprint-close → sprint-review → develop 머지"
+description: "Sprint 9 sprint-close 완료. 다음: sprint-review → develop 직접 머지"
 metadata:
   node_type: memory
   type: project
-  originSessionId: sprint9-t12-complete
+  originSessionId: sprint9-sprint-close-complete
 ---
 
-Sprint 9 — Phase 3 핵심 도메인(보강) 완성. 모든 Task 완료. 다음 세션은 **sprint-close 에이전트**로 진입.
+Sprint 9 — sprint-close 완료 (2026-05-26). 다음 세션은 **sprint-review 에이전트**로 진입.
 
 ## Sprint 9 최종 현황
 
@@ -22,9 +22,9 @@ Sprint 9 — Phase 3 핵심 도메인(보강) 완성. 모든 Task 완료. 다음
 | T7 | 보강데이 일괄 + 보강 관리 + A41 라벨 | ✅ | `ef06b43` |
 | T8 | 결석 이력 조회 + AbsenceHistoryDialog | ✅ | `f2a5689` |
 | T9 | 통합 검증 + A39/A40 + AC 마킹 | ✅ | `70c856a` |
-| **T10** | **I3 보강 가능일 정의 확장 + T3 검증 3 폐기** | ✅ | `4b21450` |
-| **T11** | **I1/I2/I4-I8 시간 단위 + UX 보강** | ✅ | `a2e3169` |
-| **T12** | **J1~J10 도메인 모델 정제 + tooltip 줄바꿈** | ✅ | `e6e3a39` |
+| T10 | I3 보강 가능일 정의 확장 + T3 검증 3 폐기 | ✅ | `4b21450` |
+| T11 | I1/I2/I4-I8 시간 단위 + UX 보강 | ✅ | `a2e3169` |
+| T12 | J1~J10 도메인 모델 정제 + tooltip 줄바꿈 | ✅ | `e6e3a39` |
 
 ## 최종 자동 검증 결과
 
@@ -39,32 +39,19 @@ Sprint 9 — Phase 3 핵심 도메인(보강) 완성. 모든 Task 완료. 다음
 - 2/3차: J1~J10 (10건) — Session #11 흡수
 - 최종 "검증완료" 보고 (2026-05-26)
 
-## Sprint 9 핵심 도메인 결정
+## sprint-close 완료 내역 (2026-05-26)
 
-| 결정 | 영향 |
-|------|------|
-| **보강 가능일 (I3)** | 케이스 A (평일 + 보강불가 코드 없음) OR 케이스 B (allows_makeup_class=1 명시). study_periods 제약 제거 |
-| **정규 수업 요일에도 보강 허용** | T3 검증 3 폐기 (수업 후 추가 보강 진행 가능) |
-| **시간 단위 시간(hours)** | UI 입력/표시는 시간 단위, 백엔드 class_minutes(분) 유지 |
-| **결석 셀 라벨 통일** | absent/makeup_done 모두 '결석' 표기. makeup_done 배경 emerald (보강 셀과 동일) |
-| **보강 삭제 진입점** | 보강일(emerald) 셀 클릭 (기존 결석 셀에서 이동) |
-| **보강 미등원 폐기** | 사용자 결정: 보강은 결과 기록 의미 — markMakeupAbsent UI 호출 제거 |
-| **보강데이 일괄 기능 폐기** | BatchMakeupDialog 삭제 (헤더 버튼/타입/래퍼 모두 정리) |
+- ✅ ROADMAP.md Sprint 9 → ✅ 완료 (2026-05-26) 마킹
+- ✅ ROADMAP.md 대시보드 진행률 53% → 59% (9/15 완료)
+- ✅ CHANGELOG.md [Unreleased] 항목 추가 (Added/Changed/Removed)
+- ✅ DEPLOY.md Sprint 9 신규 체크리스트 작성 + 이전 Sprint 8 항목 아카이빙
+- ✅ sprint9.md DoD CHANGELOG 항목 ✅ 마킹
+- ✅ sprint-planner MEMORY.md 스프린트 현황 갱신 (Sprint 9 완료, 다음 번호 10)
+- ⬜ sprint9 → develop 직접 머지 (단일 개발자 정책 — PR 단계 생략)
 
-## 다음 세션 (sprint-close) 진입 액션
+## 다음 세션 (sprint-review) 진입 액션
 
 새 대화에서:
-
-> "sprint-close 실행해줘."
-
-sprint-close 에이전트가 처리:
-1. ROADMAP.md Sprint 9 → ✅ 완료 마킹
-2. CHANGELOG.md `[0.4.x]` 항목 추가 (보강 도메인 + UX 보강 + 도메인 모델 정제)
-3. DEPLOY.md 신규 체크리스트 작성
-4. sprint9.md DoD 모든 항목 ✅ 확인
-5. **PR 단계 생략** — 단일 개발자 정책 ([[workflow-no-pr]]). sprint9 → develop 직접 머지 안내
-
-sprint-close 완료 후:
 
 > "sprint-review 실행해줘."
 
@@ -73,6 +60,10 @@ sprint-review 에이전트가 4종 산출물 작성 (A40):
 - `docs/risk-register/2026-05-26.md`
 - `docs/sprint-retrospectives/sprint9-retrospective.md`
 - `docs/code-reviews/sprint9.md`
+
+develop 직접 머지는 sprint-review 완료 후 진행:
+
+> "sprint-review 완료. develop 직접 머지 해줘."
 
 ## Sprint 10 carry-over 메모
 

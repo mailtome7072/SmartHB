@@ -331,7 +331,7 @@
 - ✅ 마이그레이션 self-check (A39): scope.md "V108 불필요" 결정 vs 실제 migrations (마지막 V107) 1:1 일치
 - ✅ sprint-review 산출물 4종 경로 명시 (A40) — scope.md Session #9
 - ✅ ROADMAP.md Sprint 9 상태 `🔄 진행 중` (T1 진입 시 갱신됨, L460)
-- ⬜ CHANGELOG.md 업데이트 — sprint-close 단계에서 처리
+- ✅ CHANGELOG.md 업데이트 — sprint-close 완료 (2026-05-26)
 
 ---
 
