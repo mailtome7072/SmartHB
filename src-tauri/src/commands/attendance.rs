@@ -162,7 +162,11 @@ struct StudentRow {
     withdraw_date: Option<String>,
 }
 
-fn validate_year_month(ym: &str) -> Result<(), String> {
+/// Sprint 9 T2 (A43): 월 범위(01-12) 검증 추가. `2026-00` / `2026-13` 같은 의미론적
+/// 무효 입력을 GLOB 패턴 통과 후 `NaiveDate::parse_from_str` 실패로 비친화적 에러
+/// 노출되던 문제 해소. `pub(crate)` 로 노출하여 `makeup.rs` 등 동일 crate 의 다른
+/// 도메인 모듈에서 재사용.
+pub(crate) fn validate_year_month(ym: &str) -> Result<(), String> {
     if ym.len() != 7 || ym.as_bytes()[4] != b'-' {
         return Err("year_month 는 YYYY-MM 형식이어야 합니다.".to_string());
     }
@@ -170,6 +174,13 @@ fn validate_year_month(ym: &str) -> Result<(), String> {
     let month = &ym[5..];
     if !year.chars().all(|c| c.is_ascii_digit()) || !month.chars().all(|c| c.is_ascii_digit()) {
         return Err("year_month 에 숫자가 아닌 문자가 포함되어 있습니다.".to_string());
+    }
+    let m: u8 = month.parse().expect("digits checked above");
+    if !(1..=12).contains(&m) {
+        return Err(format!(
+            "year_month 의 월은 01~12 사이여야 합니다 (입력: {}).",
+            ym
+        ));
     }
     Ok(())
 }
@@ -323,6 +334,17 @@ pub struct AttendanceSummary {
     pub makeup_completed_minutes: i64,
 }
 
+/// 보강 출결 1건 — 그리드에서 비수업일 셀에 표시.
+/// Sprint 9 Session #10 J4 — "결석일과 보강일이 다른 경우 보강일 셀에 표기".
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GridMakeupCell {
+    pub id: i64,
+    pub event_date: String,
+    pub status: String, // makeup_attended | makeup_absent
+    pub class_minutes: i64,
+}
+
 /// 그리드 한 원생 행.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -331,8 +353,32 @@ pub struct AttendanceGridStudent {
     pub name: String,
     pub serial_no: String,
     pub schedule_days: Vec<i64>,
+    /// Sprint 9 Session #10 I8 — 클라이언트가 비수업일 셀 "+" 표시 조건 판단에 사용.
+    pub enroll_date: String,
+    /// Sprint 9 Session #10 I8 — 퇴교일 없으면 null.
+    pub withdraw_date: Option<String>,
     pub attendances: Vec<AttendanceCell>,
+    /// Sprint 9 Session #10 J4 — month 내 보강 출결 (비수업일 셀에 표기).
+    pub makeups: Vec<GridMakeupCell>,
     pub summary: AttendanceSummary,
+    /// Sprint 9 Session #12 K1' — 만기 미도래 미보강 결석 중 가장 이른 일자.
+    /// 클라이언트의 비수업일 "+" 표시 사전 판단에 사용. 이전 월 결석도 포함.
+    /// `None` 이면 보강 필요한 결석 없음 → "+" 비표시.
+    pub earliest_pending_absence_date: Option<String>,
+}
+
+/// 학사일정 매핑 — 해당 월 일자별 코드 속성.
+/// Sprint 9 Session #10 I7 (헤더 보강데이 시각 강조) + I8 (셀 사전 판단).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DaySchedule {
+    pub event_date: String,
+    /// 보강 가능 코드 명시 (보강데이/단원평가/공휴수업일).
+    pub allows_makeup: bool,
+    /// 보강 불가 코드 명시 (공휴일/방학/휴원일).
+    pub is_block: bool,
+    /// 표시용 코드명 (우선순위: allows_makeup > is_block > 일반).
+    pub label: String,
 }
 
 /// 그리드 응답 전체.
@@ -341,6 +387,8 @@ pub struct AttendanceGridStudent {
 pub struct AttendanceGrid {
     pub year_month: String,
     pub students: Vec<AttendanceGridStudent>,
+    /// 해당 월 일자별 학사일정 코드 정보 — 일자 헤더 강조 + 비수업일 셀 사전 판단.
+    pub day_schedules: Vec<DaySchedule>,
 }
 
 /// 토글 결과.
@@ -389,9 +437,9 @@ pub async fn get_attendance_summary(
 async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<AttendanceGrid, String> {
     validate_year_month(year_month)?;
 
-    // 1) 해당 월 출결이 있는 원생들 (정렬: serial_no)
+    // 1) 해당 월 출결이 있는 원생들 (정렬: serial_no) — Session #10 I8 위해 enroll/withdraw 동봉.
     let student_rows = sqlx::query(
-        "SELECT DISTINCT s.id, s.name, s.serial_no \
+        "SELECT DISTINCT s.id, s.name, s.serial_no, s.enroll_date, s.withdraw_date \
          FROM students s \
          JOIN regular_attendances a ON a.student_id = s.id \
          WHERE a.year_month = ? \
@@ -407,6 +455,9 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
         let student_id: i64 = srow.try_get("id").map_err(|e| e.to_string())?;
         let name: String = srow.try_get("name").map_err(|e| e.to_string())?;
         let serial_no: String = srow.try_get("serial_no").map_err(|e| e.to_string())?;
+        let enroll_date: String = srow.try_get("enroll_date").map_err(|e| e.to_string())?;
+        let withdraw_date: Option<String> =
+            srow.try_get("withdraw_date").map_err(|e| e.to_string())?;
 
         // 수업 요일 (현행 스케줄)
         let day_rows = sqlx::query(
@@ -461,20 +512,151 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
 
         let summary = compute_summary(pool, student_id, year_month).await?;
 
+        // J4: 학생별 보강 출결 조회 — 비수업일 셀에 "보강" 표기.
+        let makeup_rows = sqlx::query(
+            "SELECT id, event_date, status, class_minutes \
+             FROM makeup_attendances \
+             WHERE student_id = ? AND year_month = ? \
+             ORDER BY event_date",
+        )
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("보강 출결 조회 실패: {}", e))?;
+        let makeups: Vec<GridMakeupCell> = makeup_rows
+            .into_iter()
+            .map(|r| {
+                Ok(GridMakeupCell {
+                    id: r.try_get("id").map_err(|e: sqlx::Error| e.to_string())?,
+                    event_date: r
+                        .try_get("event_date")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                    status: r.try_get("status").map_err(|e: sqlx::Error| e.to_string())?,
+                    class_minutes: r
+                        .try_get("class_minutes")
+                        .map_err(|e: sqlx::Error| e.to_string())?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        // Sprint 9 Session #12 K1': 만기 미도래 미보강 결석 중 가장 이른 일자.
+        // 그리드 yearMonth 기준으로 makeup_deadline 도래 여부 판단 (deadline NULL 또는 deadline >= yearMonth).
+        // year_month 필터 없음 — 이전 월의 결석도 포함.
+        let earliest_pending_absence_date: Option<String> = sqlx::query_scalar(
+            "SELECT MIN(event_date) FROM regular_attendances \
+             WHERE student_id = ? \
+               AND status = 'absent' \
+               AND makeup_attendance_id IS NULL \
+               AND (makeup_deadline IS NULL OR makeup_deadline >= ?)",
+        )
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("만기 미도래 결석 최소 일자 조회 실패: {}", e))?;
+
         students.push(AttendanceGridStudent {
             student_id,
             name,
             serial_no,
             schedule_days,
+            enroll_date,
+            withdraw_date,
             attendances,
+            makeups,
             summary,
+            earliest_pending_absence_date,
         });
     }
+
+    let day_schedules = build_day_schedules(pool, year_month).await?;
 
     Ok(AttendanceGrid {
         year_month: year_month.to_string(),
         students,
+        day_schedules,
     })
+}
+
+/// 월의 일자별 학사일정 코드 매핑을 생성한다 (Session #10 I7/I8).
+///
+/// 동일 일자에 다중 코드 가능 — 우선순위: `allows_makeup=1` > `is_block` > 일반.
+/// 기간성 코드 (period_end_date) 는 시작~종료 모든 일자로 펼친다.
+async fn build_day_schedules(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<Vec<DaySchedule>, String> {
+    let parts: Vec<&str> = year_month.split('-').collect();
+    let year: i32 = parts[0].parse().expect("validated");
+    let month: u32 = parts[1].parse().expect("validated");
+    let first = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+        .ok_or_else(|| format!("일자 생성 실패: {}-{:02}-01", year, month))?;
+    let next_month_first = if month == 12 {
+        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+    }
+    .ok_or_else(|| "다음 월 일자 생성 실패".to_string())?;
+
+    // month 와 겹치는 모든 schedule_events + 속성 조회.
+    let rows = sqlx::query(
+        "SELECT e.event_date, COALESCE(e.period_end_date, e.event_date) AS end_d, \
+                c.code_name, c.allows_regular_class, c.allows_makeup_class \
+         FROM schedule_events e \
+         JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE e.event_date < ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+    )
+    .bind(next_month_first.to_string())
+    .bind(first.to_string())
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("학사일정 조회 실패: {}", e))?;
+
+    use std::collections::BTreeMap;
+    // 일자별 코드 후보 — (allows_makeup, is_block, label) 우선순위로 reduce.
+    let mut by_date: BTreeMap<String, (bool, bool, String)> = BTreeMap::new();
+    for r in rows {
+        let s: String = r.try_get("event_date").map_err(|e| e.to_string())?;
+        let e_str: String = r.try_get("end_d").map_err(|e| e.to_string())?;
+        let code_name: String = r.try_get("code_name").map_err(|e| e.to_string())?;
+        let allows_reg: i64 = r.try_get("allows_regular_class").map_err(|e| e.to_string())?;
+        let allows_mk: i64 = r.try_get("allows_makeup_class").map_err(|e| e.to_string())?;
+        let is_block = allows_reg == 0 && allows_mk == 0;
+        let mut d = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+            .map_err(|e| format!("이벤트 일자 파싱 실패: {}", e))?;
+        let ed = chrono::NaiveDate::parse_from_str(&e_str, "%Y-%m-%d")
+            .map_err(|e| format!("이벤트 종료일 파싱 실패: {}", e))?;
+        while d <= ed {
+            if d >= first && d < next_month_first {
+                let key = d.to_string();
+                let entry = by_date.entry(key).or_insert((false, false, String::new()));
+                // 우선순위: allows_makeup 가 우세 — 한 일자에 보강데이 + 공휴일 동시 등록 시 보강데이로 표시.
+                let new_makeup = allows_mk == 1;
+                let new_block = is_block;
+                if new_makeup && !entry.0 {
+                    *entry = (true, entry.1 || new_block, code_name.clone());
+                } else if !entry.0 && new_block && !entry.1 {
+                    *entry = (false, true, code_name.clone());
+                } else if entry.2.is_empty() {
+                    entry.2 = code_name.clone();
+                }
+                entry.0 = entry.0 || new_makeup;
+                entry.1 = entry.1 || new_block;
+            }
+            d = d.succ_opt().expect("date succ");
+        }
+    }
+
+    Ok(by_date
+        .into_iter()
+        .map(|(event_date, (allows_makeup, is_block, label))| DaySchedule {
+            event_date,
+            allows_makeup,
+            is_block,
+            label,
+        })
+        .collect())
 }
 
 async fn toggle_impl(
@@ -974,10 +1156,24 @@ mod tests {
     #[tokio::test]
     async fn validate_year_month_rejects_invalid_formats() {
         assert!(validate_year_month("2026-06").is_ok());
+        assert!(validate_year_month("2026-01").is_ok());
+        assert!(validate_year_month("2026-12").is_ok());
         assert!(validate_year_month("2026/06").is_err());
         assert!(validate_year_month("2026-6").is_err());
         assert!(validate_year_month("YYYY-MM").is_err());
         assert!(validate_year_month("").is_err());
+    }
+
+    /// Sprint 9 T2 (A43): 월 범위(01-12) 검증 — GLOB 패턴은 통과하지만 의미론적
+    /// 무효 입력 차단. 사용자 친화 에러 메시지 제공.
+    #[tokio::test]
+    async fn validate_year_month_rejects_out_of_range_month() {
+        let err00 = validate_year_month("2026-00").expect_err("월 0은 무효");
+        assert!(err00.contains("01~12"), "친화 메시지: {}", err00);
+        let err13 = validate_year_month("2026-13").expect_err("월 13은 무효");
+        assert!(err13.contains("01~12"), "친화 메시지: {}", err13);
+        // 99 같은 명확히 잘못된 케이스도 차단 (이전엔 GLOB 통과로 NaiveDate 파싱 실패)
+        assert!(validate_year_month("2026-99").is_err());
     }
 
     // ─────────────── T3 단위 테스트 ───────────────
@@ -1074,6 +1270,82 @@ mod tests {
         assert_eq!(s.summary.year_month, "2026-06");
         assert_eq!(s.summary.absent_count, 0);
         assert!(s.summary.present_count > 0);
+        // K1': 결석 없음 → None.
+        assert!(s.earliest_pending_absence_date.is_none());
+    }
+
+    // ─────── Session #12 K1' — earliest_pending_absence_date ───────
+
+    #[tokio::test]
+    async fn grid_earliest_pending_returns_min_unmatched_absence() {
+        // 6월에 결석 2건(절반은 만기 미도래) → MIN(eventDate) 반환.
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1), (3, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        // 6/01(월) 및 6/03(수) 두 일자를 결석으로 토글 — 둘 다 makeup_deadline = 2026-07.
+        let aids: Vec<i64> = sqlx::query_scalar(
+            "SELECT id FROM regular_attendances WHERE student_id = ? AND year_month = '2026-06' \
+             AND (event_date = '2026-06-01' OR event_date = '2026-06-03') ORDER BY event_date",
+        )
+        .bind(sid)
+        .fetch_all(&pool)
+        .await
+        .expect("aids");
+        for aid in &aids {
+            toggle_impl(&pool, *aid, "absent").await.expect("absent");
+        }
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        assert_eq!(
+            grid.students[0].earliest_pending_absence_date.as_deref(),
+            Some("2026-06-01"),
+        );
+    }
+
+    #[tokio::test]
+    async fn grid_earliest_pending_excludes_expired_deadlines() {
+        // 결석의 makeup_deadline 이 grid yearMonth 보다 이전이면 만기 도래 → 제외.
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+        toggle_impl(&pool, aid, "absent").await.expect("absent");
+        // 강제로 만기 도래 처리 — deadline 을 2026-05(grid yearMonth 이전) 으로 변경.
+        sqlx::query("UPDATE regular_attendances SET makeup_deadline = '2026-05' WHERE id = ?")
+            .bind(aid)
+            .execute(&pool)
+            .await
+            .expect("update deadline");
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        assert!(grid.students[0].earliest_pending_absence_date.is_none());
+    }
+
+    #[tokio::test]
+    async fn grid_earliest_pending_includes_previous_month_absence() {
+        // 5월 결석(미보강, 만기 미도래) + 6월 그리드 조회 → 5월 일자 반환.
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-05", "2026-05-01", "2026-05-31", 1).await;
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1), (3, 1)]).await;
+        generate_impl(&pool, "2026-05").await.expect("generate may");
+        generate_impl(&pool, "2026-06").await.expect("generate jun");
+
+        // 5월 첫 결석 처리 — deadline = 2026-06 (다음 달 말일까지).
+        let may_aid = first_attendance_id(&pool, sid, "2026-05").await;
+        toggle_impl(&pool, may_aid, "absent").await.expect("absent");
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        let pending = grid.students[0].earliest_pending_absence_date.as_deref();
+        assert!(pending.is_some(), "이전 월 결석도 포함");
+        assert!(
+            pending.expect("some").starts_with("2026-05"),
+            "5월 일자가 반환되어야 함: {:?}",
+            pending,
+        );
     }
 
     // ─────── AC-T3-2 ───────

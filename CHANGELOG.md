@@ -37,6 +37,46 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 9: 보강 IPC 백엔드 7종 (`src-tauri/src/commands/makeup.rs` 신규) — `get_pending_absences`, `get_makeup_eligible_dates`, `create_makeup_with_absences`, `cancel_makeup`, `mark_makeup_absent`, `batch_create_makeups`, `get_absence_history`
+- Sprint 9: 보강 비즈니스 규칙 단위 테스트 28건 신규 (T2 9 + T3 9 + T4 7 + T8 3, PRD §6.5 100% 커버)
+- Sprint 9: `audit::AuditEventType` — `MakeupCreated`, `MakeupCancelled`, `MakeupAbsent` 3 variant 추가
+- Sprint 9: 보강 등록 UI — `MakeupRegisterDialog` (비수업일 셀 클릭, 충당 결석 다중 선택, 소멸기한 임박 순 정렬)
+- Sprint 9: 보강 삭제 UI — `MakeupManageDialog` (보강일 emerald 셀 클릭 진입, 취소 시 결석 자동 환원)
+- Sprint 9: 결석 이력 UI — `AbsenceHistoryDialog` (출결표 학생명 클릭, 미처리/보강완료/소멸 3종 시각 구분)
+- Sprint 9: `src/lib/time.ts` 신규 — `minutesToHours` / `hoursToMinutes` / `formatHours` / `minutesToHoursText` (UI는 시간 단위, 백엔드는 분 단위 유지)
+- Sprint 9: `src/types/makeup.ts` 도메인 타입 8종 — `PendingAbsence`, `EligibleDate`, `CreateMakeupPayload`, `MakeupResult`, `BatchMakeupEntry`, `BatchCreateMakeupsPayload`, `BatchFailure`, `BatchResult` + `AbsenceHistoryItem`
+- Sprint 9: `src/lib/tauri/index.ts` 보강 IPC 래퍼 7종 추가
+
+### Changed
+- Sprint 9 (I3/T10): `get_makeup_eligible_dates` 보강 가능일 재정의 — 케이스 A (평일+보강불가코드없음) OR 케이스 B (`allows_makeup_class=1`). `study_periods` 범위 제약 제거 + T3 정규 수업 요일 차단 검증 3 폐기 (수업 후 추가 보강 허용)
+- Sprint 9 (J4/J6): 보강일(emerald) 셀 신규 추가 — 보강 당일 그리드에 "보강" 라벨 emerald 배경으로 표시. 보강 삭제 진입점을 결석 셀에서 보강일 셀로 이동
+- Sprint 9 (J7): 결석 셀 라벨 통일 — `absent`/`makeup_done` 모두 '결석' 표기 (`×` 제거), `makeup_done` 배경은 emerald (보강일 셀과 동일)
+- Sprint 9 (J8/J9/J10): 출결 셀 양방향 tooltip — 결석 셀 hover 시 매칭 보강일자, 보강 셀 hover 시 충당 결석일자(다건 줄바꿈)
+- Sprint 9 (A41/T7): 출결표 헤더 라벨 "결석" → "미처리\\n결석" (title 속성에 필터 조건 설명 추가)
+- Sprint 9 (I2): 헤더 보강 필요 학생 수 표시 + 0명 시 disabled 처리
+- Sprint 9 (I7): 출결표 일자 헤더 — `allowsMakeup=true` 일자 sky-100/sky-800 배경 강조 + "보강데이" title
+
+### Removed
+- Sprint 9 (J5): 보강 미등원 UI — `MakeupManageDialog`에서 "미등원" 옵션 제거 (사용자 결정 — 보강은 결과 기록 의미)
+- Sprint 9 (J7): `BatchMakeupDialog` 컴포넌트 삭제 — 보강데이 일괄 기능 폐기 (사용자 결정)
+- Sprint 9 (J7): 출결표 헤더 "보강데이 일괄" 버튼 제거
+- Sprint 9 (K7): 출결표 헤더 'N / M 명' 별도 카운터 — 라벨 병기 형태로 통합
+
+### Sprint 9 Session #12 — 4차 시각 검증 K1~K7 흡수 (2026-05-26)
+
+`Added`:
+- (K1') 그리드 응답에 `earliest_pending_absence_date: Option<String>` 추가 — 만기 미도래 미보강 결석 중 가장 이른 일자(이전 월 결석 포함). 백엔드 단위 테스트 3건 신규
+- (K2/K2') 출결 관리 헤더 '재원중만' 체크박스 — 퇴교 원생 필터, 디폴트 ON
+- (K3) 정규 수업 셀(present/makeup_done/makeup_expired) 우클릭 → 보강 등록 진입. 결석 셀 우클릭 메모 동작은 기존 유지
+- (K4) 출결표 일자 헤더 보강데이 라벨 — 날짜 밑 작은 폰트 '보강데이' 표기 (셀 너비 변동 없음)
+- (K6) '보강대상' 체크박스 — 만기 미도래 미보강 결석이 있는 원생만 필터, 디폴트 OFF
+- (K7) 라벨 카운트 병기 — "재원중(N명)" / "보강대상(M명)". 보강대상 카운트는 재원중 필터 ON 시 재원중 원생 한정 (연계)
+
+`Changed`:
+- (K1') 비수업일 셀 '+' 표시 조건 정밀화 — `summary.makeupNeededMinutes > 0` → "셀 일자 이전에 만기 미도래 미보강 결석 존재". 이전 월 결석에 대한 보강 등록도 다음 월 그리드에서 진입 가능
+- (K4) 단원평가 응시일 헤더 — sky 배경 제거 (일반 평일과 동일). 보강데이는 sky 배경 유지
+
 ---
 
 ## [0.4.0] - 2026-05-24

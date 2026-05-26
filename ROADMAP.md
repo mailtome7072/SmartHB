@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 53% (8/15 스프린트 완료) |
-| 현재 Phase | Phase 2 완료 — Sprint 8 완료 (2026-05-24), Phase 3 (보강+소멸) 착수 예정 |
-| 다음 마일스톤 | 보강 등록 + 매칭 (Sprint 9) |
+| 전체 진행률 | 59% (9/15 스프린트 완료) |
+| 현재 Phase | Phase 3 진행 중 — Sprint 9 완료 (2026-05-26), Sprint 10 (소멸+캘린더) 착수 예정 |
+| 다음 마일스톤 | 소멸 자동 전이 + 퇴교 보강 처리 + 캘린더 뷰 (Sprint 10) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -452,51 +452,59 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 3: 보강 + 소멸 (Sprint 9~10) 📋 예정
+## Phase 3: 보강 + 소멸 (Sprint 9~10) 🔄 진행 중
 
 ### 목표
 출결/보강의 가장 복잡한 도메인(보강 매칭, 소멸 자동 전이, 퇴교 처리)을 완성하여 UC-4를 달성한다.
 
-### Sprint 9: 보강 등록 + 매칭 (2주) 🔄 진행 중
+### Sprint 9: 보강 등록 + 매칭 (2주) ✅ 완료 (2026-05-26)
+
+> 계획 문서: `docs/sprint/sprint9.md` / Task T1~T12 완료 / 시각 검증 3라운드 18건 흡수 (I1~I8 + J1~J10)
+> develop 머지: `sprint9 → develop` (--no-ff, 진행 중)
+
+#### 주요 도메인 결정 사항
+
+| 결정 | 내용 |
+|------|------|
+| PI-02 보강-결석 매칭 | 일 단위 매칭 확정 (옵션 A — 시간값 검증 없이 일 기준) |
+| 보강 가능일 (I3) | 케이스 A (평일 + 보강불가 코드 없음) OR 케이스 B (`allows_makeup_class=1` 명시). `study_periods` 제약 제거 |
+| 정규 수업 요일 보강 허용 | T3 검증 3 폐기 — 수업 후 추가 보강 진행 가능 |
+| 시간 표시 단위 | UI 입력/표시는 시간(h) 단위, 백엔드 `class_minutes`(분) 유지 |
+| 결석 셀 라벨 통일 | `absent`/`makeup_done` 모두 '결석' 표기, `makeup_done` 배경은 emerald |
+| 보강 삭제 진입점 | 보강일(emerald) 셀 클릭 (기존 결석 셀에서 이동 — J6) |
+| 보강 미등원 폐기 | 사용자 결정 — `markMakeupAbsent` UI 호출 제거 (J5) |
+| 보강데이 일괄 기능 폐기 | `BatchMakeupDialog` 삭제 (J7) |
 
 #### 작업 목록
 
-- ⬜ **PI-02 사용자 결정 반영**: 보강-결석 시간값 매칭 규칙 확정
-  - 결정 결과에 따라 데이터 모델/매칭 로직 조정
-- ⬜ **보강 등록 개별 (§4.5.4)**: 비수업일 셀 클릭 → 충당 결석 다중 선택
-  - 소멸기한 임박 순 정렬
-  - "보강 진행 가능 OFF" 일자 차단 (AC-4.4-3)
-  - 보강 1건 : 결석 N건 매칭 (일 단위)
-  - IPC 커맨드: `create_makeup`, `get_pending_absences`, `link_makeup_to_absences`
-- ⬜ **보강데이 일괄 등록 (§4.5.5)**: 보강 필요 원생 리스트 → 다중 선택 → 일괄 확정
-  - 원생별 충당 결석 일수 지정
-  - 보강데이 당일 미등원: 사전 취소 또는 "보강결석" 처리
-- ⬜ **보강 약속 취소 + 미등원 (§4.5.6)**
-  - 취소: 보강 레코드 삭제 → 결석 환원
-  - 미등원: "보강결석" 마킹, 결석 상태 유지
-- ⬜ **결석 이력 조회 (§4.5.10)**: 원생 상세에서 결석 이력 표
-  - 처리 상태별 시각 구분 (보강완료/미보강/보강소멸)
-- ⬜ **보강 관련 단위 테스트 100%**: 매칭 로직, 취소/환원, 보강결석 처리
+- ✅ **T1**: PI-02 결정 반영 + 보강 도메인 설계 검토 — V108 신규 마이그레이션 불필요 확정
+- ✅ **T2**: 보강 IPC 백엔드 — `get_pending_absences` + `get_makeup_eligible_dates` + `validate_year_month` 강화 (A43) + 단위 테스트 9건
+- ✅ **T3**: 보강 등록 + 매칭 트랜잭션 IPC — `create_makeup_with_absences` (BEGIN IMMEDIATE, 검증 5종) + `MakeupCreated` audit variant + 단위 테스트 9건
+- ✅ **T4**: 보강 취소 + 미등원 + 일괄 IPC — `cancel_makeup` + `mark_makeup_absent` + `batch_create_makeups` + 단위 테스트 7건
+- ✅ **T5**: TypeScript IPC 래퍼 7종 + `src/types/makeup.ts` 도메인 타입 8종
+- ✅ **T6**: 보강 등록(개별) UI — `MakeupRegisterDialog` + `AttendanceGrid` 비수업일 셀 클릭 + TanStack Query 무효화
+- ✅ **T7**: 보강데이 일괄 UI + `MakeupManageDialog` + (A41) 헤더 라벨 "미처리\\n결석" 변경
+- ✅ **T8**: 결석 이력 조회 — `get_absence_history` IPC + `AbsenceHistoryDialog` (3종 상태 시각 구분)
+- ✅ **T9**: 통합 검증 — 자동 7항목 전수 통과 + 마이그레이션 self-check (A39) + sprint-review 산출물 경로 명시 (A40)
+- ✅ **T10**: 보강 가능일 정의 확장 + T3 검증 3 폐기 (I3 시각 검증 반영)
+- ✅ **T11**: 프론트엔드 시간 단위 + UX 보강 — `src/lib/time.ts` 신규 + I1/I2/I4~I8 흡수
+- ✅ **T12**: 2/3차 시각 검증 J1~J10 흡수 — 보강일 emerald 셀 + 미등원 폐기 + 일괄 기능 폐기 + 양방향 tooltip
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 보강 등록(개별/일괄) → 결석 "보강완료" 전이 동작
-- ⬜ 보강 취소 → 결석 환원 정합성 유지
-- ⬜ 보강결석 처리 동작 (새 결석 미생성 확인)
-- ⬜ 비즈니스 규칙 단위 테스트 100% 커버
-
-#### 🧪 Playwright MCP 검증 시나리오
-```
-1. browser_navigate → http://localhost:1420/attendance
-2. browser_click → 비수업일 셀 클릭 (보강 등록 다이얼로그)
-3. browser_snapshot → 충당 결석 선택 화면 확인 (소멸기한 임박순)
-4. browser_click → 결석 2건 선택 → "확정" 클릭
-5. browser_snapshot → 보강 등록 완료 + 결석 상태 "보강완료" 확인
-6. browser_console_messages(level: "error") → 콘솔 에러 없음
-```
+- ✅ 보강 등록(개별) → 결석 "보강완료" 전이 동작 (AC-4.5-3)
+- ✅ 보강 취소 → 결석 환원 정합성 유지 (AC-4.5-4)
+- ✅ "보강 진행 가능 OFF" 일자 보강 등록 차단 (AC-4.4-3)
+- ✅ 결석 이력에서 보강완료/보강소멸 시각 구분 (AC-4.5-7)
+- ✅ 보강 비즈니스 규칙 단위 테스트 신규 28건 (T2 9 + T3 9 + T4 7 + T8 3)
+- ✅ `cargo test --lib` cipher off 254 passed / cipher on 133 passed
+- ✅ `cargo clippy --lib -- -D warnings` cipher off/on clean
+- ✅ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과
+- ✅ 마이그레이션 self-check (A39): V108 불필요 결정과 실제 migrations 1:1 일치
+- ✅ 사용자 시각 검증 7라운드 "검증완료" (2026-05-26)
 
 #### 기술 고려사항
 - 보강-결석 매칭은 트랜잭션 내에서 원자적 실행 (정합성 필수)
-- PI-02 미결정 시: "시간 무관 일 단위 매칭" 보수적 채택
+- PI-02 확정: 일 단위 매칭 (분 단위 전환은 T3 검증 3 활성화만으로 가능 — R58)
 
 ---
 

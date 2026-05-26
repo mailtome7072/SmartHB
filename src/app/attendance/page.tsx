@@ -23,7 +23,10 @@ import {
 } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { AbsenceHistoryDialog } from '@/components/attendance/AbsenceHistoryDialog'
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
+import { MakeupManageDialog } from '@/components/attendance/MakeupManageDialog'
+import { MakeupRegisterDialog } from '@/components/attendance/MakeupRegisterDialog'
 
 function currentYearMonth(): string {
   const now = new Date()
@@ -42,6 +45,22 @@ function previousYearMonths(count: number, from: string): string[] {
   return result
 }
 
+interface MakeupDialogTarget {
+  studentId: number
+  studentName: string
+  studentSerialNo: string
+  eventDate: string
+}
+
+interface MakeupManageTarget {
+  studentId: number
+  studentName: string
+  studentSerialNo: string
+  makeupId: number
+  eventDate: string
+  classMinutes: number
+}
+
 export default function AttendancePage() {
   const [yearMonth, setYearMonth] = useState(currentYearMonth)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +69,20 @@ export default function AttendancePage() {
   // 자모 부분 일치는 별도 라이브러리 필요로 추후 task 로 분리, 본 구현은 substring 만.
   const [searchInput, setSearchInput] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Sprint 9 Session #12 K2: 재원중만 필터 (withdrawDate === null). 디폴트 ON.
+  const [enrolledOnly, setEnrolledOnly] = useState(true)
+  // Sprint 9 Session #12 K6: 보강대상 필터 (earliestPendingAbsenceDate !== null). 디폴트 OFF.
+  const [needsMakeupOnly, setNeedsMakeupOnly] = useState(false)
+  // Sprint 9 T6: 비수업일 셀 클릭 → 보강 등록 다이얼로그.
+  const [makeupTarget, setMakeupTarget] = useState<MakeupDialogTarget | null>(null)
+  // Sprint 9 Session #10 J6: 보강일 셀 클릭 → 보강 관리(삭제) 다이얼로그.
+  const [manageTarget, setManageTarget] = useState<MakeupManageTarget | null>(null)
+  // Sprint 9 T8: 학생명 클릭 → 결석 이력 다이얼로그. 학생 ID + 표시용 이름/일련번호.
+  const [historyTarget, setHistoryTarget] = useState<{
+    studentId: number
+    studentName: string
+    studentSerialNo: string
+  } | null>(null)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -89,22 +122,44 @@ export default function AttendancePage() {
   const showGenerateButton = existsQuery.data === false
   const showGrid = existsQuery.data === true && gridQuery.data !== undefined
 
-  // 검색어 적용 — 빈 입력 시 전체. 새 grid 객체를 만들어 AttendanceGrid 에 전달.
-  // students 외 다른 필드는 그대로 spread.
+  // 검색어 + 재원중 + 보강대상 필터 — 새 grid 객체를 만들어 AttendanceGrid 에 전달.
+  // K2 (Session #12): enrolledOnly 체크 시 withdrawDate === null 만 통과.
+  // K6 (Session #12): needsMakeupOnly 체크 시 earliestPendingAbsenceDate !== null 만 통과.
   const filteredGrid = useMemo(() => {
     if (gridQuery.data === undefined) return undefined
-    if (debouncedSearch === '') return gridQuery.data
+    if (debouncedSearch === '' && !enrolledOnly && !needsMakeupOnly) {
+      return gridQuery.data
+    }
     const q = debouncedSearch
     return {
       ...gridQuery.data,
-      students: gridQuery.data.students.filter((s) =>
-        s.name.toLowerCase().includes(q),
-      ),
+      students: gridQuery.data.students.filter((s) => {
+        if (enrolledOnly && s.withdrawDate !== null) return false
+        if (needsMakeupOnly && s.earliestPendingAbsenceDate === null) return false
+        if (q !== '' && !s.name.toLowerCase().includes(q)) return false
+        return true
+      }),
     }
-  }, [gridQuery.data, debouncedSearch])
+  }, [gridQuery.data, debouncedSearch, enrolledOnly, needsMakeupOnly])
 
   const matchedCount = filteredGrid?.students.length ?? 0
-  const totalCount = gridQuery.data?.students.length ?? 0
+
+  // K7 (Session #12): 라벨 옆 카운트 표기.
+  // - 재원중(N명) = withdrawDate === null 인 원생 수 (전체 기준)
+  // - 보강대상(N명) = 보강 필요 원생 수, 재원중 체크 ON 이면 재원중 한정 (연계)
+  const enrolledCount = useMemo(
+    () =>
+      gridQuery.data?.students.filter((s) => s.withdrawDate === null).length ??
+      0,
+    [gridQuery.data],
+  )
+  const needsMakeupCount = useMemo(() => {
+    if (gridQuery.data === undefined) return 0
+    return gridQuery.data.students.filter((s) => {
+      if (enrolledOnly && s.withdrawDate !== null) return false
+      return s.earliestPendingAbsenceDate !== null
+    }).length
+  }, [gridQuery.data, enrolledOnly])
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
@@ -144,11 +199,26 @@ export default function AttendancePage() {
               aria-label="원생 이름 검색"
               className="min-h-[44px] w-48 rounded-md border-2 border-[var(--border)] px-3 text-base"
             />
-            {debouncedSearch !== '' && (
-              <span className="text-sm text-gray-600" aria-live="polite">
-                {matchedCount} / {totalCount} 명
-              </span>
-            )}
+            <label className="ml-2 flex min-h-[44px] cursor-pointer items-center gap-2 text-base text-gray-700">
+              <input
+                type="checkbox"
+                checked={enrolledOnly}
+                onChange={(e) => setEnrolledOnly(e.target.checked)}
+                aria-label="재원중 원생만 보기"
+                className="h-5 w-5 cursor-pointer accent-[var(--accent)]"
+              />
+              재원중({enrolledCount}명)
+            </label>
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-base text-gray-700">
+              <input
+                type="checkbox"
+                checked={needsMakeupOnly}
+                onChange={(e) => setNeedsMakeupOnly(e.target.checked)}
+                aria-label="보강대상 원생만 보기"
+                className="h-5 w-5 cursor-pointer accent-[var(--accent)]"
+              />
+              보강대상({needsMakeupCount}명)
+            </label>
           </div>
         )}
 
@@ -194,7 +264,59 @@ export default function AttendancePage() {
 
         {showGrid && filteredGrid !== undefined && (
           <>
-            <AttendanceGrid grid={filteredGrid} />
+            <AttendanceGrid
+              grid={filteredGrid}
+              onNonClassDayClick={(studentId, eventDate) => {
+                const student = filteredGrid.students.find(
+                  (s) => s.studentId === studentId,
+                )
+                if (student === undefined) return
+                setMakeupTarget({
+                  studentId,
+                  studentName: student.name,
+                  studentSerialNo: student.serialNo,
+                  eventDate,
+                })
+              }}
+              onClassDayMakeupRegister={(studentId, eventDate) => {
+                // Session #12 K3: 정규 수업 셀 우클릭 진입 — 비수업일 진입과 동일한 다이얼로그.
+                const student = filteredGrid.students.find(
+                  (s) => s.studentId === studentId,
+                )
+                if (student === undefined) return
+                setMakeupTarget({
+                  studentId,
+                  studentName: student.name,
+                  studentSerialNo: student.serialNo,
+                  eventDate,
+                })
+              }}
+              onMakeupDayCellClick={(studentId, makeup) => {
+                const student = filteredGrid.students.find(
+                  (s) => s.studentId === studentId,
+                )
+                if (student === undefined) return
+                setManageTarget({
+                  studentId,
+                  studentName: student.name,
+                  studentSerialNo: student.serialNo,
+                  makeupId: makeup.id,
+                  eventDate: makeup.eventDate,
+                  classMinutes: makeup.classMinutes,
+                })
+              }}
+              onStudentNameClick={(studentId) => {
+                const student = filteredGrid.students.find(
+                  (s) => s.studentId === studentId,
+                )
+                if (student === undefined) return
+                setHistoryTarget({
+                  studentId,
+                  studentName: student.name,
+                  studentSerialNo: student.serialNo,
+                })
+              }}
+            />
             {debouncedSearch !== '' && matchedCount === 0 && (
               <p className="mt-4 text-center text-base text-gray-600">
                 &ldquo;{searchInput}&rdquo; 검색 결과가 없습니다.
@@ -207,6 +329,52 @@ export default function AttendancePage() {
           <p className="text-gray-600">출결 데이터 불러오는 중...</p>
         )}
       </section>
+
+      {makeupTarget !== null && (
+        <MakeupRegisterDialog
+          studentId={makeupTarget.studentId}
+          studentName={makeupTarget.studentName}
+          studentSerialNo={makeupTarget.studentSerialNo}
+          eventDate={makeupTarget.eventDate}
+          yearMonth={yearMonth}
+          onClose={() => setMakeupTarget(null)}
+          onSuccess={() => {
+            setMakeupTarget(null)
+            void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+            void queryClient.invalidateQueries({
+              queryKey: ['pending-absences', makeupTarget.studentId],
+            })
+          }}
+        />
+      )}
+
+      {manageTarget !== null && (
+        <MakeupManageDialog
+          makeupId={manageTarget.makeupId}
+          studentName={manageTarget.studentName}
+          studentSerialNo={manageTarget.studentSerialNo}
+          eventDate={manageTarget.eventDate}
+          classMinutes={manageTarget.classMinutes}
+          onClose={() => setManageTarget(null)}
+          onSuccess={() => {
+            setManageTarget(null)
+            void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+            void queryClient.invalidateQueries({
+              queryKey: ['pending-absences', manageTarget.studentId],
+            })
+          }}
+        />
+      )}
+
+
+      {historyTarget !== null && (
+        <AbsenceHistoryDialog
+          studentId={historyTarget.studentId}
+          studentName={historyTarget.studentName}
+          studentSerialNo={historyTarget.studentSerialNo}
+          onClose={() => setHistoryTarget(null)}
+        />
+      )}
       </main>
     </AppShell>
   )

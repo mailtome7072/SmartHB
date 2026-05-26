@@ -104,6 +104,13 @@ pub fn run() {
             commands::attendance::toggle_attendance,
             commands::attendance::update_absence_memo,
             commands::attendance::get_attendance_summary,
+            commands::makeup::get_pending_absences,
+            commands::makeup::get_makeup_eligible_dates,
+            commands::makeup::create_makeup_with_absences,
+            commands::makeup::cancel_makeup,
+            commands::makeup::mark_makeup_absent,
+            commands::makeup::batch_create_makeups,
+            commands::makeup::get_absence_history,
             startup::app_startup_sequence,
         ])
         .on_window_event(|_window, event| {

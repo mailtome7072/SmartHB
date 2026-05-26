@@ -8,6 +8,7 @@ pub mod db;
 pub mod fees;
 pub mod integrity;
 pub mod lock;
+pub mod makeup;
 pub mod pagination;
 pub mod paths;
 pub mod recovery;

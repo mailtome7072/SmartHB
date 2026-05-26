@@ -33,6 +33,13 @@ import type {
   ToggleResult,
 } from '@/types/attendance'
 import type {
+  AbsenceHistoryItem,
+  CreateMakeupPayload,
+  EligibleDate,
+  MakeupResult,
+  PendingAbsence,
+} from '@/types/makeup'
+import type {
   CascadeDeletePreview,
   CreateScheduleCodePayload,
   CreateScheduleEventPayload,
@@ -979,7 +986,7 @@ export async function generateAttendances(yearMonth: string): Promise<GenerateRe
 /** 출결표 그리드 — 원생 × 일자 + 월간 요약. 50명×31일 < 1초 (PRD §5.7). */
 export async function getAttendanceGrid(yearMonth: string): Promise<AttendanceGrid> {
   const inv = await getInvoke()
-  if (!inv) return { yearMonth, students: [] }
+  if (!inv) return { yearMonth, students: [], daySchedules: [] }
   return inv('get_attendance_grid', { yearMonth }) as Promise<AttendanceGrid>
 }
 
@@ -1022,4 +1029,50 @@ export async function getAttendanceSummary(
     }
   }
   return inv('get_attendance_summary', { studentId, yearMonth }) as Promise<AttendanceSummary>
+}
+
+// ──────────────────── 보강 도메인 (Sprint 9 T2~T4) ────────────────────
+
+/** 원생의 미처리 결석 목록 — 소멸기한 임박순 (NULL 마지막). PRD §4.5.4 다이얼로그 소스. */
+export async function getPendingAbsences(studentId: number): Promise<PendingAbsence[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_pending_absences', { studentId }) as Promise<PendingAbsence[]>
+}
+
+/** 보강 가능 일자 — year_month 내 `allows_makeup_class=1` 학사일정 + 학생 입퇴교 범위. */
+export async function getMakeupEligibleDates(
+  studentId: number,
+  yearMonth: string,
+): Promise<EligibleDate[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_makeup_eligible_dates', { studentId, yearMonth }) as Promise<EligibleDate[]>
+}
+
+/** 보강 등록 + 매칭 (트랜잭션 검증 5종). PI-02 일 단위 채택 — class_minutes 비교 없음. */
+export async function createMakeupWithAbsences(
+  payload: CreateMakeupPayload,
+): Promise<MakeupResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('create_makeup_with_absences', { payload }) as Promise<MakeupResult>
+}
+
+/** 보강 취소 — 연결 결석을 absent 환원 + makeup_attendances DELETE. */
+export async function cancelMakeup(makeupId: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('cancel_makeup', { makeupId })
+}
+
+/** 원생 결석 이력 — absent/makeup_done/makeup_expired 모두 포함, event_date DESC (T8). */
+export async function getAbsenceHistory(
+  studentId: number,
+): Promise<AbsenceHistoryItem[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_absence_history', { studentId }) as Promise<AbsenceHistoryItem[]>
 }
