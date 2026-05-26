@@ -51,7 +51,7 @@
 
 ## 작업 목록
 
-### T1: Sprint 9 dead code 정리 (carry-over) — 2h
+### T1: Sprint 9 dead code 정리 (carry-over) — 2h ✅ (2026-05-26, `dde74aa`)
 > A49 반영. 폐기된 IPC 2종 + audit variant + 단위 테스트 제거
 
 **작업 내용**:
@@ -71,24 +71,38 @@
 
 ---
 
-### T2: 소멸 자동 전이 설계 + 사용자 확인 — 2h
+### T2: 소멸 자동 전이 설계 + 사용자 확인 — 2h ✅ (2026-05-26)
 > A51 반영. 도메인 규칙 중 운용 관행 교차 항목을 사전에 사용자와 수렴
 
+**작업 내용**: scope.md Session #2 참조
+
+**사용자 결정 (2026-05-26, PI-05~PI-09)**:
+| ID | 결정 |
+|----|------|
+| PI-05 | 트리거 3개소(앱 시작 + 출결 생성 + 교습기간 등록) |
+| PI-06 | 소멸 판정 기준일 = 오늘 (chrono::Local::now), 테스트는 Option<NaiveDate> 주입 |
+| PI-07 | V108 마이그레이션 진행 → **T1' 신규 task** |
+| PI-08 | 선행 수업 = 기존 상태 토글 흐름 활용 → **T7 범위 축소** |
+| PI-09 | 자동 전이 알림 = 토스트 (건수 > 0일 때만) |
+
+**AC**: ✅ 모든 PI 결정 + scope.md 기록 완료
+
+---
+
+### T1': V108 마이그레이션 — makeup_attendances.status CHECK 정리 (PI-07 결정) — 0.5h
+
 **작업 내용**:
-1. 소멸 전이 트리거 3개소 설계서 작성 (scope.md에 기록):
-   - 앱 시작 시 batch
-   - 출결 생성 시 (`generate_attendances` 내부)
-   - 교습기간 등록 직후
-2. 소멸기한 판정 로직 확정: `makeup_deadline`(년월) + 해당 년월의 교습기간 종료일
-3. 선행 수업(§4.2.3) 운용 시나리오 확인: 미래 일자 결석 등록 → 현재 시점 보강 매칭
-4. **사용자 확인 질문**: 교습기간 미등록 월의 소멸 처리 방식 (대기 vs 즉시 소멸)
-5. V108 마이그레이션 필요 여부 판단
+1. `src-tauri/migrations/108__cleanup_makeup_status_check.sql` 신규
+2. `makeup_attendances.status` CHECK 제약에서 `'makeup_absent'` 값 제거
+3. SQLite CHECK ALTER 미지원 → 테이블 rename + 재생성 + INSERT SELECT
+4. `.sqlx/` 오프라인 캐시 갱신 후 커밋
+5. cargo test 통과 확인 (데이터 0건이므로 안전)
 
 **AC**:
-- scope.md에 소멸 전이 설계가 기록됨
-- 사용자 확인 완료 (운용 관행 교차 항목 0건 잔존)
+- V108 적용 후 CHECK 제약 단순화 (`status = 'makeup_attended'`)
+- 기존 `cargo test` 통과 (Sprint 9 J5 폐기 결정 후 makeup_absent 사용 코드 0건)
 
-**검증**: 문서 리뷰
+**검증**: `cargo test` + `cargo clippy` + `.sqlx/` 캐시 검증
 
 ---
 
@@ -338,8 +352,9 @@
 
 | 항목 | 시간 |
 |------|------|
-| T1: dead code 정리 | 2h |
-| T2: 소멸 설계 + 사용자 확인 | 2h |
+| T1: dead code 정리 ✅ | 2h (실측 1.5h) |
+| T2: 소멸 설계 + 사용자 확인 ✅ | 2h |
+| T1': V108 makeup_status CHECK 정리 (PI-07) | 0.5h |
 | T3: 소멸 자동 전이 IPC | 4h |
 | T4: 소멸 트리거 통합 | 3h |
 | T5: 소멸 환원 IPC | 3h |
@@ -350,9 +365,9 @@
 | T10: 퇴교 보강 UI | 3h |
 | T11: 캘린더 뷰 UI | 6h |
 | T12: 통합 검증 | 3h |
-| **소계 (구현)** | **38h** |
+| **소계 (구현)** | **38.5h** (T1' +0.5h) |
 | **시각 검증 버퍼 (A50)** | **6h** |
-| **총계** | **44h** |
+| **총계** | **44.5h** |
 
 - 팀: 1인 개발 + AI 보조
 - 2주 스프린트, 일 4h 실작업 = 40h 기본 + 6h 버퍼 = 46h 가용
