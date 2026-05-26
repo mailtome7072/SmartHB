@@ -1,4 +1,5 @@
 allowBuilds:
-  msw: false  # Service Worker mocking — 본 프로젝트 미사용 (shadcn CLI 의 transitive dep)
+  esbuild: true # Next.js/Tauri 빌드 체인 native 의존성
+  msw: false # Service Worker mocking — 본 프로젝트 미사용 (shadcn CLI 의 transitive dep)
   sharp: true
   unrs-resolver: true
