@@ -485,3 +485,94 @@ SQLite는 CHECK ALTER 미지원 → 다음 패턴 사용:
 - `students.rs` 또는 `expiration.rs` 에 IPC 2종:
   - `get_pending_makeup_for_withdrawal(student_id)` — 미보강 결석 리스트 조회
   - `process_withdrawal_makeup(student_id, choice)` — 3가지 선택지 처리
+
+---
+
+## Session #7 (T6 — 퇴교 시 미사용 보강 처리 IPC, 2026-05-26)
+
+> Sprint 10 Session #7 — T6 (퇴교 시 미보강 결석 일괄 처리, PRD §4.5.9).
+> 예상 3h. PI-11/PI-12 사용자 결정 반영.
+
+### 사용자 결정 (2026-05-26)
+
+| ID | 결정 |
+|----|------|
+| **PI-11** | 모듈 = `expiration.rs` 에 추가 (소멸 도메인 일치성) |
+| **PI-12** | `external_expire` 메모 = 결석별 `absence_memo` 일괄 저장 (결석 이력 §4.5.10 에서 직접 확인) |
+
+### 설계
+
+#### 응답 구조체
+
+```rust
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WithdrawalPendingMakeup {
+    pub student_id: i64,
+    pub remaining_minutes: i64,  // 잔여 보강필요시간
+    pub absences: Vec<PendingAbsenceForWithdrawal>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingAbsenceForWithdrawal {
+    pub id: i64,
+    pub event_date: String,
+    pub class_minutes: i64,
+    pub makeup_deadline: Option<String>,
+}
+
+/// 퇴교 처리 선택지.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum WithdrawalChoice {
+    ImmediateExpire,                      // 전체 → makeup_expired
+    ExternalExpire { memo: String },      // 전체 → makeup_expired + absence_memo 일괄 저장
+    // defer_withdrawal 은 UI 에서 다이얼로그 닫기로 처리 — IPC 호출 없음
+}
+```
+
+#### IPC 2종
+
+1. `get_pending_makeup_for_withdrawal(student_id) -> WithdrawalPendingMakeup`
+   - SQL: `SELECT id, event_date, class_minutes, makeup_deadline FROM regular_attendances WHERE student_id = ? AND status='absent' AND makeup_attendance_id IS NULL ORDER BY event_date`
+   - 잔여 시간 계산: `SUM(class_minutes)`
+   - 빈 리스트면 UI에서 다이얼로그 미표시
+
+2. `process_withdrawal_makeup(student_id, choice, withdraw_date) -> ()`
+   - 트랜잭션 내:
+     - 미보강 결석 → `makeup_expired` 전이
+     - `ExternalExpire { memo }` 인 경우 동일 트랜잭션에서 `UPDATE absence_memo`
+     - 학생 `withdraw_date` 설정
+   - audit:
+     - `MakeupExpired` (전이된 결석 수만큼)
+     - `StudentWithdrawn`
+
+#### defer_withdrawal 처리
+IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 사용자가 보강 완료 후 다시 퇴교 흐름 진입.
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/src/commands/expiration.rs | [2회] | 응답 struct 2종 + IPC 2종 + 단위 테스트 5건+ |
+| src-tauri/src/lib.rs | [2회] | invoke_handler 2건 추가 |
+| docs/sprint/sprint10/scope.md | [6회] | Session #7 추가 |
+
+### 완료 기준 — T6 AC (sprint10.md L186-189)
+
+- ✅ IPC 2종 등록 — `get_pending_makeup_for_withdrawal` + `process_withdrawal_makeup` (TS 래퍼는 T10 UI 진입 시 추가)
+- ✅ 단위 테스트 **6건 통과** (계획 5건+ 충족):
+  - withdrawal_lists_pending_absences_with_remaining_minutes — 정렬/잔여 시간 합
+  - withdrawal_returns_empty_when_no_pending_absence — 빈 리스트
+  - withdrawal_immediate_expire_transitions_all_and_sets_withdraw_date — 전체 전이 + 퇴교
+  - withdrawal_external_expire_saves_memo_and_transitions_all — memo 일괄 저장 + 전이
+  - withdrawal_zero_absences_still_sets_withdraw_date — 결석 0건도 퇴교 정상
+  - withdrawal_rejects_missing_student — 미존재 학생 거부
+- ✅ `cargo test` 265 passed (T4 259 → +6) / `cargo clippy` clean
+
+### 세션 종료 조건
+
+- ✅ T6 AC 통과
+- ⬜ 단일 커밋
+- ⬜ 다음 세션(T7 — 선행 수업 검증) 진입점 준비

@@ -31,7 +31,7 @@
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::db;
 use chrono::{Local, NaiveDate};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 
 /// 자동 전이 결과 — IPC 응답.
@@ -137,6 +137,189 @@ pub(crate) async fn expire_overdue_absences_impl(
         transitioned_count: details.len(),
         details,
     })
+}
+
+// ────────────────────────────────────────────────────────────────────
+// T6: 퇴교 시 미사용 보강 처리 (PRD §4.5.9)
+// ────────────────────────────────────────────────────────────────────
+//
+// 사용자 결정 (Sprint 10 T2, 2026-05-26):
+// - PI-11: 본 모듈(expiration.rs) 에 추가 — 소멸 도메인 일치
+// - PI-12: external_expire memo = 결석별 absence_memo 일괄 저장
+//
+// `defer_withdrawal` 선택지는 UI 에서 다이얼로그 닫기로 처리 — IPC 호출 없음.
+
+/// 퇴교 시 미보강 결석 1건 — UI 다이얼로그에 표시.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingAbsenceForWithdrawal {
+    pub id: i64,
+    pub event_date: String,
+    pub class_minutes: i64,
+    pub makeup_deadline: Option<String>,
+}
+
+/// 퇴교 시 미사용 보강 조회 응답.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WithdrawalPendingMakeup {
+    pub student_id: i64,
+    pub remaining_minutes: i64,
+    pub absences: Vec<PendingAbsenceForWithdrawal>,
+}
+
+/// 퇴교 처리 선택지 — PRD §4.5.9. `defer_withdrawal` 은 UI 처리 (IPC 호출 안 함).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum WithdrawalChoice {
+    /// 즉시 소멸 — 전체 미보강 결석 → makeup_expired 전이.
+    ImmediateExpire,
+    /// 외부 처리 후 소멸 — 동일 memo 를 모든 미보강 결석 absence_memo 에 일괄 저장 + makeup_expired 전이.
+    ExternalExpire { memo: String },
+}
+
+/// 퇴교 대상 원생의 미보강 결석 조회.
+///
+/// 빈 리스트(`absences.is_empty() && remaining_minutes == 0`) 면 UI 는 다이얼로그 미표시.
+#[tauri::command]
+pub async fn get_pending_makeup_for_withdrawal(
+    student_id: i64,
+) -> Result<WithdrawalPendingMakeup, String> {
+    let pool = db::pool().map_err(String::from)?;
+    get_pending_makeup_for_withdrawal_impl(pool, student_id).await
+}
+
+pub(crate) async fn get_pending_makeup_for_withdrawal_impl(
+    pool: &SqlitePool,
+    student_id: i64,
+) -> Result<WithdrawalPendingMakeup, String> {
+    let rows = sqlx::query(
+        "SELECT id, event_date, class_minutes, makeup_deadline \
+         FROM regular_attendances \
+         WHERE student_id = ? AND status = 'absent' AND makeup_attendance_id IS NULL \
+         ORDER BY event_date",
+    )
+    .bind(student_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("미보강 결석 조회 실패: {}", e))?;
+
+    let mut absences: Vec<PendingAbsenceForWithdrawal> = Vec::with_capacity(rows.len());
+    let mut remaining_minutes: i64 = 0;
+    for r in rows {
+        let cm: i64 = r.try_get("class_minutes").map_err(|e| e.to_string())?;
+        remaining_minutes += cm;
+        absences.push(PendingAbsenceForWithdrawal {
+            id: r.try_get("id").map_err(|e| e.to_string())?,
+            event_date: r.try_get("event_date").map_err(|e| e.to_string())?,
+            class_minutes: cm,
+            makeup_deadline: r.try_get("makeup_deadline").map_err(|e| e.to_string())?,
+        });
+    }
+    Ok(WithdrawalPendingMakeup {
+        student_id,
+        remaining_minutes,
+        absences,
+    })
+}
+
+/// 퇴교 처리 — 선택지에 따라 미보강 결석 일괄 전이 + 학생 withdraw_date 설정.
+///
+/// 단일 트랜잭션 — 보강 전이/메모 갱신/퇴교 설정이 원자적으로 적용.
+#[tauri::command]
+pub async fn process_withdrawal_makeup(
+    student_id: i64,
+    choice: WithdrawalChoice,
+    withdraw_date: String,
+) -> Result<(), String> {
+    let pool = db::pool().map_err(String::from)?;
+    let expired_ids =
+        process_withdrawal_makeup_impl(pool, student_id, &choice, &withdraw_date).await?;
+    // audit fire-and-forget — 전이된 결석마다 1건 + 학생 퇴교 1건.
+    for aid in &expired_ids {
+        audit::try_record(
+            AuditEventType::MakeupExpired,
+            Some(&student_id.to_string()),
+            Some(&format!(
+                r#"{{"attendanceId":{},"trigger":"withdrawal"}}"#,
+                aid
+            )),
+        )
+        .await;
+    }
+    audit::try_record(
+        AuditEventType::StudentWithdrawn,
+        Some(&student_id.to_string()),
+        None,
+    )
+    .await;
+    Ok(())
+}
+
+pub(crate) async fn process_withdrawal_makeup_impl(
+    pool: &SqlitePool,
+    student_id: i64,
+    choice: &WithdrawalChoice,
+    withdraw_date: &str,
+) -> Result<Vec<i64>, String> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
+
+    // external_expire 인 경우 모든 미보강 결석에 동일 memo 일괄 저장.
+    if let WithdrawalChoice::ExternalExpire { memo } = choice {
+        sqlx::query(
+            "UPDATE regular_attendances \
+             SET absence_memo = ?, \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+             WHERE student_id = ? AND status = 'absent' AND makeup_attendance_id IS NULL",
+        )
+        .bind(memo)
+        .bind(student_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("결석 메모 일괄 저장 실패: {}", e))?;
+    }
+
+    // 미보강 결석 → makeup_expired 일괄 전이 (deadline 무관).
+    let rows = sqlx::query(
+        "UPDATE regular_attendances \
+         SET status = 'makeup_expired', \
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE student_id = ? AND status = 'absent' AND makeup_attendance_id IS NULL \
+         RETURNING id",
+    )
+    .bind(student_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| format!("퇴교 보강 전이 실패: {}", e))?;
+    let expired_ids: Vec<i64> = rows
+        .into_iter()
+        .map(|r| r.try_get::<i64, _>("id").map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // 학생 withdraw_date 설정.
+    let result = sqlx::query(
+        "UPDATE students SET \
+            withdraw_date = ?, \
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE id = ?",
+    )
+    .bind(withdraw_date)
+    .bind(student_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("퇴교 처리 실패: {}", e))?;
+    if result.rows_affected() == 0 {
+        return Err(format!("원생을 찾을 수 없습니다 (id={}).", student_id));
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
+
+    Ok(expired_ids)
 }
 
 #[cfg(test)]
@@ -345,5 +528,167 @@ mod tests {
 
         assert_eq!(report.transitioned_count, 0);
         assert_eq!(fetch_status(&pool, aid).await, "absent");
+    }
+
+    // ─────────────── T6 — 퇴교 시 미사용 보강 처리 (PRD §4.5.9) ───────────────
+
+    async fn fetch_withdraw_date(pool: &SqlitePool, sid: i64) -> Option<String> {
+        sqlx::query_scalar("SELECT withdraw_date FROM students WHERE id = ?")
+            .bind(sid)
+            .fetch_one(pool)
+            .await
+            .expect("fetch withdraw_date")
+    }
+
+    async fn fetch_memo(pool: &SqlitePool, aid: i64) -> Option<String> {
+        sqlx::query_scalar("SELECT absence_memo FROM regular_attendances WHERE id = ?")
+            .bind(aid)
+            .fetch_one(pool)
+            .await
+            .expect("fetch memo")
+    }
+
+    /// 미보강 결석 조회 — 잔여 시간 합 + event_date 오름차순 정렬.
+    #[tokio::test]
+    async fn withdrawal_lists_pending_absences_with_remaining_minutes() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001").await;
+        // 3건 결석 (60+90+30 = 180분)
+        seed_absence(&pool, sid, "2026-05-20", "2026-05", Some("2026-06")).await;
+        let aid_mid = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO regular_attendances \
+                (student_id, event_date, year_month, status, class_minutes, makeup_deadline) \
+             VALUES (?, '2026-05-10', '2026-05', 'absent', 90, '2026-06') RETURNING id",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .expect("seed 90m");
+        sqlx::query(
+            "INSERT INTO regular_attendances \
+                (student_id, event_date, year_month, status, class_minutes, makeup_deadline) \
+             VALUES (?, '2026-05-05', '2026-05', 'absent', 30, '2026-06')",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .expect("seed 30m");
+
+        let result = get_pending_makeup_for_withdrawal_impl(&pool, sid).await.expect("ok");
+        assert_eq!(result.student_id, sid);
+        assert_eq!(result.remaining_minutes, 60 + 90 + 30);
+        assert_eq!(result.absences.len(), 3);
+        // 정렬: event_date 오름차순
+        assert_eq!(result.absences[0].event_date, "2026-05-05");
+        assert_eq!(result.absences[1].event_date, "2026-05-10");
+        assert_eq!(result.absences[1].id, aid_mid);
+        assert_eq!(result.absences[2].event_date, "2026-05-20");
+    }
+
+    /// 미보강 결석 0건 → 빈 리스트 + remaining_minutes=0 (UI 다이얼로그 미표시 조건).
+    #[tokio::test]
+    async fn withdrawal_returns_empty_when_no_pending_absence() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001").await;
+        // 출석만 시드 (제외 대상)
+        sqlx::query(
+            "INSERT INTO regular_attendances \
+                (student_id, event_date, year_month, status, class_minutes) \
+             VALUES (?, '2026-05-10', '2026-05', 'present', 60)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .expect("seed present");
+
+        let result = get_pending_makeup_for_withdrawal_impl(&pool, sid).await.expect("ok");
+        assert_eq!(result.remaining_minutes, 0);
+        assert!(result.absences.is_empty());
+    }
+
+    /// immediate_expire → 전체 미보강 결석 makeup_expired + withdraw_date 설정.
+    #[tokio::test]
+    async fn withdrawal_immediate_expire_transitions_all_and_sets_withdraw_date() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001").await;
+        let a1 = seed_absence(&pool, sid, "2026-05-05", "2026-05", Some("2026-06")).await;
+        let a2 = seed_absence(&pool, sid, "2026-05-10", "2026-05", Some("2026-06")).await;
+
+        let expired = process_withdrawal_makeup_impl(
+            &pool,
+            sid,
+            &WithdrawalChoice::ImmediateExpire,
+            "2026-05-31",
+        )
+        .await
+        .expect("ok");
+
+        assert_eq!(expired.len(), 2);
+        assert_eq!(fetch_status(&pool, a1).await, "makeup_expired");
+        assert_eq!(fetch_status(&pool, a2).await, "makeup_expired");
+        assert_eq!(fetch_withdraw_date(&pool, sid).await.as_deref(), Some("2026-05-31"));
+        // memo 는 변경 없음
+        assert!(fetch_memo(&pool, a1).await.is_none());
+    }
+
+    /// external_expire → memo 일괄 저장 + 전체 makeup_expired + withdraw_date 설정.
+    #[tokio::test]
+    async fn withdrawal_external_expire_saves_memo_and_transitions_all() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001").await;
+        let a1 = seed_absence(&pool, sid, "2026-05-05", "2026-05", Some("2026-06")).await;
+        let a2 = seed_absence(&pool, sid, "2026-05-10", "2026-05", Some("2026-06")).await;
+
+        let memo = "환불 처리됨 (외부 정산)".to_string();
+        let expired = process_withdrawal_makeup_impl(
+            &pool,
+            sid,
+            &WithdrawalChoice::ExternalExpire { memo: memo.clone() },
+            "2026-05-31",
+        )
+        .await
+        .expect("ok");
+
+        assert_eq!(expired.len(), 2);
+        assert_eq!(fetch_status(&pool, a1).await, "makeup_expired");
+        assert_eq!(fetch_status(&pool, a2).await, "makeup_expired");
+        assert_eq!(fetch_memo(&pool, a1).await.as_deref(), Some(memo.as_str()));
+        assert_eq!(fetch_memo(&pool, a2).await.as_deref(), Some(memo.as_str()));
+        assert_eq!(fetch_withdraw_date(&pool, sid).await.as_deref(), Some("2026-05-31"));
+    }
+
+    /// 미보강 결석 0건 → 전이 0건이지만 withdraw_date 는 정상 설정.
+    #[tokio::test]
+    async fn withdrawal_zero_absences_still_sets_withdraw_date() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001").await;
+        // 결석 시드 없음.
+
+        let expired = process_withdrawal_makeup_impl(
+            &pool,
+            sid,
+            &WithdrawalChoice::ImmediateExpire,
+            "2026-05-31",
+        )
+        .await
+        .expect("ok");
+
+        assert!(expired.is_empty());
+        assert_eq!(fetch_withdraw_date(&pool, sid).await.as_deref(), Some("2026-05-31"));
+    }
+
+    /// 미존재 학생 id → 에러.
+    #[tokio::test]
+    async fn withdrawal_rejects_missing_student() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let err = process_withdrawal_makeup_impl(
+            &pool,
+            99999,
+            &WithdrawalChoice::ImmediateExpire,
+            "2026-05-31",
+        )
+        .await
+        .expect_err("학생 없음");
+        assert!(err.contains("찾을 수 없습니다"));
     }
 }

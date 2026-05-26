@@ -110,6 +110,8 @@ pub fn run() {
             commands::makeup::cancel_makeup,
             commands::makeup::get_absence_history,
             commands::expiration::expire_overdue_absences,
+            commands::expiration::get_pending_makeup_for_withdrawal,
+            commands::expiration::process_withdrawal_makeup,
             startup::app_startup_sequence,
         ])
         .on_window_event(|_window, event| {

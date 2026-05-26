@@ -178,8 +178,8 @@
 
 ---
 
-### T6: 퇴교 시 미사용 보강 처리 IPC — 3h
-> PRD §4.5.9 구현
+### T6: 퇴교 시 미사용 보강 처리 IPC — 3h ✅ (2026-05-26, 단위 테스트 6건)
+> PRD §4.5.9 구현. PI-11(expiration.rs) + PI-12(absence_memo 일괄 저장) 적용. defer_withdrawal 은 UI 처리.
 
 **작업 내용**:
 1. `students.rs` 또는 `expiration.rs`에 퇴교 보강 처리 함수:
