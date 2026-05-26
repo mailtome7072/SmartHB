@@ -361,6 +361,10 @@ pub struct AttendanceGridStudent {
     /// Sprint 9 Session #10 J4 — month 내 보강 출결 (비수업일 셀에 표기).
     pub makeups: Vec<GridMakeupCell>,
     pub summary: AttendanceSummary,
+    /// Sprint 9 Session #12 K1' — 만기 미도래 미보강 결석 중 가장 이른 일자.
+    /// 클라이언트의 비수업일 "+" 표시 사전 판단에 사용. 이전 월 결석도 포함.
+    /// `None` 이면 보강 필요한 결석 없음 → "+" 비표시.
+    pub earliest_pending_absence_date: Option<String>,
 }
 
 /// 학사일정 매핑 — 해당 월 일자별 코드 속성.
@@ -536,6 +540,22 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
             })
             .collect::<Result<Vec<_>, String>>()?;
 
+        // Sprint 9 Session #12 K1': 만기 미도래 미보강 결석 중 가장 이른 일자.
+        // 그리드 yearMonth 기준으로 makeup_deadline 도래 여부 판단 (deadline NULL 또는 deadline >= yearMonth).
+        // year_month 필터 없음 — 이전 월의 결석도 포함.
+        let earliest_pending_absence_date: Option<String> = sqlx::query_scalar(
+            "SELECT MIN(event_date) FROM regular_attendances \
+             WHERE student_id = ? \
+               AND status = 'absent' \
+               AND makeup_attendance_id IS NULL \
+               AND (makeup_deadline IS NULL OR makeup_deadline >= ?)",
+        )
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("만기 미도래 결석 최소 일자 조회 실패: {}", e))?;
+
         students.push(AttendanceGridStudent {
             student_id,
             name,
@@ -546,6 +566,7 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
             attendances,
             makeups,
             summary,
+            earliest_pending_absence_date,
         });
     }
 
@@ -1249,6 +1270,82 @@ mod tests {
         assert_eq!(s.summary.year_month, "2026-06");
         assert_eq!(s.summary.absent_count, 0);
         assert!(s.summary.present_count > 0);
+        // K1': 결석 없음 → None.
+        assert!(s.earliest_pending_absence_date.is_none());
+    }
+
+    // ─────── Session #12 K1' — earliest_pending_absence_date ───────
+
+    #[tokio::test]
+    async fn grid_earliest_pending_returns_min_unmatched_absence() {
+        // 6월에 결석 2건(절반은 만기 미도래) → MIN(eventDate) 반환.
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1), (3, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        // 6/01(월) 및 6/03(수) 두 일자를 결석으로 토글 — 둘 다 makeup_deadline = 2026-07.
+        let aids: Vec<i64> = sqlx::query_scalar(
+            "SELECT id FROM regular_attendances WHERE student_id = ? AND year_month = '2026-06' \
+             AND (event_date = '2026-06-01' OR event_date = '2026-06-03') ORDER BY event_date",
+        )
+        .bind(sid)
+        .fetch_all(&pool)
+        .await
+        .expect("aids");
+        for aid in &aids {
+            toggle_impl(&pool, *aid, "absent").await.expect("absent");
+        }
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        assert_eq!(
+            grid.students[0].earliest_pending_absence_date.as_deref(),
+            Some("2026-06-01"),
+        );
+    }
+
+    #[tokio::test]
+    async fn grid_earliest_pending_excludes_expired_deadlines() {
+        // 결석의 makeup_deadline 이 grid yearMonth 보다 이전이면 만기 도래 → 제외.
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let aid = first_attendance_id(&pool, sid, "2026-06").await;
+        toggle_impl(&pool, aid, "absent").await.expect("absent");
+        // 강제로 만기 도래 처리 — deadline 을 2026-05(grid yearMonth 이전) 으로 변경.
+        sqlx::query("UPDATE regular_attendances SET makeup_deadline = '2026-05' WHERE id = ?")
+            .bind(aid)
+            .execute(&pool)
+            .await
+            .expect("update deadline");
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        assert!(grid.students[0].earliest_pending_absence_date.is_none());
+    }
+
+    #[tokio::test]
+    async fn grid_earliest_pending_includes_previous_month_absence() {
+        // 5월 결석(미보강, 만기 미도래) + 6월 그리드 조회 → 5월 일자 반환.
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-05", "2026-05-01", "2026-05-31", 1).await;
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1), (3, 1)]).await;
+        generate_impl(&pool, "2026-05").await.expect("generate may");
+        generate_impl(&pool, "2026-06").await.expect("generate jun");
+
+        // 5월 첫 결석 처리 — deadline = 2026-06 (다음 달 말일까지).
+        let may_aid = first_attendance_id(&pool, sid, "2026-05").await;
+        toggle_impl(&pool, may_aid, "absent").await.expect("absent");
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        let pending = grid.students[0].earliest_pending_absence_date.as_deref();
+        assert!(pending.is_some(), "이전 월 결석도 포함");
+        assert!(
+            pending.expect("some").starts_with("2026-05"),
+            "5월 일자가 반환되어야 함: {:?}",
+            pending,
+        );
     }
 
     // ─────── AC-T3-2 ───────

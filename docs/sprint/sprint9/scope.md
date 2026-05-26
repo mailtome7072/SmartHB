@@ -925,3 +925,59 @@ WHERE candidates.date BETWEEN ? AND ?  -- 학생 입퇴교 범위
 - `mark_makeup_absent` 백엔드 IPC + `markMakeupAbsent` audit variant 정리 (dead code)
 - `batch_create_makeups` 백엔드 IPC + 관련 audit/payload 정리 (dead code)
 - `makeup_attendances.status='makeup_absent'` CHECK 제약 마이그레이션 정리 (선택적)
+
+---
+
+## Session #12 (T13 — 4차 시각 검증 K1~K4 흡수, 2026-05-26)
+
+> sprint-close + sprint-review 완료 후 `pnpm tauri:dev` 수동 스테이징 검증에서 4건 추가 발견 — 사용자 결정 "전부 Sprint 9 흡수".
+
+### Task
+| Task | 작업 | 예상 |
+|------|------|------|
+| **T13** | K1~K4 4건 흡수 — UI 보강 + 수업 셀 우클릭 진입점 + 단원평가 헤더 분리 | 4~6h |
+
+### 시각 검증 4차 라운드 — 7건 (K1~K7, 4차+5차 누적)
+
+| 코드 | 영역 | 내용 | 결정 |
+|------|------|------|------|
+| **K1** | 공통 (AttendanceGrid) | 충당 가능한 결석(미보강)이 없는 원생은 보강일 셀의 '+' 버튼 비표시 | `isEligible` 조건 추가 — 1차는 `summary.makeupNeededMinutes > 0`, **K1' (5차)** 에서 백엔드 응답 확장 후 정밀화 |
+| **K1'** | 백엔드 (attendance.rs) | K1 정밀화 — "이전 일자에 만기 미도래 미보강 결석이 있을 때만" + 표시. 이전 월 결석 포함 | `AttendanceGridStudent.earliest_pending_absence_date: Option<String>` 추가. SQL: `MIN(event_date) WHERE absent AND makeup_attendance_id IS NULL AND (deadline IS NULL OR deadline >= grid yearMonth)`. 단위 테스트 3건 추가 |
+| **K2** | 공통 (attendance/page) | 상단 '재원중만' 체크박스 — 퇴교 원생 필터링 | 새 state + `student.withdrawDate === null` 필터. **K2' (5차)** 디폴트 ON |
+| **K3** | 보강 등록 진입점 (AttendanceGrid) | 수업있는 날에도 보강 등록 가능 — 정규 수업 셀에서 진입점 누락 | 수업 셀(present/makeup_done/expired) 우클릭 = 보강 등록. 결석 셀 우클릭 = 메모 (기존 유지) |
+| **K4** | 헤더 라벨 (AttendanceGrid) | 단원평가/보강데이 헤더 배경색 동일 — 단원평가 헤더는 배경색 제거, 보강데이는 날짜 밑 작은 폰트 '보강데이' 표기 (셀 너비 유지) | label 기반 분기 — 코드명에 "단원평가" 포함 시 배경 미적용 / "보강데이" 포함 시 라벨 표기 |
+| **K6** | 공통 (attendance/page) | '재원중만' 우측 '보강대상' 체크박스 — 보강 필요 원생만 필터 | `needsMakeupOnly` state, `earliestPendingAbsenceDate !== null` 필터, 디폴트 OFF |
+| **K7** | 카운트 표기 (attendance/page) | 기존 'N / M 명' 별도 카운터 제거. "재원중(N명)" / "보강대상(M명)" 라벨 표기. 보강대상 산정은 재원중 필터와 연계 | 라벨에 카운트 직접 병기. 보강대상 카운트는 `enrolledOnly ON` 시 재원중 원생 한정 |
+
+### K3 진입점 UX (사용자 결정)
+- 결석(absent) 셀 우클릭 → 메모 (기존 유지)
+- present / makeup_done / makeup_expired 셀 우클릭 → 보강 등록 다이얼로그 진입
+- 비수업일(cell=null) + 보강 가능 → 좌클릭 + 버튼 (기존 유지)
+- 보강(emerald) 셀 클릭 → 보강 관리(취소) (기존 유지)
+
+### 수정 파일
+
+| 파일 | 변동 |
+|------|------|
+| src-tauri/src/commands/attendance.rs | K1' — `earliest_pending_absence_date` 필드 + SQL + 단위 테스트 3건 |
+| src/types/attendance.ts | K1' — `earliestPendingAbsenceDate` 타입 추가 |
+| src/components/attendance/AttendanceGrid.tsx | K1' isEligible 정밀화 / K3 우클릭 라우팅 / K4 헤더 라벨 분기 |
+| src/app/attendance/page.tsx | K2/K2' 재원중 필터 + 디폴트 ON / K6 보강대상 체크박스 / K7 카운트 라벨 |
+| docs/sprint/sprint9/scope.md | Session #12 추가 |
+
+### 자동 검증
+- ✅ cargo test cipher off **256** passed (sprint-close 254 → K1' 신규 3건 추가)
+- ✅ cargo clippy cipher off clean
+- ✅ pnpm lint / tsc --noEmit clean
+- ✅ pnpm build 13 라우트 정상
+
+### 시각 검증 (사용자, 2026-05-26)
+- ✅ 4차 라운드 K1~K4 검증 진행 → 정밀화/추가 요청(K1'/K2'/K6) 도출
+- ✅ 5차 라운드 K1'/K2'/K6 검증 진행 → 카운트 표기 요청(K7) 도출
+- ✅ 6차 라운드 K7 — "검수완료. 모두 pass"
+
+### Session 종료 조건
+- ✅ K1~K7 모두 사용자 시각 검증 통과
+- ✅ 자동 검증 7항목 통과
+- ✅ sprint9.md DoD 갱신 + CHANGELOG.md 항목 추가
+- ⬜ 단일 커밋 + 메모리 동기화

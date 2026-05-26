@@ -333,6 +333,18 @@
 - ✅ ROADMAP.md Sprint 9 상태 `🔄 진행 중` (T1 진입 시 갱신됨, L460)
 - ✅ CHANGELOG.md 업데이트 — sprint-close 완료 (2026-05-26)
 
+**Session #12 — 4차 시각 검증 K1~K7 흡수 (2026-05-26, sprint-review 후 사후 흡수)**
+- ✅ K1 미보강 결석 없을 때 '+' 비표시 → K1' 정밀화 (셀 일자 이전 만기 미도래 미보강 결석 존재 검사, 이전 월 포함)
+- ✅ K1' 백엔드 응답 `earliest_pending_absence_date` 추가 + 단위 테스트 3건
+- ✅ K2 재원중만 체크박스 + K2' 디폴트 ON
+- ✅ K3 수업 셀(present/makeup_done/makeup_expired) 우클릭 보강 등록 진입
+- ✅ K4 단원평가 헤더 배경 제거 / 보강데이 헤더 작은 폰트 '보강데이' 라벨
+- ✅ K6 보강대상 체크박스 (만기 미도래 미보강 결석 보유자 필터)
+- ✅ K7 카운트 라벨 — "재원중(N명)" / "보강대상(M명)" 병기 + 재원중↔보강대상 연계
+- ✅ cargo test cipher off 256 passed (sprint-close 254 → +3 K1' 단위 테스트)
+- ✅ pnpm lint / tsc / build clean
+- ✅ 사용자 6라운드 시각 검증 누적 "검수완료. 모두 pass"
+
 ---
 
 ## 🧪 Playwright MCP 검증 시나리오 (UC-4 보강 흐름)

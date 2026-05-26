@@ -70,6 +70,9 @@ interface Props {
   onMakeupDayCellClick?: (studentId: number, makeup: GridMakeupCell) => void
   /** Sprint 9 T8 — 학생명 클릭 시 호출 (결석 이력 다이얼로그 진입). */
   onStudentNameClick?: (studentId: number) => void
+  /** Sprint 9 Session #12 K3 — 정규 수업 셀(present/makeup_done/makeup_expired) 우클릭 시
+   *  보강 등록 진입. 결석(absent) 셀 우클릭은 기존 메모 동작 유지. */
+  onClassDayMakeupRegister?: (studentId: number, eventDate: string) => void
 }
 
 interface LastToggle {
@@ -111,6 +114,7 @@ export function AttendanceGrid({
   onNonClassDayClick,
   onMakeupDayCellClick,
   onStudentNameClick,
+  onClassDayMakeupRegister,
 }: Props) {
   const queryClient = useQueryClient()
   const [lastToggle, setLastToggle] = useState<LastToggle | null>(null)
@@ -247,13 +251,16 @@ export function AttendanceGrid({
                 const isWeekend = wd === '토' || wd === '일'
                 const eventDate = `${grid.yearMonth}-${String(d).padStart(2, '0')}`
                 const sched = dayScheduleMap.get(eventDate)
-                const isMakeupDay = sched?.allowsMakeup === true
+                // Session #12 K4: 단원평가 응시일은 배경색 제거(일반 평일과 동일 표기).
+                // 보강데이/공휴수업일 등 그 외 allowsMakeup=true 일자만 sky 배경 유지.
+                const isAssessment = sched?.label === '단원평가 응시일'
+                const showSkyBg = sched?.allowsMakeup === true && !isAssessment
                 return (
                   <th
                     key={`wd-${d}`}
                     title={sched?.label}
                     className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-xs ${
-                      isMakeupDay
+                      showSkyBg
                         ? 'bg-sky-100 text-sky-800 font-semibold'
                         : isWeekend
                           ? 'text-red-600'
@@ -269,16 +276,24 @@ export function AttendanceGrid({
               {days.map((d) => {
                 const eventDate = `${grid.yearMonth}-${String(d).padStart(2, '0')}`
                 const sched = dayScheduleMap.get(eventDate)
-                const isMakeupDay = sched?.allowsMakeup === true
+                const isAssessment = sched?.label === '단원평가 응시일'
+                const showSkyBg = sched?.allowsMakeup === true && !isAssessment
+                // K4: 보강데이는 날짜 밑에 작은 폰트 라벨 — 셀 너비 변경 없도록 absolute 또는 leading-none.
+                const isMakeupDayLabel = sched?.label === '보강데이'
                 return (
                   <th
                     key={`d-${d}`}
                     title={sched?.label}
-                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-2 text-center text-sm ${
-                      isMakeupDay ? 'bg-sky-100 text-sky-800 font-semibold' : ''
+                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-2 text-center text-sm leading-tight ${
+                      showSkyBg ? 'bg-sky-100 text-sky-800 font-semibold' : ''
                     }`}
                   >
                     {d}
+                    {isMakeupDayLabel && (
+                      <div className="text-[10px] font-normal leading-none text-sky-700">
+                        보강데이
+                      </div>
+                    )}
                   </th>
                 )
               })}
@@ -293,9 +308,12 @@ export function AttendanceGrid({
                 yearMonth={grid.yearMonth}
                 dayScheduleMap={dayScheduleMap}
                 onCellClick={handleCellClick}
-                onCellContextMenu={(cell) => {
+                onCellContextMenu={(cell, studentId) => {
+                  // Session #12 K3: 결석 셀 = 메모, 그 외(present/makeup_done/makeup_expired) = 보강 등록.
                   if (cell.status === 'absent') {
                     setMemoDialogCell(cell)
+                  } else if (onClassDayMakeupRegister !== undefined) {
+                    onClassDayMakeupRegister(studentId, cell.eventDate)
                   }
                 }}
                 onNonClassDayClick={onNonClassDayClick}
@@ -308,7 +326,7 @@ export function AttendanceGrid({
       </div>
 
       <p className="mt-3 text-sm text-gray-600">
-        셀 클릭 = 출석↔결석 토글 · 결석 셀 우클릭 = 사유 메모 · Ctrl+Z (또는 Cmd+Z) = 마지막 토글 취소
+        셀 클릭 = 출석↔결석 토글 · 결석 셀 우클릭 = 사유 메모 · 출석/보강완료 셀 우클릭 = 보강 등록 · Ctrl+Z (또는 Cmd+Z) = 마지막 토글 취소
       </p>
 
       {memoDialogCell !== null && (
@@ -339,7 +357,8 @@ interface StudentRowProps {
   /** Sprint 9 Session #10 I7/I8 — 일자별 학사일정 매핑. */
   dayScheduleMap: Map<string, DaySchedule>
   onCellClick: (cell: AttendanceCell) => void
-  onCellContextMenu: (cell: AttendanceCell) => void
+  /** Session #12 K3 — studentId 동봉 시그니처. */
+  onCellContextMenu: (cell: AttendanceCell, studentId: number) => void
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
   /** Sprint 9 Session #10 J6 — 보강일 셀 클릭 시 보강 관리 다이얼로그 호출. */
   onMakeupDayCellClick?: (studentId: number, makeup: GridMakeupCell) => void
@@ -438,10 +457,15 @@ const StudentRow = memo(function StudentRow({
         const makeupOnThisDay = cell === undefined ? makeupsByDay.get(dayKey) : undefined
         // I8: 비수업일 셀 사전 판단 — 보강 불가 일자는 "+" 자체 비표시.
         // J4 보강이 있는 비수업일에는 "+" 대신 보강 표기.
+        // K1' (Session #12): 만기 미도래 미보강 결석이 이 일자 이전에 있을 때만 "+" 표시.
+        const earliestPending = student.earliestPendingAbsenceDate
+        const hasPriorPendingAbsence =
+          earliestPending !== null && earliestPending < eventDate
         const isEligible =
           onNonClassDayClick !== undefined &&
           cell === undefined &&
           makeupOnThisDay === undefined &&
+          hasPriorPendingAbsence &&
           isMakeupEligibleForCell(
             student,
             eventDate,
@@ -465,7 +489,7 @@ const StudentRow = memo(function StudentRow({
             cellMakeupHintDate={cellMakeupHintDate}
             makeupAbsenceHintDates={makeupAbsenceHintDates}
             onClick={handleCellClick}
-            onContextMenu={onCellContextMenu}
+            onContextMenu={(c) => onCellContextMenu(c, student.studentId)}
             onEmptyCellClick={
               isEligible
                 ? () => onNonClassDayClick!(student.studentId, eventDate)

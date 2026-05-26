@@ -55,6 +55,9 @@ export interface AttendanceGridStudent {
   attendances: AttendanceCell[]
   makeups: GridMakeupCell[] // Sprint 9 Session #10 J4 — 보강일 셀 표기
   summary: AttendanceSummary
+  /** Sprint 9 Session #12 K1' — 만기 미도래 미보강 결석 중 가장 이른 일자.
+   *  비수업일 "+" 표시 사전 판단에 사용. 이전 월 결석 포함. null 이면 보강 필요 없음. */
+  earliestPendingAbsenceDate: string | null
 }
 
 /** 일자별 학사일정 매핑 — Sprint 9 Session #10 I7/I8. */
