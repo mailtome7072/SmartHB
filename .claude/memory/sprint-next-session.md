@@ -1,79 +1,52 @@
 ---
 name: sprint-next-session
-description: "Sprint 9 완전 종료 (Session #12 K1~K7 흡수 포함). 다음: sprint9 → develop 직접 머지"
+description: "Sprint 10 계획 수립 완료 (2026-05-26). 다음: /sprint-dev 10 으로 구현 진입"
 metadata:
   node_type: memory
   type: project
-  originSessionId: sprint9-k7-complete
+  originSessionId: sprint10-planning
 ---
 
-Sprint 9 완전 종료 (2026-05-26). sprint-close + sprint-review + Session #12 사후 흡수 모두 완료. 다음은 **sprint9 → develop 직접 머지** ([[workflow-no-pr]]).
+Sprint 10 계획 수립 완료 (2026-05-26). Phase 3 마지막 스프린트 — 소멸 자동 전이 + 퇴교 보강 + 선행 수업 + 캘린더 뷰.
 
-## Sprint 9 최종 현황
+## Sprint 10 핵심 정보
 
-| Phase | 상태 | 커밋 |
-|-------|------|------|
-| T1~T8 (백엔드 IPC + UI 기본) | ✅ | 8 커밋 |
-| T9 (자동 검증 + A39/A40 적용) | ✅ | `70c856a` |
-| T10 (I3 보강 가능일 재정의) | ✅ | `4b21450` |
-| T11 (I1/I2/I4-I8 시간 단위 + UX) | ✅ | `a2e3169` |
-| T12 (J1~J10 도메인 정제) | ✅ | `e6e3a39` |
-| **sprint-close** | ✅ | `135397f` |
-| **sprint-review** | ✅ | `ccfa533` |
-| chore esbuild allowBuilds | ✅ | `2667a3c` |
-| **Session #12 K1~K7** (4차 시각 검증) | ✅ | `5be93ed` |
+- **계획 문서**: `docs/sprint/sprint10.md`
+- **Task**: T1~T12 (12개, 44h = 38h 구현 + 6h 시각 검증 버퍼)
+- **Phase 위치**: Phase 3 (보강 + 소멸) 두 번째이자 마지막 sprint
+- **브랜치**: `sprint10` (develop 기반, 아직 미생성 — `/sprint-dev 10` 진입 시 생성)
 
-## Session #12 K1~K7 핵심 결정 (스테이징 검증 사후 흡수)
+## Task 요약
 
-| 코드 | 내용 |
-|------|------|
-| K1' | 비수업일 '+' 표시 조건 정밀화 — 백엔드 응답 `earliest_pending_absence_date` 신규(이전 월 결석 포함). 셀 일자 이전 만기 미도래 결석 존재 시에만 표시 |
-| K2/K2' | '재원중만' 체크박스, 디폴트 ON |
-| K3 | 정규 수업 셀(present/makeup_done/expired) 우클릭 → 보강 등록 진입. 결석 셀 우클릭 = 메모 유지 |
-| K4 | 단원평가 응시일 헤더 sky 배경 제거 / 보강데이 헤더 작은 폰트 '보강데이' 라벨 |
-| K6 | '보강대상' 체크박스 — `earliestPendingAbsenceDate !== null` 필터, 디폴트 OFF |
-| K7 | "재원중(N명)" / "보강대상(M명)" 라벨 병기. 보강대상 카운트는 재원중 필터와 연계 |
+| Task | 내용 | 시간 |
+|------|------|------|
+| T1 | Sprint 9 dead code 정리 (A49) | 2h |
+| T2 | 소멸 자동 전이 설계 + 사용자 확인 (A51) | 2h |
+| T3 | 소멸 자동 전이 백엔드 IPC — expiration.rs 신규 | 4h |
+| T4 | 소멸 트리거 통합 (앱 시작/출결 생성/교습기간 등록) | 3h |
+| T5 | 보강소멸 → 결석 환원 IPC (AC-4.5-5) | 3h |
+| T6 | 퇴교 보강 처리 IPC (§4.5.9) | 3h |
+| T7 | 선행 수업 IPC (§4.2.3) | 2h |
+| T8 | 캘린더 ADR + 집계 IPC (PI-03) | 4h |
+| T9 | 소멸 환원/알림 UI | 3h |
+| T10 | 퇴교 보강 처리 UI | 3h |
+| T11 | 캘린더 뷰 UI 일/주/월 (§4.6) | 6h |
+| T12 | 통합 검증 + 자동 검증 | 3h |
 
-## 최종 자동 검증
+## 미결정 항목
 
-- cargo test cipher off **256 passed** (sprint-close 254 → K1' 신규 단위 테스트 3건 추가)
-- cargo clippy cipher off clean
-- pnpm lint / tsc --noEmit clean
-- pnpm build 13 라우트 static export
-
-> cipher on 빌드는 환경(Strawberry Perl) 의존 — sprint-close때 133 passed 통과한 기록 그대로 유지
-
-## 사용자 시각 검증 — 7라운드 누적
-
-- 1~3차 (T10~T12 흡수): I1~I8 + J1~J10 — Sprint 9 본체 흡수
-- 4차 (K1~K4): 4건 발견 → Sprint 9 흡수 결정 (사용자, 2026-05-26)
-- 5차 (K1'/K2'/K6): K1' 백엔드 정밀화 + K6 신규 → Sprint 9 흡수
-- 6차 (K7): 카운트 표기 + 재원중 연계 → Sprint 9 흡수
-- 7차 종합: "검수완료. 모두 pass" (사용자, 2026-05-26)
+- PI-03: 캘린더 라이브러리 선택 (T8에서 ADR)
+- PI-04: 보강데이 일괄 등록 버튼 범위 (T11에서 사용자 확인)
 
 ## 다음 액션
 
-새 대화 또는 같은 세션에서:
-
-```bash
-git checkout develop
-git merge --no-ff sprint9 -m "feat: Sprint 9 완료 — 보강 등록 + 매칭 + 결석 이력 + UX 정밀화 (Phase 3 첫 마일스톤)"
-git push origin develop
 ```
-
-`DEPLOY.md` 체크리스트의 남은 ⬜ 항목:
-- ⬜ sprint9 → develop 직접 머지
-- ⬜ pnpm tauri:dev 스테이징 검증 (이미 6라운드 완료 — 머지 직전 한 번 더 봐도 무방)
-
-## Sprint 10 carry-over (정리용, sprint-close 시점 + Session #12)
-
-- `mark_makeup_absent` 백엔드 IPC + audit variant 정리 (dead code, code-review F1)
-- `batch_create_makeups` 백엔드 IPC + 관련 코드 정리 (dead code)
-- `makeup_attendances.status='makeup_absent'` CHECK 제약 마이그레이션 정리 (선택)
-- 원래 Sprint 10 마일스톤: 소멸 자동 전이 + 퇴교 보강 처리 + 캘린더 뷰
+/sprint-dev 10
+```
 
 ## 정책 (재확인)
 
-- **PR 단계 생략** — 단일 개발자, sprint9 → develop 직접 머지 ([[workflow-no-pr]])
+- **PR 단계 생략** — 단일 개발자, sprint10 → develop 직접 머지 ([[workflow-no-pr]])
 - **사용자 메모리 미러 동기화** — 사용자 메모리 + `.claude/memory/` 두 곳 모두 갱신 후 commit
-- Capacity 실측: 계획 38h → 약 58h (시각 검증 4라운드 흡수 결과, sprint-review 후 +6h 추가)
+- **마이그레이션**: V108부터 (V107 완료)
+- **시각 검증 버퍼**: 6h 별도 예약 (A50)
