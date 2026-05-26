@@ -771,5 +771,63 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 ### 세션 종료 조건
 
 - ✅ T9 AC 통과
+- ✅ 단일 커밋 (`b7b6fcb`)
+- ✅ 다음 세션(T10) 진입점 준비
+
+---
+
+## Session #11 (T10 — 퇴교 보강 UI 다이얼로그, 2026-05-26)
+
+> Sprint 10 Session #11 — T10 (PRD §4.5.9 퇴교 처리 다이얼로그).
+> 예상 3h. T6 백엔드 IPC 활용 + 3가지 선택지 + defer 는 UI 처리.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T10** | 퇴교 보강 처리 UI — TS 타입 + 래퍼 + WithdrawalMakeupDialog + 기존 흐름 통합 | 3h |
+
+### 현재 퇴교 흐름 (Sprint 4 T8)
+
+`src/app/students/edit/page.tsx`:
+1. "퇴교 처리" 버튼 클릭 → AlertDialog (퇴교일자 선택)
+2. "확정" → `withdrawStudent(id, withdrawDate)` 직접 호출
+3. 안내: "보강 잔여 처리는 Phase 3 에서 별도 제공" (← 본 T10 으로 채워짐)
+
+### T10 구현 방향
+
+기존 AlertDialog 의 "확정" 클릭 시 흐름 변경:
+1. `getPendingMakeupForWithdrawal(studentId)` 호출 (잔여 보강 조회)
+2. `absences.length === 0` → 기존 `withdrawStudent` 직접 호출 (no-change 경로)
+3. 잔여 보강 있음 → 새 `WithdrawalMakeupDialog` 전환:
+   - 표시: 원생명, 잔여 보강필요시간(분→시간), 미보강 결석 일자 리스트
+   - 3가지 선택지:
+     - **즉시 소멸**: `ImmediateExpire` → `processWithdrawalMakeup`
+     - **보강 후 퇴교**: 다이얼로그 닫기 (IPC 호출 없음, PI-08 결정)
+     - **외부 처리 후 소멸**: memo textarea 입력 → `ExternalExpire { memo }` → `processWithdrawalMakeup`
+4. 성공 시 TanStack Query 무효화 + `/students` 이동
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src/types/withdrawal.ts | [신규] | WithdrawalChoice, WithdrawalPendingMakeup, PendingAbsenceForWithdrawal |
+| src/lib/tauri/index.ts | [1회] | getPendingMakeupForWithdrawal + processWithdrawalMakeup 래퍼 |
+| src/components/students/WithdrawalMakeupDialog.tsx | [신규] | 신규 다이얼로그 |
+| src/app/students/edit/page.tsx | [1회] | handleWithdrawConfirmed 흐름 변경 + 보강 보유 분기 |
+| docs/sprint/sprint10/scope.md | [10회 ⚠️] | Session #11 추가 |
+
+⚠️ scope.md 10회 도달 — loop-detection 스킬 체크: 본 sprint 의 정상적인 다단계 진행 (Sprint 9 의 12 sessions 보다 적음). 동일 코드 파일 반복 수정 아님 — 정상 진행으로 판단.
+
+### 완료 기준 — T10 AC (sprint10.md L273-275)
+
+- ✅ 퇴교 시 `getPendingMakeupForWithdrawal` 검증 → 결석 보유 시만 다이얼로그 mount
+- ✅ 3가지 선택지: 즉시 소멸 (ImmediateExpire IPC) / 보강 후 퇴교 (다이얼로그 닫기, PI-08) / 외부 처리 (ExternalExpire memo 입력)
+- ✅ 결석 0건 원생 → 기존 `withdrawStudent` 직접 호출 + `/students` 이동
+- ✅ `pnpm lint` clean / `pnpm tsc --noEmit` clean
+
+### 세션 종료 조건
+
+- ✅ T10 AC 통과
 - ⬜ 단일 커밋
-- ⬜ 다음 세션(T10 — 퇴교 보강 UI) 진입점 준비
+- ⬜ 다음 세션(T11 — 캘린더 뷰 UI) 진입점 준비

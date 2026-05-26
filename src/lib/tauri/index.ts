@@ -55,6 +55,10 @@ import type {
 } from '@/types/academic'
 import type { ExpirationReport } from '@/types/expiration'
 import type {
+  WithdrawalChoice,
+  WithdrawalPendingMakeup,
+} from '@/types/withdrawal'
+import type {
   ScheduleSet,
   StudentSchedule,
 } from '@/types/schedule'
@@ -448,6 +452,43 @@ export async function reinstateStudent(id: number): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('reinstate_student', { id })
+}
+
+/**
+ * Sprint 10 T6 — 퇴교 시 미보강 결석 조회 (PRD §4.5.9).
+ *
+ * 빈 리스트(`absences.length === 0 && remainingMinutes === 0`) → 보강 잔여 없음 → 일반 `withdrawStudent` 흐름 사용.
+ */
+export async function getPendingMakeupForWithdrawal(
+  studentId: number,
+): Promise<WithdrawalPendingMakeup> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { studentId, remainingMinutes: 0, absences: [] }
+  }
+  return inv('get_pending_makeup_for_withdrawal', {
+    studentId,
+  }) as Promise<WithdrawalPendingMakeup>
+}
+
+/**
+ * Sprint 10 T6 — 퇴교 처리 (PRD §4.5.9, 3가지 선택지).
+ *
+ * 단일 트랜잭션: 보강 일괄 전이 + (external_expire 시) memo 일괄 저장 + withdraw_date 설정.
+ * `defer_withdrawal` 은 IPC 호출 없이 UI 다이얼로그 닫기로 처리.
+ */
+export async function processWithdrawalMakeup(
+  studentId: number,
+  choice: WithdrawalChoice,
+  withdrawDate: string,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('process_withdrawal_makeup', {
+    studentId,
+    choice,
+    withdrawDate,
+  })
 }
 
 /**

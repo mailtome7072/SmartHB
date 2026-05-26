@@ -272,8 +272,8 @@
 
 ---
 
-### T10: 퇴교 보강 처리 UI — 3h · skill: frontend-design
-> T6 백엔드 연결
+### T10: 퇴교 보강 처리 UI — 3h ✅ (2026-05-26)
+> T6 백엔드 연결 — WithdrawalMakeupDialog 신규 + edit page 통합. defer 는 다이얼로그 닫기로 UI 처리 (PI-08).
 
 **작업 내용**:
 1. **퇴교 보강 처리 다이얼로그** — 원생 퇴교 버튼 클릭 시 미사용 보강 보유 시 표시
@@ -380,7 +380,7 @@
 - ⬜ 소멸 자동 전이가 앱 시작 / 출결 생성 / 교습기간 등록 3개 트리거에서 정상 발동
 - ❌ 보강소멸 → 결석 환원 시 확인 다이얼로그 동작 (AC-4.5-5) — 사용자 결정으로 폐기 (2026-05-26)
 - ⬜ 보강완료(emerald) vs 보강소멸(gray) 출결 그리드 시각 구분 (사용자 요구 2026-05-26, 이미 구현됨 — T12 시각 검증으로 확정)
-- ⬜ 퇴교 처리 다이얼로그 3개 선택지 모두 동작 (PRD §4.5.9)
+- ✅ 퇴교 처리 다이얼로그 3개 선택지 모두 동작 (PRD §4.5.9) — T10 (`WithdrawalMakeupDialog`, T12 시각 검증 예정)
 - ✅ 선행 수업: 미래 결석 → 현재 보강 매칭 동작 (PRD §4.2.3) — 백엔드 단위 테스트 통과 (`create_makeup_supports_future_absence_for_advance_class`)
 - ⬜ 캘린더 뷰 일/주/월 전환 + 원생 팝업 + 보강관리 뷰 동작 (PRD §4.6)
 - ✅ Sprint 9 dead code 0건 (mark_makeup_absent + batch_create_makeups 완전 제거) — T1 완료 (Session #1, 2026-05-26)
