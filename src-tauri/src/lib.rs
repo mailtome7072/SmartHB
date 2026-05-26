@@ -112,6 +112,8 @@ pub fn run() {
             commands::expiration::expire_overdue_absences,
             commands::expiration::get_pending_makeup_for_withdrawal,
             commands::expiration::process_withdrawal_makeup,
+            commands::calendar::get_calendar_data,
+            commands::calendar::get_makeup_management_data,
             startup::app_startup_sequence,
         ])
         .on_window_event(|_window, event| {

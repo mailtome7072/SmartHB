@@ -228,8 +228,8 @@
 
 ---
 
-### T8: 캘린더 라이브러리 ADR + 백엔드 집계 IPC — 4h · skill: brainstorming
-> PI-03 결정 + 캘린더 뷰용 백엔드 데이터 집계
+### T8: 캘린더 라이브러리 ADR + 백엔드 집계 IPC — 4h ✅ (2026-05-26, ADR-006 + 6 tests)
+> PI-03 결정: FullCalendar 채택 (ADR-006). PI-11 파생: calendar.rs 신규 모듈.
 
 **작업 내용**:
 1. **ADR 작성**: FullCalendar vs React Big Calendar

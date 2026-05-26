@@ -3,6 +3,7 @@ pub mod attendance;
 pub mod audit;
 pub mod auth;
 pub mod backup;
+pub mod calendar;
 pub mod codes;
 pub mod db;
 pub mod expiration;

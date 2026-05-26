@@ -642,5 +642,91 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 ### 세션 종료 조건
 
 - ✅ T7 AC 통과
-- ⬜ 단일 커밋
-- ⬜ 다음 세션(T8 — 캘린더 ADR + 집계 IPC) 진입점 준비 + PI-03 사용자 확인 안내
+- ✅ 단일 커밋 (`840e9c7`)
+- ✅ 다음 세션(T8) 진입점 준비
+
+---
+
+## Session #9 (T8 — 캘린더 ADR + 백엔드 집계 IPC, 2026-05-26)
+
+> Sprint 10 Session #9 — T8 (PI-03 캘린더 라이브러리 결정 + 백엔드 집계 IPC 2종).
+> 예상 4h. skill: brainstorming.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T8-A** | ADR 작성 + PI-03 사용자 결정 (FullCalendar vs React Big Calendar) | 1h |
+| **T8-B** | 백엔드 집계 IPC 2종 + 단위 테스트 4건+ | 3h |
+
+### Weighted Decision Matrix — PI-03
+
+> SmartHB 컨텍스트: Tauri 2 + Next.js 15 static export, 50대 운영자 1인, ≤50명 원생, 외부 네트워크 없음, React 19.
+
+| 기준 | 가중치 | FullCalendar | 점수 | React Big Calendar | 점수 |
+|------|-------|--------------|------|---------------------|------|
+| 라이선스 (MVP 범위) | 0.20 | MIT (premium 기능은 상용, 우리는 MIT만 사용) | 4 | MIT 완전 | 5 |
+| 번들 크기 (50대 PC 로딩) | 0.15 | ~150KB+ 큼 | 2 | ~80KB 중간 | 4 |
+| 일/주/월 뷰 완성도 | 0.20 | 표준, 매우 강력 | 5 | 보통, 커스터마이징 필요 | 3 |
+| 커스텀 렌더러 (원생 + 시간 셀) | 0.15 | eventContent prop 강력 | 5 | components prop 자유도 | 4 |
+| TypeScript 지원 | 0.05 | 공식 @types 풍부 | 5 | 공식 .d.ts 보통 | 4 |
+| Next.js static export 호환 | 0.10 | `'use client'` + dynamic import 필요 | 3 | `'use client'` 충분 | 4 |
+| 한국어 i18n / 운영 안정성 | 0.05 | 로케일 패키지 풍부, 한국 사용 사례 많음 | 5 | 로케일 자유 설정 | 3 |
+| React 19 호환 | 0.05 | `@fullcalendar/react` 호환 확인 필요 | 3 | 호환 보고됨 | 4 |
+| 50대 친화 검증 사례 | 0.05 | 풍부한 community + 한국어 가이드 | 5 | 보통 | 3 |
+| **총점** |        |              | **3.95** |                | **3.85** |
+
+→ **차이 0.10 — 통계적 동등 수준**. 2단계 SWOT 으로 결정.
+
+### SWOT — FullCalendar
+
+- **Strengths**: 시각적 완성도, 풍부한 한국어 자료, eventContent 커스터마이징 강력
+- **Weaknesses**: 번들 크기, premium 기능 분리 (시간그리드 일부 premium — MVP 범위는 무료)
+- **Opportunities**: 사용자(50대)에게 친숙한 UI 패턴 (Google Calendar 류)
+- **Threats**: premium 기능 사용 시 라이선스 비용 (MVP 범위 외)
+
+### SWOT — React Big Calendar
+
+- **Strengths**: 가벼움, MIT 전체, 컴포넌트 자유도 높음
+- **Weaknesses**: 커뮤니티 작아 한국어 자료 부족, 시간 그리드 디자인 보강 필요
+- **Opportunities**: 완전한 MIT — 미래 확장 시 라이선스 부담 없음
+- **Threats**: 커스터마이징 부담 — 50대 친화 UI 직접 구현 필요
+
+### 추천
+
+**FullCalendar** — 50대 운영자 친화 + 시각 완성도가 핵심. premium 기능 미사용으로 라이선스 부담 없음. 번들 크기는 한 번 로딩이라 50명 미만 규모에서 영향 미미. 사용자 결정 필요.
+
+### T8-B 백엔드 집계 IPC 설계 (사용자 결정 후 작업)
+
+1. **`get_calendar_data(year_month)`** — 캘린더 뷰용
+   - 응답: 일자별 시간대별 수업 원생 목록
+   - 정규 수업 + 보강 수업 모두 포함, 시작/종료 시간 + 원생명
+   - AC-4.6-1: 시간대별 인원 = 시작 원생 + 진행 중 원생 합산 (백엔드에서 시간 범위 겹침 계산)
+
+2. **`get_makeup_management_data(year_month)`** — 보강 관리 뷰용
+   - 응답: 보강 필요 원생 리스트 (잔여 보강필요시간 + 소멸기한 + 소멸 임박 플래그)
+   - 정렬: makeup_deadline ASC, event_date ASC (소멸기한 임박 순)
+   - 소멸 임박: 교습기간 종료일 - 7일 이내
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| docs/arch/adr-001-calendar-library.md | [신규] | ADR (PI-03 결정 기록) |
+| src-tauri/src/commands/expiration.rs 또는 신규 calendar.rs | [신규/2회] | 집계 IPC 2종 — 위치 PI-03 결정 후 |
+| src-tauri/src/lib.rs | [3회] | invoke_handler 2건 추가 |
+| docs/sprint/sprint10/scope.md | [8회] | Session #9 추가 |
+
+### 완료 기준 — T8 AC (sprint10.md L234-237)
+
+- ✅ ADR 문서 작성 — `docs/arch/adr-006-calendar-library.md` (FullCalendar 채택, 사용자 결정 2026-05-26)
+- ✅ 캘린더 데이터 집계 IPC — `get_calendar_data` + 단위 테스트 2건 (그룹화 + year_month 필터)
+- ✅ 보강 관리 데이터 IPC — `get_makeup_management_data` + 단위 테스트 4건 (정렬, 임박 판정, 교습기간 미등록, 보강완료/소멸 제외)
+- ✅ `cargo test` 272 passed (T7 266 → +6 calendar) / `cargo clippy` clean
+- ⚠️ `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` 병렬 실행 시 가끔 실패 (단독 실행 통과) — flaky, calendar 변경과 무관. carry-over
+
+### 세션 종료 조건
+
+- ✅ T8 AC 통과
+- ⬜ 단일 커밋 (ADR + IPC + 테스트)
+- ⬜ 다음 세션(T9 — 소멸 알림 UI 잔여) 진입점 준비
