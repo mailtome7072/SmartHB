@@ -66,6 +66,17 @@ pub struct CreateStudyPeriodPayload {
     pub end_date: String,
 }
 
+/// 교습기간 등록/수정/확정 응답 — Sprint 10 T4 (PI-05/PI-09).
+///
+/// 교습기간 등록 직후 소멸 자동 전이 트리거 호출 — `expiration_report` 동봉.
+/// 새로 등록된 month 의 deadline 확정 즉시 반영 (PRD §4.5.7 "교습기간 등록 시 확정").
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyPeriodResult {
+    pub study_period: StudyPeriod,
+    pub expiration_report: crate::commands::expiration::ExpirationReport,
+}
+
 /// 교습기간 수정 payload — id 는 별도 인자.
 #[derive(Debug, Deserialize)]
 pub struct UpdateStudyPeriodPayload {
@@ -114,7 +125,7 @@ async fn is_operating_day_for(dow: i64) -> bool {
 #[tauri::command]
 pub async fn create_study_period(
     payload: CreateStudyPeriodPayload,
-) -> Result<StudyPeriod, String> {
+) -> Result<StudyPeriodResult, String> {
     let pool = db::pool().map_err(String::from)?;
 
     // 일자 중첩 검증 — Sprint 8 T8 (R39 / A28): 미확정(is_confirmed=0) 교습기간은
@@ -148,7 +159,14 @@ pub async fn create_study_period(
     .map_err(AppError::Db)
     .map_err(String::from)?;
 
-    StudyPeriod::from_row(&row).map_err(String::from)
+    let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
+    // Sprint 10 T4 (PI-05): 교습기간 등록 직후 소멸 자동 전이.
+    let expiration_report =
+        crate::commands::expiration::expire_overdue_absences_impl(pool, None).await?;
+    Ok(StudyPeriodResult {
+        study_period,
+        expiration_report,
+    })
 }
 
 /// 교습기간 수정 — 지난 달 또는 마감된 기간은 차단 (AC-4.4-1, AC-T5-2).
@@ -158,7 +176,7 @@ pub async fn create_study_period(
 pub async fn update_study_period(
     id: i64,
     payload: UpdateStudyPeriodPayload,
-) -> Result<StudyPeriod, String> {
+) -> Result<StudyPeriodResult, String> {
     let pool = db::pool().map_err(String::from)?;
 
     // 대상 기간 조회 + 차단 조건 검증
@@ -213,7 +231,13 @@ pub async fn update_study_period(
     .map_err(AppError::Db)
     .map_err(String::from)?;
 
-    StudyPeriod::from_row(&row).map_err(String::from)
+    let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
+    let expiration_report =
+        crate::commands::expiration::expire_overdue_absences_impl(pool, None).await?;
+    Ok(StudyPeriodResult {
+        study_period,
+        expiration_report,
+    })
 }
 
 /// 교습기간 목록 — `from_month` ~ `to_month` 범위 (포함). 둘 다 "YYYY-MM" 형식.
@@ -261,8 +285,10 @@ pub async fn get_study_period(year_month: String) -> Result<Option<StudyPeriod>,
 }
 
 /// 교습기간 확정 (`is_confirmed = 1`). AC-T5-3.
+///
+/// Sprint 10 T4 (PI-05): 확정 직후 소멸 자동 전이 — 새로 확정된 month 의 deadline 도래 결석 처리.
 #[tauri::command]
-pub async fn confirm_study_period(id: i64) -> Result<StudyPeriod, String> {
+pub async fn confirm_study_period(id: i64) -> Result<StudyPeriodResult, String> {
     let pool = db::pool().map_err(String::from)?;
     let row = sqlx::query(
         "UPDATE study_periods SET \
@@ -278,7 +304,13 @@ pub async fn confirm_study_period(id: i64) -> Result<StudyPeriod, String> {
     .map_err(AppError::Db)
     .map_err(String::from)?
     .ok_or_else(|| "해당 교습기간을 찾을 수 없습니다.".to_string())?;
-    StudyPeriod::from_row(&row).map_err(String::from)
+    let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
+    let expiration_report =
+        crate::commands::expiration::expire_overdue_absences_impl(pool, None).await?;
+    Ok(StudyPeriodResult {
+        study_period,
+        expiration_report,
+    })
 }
 
 /// 미확정 교습기간 삭제. is_confirmed=1 또는 is_closed=1 이면 차단.

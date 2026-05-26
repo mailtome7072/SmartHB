@@ -350,5 +350,80 @@ SQLite는 CHECK ALTER 미지원 → 다음 패턴 사용:
 ### 세션 종료 조건
 
 - ✅ T3 AC 통과
+- ✅ 단일 커밋 (`616021d`)
+- ✅ 다음 세션(T4 — 트리거 3개소 통합) 진입점 준비
+
+---
+
+## Session #5 (T4 — 트리거 3개소 통합, 2026-05-26)
+
+> Sprint 10 Session #5 — T4 (소멸 자동 전이 트리거 통합).
+> 예상 3h. PI-05 결정 반영.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T4** | 앱 시작 + 출결 생성 + 교습기간 등록 3개소에 `expire_overdue_absences_impl` 통합 | 3h |
+
+### 설계 — 응답 동봉 패턴 (PI-09 토스트 알림 지원)
+
+#### A. 앱 시작 트리거
+- 위치: `src-tauri/src/startup.rs::app_startup_sequence` 의 `db::initialize` 직후
+- 호출: `expire_overdue_absences_impl(pool, None).await`
+- 응답: `StartupResult` 에 `expiration_report: ExpirationReport` 필드 추가
+- 프론트엔드: startup IPC 응답에서 toast 표시
+
+#### B. 출결 생성 트리거
+- 위치: `attendance.rs::generate_impl` 의 `tx.commit()` 직후
+- 호출: `expire_overdue_absences_impl(pool, None).await`
+- 응답: `GenerateResult` 에 `expiration_report: ExpirationReport` 필드 추가
+
+#### C. 교습기간 등록 트리거 (create/update/confirm)
+- 위치: `academic.rs::create_study_period`, `update_study_period`, `confirm_study_period`
+- 응답: 기존 `Result<StudyPeriod, String>` → `Result<StudyPeriodResult, String>` 변경
+  - `StudyPeriodResult { study_period: StudyPeriod, expiration_report: ExpirationReport }` 신규 wrapper
+- `delete_study_period` 는 트리거 제외 (반대 방향 — deadline 미확정 효과)
+
+#### D. TS 래퍼 + 타입
+- `src/types/expiration.ts` 신규 — `ExpirationReport`, `ExpiredAbsenceDetail`
+- `src/types/attendance.ts` — `GenerateResult` 에 `expirationReport` 추가
+- `src/types/academic.ts` — `StudyPeriodResult` wrapper 신규
+- `src/lib/tauri/index.ts`:
+  - `expireOverdueAbsences` 래퍼 신규
+  - `createStudyPeriod` / `updateStudyPeriod` / `confirmStudyPeriod` 반환 타입 변경
+  - `generateAttendances` 반환 타입 갱신 (GenerateResult 확장)
+
+#### E. 호출처 컴포넌트 영향
+- `src/app/attendance/page.tsx` — `generateMutation` 응답에서 `expirationReport` 확인 후 토스트
+- `src/components/academic/StudyPeriodEditor.tsx` — 등록/수정/확정 응답에서 동일 처리
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/src/commands/attendance.rs | [1회] | `GenerateResult.expiration_report` 추가 + `generate_impl` 트리거 |
+| src-tauri/src/commands/academic.rs | [1회] | `StudyPeriodResult` wrapper + 3개 IPC 응답 변경 |
+| src-tauri/src/startup.rs | [1회] | `StartupResult.expiration_report` + 호출 |
+| src/lib/tauri/index.ts | [1회] | 4개 래퍼 시그니처 변경 + `expireOverdueAbsences` 신규 |
+| src/types/expiration.ts | [신규] | `ExpirationReport`, `ExpiredAbsenceDetail` |
+| src/types/attendance.ts | [1회] | `GenerateResult.expirationReport` 추가 |
+| src/types/academic.ts | [1회] | `StudyPeriodResult` wrapper |
+| src/app/attendance/page.tsx | [1회] | 토스트 |
+| src/components/academic/StudyPeriodEditor.tsx | [1회] | 토스트 + 응답 타입 갱신 |
+| docs/sprint/sprint10/scope.md | [4회] | Session #5 |
+
+### 완료 기준 — T4 AC (sprint10.md L132-138)
+
+- ✅ 앱 시작 → `expire_overdue_absences_impl` 호출 + StartupResult.expiration_report 동봉 (fail-soft)
+- ✅ 출결 생성 → 트랜잭션 커밋 직후 호출 + GenerateResult.expiration_report 동봉
+- ✅ 교습기간 등록(create/update/confirm) 3개 IPC → StudyPeriodResult wrapper 응답
+- ✅ 단위 테스트: `generate_includes_expiration_report_when_deadline_reached` (응답 필드 존재 검증) — T3 7건과 합쳐 충분
+- ✅ `cargo test` 259 passed (T3 258 → +1) / `cargo clippy` clean
+- ✅ `pnpm lint` / `pnpm tsc --noEmit` / `pnpm build` clean
+
+### 세션 종료 조건
+
+- ✅ T4 AC 통과
 - ⬜ 단일 커밋
-- ⬜ 다음 세션(T4 — 트리거 3개소 통합) 진입점 준비
+- ⬜ 다음 세션(T5 — 소멸 환원 IPC) 진입점 준비

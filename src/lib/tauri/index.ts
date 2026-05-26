@@ -48,10 +48,12 @@ import type {
   ScheduleEvent,
   ScheduleEventListItem,
   StudyPeriod,
+  StudyPeriodResult,
   UpdateScheduleCodePayload,
   UpdateScheduleEventPayload,
   UpdateStudyPeriodPayload,
 } from '@/types/academic'
+import type { ExpirationReport } from '@/types/expiration'
 import type {
   ScheduleSet,
   StudentSchedule,
@@ -724,43 +726,50 @@ export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
 
 // ─── 교습기간 study_periods (T5) ─────────────────────────────────────
 
+/** Sprint 10 T4: 응답이 `StudyPeriodResult` 로 wrapping — 소멸 자동 전이 결과 동봉. */
 export async function createStudyPeriod(
   payload: CreateStudyPeriodPayload,
-): Promise<StudyPeriod> {
+): Promise<StudyPeriodResult> {
   const inv = await getInvoke()
   if (!inv) {
     return {
-      id: 0,
-      year_month: payload.year_month,
-      start_date: payload.start_date,
-      end_date: payload.end_date,
-      is_confirmed: false,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      studyPeriod: {
+        id: 0,
+        year_month: payload.year_month,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        is_confirmed: false,
+        is_closed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      expirationReport: { transitionedCount: 0, details: [] },
     }
   }
-  return inv('create_study_period', { payload }) as Promise<StudyPeriod>
+  return inv('create_study_period', { payload }) as Promise<StudyPeriodResult>
 }
 
 export async function updateStudyPeriod(
   id: number,
   payload: UpdateStudyPeriodPayload,
-): Promise<StudyPeriod> {
+): Promise<StudyPeriodResult> {
   const inv = await getInvoke()
   if (!inv) {
     return {
-      id,
-      year_month: payload.start_date.slice(0, 7),
-      start_date: payload.start_date,
-      end_date: payload.end_date,
-      is_confirmed: false,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      studyPeriod: {
+        id,
+        year_month: payload.start_date.slice(0, 7),
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        is_confirmed: false,
+        is_closed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      expirationReport: { transitionedCount: 0, details: [] },
     }
   }
-  return inv('update_study_period', { id, payload }) as Promise<StudyPeriod>
+  return inv('update_study_period', { id, payload }) as Promise<StudyPeriodResult>
 }
 
 /** 교습기간 목록 — "YYYY-MM" 범위(포함). */
@@ -780,21 +789,24 @@ export async function getStudyPeriod(yearMonth: string): Promise<StudyPeriod | n
   return inv('get_study_period', { yearMonth }) as Promise<StudyPeriod | null>
 }
 
-export async function confirmStudyPeriod(id: number): Promise<StudyPeriod> {
+export async function confirmStudyPeriod(id: number): Promise<StudyPeriodResult> {
   const inv = await getInvoke()
   if (!inv) {
     return {
-      id,
-      year_month: '',
-      start_date: '',
-      end_date: '',
-      is_confirmed: true,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      studyPeriod: {
+        id,
+        year_month: '',
+        start_date: '',
+        end_date: '',
+        is_confirmed: true,
+        is_closed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      expirationReport: { transitionedCount: 0, details: [] },
     }
   }
-  return inv('confirm_study_period', { id }) as Promise<StudyPeriod>
+  return inv('confirm_study_period', { id }) as Promise<StudyPeriodResult>
 }
 
 /** 미확정 교습기간 삭제 — 확정/마감 시 백엔드가 throw. */
@@ -978,9 +990,26 @@ export async function checkAttendanceExists(yearMonth: string): Promise<boolean>
 export async function generateAttendances(yearMonth: string): Promise<GenerateResult> {
   const inv = await getInvoke()
   if (!inv) {
-    return { yearMonth, studentCount: 0, attendanceCount: 0 }
+    return {
+      yearMonth,
+      studentCount: 0,
+      attendanceCount: 0,
+      expirationReport: { transitionedCount: 0, details: [] },
+    }
   }
   return inv('generate_attendances', { yearMonth }) as Promise<GenerateResult>
+}
+
+/**
+ * Sprint 10 T4 (PI-05): 소멸 자동 전이 수동 호출.
+ *
+ * 트리거 3개소(앱 시작/출결 생성/교습기간 등록)에서 응답에 자동 동봉되지만,
+ * UI 에서 명시적으로 한 번 더 호출하고 싶을 때 사용 (예: 디버깅, 수동 점검 메뉴).
+ */
+export async function expireOverdueAbsences(): Promise<ExpirationReport> {
+  const inv = await getInvoke()
+  if (!inv) return { transitionedCount: 0, details: [] }
+  return inv('expire_overdue_absences') as Promise<ExpirationReport>
 }
 
 /** 출결표 그리드 — 원생 × 일자 + 월간 요약. 50명×31일 < 1초 (PRD §5.7). */

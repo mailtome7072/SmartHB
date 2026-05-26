@@ -64,6 +64,8 @@ interface MakeupManageTarget {
 export default function AttendancePage() {
   const [yearMonth, setYearMonth] = useState(currentYearMonth)
   const [error, setError] = useState<string | null>(null)
+  // Sprint 10 T4 (PI-09): 소멸 자동 전이 결과 알림. 별도 line 으로 표시.
+  const [expirationNotice, setExpirationNotice] = useState<string | null>(null)
   // Sprint 8 T9 follow-up: 원생 이름 인플레이스 필터.
   // 글로벌 검색바(PRD §4.14)는 페이지 이동용 — 본 입력은 현 그리드 행 좁히기용.
   // 자모 부분 일치는 별도 라이브러리 필요로 추후 task 로 분리, 본 구현은 substring 만.
@@ -106,10 +108,15 @@ export default function AttendancePage() {
   // 출결 일괄 생성
   const generateMutation = useMutation({
     mutationFn: () => generateAttendances(yearMonth),
-    onSuccess: () => {
+    onSuccess: (result) => {
       setError(null)
       void queryClient.invalidateQueries({ queryKey: ['attendance-exists', yearMonth] })
       void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+      // Sprint 10 T4 (PI-09): 출결 생성 직후 소멸 자동 전이 결과 알림.
+      const count = result.expirationReport.transitionedCount
+      setExpirationNotice(
+        count > 0 ? `출결 생성과 함께 소멸기한 도래 결석 ${count}건이 자동 처리되었습니다.` : null,
+      )
     },
     onError: (e) => {
       setError(typeof e === 'string' ? e : (e as Error).message)
@@ -240,6 +247,23 @@ export default function AttendancePage() {
           className="mx-6 mt-4 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-base text-[var(--danger)]"
         >
           {error}
+        </div>
+      )}
+
+      {expirationNotice !== null && (
+        <div
+          role="status"
+          className="mx-6 mt-4 flex items-center justify-between rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-base text-amber-900"
+        >
+          <span>{expirationNotice}</span>
+          <button
+            type="button"
+            onClick={() => setExpirationNotice(null)}
+            aria-label="알림 닫기"
+            className="ml-3 min-h-[32px] min-w-[32px] rounded text-amber-700 hover:bg-amber-100"
+          >
+            ×
+          </button>
         </div>
       )}
 
