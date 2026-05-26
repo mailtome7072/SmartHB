@@ -425,5 +425,63 @@ SQLite는 CHECK ALTER 미지원 → 다음 패턴 사용:
 ### 세션 종료 조건
 
 - ✅ T4 AC 통과
-- ⬜ 단일 커밋
-- ⬜ 다음 세션(T5 — 소멸 환원 IPC) 진입점 준비
+- ✅ 단일 커밋 (`6b6cc47`)
+- ✅ 다음 세션(T5 — 소멸 환원 IPC) 진입점 준비
+
+---
+
+## Session #6 (T5 폐기 결정, 2026-05-26)
+
+> Sprint 10 Session #6 — T5 환원 기능 폐기 + 보강완료/소멸 시각 구분 확인.
+> 예상 0.5h. 코드 변경 없음, 결정 기록 + 문서 갱신.
+
+### 사용자 결정 (PI-10 대체)
+
+> "보강기한 소멸되면 끝임. 출결관리에 결석이 보강완료된 것과 소멸된 것은 구분해 표현해 주는 것이 필요함."
+
+→ **T5(소멸 → 결석 환원 IPC) + T9 환원 다이얼로그 완전 폐기**. PRD §4.5.3 AC-4.5-5 요건 해제 (사용자 운영 정책 결정).
+
+→ 추가 요구: 출결 그리드에서 보강완료(`makeup_done`) vs 보강소멸(`makeup_expired`) 시각 구분.
+
+### 보강완료/소멸 시각 구분 현황 (AttendanceGrid.tsx::statusCellClass)
+
+| 상태 | 라벨 | 배경 | 비고 |
+|------|------|------|------|
+| `present` | ○ | 흰색 | 출석 |
+| `absent` | 결석 | bg-red-100 (빨강) | 미보강 결석 |
+| `makeup_done` | 결석 | bg-emerald-100 (초록) | 보강완료 (Sprint 9 J7) |
+| `makeup_expired` | **소멸** | bg-gray-200 (회색) | 보강소멸 |
+
+→ Sprint 9 J7에서 `absent`/`makeup_done` 라벨을 '결석'으로 통일하면서 배경색(red vs emerald)으로 구분. `makeup_expired`는 라벨 '소멸' + 회색 배경으로 별도 구분 — 사용자 요구 시각 구분 **이미 충족**.
+
+→ 사용자 시각 검증 시점(T12 통합 검증 또는 별도 라운드)에 최종 확인.
+
+### 폐기 영향 범위
+
+| 영향 | 처리 |
+|------|------|
+| sprint10.md T5 (소멸 환원 IPC, 3h) | **폐기** — 작업 미수행 |
+| sprint10.md T9 (소멸 환원 UI, 3h 중 일부) | 환원 다이얼로그 부분 폐기. 토스트 알림 부분만 유지 (이미 T4 attendance/page.tsx + StudyPeriodEditor에서 처리됨) |
+| sprint10.md DoD "보강소멸 → 결석 환원 시 확인 다이얼로그 동작 (AC-4.5-5)" | **폐기** |
+| Capacity 절감 | T5 3h + T9 환원 부분 약 1.5h = **약 4.5h** 절감 |
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| docs/sprint/sprint10.md | [1회] | T5/T9/DoD 폐기 마킹 |
+| docs/sprint/sprint10/scope.md | [5회] | Session #6 추가 |
+
+### 완료 기준
+
+- ✅ T5/T9 폐기 결정 scope.md 기록
+- ✅ sprint10.md DoD AC-4.5-5 항목 폐기 + Capacity 40h 로 갱신
+- ✅ 단일 커밋 + 메모리 동기화
+- ✅ 다음 세션(T6 — 퇴교 보강 처리 IPC) 진입점 준비
+
+### 다음 세션 (T6) 미리보기
+
+- PRD §4.5.9 퇴교 시 미사용 보강 처리 — 3가지 선택지
+- `students.rs` 또는 `expiration.rs` 에 IPC 2종:
+  - `get_pending_makeup_for_withdrawal(student_id)` — 미보강 결석 리스트 조회
+  - `process_withdrawal_makeup(student_id, choice)` — 3가지 선택지 처리
