@@ -292,5 +292,63 @@ SQLite는 CHECK ALTER 미지원 → 다음 패턴 사용:
 ### 세션 종료 조건
 
 - ✅ T1' AC 통과
+- ✅ 단일 커밋 (`1efd70f`)
+- ✅ 다음 세션(T3 — 소멸 자동 전이 IPC) 진입점 준비
+
+---
+
+## Session #4 (T3 — 소멸 자동 전이 백엔드 IPC, 2026-05-26)
+
+> Sprint 10 Session #4 — T3 (expiration.rs 신규 모듈 + 단위 테스트 6건+).
+> 예상 4h. PI-05/PI-06 결정 반영.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T3** | 소멸 자동 전이 핵심 IPC + audit + 단위 테스트 | 4h |
+
+### 구현 범위 (Session #2 설계 그대로)
+
+1. 신규 모듈 `src-tauri/src/commands/expiration.rs`
+   - `expire_overdue_absences_impl(pool, as_of: Option<NaiveDate>)` — `Local::now` 기본값 (PI-06)
+   - `expire_overdue_absences()` IPC 핸들러
+   - 응답 구조체 `ExpirationReport { transitioned_count, details }` + `ExpiredAbsenceDetail`
+2. `audit.rs` — `MakeupExpired` variant 추가 (PRD §6.6 자가 진단/감사 로그)
+3. `mod.rs` — `pub mod expiration;` 등록
+4. `lib.rs` — `invoke_handler!` 등록
+5. 단위 테스트 6건+:
+   - 소멸기한 도래 + 미보강 → 전이 성공
+   - 소멸기한 미도래(study_periods.end_date 미경과) → 전이 없음
+   - 이미 `makeup_done` → 전이 대상 아님
+   - 이미 `makeup_expired` → 중복 전이 없음
+   - 교습기간 미등록 월(study_periods 행 없음) → 전이 보류 (PI-05 정책)
+   - 복수 원생 batch 전이 + ExpirationReport.details 정확성
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/src/commands/expiration.rs | [신규] | 모듈 신설 |
+| src-tauri/src/commands/mod.rs | [1회] | `pub mod expiration;` |
+| src-tauri/src/lib.rs | [1회] | invoke_handler 등록 |
+| src-tauri/src/commands/audit.rs | [1회] | `MakeupExpired` variant |
+| docs/sprint/sprint10/scope.md | [3회] | Session #4 추가 |
+
+### 완료 기준 — T3 AC (sprint10.md L114-118)
+
+- ✅ `expire_overdue_absences` 단위 테스트 **7건 통과** (계획 6건+ 충족)
+- ✅ 트랜잭션 내 원자적 실행 (`pool.begin()` → RETURNING → `tx.commit()`)
+- ✅ audit 로그 기록 (`MakeupExpired` variant, fire-and-forget per row)
+- ✅ `cargo test` 258 passed (T1' 251 → +7 T3) / `cargo clippy` clean
+
+### 발견된 이슈 + 해결
+
+- 회귀 1건: `summary_aggregates_completed_makeup_minutes` 실패 (V108 CHECK 단순화로 `makeup_absent` INSERT 차단)
+  - 해결: 테스트의 `makeup_absent` 시드 행 제거. 검증 의도(출석한 보강만 합산)는 동일 유지
+
+### 세션 종료 조건
+
+- ✅ T3 AC 통과
 - ⬜ 단일 커밋
-- ⬜ 다음 세션(T3 — 소멸 자동 전이 IPC) 진입점 준비
+- ⬜ 다음 세션(T4 — 트리거 3개소 통합) 진입점 준비

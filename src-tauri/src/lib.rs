@@ -109,6 +109,7 @@ pub fn run() {
             commands::makeup::create_makeup_with_absences,
             commands::makeup::cancel_makeup,
             commands::makeup::get_absence_history,
+            commands::expiration::expire_overdue_absences,
             startup::app_startup_sequence,
         ])
         .on_window_event(|_window, event| {

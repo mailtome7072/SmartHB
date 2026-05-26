@@ -1623,14 +1623,12 @@ mod tests {
         seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
         let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
 
-        // 보강 출결 2건 (출석 + 결석)
+        // 보강 출결 2건 (출석한 보강만 — V108 이후 makeup_absent 시드 불가, J5 폐기)
         sqlx::query(
             "INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) \
              VALUES (?, '2026-06-10', '2026-06', 'makeup_attended', 60), \
-                    (?, '2026-06-17', '2026-06', 'makeup_attended', 90), \
-                    (?, '2026-06-24', '2026-06', 'makeup_absent',   60)",
+                    (?, '2026-06-17', '2026-06', 'makeup_attended', 90)",
         )
-        .bind(sid)
         .bind(sid)
         .bind(sid)
         .execute(&pool)

@@ -5,6 +5,7 @@ pub mod auth;
 pub mod backup;
 pub mod codes;
 pub mod db;
+pub mod expiration;
 pub mod fees;
 pub mod integrity;
 pub mod lock;
