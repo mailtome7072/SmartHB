@@ -52,7 +52,6 @@ pub enum AuditEventType {
     // Sprint 9 T3/T4 — 보강 도메인 (PRD §4.5.4~6)
     MakeupCreated,
     MakeupCancelled,
-    MakeupAbsent,
 }
 
 impl AuditEventType {
@@ -73,7 +72,6 @@ impl AuditEventType {
             Self::SecurityEvent => "security-event",
             Self::MakeupCreated => "makeup-created",
             Self::MakeupCancelled => "makeup-cancelled",
-            Self::MakeupAbsent => "makeup-absent",
         }
     }
 }

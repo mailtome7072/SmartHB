@@ -368,7 +368,7 @@
 - ⬜ 퇴교 처리 다이얼로그 3개 선택지 모두 동작 (PRD §4.5.9)
 - ⬜ 선행 수업: 미래 결석 → 현재 보강 매칭 동작 (PRD §4.2.3)
 - ⬜ 캘린더 뷰 일/주/월 전환 + 원생 팝업 + 보강관리 뷰 동작 (PRD §4.6)
-- ⬜ Sprint 9 dead code 0건 (mark_makeup_absent + batch_create_makeups 완전 제거)
+- ✅ Sprint 9 dead code 0건 (mark_makeup_absent + batch_create_makeups 완전 제거) — T1 완료 (Session #1, 2026-05-26)
 - ⬜ `cargo test` 전체 통과 (cipher off/on)
 - ⬜ `cargo clippy -- -D warnings` clean (cipher off/on)
 - ⬜ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과

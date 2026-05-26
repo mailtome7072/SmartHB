@@ -108,8 +108,6 @@ pub fn run() {
             commands::makeup::get_makeup_eligible_dates,
             commands::makeup::create_makeup_with_absences,
             commands::makeup::cancel_makeup,
-            commands::makeup::mark_makeup_absent,
-            commands::makeup::batch_create_makeups,
             commands::makeup::get_absence_history,
             startup::app_startup_sequence,
         ])
