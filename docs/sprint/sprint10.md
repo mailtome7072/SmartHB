@@ -89,7 +89,7 @@
 
 ---
 
-### T1': V108 마이그레이션 — makeup_attendances.status CHECK 정리 (PI-07 결정) — 0.5h
+### T1': V108 마이그레이션 — makeup_attendances.status CHECK 정리 (PI-07 결정) — 0.5h ✅ (2026-05-26)
 
 **작업 내용**:
 1. `src-tauri/migrations/108__cleanup_makeup_status_check.sql` 신규

@@ -249,3 +249,48 @@ RETURNING id, student_id, event_date, makeup_deadline;
 5. `cargo test` 통과 확인 (CHECK 제약 위반 테스트 없음 — 데이터 0건이므로 안전)
 
 **AC**: V108 적용 후 `makeup_attendances.status` 단일 값 강제 + `cargo test` 통과
+
+---
+
+## Session #3 (T1' — V108 마이그레이션, 2026-05-26)
+
+> Sprint 10 Session #3 — T1' (V108 적용).
+> 예상 0.5h. PI-07 결정 반영.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T1'** | V108 마이그레이션 — `makeup_attendances.status` CHECK 제약에서 `'makeup_absent'` 제거 | 0.5h |
+
+### V108 구현 패턴
+
+SQLite는 CHECK ALTER 미지원 → 다음 패턴 사용:
+1. `PRAGMA foreign_keys=OFF;` (FK 참조 임시 해제 — V107이 `regular_attendances.makeup_attendance_id → makeup_attendances.id` 참조)
+2. 새 테이블 `makeup_attendances_new` 생성 (CHECK 단순화)
+3. `INSERT INTO ... SELECT * FROM makeup_attendances;`
+4. `DROP TABLE makeup_attendances;`
+5. `ALTER TABLE makeup_attendances_new RENAME TO makeup_attendances;`
+6. 인덱스 재생성 (테이블 rename 시 인덱스는 따라가지만 명시적으로 보장)
+7. `PRAGMA foreign_keys=ON;`
+8. `PRAGMA foreign_key_check;` 검증
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/migrations/108__cleanup_makeup_status_check.sql | [신규] | V108 마이그레이션 |
+| docs/sprint/sprint10/scope.md | [2회] | Session #3 추가 |
+
+### 완료 기준
+
+- ✅ V108 SQL 파일 작성 (`108__cleanup_makeup_status_check.sql`, 50 라인)
+- ✅ `cargo test --manifest-path src-tauri/Cargo.toml` 251 passed / 0 failed (T1 동일, 회귀 없음 — 인메모리 DB가 V108까지 자동 적용)
+- ✅ `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` clean
+- ✅ `.sqlx/` 오프라인 캐시 영향 없음 — makeup.rs는 `sqlx::query()` (런타임 매크로) 사용, compile-time `query!` 매크로 없음
+
+### 세션 종료 조건
+
+- ✅ T1' AC 통과
+- ⬜ 단일 커밋
+- ⬜ 다음 세션(T3 — 소멸 자동 전이 IPC) 진입점 준비
