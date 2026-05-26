@@ -728,5 +728,48 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 ### 세션 종료 조건
 
 - ✅ T8 AC 통과
-- ⬜ 단일 커밋 (ADR + IPC + 테스트)
-- ⬜ 다음 세션(T9 — 소멸 알림 UI 잔여) 진입점 준비
+- ✅ 단일 커밋 (`21f8719`)
+- ✅ 다음 세션(T9) 진입점 준비
+
+---
+
+## Session #10 (T9 — 소멸 알림 UI 잔여, 2026-05-26)
+
+> Sprint 10 Session #10 — T9 (앱 시작 시 expiration_report 토스트).
+> 예상 1.5h. PI-09 결정 적용 — 건수 > 0 시만 토스트.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T9** | 앱 시작 startup 응답의 expiration_report 를 토스트로 표시 | 1.5h |
+
+### 설계
+
+1. **types/index.ts** — `StartupResult` 에 `expirationReport` 추가 (백엔드 응답 정합)
+2. **stores/session-store** — `dismissedExpirationNotice` 플래그 추가 (한 번 닫으면 같은 세션에서 재표시 안 함)
+3. **루트 페이지** (`src/app/page.tsx`) — `unlocked && lastStartup` 시 토스트 영역 표시
+   - 기존 attendance/page.tsx의 amber 배너 패턴 재사용 (일관성)
+   - 닫기 버튼 → `dismissExpirationNotice()` 호출
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src/types/index.ts | [1회] | StartupResult.expirationReport 추가 |
+| src/stores/session-store.ts | [1회] | dismissExpirationNotice 액션 |
+| src/app/page.tsx | [1회] | 토스트 영역 + 닫기 |
+| docs/sprint/sprint10/scope.md | [9회] | Session #10 추가 |
+
+### 완료 기준 — T9 AC (축소된 범위)
+
+- ✅ 앱 시작 (unlock) 직후 메인 페이지에서 expiration_report 토스트 표시 (amber 배너)
+- ✅ 건수 > 0 일 때만 표시 (PI-09 일치)
+- ✅ 닫기 버튼 → `expirationNoticeDismissed` 플래그로 같은 세션 재표시 차단
+- ✅ `pnpm lint` clean / `pnpm tsc --noEmit` clean
+
+### 세션 종료 조건
+
+- ✅ T9 AC 통과
+- ⬜ 단일 커밋
+- ⬜ 다음 세션(T10 — 퇴교 보강 UI) 진입점 준비

@@ -141,4 +141,8 @@ export interface StartupResult {
   lock_force_used: boolean
   integrity_ok: boolean
   audit_cleaned: number
+  /** Sprint 10 T4 (PI-05/PI-09): 앱 시작 직후 소멸 자동 전이 결과.
+   *  내부는 camelCase, 본 필드는 snake_case 유지 (기존 StartupResult 패턴).
+   *  `transitioned_count > 0` 시 메인 페이지에서 토스트 표시 (T9). */
+  expiration_report: import('./expiration').ExpirationReport
 }

@@ -371,6 +371,7 @@ export async function appStartupSequence(
       lock_force_used: forceLock,
       integrity_ok: true,
       audit_cleaned: 0,
+      expiration_report: { transitionedCount: 0, details: [] },
     }
   }
   return inv('app_startup_sequence', {
