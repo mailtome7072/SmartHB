@@ -1355,4 +1355,39 @@ mod tests {
         assert_eq!(h2.len(), 1);
         assert_eq!(h2[0].event_date, "2026-06-16");
     }
+
+    // ─────────────── Sprint 10 T7 — 선행 수업 (PRD §4.2.3) ───────────────
+
+    /// 선행 수업 시나리오 — 미래 결석(6/20)을 현재 보강(6/13)이 충당.
+    /// 백엔드는 보강일 < 결석일 순서 검증을 하지 않으므로 PRD §4.2.3 시나리오 자연스럽게 지원.
+    /// UI 필터(MakeupRegisterDialog::filteredPending) 는 별도 — UI 차원의 제약.
+    #[tokio::test]
+    async fn create_makeup_supports_future_absence_for_advance_class() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        // 미래 일자 6/20 에 결석 사전 등록 (학부모 통보로 셀 토글한 상태 가정).
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-20"]).await;
+        // 보강 일자 6/13 (토요일, 공휴수업일 코드 등록)
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        // 보강일(6/13) < 결석일(6/20) — 선행 수업 시나리오.
+        let result = create_makeup_with_absences_impl(
+            &pool,
+            &payload(sid, "2026-06-13", absences.clone()),
+        )
+        .await
+        .expect("선행 수업 보강 등록 성공");
+
+        assert_eq!(result.matched_count, 1);
+
+        // 미래 결석이 makeup_done 으로 전이됨 — 매칭된 보강 id 도 연결.
+        let (status, mid): (String, Option<i64>) = sqlx::query_as(
+            "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id = ?",
+        )
+        .bind(absences[0])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "makeup_done");
+        assert_eq!(mid, Some(result.makeup_id));
+    }
 }

@@ -206,8 +206,8 @@
 
 ---
 
-### T7: 선행 수업 처리 IPC — 2h
-> PRD §4.2.3 구현
+### T7: 선행 수업 검증 — 2h ✅ (2026-05-26, 축소된 범위)
+> PRD §4.2.3 — PI-08 결정으로 별도 IPC 없이 기존 토글 + 보강 흐름 활용. 백엔드가 이미 시나리오 지원함을 단위 테스트로 보장. UI 필터 완화는 별도 task 이연.
 
 **작업 내용**:
 1. 기존 `toggle_attendance` 확장 또는 별도 `register_advance_absence` 함수:
@@ -381,7 +381,7 @@
 - ❌ 보강소멸 → 결석 환원 시 확인 다이얼로그 동작 (AC-4.5-5) — 사용자 결정으로 폐기 (2026-05-26)
 - ⬜ 보강완료(emerald) vs 보강소멸(gray) 출결 그리드 시각 구분 (사용자 요구 2026-05-26, 이미 구현됨 — T12 시각 검증으로 확정)
 - ⬜ 퇴교 처리 다이얼로그 3개 선택지 모두 동작 (PRD §4.5.9)
-- ⬜ 선행 수업: 미래 결석 → 현재 보강 매칭 동작 (PRD §4.2.3)
+- ✅ 선행 수업: 미래 결석 → 현재 보강 매칭 동작 (PRD §4.2.3) — 백엔드 단위 테스트 통과 (`create_makeup_supports_future_absence_for_advance_class`)
 - ⬜ 캘린더 뷰 일/주/월 전환 + 원생 팝업 + 보강관리 뷰 동작 (PRD §4.6)
 - ✅ Sprint 9 dead code 0건 (mark_makeup_absent + batch_create_makeups 완전 제거) — T1 완료 (Session #1, 2026-05-26)
 - ⬜ `cargo test` 전체 통과 (cipher off/on)

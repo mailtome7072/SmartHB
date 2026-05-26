@@ -574,5 +574,73 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 ### 세션 종료 조건
 
 - ✅ T6 AC 통과
+- ✅ 단일 커밋 (`6209d00`)
+- ✅ 다음 세션(T7) 진입점 준비
+
+---
+
+## Session #8 (T7 — 선행 수업 검증, 2026-05-26)
+
+> Sprint 10 Session #8 — T7 (PRD §4.2.3 선행 수업, 축소된 범위).
+> 예상 2h. PI-08 결정 반영 — 별도 IPC 신설 없이 기존 토글 + 보강 흐름 활용.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T7** | 선행 수업 시나리오 검증 단위 테스트 + scope.md 흐름 문서화 | 2h |
+
+### 코드 분석 결과 — 백엔드 이미 PRD §4.2.3 지원
+
+`create_makeup_with_absences_impl` 검증 항목:
+1. 보강 가능 일자 (케이스 A/B)
+2. 학생 존재 + 입퇴교 범위 (event_date 기준)
+3. ~~정규 수업 요일 차단~~ (Sprint 9 T10 폐기)
+4. 결석 유효성 — 학생 일치 + status='absent' + 미매칭
+
+**→ 보강 event_date vs 결석 absence.event_date 순서 검증 없음** (의도). 즉 백엔드는 미래 결석을 현재 보강이 충당하는 것을 자연스럽게 허용. PRD §4.2.3 선행 수업 시나리오와 정합.
+
+> UI 측 `MakeupRegisterDialog::filteredPending` 은 `a.eventDate < eventDate` 필터를 적용 — 현재 보강일 이전 결석만 표시. 미래 결석 매칭은 UI 차원에서 차단됨. 본 sprint 에서는 UI 필터 그대로 유지 (Sprint 9 검증 통과). 사용자가 PRD §4.2.3 실제 운영을 시작할 때 시각 검증으로 확인 후 별도 task 에서 UI 필터 완화 검토.
+
+### 선행 수업 운영 흐름 (PRD §4.2.3 + PI-08 정합)
+
+```
+[Step 1] 월 초: 원장이 generate_attendances 호출
+   → regular_attendances 일괄 INSERT (status='present')
+
+[Step 2] 학부모 사전 통보로 미래 결석 확정 (예: 6/15)
+   → 출결 그리드에서 6/15 셀 토글 (present → absent)
+   → makeup_deadline 자동 설정 (2026-07)
+
+[Step 3] 선행 등원일(예: 6/10) 보강 등록
+   → 백엔드 create_makeup_with_absences: event_date=6/10, absence_ids=[6/15 결석]
+   → 검증 통과 (백엔드는 보강일 < 결석일 시나리오 허용)
+   → 6/15 결석 status='makeup_done' 전이
+
+[제약] Step 3 의 UI 진입 — 현재 MakeupRegisterDialog 는 보강일 이전 결석만 표시.
+       사용자가 운영 시작 시 시각 검증으로 확인 후 필터 완화 검토.
+```
+
+### 출결 생성 충돌 방지 (R69)
+
+- `generate_attendances` 는 `check_attendance_exists` 로 같은 월에 이미 출결이 있으면 거부 (이미 구현됨, `attendance.rs::generate_impl` L79-84)
+- 사전 등록 결석이 있는 경우라도 출결 생성은 거부 → 운영 흐름 보호 (월 초 generate 표준)
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/src/commands/makeup.rs | [1회] | 선행 수업 단위 테스트 1건 추가 |
+| docs/sprint/sprint10/scope.md | [7회] | Session #8 추가 |
+
+### 완료 기준 — T7 AC (sprint10.md L209-212, 축소)
+
+- ✅ 단위 테스트 1건 — `create_makeup_supports_future_absence_for_advance_class` (미래 결석을 현재 보강이 충당 성공)
+- ✅ scope.md 에 선행 수업 운영 흐름 문서화 (PRD §4.2.3 정합)
+- ✅ `cargo test` 266 passed (T6 265 → +1) / `cargo clippy` clean
+
+### 세션 종료 조건
+
+- ✅ T7 AC 통과
 - ⬜ 단일 커밋
-- ⬜ 다음 세션(T7 — 선행 수업 검증) 진입점 준비
+- ⬜ 다음 세션(T8 — 캘린더 ADR + 집계 IPC) 진입점 준비 + PI-03 사용자 확인 안내
