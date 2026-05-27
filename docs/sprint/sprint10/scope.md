@@ -1016,3 +1016,57 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 
 - **cipher on 은 이제 로컬 검증 가능** (Strawberry Perl 설치 완료). 이전 인계 1번 항목 해소.
 - flaky 동시성 테스트는 별도 carry-over 로 유지 (cipher 무관).
+
+---
+
+## Session #15 (T11 시각 검증 — V108 마이그레이션 FK 실패 수정, 2026-05-27)
+
+> `pnpm tauri:dev` 로 실제 앱 기동 시각 검증 중 발견. 실데이터 DB 에서 앱 시작 실패:
+> "설정 정보를 불러오는 중 오류 / 마이그레이션 실행 실패: code 787 FOREIGN KEY constraint failed".
+
+### 근본 원인 (V108 — T1' 작성)
+
+V108 은 makeup_attendances 를 재생성(CHECK 단순화)하는데, `regular_attendances.makeup_attendance_id
+→ makeup_attendances.id` 자식 FK 가 있다. 앱 연결은 `foreign_keys = ON`(db.rs:109) + sqlx 가
+마이그레이션을 트랜잭션으로 감쌈:
+- `PRAGMA foreign_keys = OFF` 는 트랜잭션 내부에서 무시 (SQLite 공식 재구성은 BEGIN 밖 OFF 요구).
+- `PRAGMA defer_foreign_keys = ON` 도 실패: DROP 암묵적 DELETE 가 deferred 카운터 +1 하나,
+  부모 행을 makeup_attendances_new(다른 이름)에 INSERT 한 시점엔 감소 안 되고 RENAME 으로도
+  감소 안 됨 → COMMIT 시 카운터>0 → 787. (`foreign_key_check` 는 0건이지만 카운터 잔존)
+- 빈 인메모리 테스트는 자식 행이 없어 통과 → 잠재 결함이 단위 테스트를 통과했던 것.
+
+### 해결 (NULL-복원 재구성)
+
+1) 자식 FK 값(ra_id→mk_id)을 TEMP 테이블 보존 + NULL → 2) 부모 재구성(dangling 없음) →
+3) 보존값으로 복원. foreign_keys ON + 트랜잭션 내부 전 구간 정합. Perl DBD::SQLite 로 실데이터
+재현·검증 후 적용.
+
+### 번호 재검토 → V108 유지 (재번호 불필요로 정정)
+
+- 초기엔 "108 < 적용된 302 → 순서 역행" 으로 보고 V303 재번호 진행했으나, **WAL 파일을 빼고 DB 를
+  복사해 오판**한 것. 실제로는 NULL-복원 수정본이 **version 108 로 이미 정상 적용**(success=1,
+  CHECK 단순화 반영, FK 0, 보강 링크 ra9→mk2 보존)됨 — sqlx 0.8 은 순서 역행 pending 도 적용.
+- 303 재번호는 "DB엔 108, 파일엔 303" 충돌(`108 previously applied but missing`)을 유발 → **108 로
+  되돌림**. 적용된 체크섬과 파일 내용 일치 → 앱 정상 시작 확인.
+
+### 검증 결과 (실데이터 DB)
+
+| 항목 | 결과 |
+|------|------|
+| 앱 시작 (잠금 해제) | ✅ db_init=17ms, 마이그레이션 오류 없음 |
+| 라우트 로드 | ✅ `/`, `/schedules`, `/students`, `/academic`, `/attendance` 모두 200 |
+| `_sqlx_migrations` | ✅ v108 success=1 (CHECK `status='makeup_attended'` 반영) |
+| FK 무결성 / 데이터 | ✅ `foreign_key_check` 0건, 보강 링크 ra9→mk2 보존 |
+| `cargo test --lib` (cipher off) | ✅ 272 passed / 0 failed |
+
+### 교훈 (메모리화)
+
+- **SQLite WAL DB 복사 시 `-wal`/`-shm` 동반 또는 체크포인트 후 복사** — 안 하면 낡은 스냅샷.
+- **sqlx 트랜잭션 내 테이블 재구성 + 자식 FK** → `defer_foreign_keys` 불가, NULL-복원 패턴 사용.
+- **빈 인메모리 테스트는 FK 데이터 경로를 못 잡음** → 마이그레이션은 시드 데이터 있는 실DB 시각 검증 필요.
+
+### 수정 파일
+
+| 파일 | 변경 |
+|------|------|
+| src-tauri/migrations/108__cleanup_makeup_status_check.sql | NULL-복원 재구성으로 FK 787 해소 (번호 108 유지) |

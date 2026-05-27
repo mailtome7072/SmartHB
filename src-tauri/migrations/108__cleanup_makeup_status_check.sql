@@ -7,16 +7,35 @@
 -- 데이터 안전성: makeup_attendances 에 status='makeup_absent' 행 0건 보장 (Sprint 9 J5 폐기 후
 -- 운용 데이터 미존재 + UI 호출 경로 제거). INSERT SELECT 시 데이터 누락 위험 없음.
 --
--- 방법: SQLite 는 CHECK 제약 ALTER 불가 → 테이블 재생성 패턴 (V107 동일).
--- - 임시 테이블 (makeup_attendances_new) 생성 — CHECK 단순화 (`status = 'makeup_attended'`)
--- - 데이터 복사 (INSERT INTO new SELECT FROM old)
--- - 원본 DROP + RENAME
--- - 인덱스 재생성 (V106 와 동일 2개)
+-- 방법: SQLite 는 CHECK 제약 ALTER 불가 → 부모 테이블(makeup_attendances) 재생성.
 --
--- PRAGMA foreign_keys: 본 마이그레이션 시점에는 OFF 가정 (sqlx 표준).
--- 본 작업으로 regular_attendances.makeup_attendance_id → makeup_attendances.id FK 가 일시
--- 분리되지만, RENAME 으로 동일 이름 복원 → FK 자동 재연결 (SQLite 기본 동작).
+-- ⚠️ FK 카운터 함정 (Sprint 10 T11 시각 검증에서 실데이터 code 787 발견):
+--   regular_attendances.makeup_attendance_id → makeup_attendances.id 자식 FK 가 존재한다.
+--   sqlx 는 마이그레이션을 트랜잭션으로 감싸고 앱 연결은 `PRAGMA foreign_keys = ON` 이다.
+--   - `PRAGMA foreign_keys = OFF` 는 트랜잭션 내부에서 무시됨 (SQLite 공식 재구성 절차는 BEGIN
+--     '밖'에서 OFF 를 요구 — sqlx 모델에선 불가).
+--   - `PRAGMA defer_foreign_keys = ON` 도 실패: DROP 의 암묵적 DELETE 가 deferred 위반 카운터를
+--     +1 하는데, 부모 행을 INSERT 한 시점엔 테이블 이름이 makeup_attendances_new 라 카운터가
+--     감소하지 않고 RENAME 으로도 감소 안 됨 → COMMIT 시 카운터>0 → code 787.
+--     (foreign_key_check 는 0건이지만 deferred 카운터가 남아 실패하는 SQLite 동작)
+--
+-- 해결: 재구성 동안 dangling 참조 자체를 없앤다.
+--   1) 자식 FK 값(ra_id→mk_id)을 TEMP 테이블에 보존하고 NULL 로 비운다 (NULL FK 는 검사 제외)
+--   2) 부모 테이블 재구성 (이제 참조하는 자식 없음 → DROP/RENAME 안전, 카운터 증가 없음)
+--   3) 보존한 값으로 자식 FK 복원 (부모 행이 동일 id 로 존재 → 즉시 FK 만족)
+--   foreign_keys ON + 트랜잭션 내부에서 전 구간 정합 유지. (Perl DBD::SQLite 로 실데이터 재현·검증)
 
+-- 1) 자식 FK 보존 + NULL
+CREATE TEMP TABLE _ra_makeup_map AS
+    SELECT id AS ra_id, makeup_attendance_id AS mk_id
+    FROM regular_attendances
+    WHERE makeup_attendance_id IS NOT NULL;
+
+UPDATE regular_attendances
+SET makeup_attendance_id = NULL
+WHERE makeup_attendance_id IS NOT NULL;
+
+-- 2) 부모 테이블 재구성 — CHECK 단순화 (`status = 'makeup_attended'`)
 CREATE TABLE makeup_attendances_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL REFERENCES students(id),
@@ -44,3 +63,12 @@ ALTER TABLE makeup_attendances_new RENAME TO makeup_attendances;
 -- 인덱스 재생성 (V106 와 동일 — 테이블 재생성 시 인덱스도 함께 소실됨)
 CREATE INDEX idx_makeup_att_student ON makeup_attendances(student_id);
 CREATE INDEX idx_makeup_att_yearmonth ON makeup_attendances(year_month);
+
+-- 3) 자식 FK 복원
+UPDATE regular_attendances
+SET makeup_attendance_id = (
+    SELECT mk_id FROM _ra_makeup_map WHERE ra_id = regular_attendances.id
+)
+WHERE id IN (SELECT ra_id FROM _ra_makeup_map);
+
+DROP TABLE _ra_makeup_map;
