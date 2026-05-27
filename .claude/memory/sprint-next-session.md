@@ -1,114 +1,69 @@
 ---
 name: sprint-next-session
-description: "Sprint 10 Session #11 완료 (T10 퇴교 보강 UI). 다음: T11 — 캘린더 뷰 UI (FullCalendar 6h)"
+description: "Sprint 10 구현 완료 (T1~T12, T5 폐기) — Phase 3 완결. 다음: sprint-close → sprint-review"
 metadata:
   node_type: memory
   type: project
-  originSessionId: sprint10-session11-t10
+  originSessionId: sprint10-session13-t12
 ---
 
-Sprint 10 — Phase 3 완결 sprint. Session #11 (T10) 완료. 다음은 **T11 캘린더 뷰 UI** (FullCalendar 6h, sprint 의 큰 작업).
+Sprint 10 (Phase 3 보강+소멸 완결 sprint) **구현 전부 완료**. 다음 단계는 마무리 — `sprint-close` → `sprint-review`.
 
-## Sprint 10 현황
+## Sprint 10 현황 — 전 Task 완료
 
 | Task | 내용 | 상태 | 커밋 |
 |------|------|------|------|
-| T1-T8 (백엔드) | 완료 | ✅ | — |
-| T9 | 앱 시작 토스트 | ✅ | `b7b6fcb` |
+| T1~T8 (백엔드) | dead code 정리 / V108 / 소멸 IPC+트리거 / 퇴교 IPC / 선행수업 / 캘린더 집계 IPC + ADR-006 | ✅ | — |
+| T5 | 소멸 환원 IPC | ❌ 폐기 (사용자 정책) | — |
+| T9 | 앱 시작 소멸 토스트 | ✅ | `b7b6fcb` |
 | T10 | 퇴교 보강 UI | ✅ | `7de4dbb` |
-| **T11** | **캘린더 뷰 UI (FullCalendar)** | ⬜ 다음 세션 | — |
-| T12 | 통합 검증 | ⬜ | — |
+| **T11** | **캘린더 뷰 UI (FullCalendar)** | ✅ | `2d8fdb3` |
+| **T12** | **통합 검증** | ✅ | `8550966` |
 
-## T10 결과 요약
+## T11 결과 요약 (FullCalendar 캘린더 뷰)
 
 | 영역 | 변동 |
 |------|------|
-| 타입 | `src/types/withdrawal.ts` 신규 — WithdrawalChoice tagged union + WithdrawalPendingMakeup |
-| 래퍼 | `getPendingMakeupForWithdrawal` + `processWithdrawalMakeup` |
-| 컴포넌트 | `WithdrawalMakeupDialog` — 3가지 선택지 (메뉴 → external 모드 전환), memo textarea 필수 |
-| 통합 | edit page handleWithdrawConfirmed — 잔여 보강 검증 후 분기 |
-| 자동 검증 | pnpm lint clean / pnpm tsc clean |
+| 의존성 | FullCalendar 6.1.20 5종 (core/react/daygrid/timegrid/interaction) — ADR-006 사전 승인 |
+| 메뉴 | '수업 관리'(`/schedules`) 활성화 (사용자 결정 — 신규 /calendar 아님) |
+| 타입 | `src/types/calendar.ts` (CalendarMonth/Day/Session, MakeupManagementStudent) |
+| 래퍼 | `getCalendarData` + `getMakeupManagementData` |
+| 페이지 | `src/app/schedules/page.tsx` — 캘린더/보강관리 2탭 |
+| 컴포넌트 | `ClassCalendar`(dynamic ssr:false) / `StudentDetailPopup` / `MakeupManagementView` |
+| PI-04 | 보강 일괄 진입점 없음 — 보강관리 뷰는 소멸 임박 순 목록 + '출결관리 이동' 버튼만 |
 
-## T11 (다음 세션) 진입 액션
+## T12 자동 검증 결과
 
-새 대화 또는 같은 세션에서:
+- `cargo test --lib` cipher off **272 passed / 0 failed**
+- `cargo clippy --lib -- -D warnings` cipher off clean
+- `pnpm lint` / `pnpm tsc --noEmit` / `pnpm build`(static export 16/16) clean
+- 마이그레이션 self-check (A39): V108 1:1 일치
+- ⚠️ **cipher on 로컬 검증 불가** — 이 PC에 Strawberry Perl 미설치 (vendored OpenSSL 빌드 실패). CI(`ci.yml`/`deploy.yml`)에서 검증. T11 은 Rust 변경 0건이라 cipher 영향 없음
 
-> "/sprint-dev 10"
+## 다음 단계 진입 액션
 
-### T11 작업 계획 (6h, sprint10.md L283-307)
+> "sprint10 구현 완료했어. sprint-close 실행해줘."
 
-1. **패키지 설치**
-   ```bash
-   pnpm add @fullcalendar/core @fullcalendar/react @fullcalendar/daygrid @fullcalendar/timegrid @fullcalendar/interaction
-   ```
+sprint-close 완료 후:
 
-2. **TS 타입 신규** `src/types/calendar.ts`:
-   - CalendarMonth, CalendarDay, CalendarSession
-   - MakeupManagementStudent
+> "sprint-review 실행해줘."
 
-3. **TS 래퍼** `src/lib/tauri/index.ts`:
-   - `getCalendarData(yearMonth)`
-   - `getMakeupManagementData(yearMonth)`
+### sprint-close 인계 사항
+1. ROADMAP.md **Phase 3 완료 표기** (Sprint 9~10 → ✅), 대시보드 진행률 갱신 (전체 17 스프린트 기준 — 현재 헤더가 15로 오기재됨, 정정 권장)
+2. CHANGELOG.md 0.4.x 항목 추가 — 소멸 자동 전이, 퇴교 보강 처리, 수업 관리 캘린더 뷰
+3. PR 단계 생략 — 단일 개발자, sprint10 → develop 직접 머지 ([[workflow-no-pr]])
 
-4. **신규 라우트** `src/app/calendar/page.tsx`:
-   - dynamic import + 'use client' (static export 호환)
-   - 한국어 로케일 (`@fullcalendar/core/locales/ko`)
-   - 일/주/월 뷰 전환 (FullCalendar 표준)
-   - 시간대별 인원수 (시작 + 진행 중 합산) — 헤더 셀 커스텀
-   - 원생 상세 팝업 (eventClick → 새 다이얼로그)
+### sprint-review 인계 사항
+1. **cipher on**: CI 에서 반드시 확인 (로컬 불가)
+2. **사용자 시각 검증 대기**: 캘린더 일/주/월 전환 + 원생 팝업 + 보강관리 강조 + 보강완료(emerald)/소멸(gray) 색 구분
+3. **carry-over flaky**: `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` 병렬 시 가끔 실패 (이번 run 통과)
+4. 산출물 경로: `docs/test-reports/sprint10-*.md`, `docs/sprint-retrospectives/sprint10-retrospective.md`
 
-5. **보강 관리 뷰** — `/calendar` 페이지 내 토글 또는 별도 섹션:
-   - 보강 필요 원생 리스트 (소멸기한 임박 순)
-   - is_imminent 강조 (색상)
-
-6. **사이드바 메뉴 추가** — `/calendar` 진입점
-
-7. **신규 컴포넌트**:
-   - `CalendarPage` (주 컴포넌트)
-   - `StudentSessionPopup` (원생 상세 — 이름, 학년, 정규/보강, 시간, 결석일, 미수업 시간, 소멸기한)
-   - `MakeupManagementSection` (보강 관리 뷰)
-
-### T11 진입 시 확인 사항
-- React 19 호환 — `@fullcalendar/react@6.x` 동작 확인. 문제 발생 시 ADR-006 미해결 사항에 따라 6.1.x 핀.
-- Next.js static export 호환 — `dynamic(() => import('...'), { ssr: false })` 패턴 필수.
-- `'use client'` 페이지 자체 + 내부 컴포넌트 분리
-
-### TS 타입 예시 (src/types/calendar.ts)
-```ts
-export interface CalendarMonth {
-  yearMonth: string
-  days: CalendarDay[]
-}
-export interface CalendarDay {
-  eventDate: string
-  regularSessions: CalendarSession[]
-  makeupSessions: CalendarSession[]
-}
-export interface CalendarSession {
-  studentId: number
-  studentName: string
-  startTime: string | null  // 보강은 null
-  classMinutes: number
-}
-export interface MakeupManagementStudent {
-  studentId: number
-  studentName: string
-  serialNo: string
-  remainingMinutes: number
-  earliestDeadline: string | null
-  isImminent: boolean
-}
-```
-
-## Sprint 10 Capacity 추적
+## Sprint 10 Capacity 실측
 
 - 계획 40h
-- 실측 누적: T1 1.5 + T2 1 + T1' 0.5 + T3 2.5 + T4 3 + T5폐기 0.5 + T6 2 + T7 1 + T8 3 + T9 1 + T10 2 = **18h**
-- 남은 작업: T11 6h + T12 3h + 버퍼 6h = 15h 필요
-- 여유: 약 7h
+- 실측 누적: T1 1.5 + T2 1 + T1' 0.5 + T3 2.5 + T4 3 + T5폐기 0 + T6 2 + T7 1 + T8 3 + T9 1 + T10 2 + T11 ~4 + T12 ~1 = **약 22.5h** (버퍼 대폭 여유)
 
 ## 정책 (재확인)
-
-- **PR 단계 생략** — 단일 개발자, sprint10 → develop 직접 머지 ([[workflow-no-pr]])
-- **사용자 메모리 미러 동기화** — 두 곳 모두 갱신 후 commit
-- **FullCalendar 패키지 추가** — T11 진입 시 pnpm add. 의존성 추가는 scope.md 에 명시
+- **PR 단계 생략** — sprint10 → develop 직접 머지 ([[workflow-no-pr]])
+- **메모리 미러 동기화** — 사용자 메모리 + `.claude/memory/` 두 곳 갱신 후 commit
