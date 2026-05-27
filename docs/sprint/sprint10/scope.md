@@ -829,5 +829,82 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 ### 세션 종료 조건
 
 - ✅ T10 AC 통과
+- ✅ 단일 커밋 (`7de4dbb`)
+- ✅ 다음 세션(T11 — 캘린더 뷰 UI) 진입점 준비
+
+---
+
+## Session #12 (T11 — 수업 관리 캘린더 뷰, 2026-05-27)
+
+> Sprint 10 Session #12 — T11 (PRD §4.6.1~4.6.3 캘린더 뷰).
+> 예상 6h. T8 ADR-006(FullCalendar) + 백엔드 집계 IPC 2종 활용.
+
+### 이번 세션의 Task
+
+| Task | 작업 | 예상 소요 |
+|------|------|---------|
+| **T11** | 수업 관리 캘린더 뷰 (일/주/월) + 원생 상세 팝업 + 보강 관리 뷰 | 6h |
+
+### 사용자 결정 (2026-05-27, T11 진입)
+
+| ID | 질문 | ✅ 결정 |
+|----|------|---------|
+| **메뉴 배치** | 캘린더 뷰 라우트/메뉴 | **'수업 관리'(`/schedules`) 메뉴 활성화** — 일/주/월 + 보강관리는 내부 탭. 메뉴 추가 없음, PRD §4.6 명칭 일치 |
+| **PI-04** | 보강데이 일괄 등록 진입점 | **진입점 없음 — 이동 버튼만** — 보강관리 뷰는 소멸 임박 순 목록 + 행별 '출결관리 이동' 버튼. 실제 보강 등록은 기존 출결 그리드 흐름 (Sprint 9 J7 폐기 일관) |
+
+### 설계
+
+#### 라이브러리 (ADR-006 FullCalendar)
+- `@fullcalendar/react` + `daygrid` + `timegrid` + `interaction` + `core` (^6.x, React 19 호환 버전)
+- `dynamic(() => import(...), { ssr: false })` 강제 (R67, static export 호환)
+- 한국어 로케일 `@fullcalendar/core/locales/ko`
+
+#### 라우트 구조 — `/schedules`
+- 탭 2개: **캘린더**(일/주/월) / **보강 관리**
+- 캘린더 탭: FullCalendar — `dayGridMonth` / `timeGridWeek` / `timeGridDay` 전환
+  - 정규 수업 = `start_time` 있는 이벤트 (start~end), 보강 = `start_time` 없음 → allDay 이벤트
+  - `eventContent` 커스텀: 원생명 + 시간
+  - 이벤트 클릭 → 원생 상세 팝업 (StudentDetailPopup)
+- 보강 관리 탭: `getMakeupManagementData` 목록
+  - 소멸기한 임박 순 정렬 (백엔드 정렬 그대로)
+  - `isImminent` 행 강조 (red/amber 배경 + 아이콘)
+  - 각 행 "출결관리 이동" 버튼 → `/attendance` 라우팅 (PI-04 결정)
+
+#### 원생 상세 팝업 (§4.6.2)
+- 이벤트 클릭 → 원생 ID + 이벤트 메타 → 팝업
+- 표시: 이름, 정규/보강 구분, 시간(시작·class_minutes→시간), 해당 월 요약(`getAttendanceSummary`)
+- "출결/보강관리 이동" 버튼 → `/attendance`
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| package.json | [신규 의존성] | FullCalendar 5종 (ADR-006 사전 승인) |
+| src/types/calendar.ts | [신규] | CalendarMonth/Day/Session, MakeupManagementStudent |
+| src/lib/tauri/index.ts | [1회] | getCalendarData + getMakeupManagementData 래퍼 |
+| src/lib/menu-config.ts | [1회] | '수업 관리' disabledHint 제거 (활성화) |
+| src/app/schedules/page.tsx | [신규] | 캘린더 뷰 페이지 + 탭 |
+| src/components/schedules/ClassCalendar.tsx | [신규] | FullCalendar 래퍼 (dynamic) |
+| src/components/schedules/StudentDetailPopup.tsx | [신규] | 원생 상세 팝업 |
+| src/components/schedules/MakeupManagementView.tsx | [신규] | 보강 관리 뷰 |
+| docs/sprint/sprint10/scope.md | [11회 ⚠️] | Session #12 |
+
+> ⚠️ scope.md 11회 — 정상적 다단계 sprint 진행 (세션당 1회). 동일 코드 파일 반복 수정 아님 — loop 아님.
+
+### 완료 기준 — T11 AC (sprint10.md L314-318)
+
+- ✅ AC-4.6-1: 시간대별 인원수 — timeGrid 주/일 뷰에서 동시간대 이벤트 겹침 시각화 (시각 검증 T12에서 최종 확인)
+- ✅ AC-4.6-2: 소멸 임박 데이터 시각 식별 — 보강관리 뷰 `isImminent` 행 amber 배경 + '⚠ 소멸 임박' 배지
+- ✅ 일/주/월 뷰 전환 — FullCalendar headerToolbar (dayGridMonth/timeGridWeek/timeGridDay) + datesSet → 월 변경 시 refetch
+- ✅ 원생 상세 팝업 → 출결관리 이동 (StudentDetailPopup, `router.push('/attendance')`)
+- ✅ `pnpm tsc --noEmit` clean / `pnpm lint` clean / `pnpm build` (static export 16/16 + Exporting 3/3) clean — R67 검증 통과
+
+### 발견된 이슈
+
+(없음 — FullCalendar 6.1.20 + React 19 + Next 15 static export 빌드 정상. dynamic ssr:false 로 코드 분할됨)
+
+### 세션 종료 조건
+
+- ✅ T11 AC 통과 (자동 검증 3종 + AC 4항목)
 - ⬜ 단일 커밋
-- ⬜ 다음 세션(T11 — 캘린더 뷰 UI) 진입점 준비
+- ⬜ 다음 세션(T12 — 통합 검증) 진입점 준비

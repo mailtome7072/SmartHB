@@ -16,7 +16,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: '대시보드', href: '/', disabledHint: 'Phase 6 에서 제공' },
   { label: '원생 관리', href: '/students' },
   { label: '학사 스케줄', href: '/academic' },
-  { label: '수업 관리', href: '/schedules', disabledHint: 'Phase 2 에서 제공' },
+  { label: '수업 관리', href: '/schedules' },
   { label: '출결 관리', href: '/attendance' },
   { label: '보강 관리', href: '/makeups', disabledHint: 'Phase 3 에서 제공' },
   { label: '단원 평가', href: '/exams', disabledHint: 'Phase 5 에서 제공' },

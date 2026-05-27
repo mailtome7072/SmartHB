@@ -59,6 +59,10 @@ import type {
   WithdrawalPendingMakeup,
 } from '@/types/withdrawal'
 import type {
+  CalendarMonth,
+  MakeupManagementStudent,
+} from '@/types/calendar'
+import type {
   ScheduleSet,
   StudentSchedule,
 } from '@/types/schedule'
@@ -1052,6 +1056,32 @@ export async function expireOverdueAbsences(): Promise<ExpirationReport> {
   const inv = await getInvoke()
   if (!inv) return { transitionedCount: 0, details: [] }
   return inv('expire_overdue_absences') as Promise<ExpirationReport>
+}
+
+/**
+ * Sprint 10 T8/T11 (PRD §4.6.1): 수업 관리 캘린더 — 일자별 정규/보강 수업.
+ *
+ * 백엔드는 raw 일자별 목록만 제공 — 시간대별 합산(AC-4.6-1)은 캘린더 UI 책임.
+ */
+export async function getCalendarData(yearMonth: string): Promise<CalendarMonth> {
+  const inv = await getInvoke()
+  if (!inv) return { yearMonth, days: [] }
+  return inv('get_calendar_data', { yearMonth }) as Promise<CalendarMonth>
+}
+
+/**
+ * Sprint 10 T8/T11 (PRD §4.6.3): 보강 관리 뷰 — 보강 필요 원생(소멸 임박 순).
+ *
+ * 정렬·임박 판정은 백엔드(`calendar.rs`)에서 수행. UI 는 표시만.
+ */
+export async function getMakeupManagementData(
+  yearMonth: string,
+): Promise<MakeupManagementStudent[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_makeup_management_data', { yearMonth }) as Promise<
+    MakeupManagementStudent[]
+  >
 }
 
 /** 출결표 그리드 — 원생 × 일자 + 월간 요약. 50명×31일 < 1초 (PRD §5.7). */
