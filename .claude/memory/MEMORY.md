@@ -2,3 +2,4 @@
 - [Sprint 다음 세션](sprint-next-session.md) — Sprint 10 구현 완료 (T1~T12, T5 폐기). Phase 3 완결 — 소멸 자동 전이 + 퇴교 보강 처리 + 수업 관리 캘린더 뷰(FullCalendar). 다음: sprint-close → sprint-review (cipher on 은 CI 검증)
 - [NTFS power-loss 패턴](ntfs-power-loss-pattern.md) — fs::write+rename 후 데이터가 NULL로 손상, atomic write 헬퍼에 손상 감지+fallback 필수
 - [keyring v3 features 트랩](keyring-v3-features-trap.md) — `keyring = "3"`만 적으면 backend 미연결로 silent set fail. `features = ["apple-native", "windows-native"]` 필수
+- [cipher 테스트 게이트 트랩](cipher-test-gate-trap.md) — `cargo test --features cipher`는 Strawberry Perl + 테스트 모듈 `#[cfg(all(test, not(feature="cipher")))]` 게이트 둘 다 필요. CI는 cipher로 빌드만 해서 미발견

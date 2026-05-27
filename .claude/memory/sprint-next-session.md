@@ -38,7 +38,7 @@ Sprint 10 (Phase 3 보강+소멸 완결 sprint) **구현 전부 완료**. 다음
 - `cargo clippy --lib -- -D warnings` cipher off clean
 - `pnpm lint` / `pnpm tsc --noEmit` / `pnpm build`(static export 16/16) clean
 - 마이그레이션 self-check (A39): V108 1:1 일치
-- ⚠️ **cipher on 로컬 검증 불가** — 이 PC에 Strawberry Perl 미설치 (vendored OpenSSL 빌드 실패). CI(`ci.yml`/`deploy.yml`)에서 검증. T11 은 Rust 변경 0건이라 cipher 영향 없음
+- ✅ **cipher on 로컬 검증 완료** (Session #14) — Strawberry Perl 설치(`winget`) + 테스트 게이트 정합 후: `cargo build --features cipher` Finished, `cargo test --features cipher` 116 passed, clippy clean. 유일 실패는 기존 flaky 동시성 테스트(단독 통과)
 
 ## 다음 단계 진입 액션
 
@@ -54,7 +54,7 @@ sprint-close 완료 후:
 3. PR 단계 생략 — 단일 개발자, sprint10 → develop 직접 머지 ([[workflow-no-pr]])
 
 ### sprint-review 인계 사항
-1. **cipher on**: CI 에서 반드시 확인 (로컬 불가)
+1. **cipher on**: 로컬 검증 완료 (Strawberry Perl 설치됨). cargo test --features cipher 컴파일 가능하도록 8개 모듈 테스트 게이트 정합 (`a3b4915`). cipher-off 동작 불변
 2. **사용자 시각 검증 대기**: 캘린더 일/주/월 전환 + 원생 팝업 + 보강관리 강조 + 보강완료(emerald)/소멸(gray) 색 구분
 3. **carry-over flaky**: `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` 병렬 시 가끔 실패 (이번 run 통과)
 4. 산출물 경로: `docs/test-reports/sprint10-*.md`, `docs/sprint-retrospectives/sprint10-retrospective.md`
