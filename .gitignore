@@ -110,3 +110,6 @@ scripts/holidays.generated.sql
 *.pptx
 *.ppt
 *.pem
+
+# Claude Code 예약 작업 임시 락
+.claude/scheduled_tasks.lock
