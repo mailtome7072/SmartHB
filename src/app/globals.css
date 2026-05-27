@@ -118,69 +118,22 @@ h5 { font-size: 20px; }
 h6 { font-size: 18px; }
 
 /* ── 수업 관리 FullCalendar 커스터마이징 (Sprint 10 T11 시각 검증) ── */
+/* 툴바는 커스텀 React 로 구현 (headerToolbar=false) — FC 버튼 스타일 불필요. */
 
-/* 오늘 버튼 — accent 강조 + 한글 그대로 */
-.fc .fc-today-button {
-  background-color: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  text-transform: none;
-  opacity: 1;
+/* 셀 배경: 학사 캘린더와 동일 — 수업 있는 날 amber-100 / 없는 날 gray-100 */
+.shb-has-class {
+  background-color: #fef3c7;
 }
-.fc .fc-today-button:disabled {
-  background-color: var(--accent);
-  border-color: var(--accent);
-  opacity: 0.5;
+.shb-no-class {
+  background-color: #f3f4f6;
 }
 
-/* 월/주/일 뷰 버튼 — 구분 색 + 너비 2배 */
-.fc .fc-button-group .fc-button-primary {
-  background-color: #e5e7eb;
-  border-color: #d1d5db;
-  color: #374151;
-  min-width: 4.5rem;
-  font-weight: 600;
-}
-.fc .fc-button-group .fc-button-primary:hover {
-  background-color: #d1d5db;
-}
-.fc .fc-button-group .fc-button-primary:not(:disabled).fc-button-active {
-  background-color: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-/* 이전/다음 — 진한 네이비 사각 버튼 (목표 디자인) */
-.fc .fc-prev-button,
-.fc .fc-next-button {
-  background-color: #334155;
-  border-color: #334155;
-  color: #fff;
-}
-.fc .fc-prev-button:hover,
-.fc .fc-next-button:hover {
-  background-color: #1e293b;
-  border-color: #1e293b;
-}
-
-/* 년월 타이틀 — 크게/굵게 + 클릭 가능 힌트 */
-.fc .fc-toolbar-title {
-  font-size: 24px;
-  font-weight: 700;
-}
-
-/* 토·일·공휴일 셀 색상 (학사 캘린더와 통일) */
-.shb-day-holiday {
-  background-color: #fef2f2;
-}
-.shb-day-holiday .fc-daygrid-day-number {
+/* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑) */
+.shb-sun .fc-daygrid-day-number {
   color: #b91c1c;
   font-weight: 700;
 }
-.shb-day-saturday {
-  background-color: #eff6ff;
-}
-.shb-day-saturday .fc-daygrid-day-number {
+.shb-sat .fc-daygrid-day-number {
   color: #1d4ed8;
   font-weight: 700;
 }
