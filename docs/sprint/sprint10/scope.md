@@ -906,5 +906,75 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 ### 세션 종료 조건
 
 - ✅ T11 AC 통과 (자동 검증 3종 + AC 4항목)
+- ✅ 단일 커밋 (`2d8fdb3`)
+- ✅ 다음 세션(T12 — 통합 검증) 진입점 준비
+
+---
+
+## Session #13 (T12 — 통합 검증 + 자동 검증, 2026-05-27)
+
+> Sprint 10 Session #13 — T12 (Sprint 10 마지막 Task). 코드 변경 없음 — 검증 + 문서 갱신.
+
+### 자동 검증 결과 (7항목)
+
+| # | 항목 | 결과 |
+|---|------|------|
+| 1 | `cargo test --lib` (cipher off) | ✅ **272 passed / 0 failed** / 3 ignored |
+| 2 | `cargo test --lib --features cipher` (cipher on) | ⚠️ 로컬 빌드 불가 — Strawberry Perl 미설치 (vendored OpenSSL 빌드 실패). **CI(`ci.yml`/`deploy.yml`)에서 검증**. T11 Rust 변경 0건이라 cipher 영향 없음 |
+| 3 | `cargo clippy --lib -- -D warnings` (cipher off) | ✅ clean |
+| 4 | `cargo clippy` (cipher on) | ⚠️ #2 와 동일 환경 제약 — CI 위임 |
+| 5 | `pnpm lint` | ✅ clean |
+| 6 | `pnpm tsc --noEmit` | ✅ clean |
+| 7 | `pnpm build` (static export) | ✅ 16/16 static + Exporting 3/3 — R67 FullCalendar+static export 호환 확정 |
+
+### 마이그레이션 self-check (A39)
+
+| 계획 (scope/sprint10.md) | 실제 migrations | 일치 |
+|--------------------------|-----------------|------|
+| V108 makeup_status CHECK 정리 (T1') | `108__cleanup_makeup_status_check.sql` | ✅ |
+| (T3/T6/T8 추가 마이그레이션 없음 — 기존 스키마 활용) | 신규 없음 | ✅ |
+
+→ 1:1 일치. 누락/잉여 0건.
+
+### 통합 시나리오 검증
+
+| 시나리오 | 검증 방식 | 결과 |
+|----------|----------|------|
+| 결석 → 소멸기한 도래 → 자동 전이 | 단위 테스트 (expiration.rs 7건) + 트리거 통합 (T4) | ✅ |
+| 퇴교 보강 처리 3선택지 | 단위 테스트 (expiration.rs 6건) + UI (T10) | ✅ |
+| 선행 수업: 미래 결석 → 현재 보강 매칭 | 단위 테스트 (makeup.rs 1건) | ✅ |
+| 캘린더 뷰: 일/주/월 + 원생 팝업 + 보강관리 | build 통과 + T11 구현 | ✅ (사용자 시각 검증 대기) |
+| 보강완료/소멸 시각 구분 | Sprint 8 구현 (emerald/gray) | ✅ (사용자 시각 검증 대기) |
+
+### sprint-review 산출물 경로 (A40)
+
+- 코드 리뷰: 본 sprint 변경 전반 (특히 expiration.rs, calendar.rs, T11 프론트 4종)
+- 테스트 리포트: `docs/test-reports/sprint10-*.md`
+- 회고: `docs/sprint-retrospectives/sprint10-retrospective.md`
+
+### 이번 세션에서 수정할 파일
+
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| docs/sprint/sprint10.md | [2회] | DoD ✅ 전환 + T12/Capacity 마킹 |
+| docs/sprint/sprint10/scope.md | [12회] | Session #13 |
+
+### 완료 기준 — T12 AC
+
+- ✅ 자동 검증 cipher off 전수 통과 + cipher on CI 위임 사유 명시
+- ✅ 마이그레이션 self-check 1:1
+- ✅ 통합 시나리오 4개 (단위 테스트/빌드 기반) — 사용자 시각 검증은 sprint-review 단계
+- ✅ sprint-review 산출물 경로 명시
+
+### 세션 종료 조건
+
+- ✅ T12 AC 통과
 - ⬜ 단일 커밋
-- ⬜ 다음 세션(T12 — 통합 검증) 진입점 준비
+- ✅ **Sprint 10 전 Task 완료 (T1~T12, T5 폐기)** → sprint-close 진입 준비
+
+### ⚠️ sprint-review 인계 사항
+
+1. **cipher on 검증**: 로컬 Strawberry Perl 미설치로 cipher feature 빌드/테스트 불가. CI 에서 반드시 확인 필요. T11 은 프론트 전용이라 Rust 회귀 없음.
+2. **사용자 시각 검증 대기**: 캘린더 뷰(일/주/월 전환, 원생 팝업, 보강관리 강조) + 보강완료/소멸 색상 구분 — 실제 데이터로 시각 검증 필요.
+3. **FullCalendar 신규 의존성**: 5종 (~150KB, dynamic 코드분할). ADR-006 사전 승인. React 19 + static export 빌드 정상 확인됨.
+4. **carry-over (Session #9)**: `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` 병렬 실행 시 가끔 flaky (단독 통과) — calendar 무관, 이번 272 passed run 에서는 통과.
