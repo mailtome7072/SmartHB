@@ -14,7 +14,7 @@ import { useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { getCalendarData, listScheduleEvents } from '@/lib/tauri'
+import { getCalendarData, listScheduleEvents, listStudyPeriods } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { MakeupManagementView } from '@/components/schedules/MakeupManagementView'
@@ -45,6 +45,15 @@ function monthRange(yearMonth: string): { from: string; to: string } {
   return { from: fmt(start), to: fmt(end) }
 }
 
+/** yearMonth 기준 ±1개월의 from/to (YYYY-MM) — listStudyPeriods 조회용. */
+function adjacentMonths(yearMonth: string): { from: string; to: string } {
+  const [y, m] = yearMonth.split('-').map(Number)
+  const prev = new Date(y, m - 2, 1)
+  const next = new Date(y, m, 1)
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return { from: fmt(prev), to: fmt(next) }
+}
+
 type Tab = 'calendar' | 'makeup'
 
 export default function SchedulesPage() {
@@ -68,6 +77,15 @@ export default function SchedulesPage() {
   const academicQuery = useQuery({
     queryKey: ['calendar-academic', range.from, range.to],
     queryFn: () => listScheduleEvents(range.from, range.to),
+    enabled: tab === 'calendar',
+    placeholderData: keepPreviousData,
+  })
+
+  // 교습기간 — 셀 배경(교습기간 내 amber) 판정. 주 뷰가 인접 월 걸침 대비 ±1개월.
+  const months = useMemo(() => adjacentMonths(yearMonth), [yearMonth])
+  const studyPeriodsQuery = useQuery({
+    queryKey: ['calendar-periods', months.from, months.to],
+    queryFn: () => listStudyPeriods(months.from, months.to),
     enabled: tab === 'calendar',
     placeholderData: keepPreviousData,
   })
@@ -133,6 +151,7 @@ export default function SchedulesPage() {
                 <ClassCalendar
                   data={calendarQuery.data}
                   academicEvents={academicQuery.data ?? []}
+                  studyPeriods={studyPeriodsQuery.data ?? []}
                   onMonthChange={(ym) => setYearMonth(ym)}
                   onStudentNameClick={goToAttendance}
                 />

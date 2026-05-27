@@ -19,11 +19,13 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import koLocale from '@fullcalendar/core/locales/ko'
 import type { DatesSetArg, EventInput } from '@fullcalendar/core'
 import type { CalendarMonth } from '@/types/calendar'
-import type { ScheduleEventListItem } from '@/types/academic'
+import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 
 interface Props {
   data: CalendarMonth
   academicEvents: ScheduleEventListItem[]
+  /** 교습기간 목록 — 셀 배경(교습기간 내 amber) 판정용. */
+  studyPeriods: StudyPeriod[]
   onMonthChange: (yearMonth: string) => void
   onStudentNameClick: (studentName: string) => void
 }
@@ -81,6 +83,7 @@ const VIEWS: Array<[string, string]> = [
 export default function ClassCalendar({
   data,
   academicEvents,
+  studyPeriods,
   onMonthChange,
   onStudentNameClick,
 }: Props) {
@@ -134,10 +137,26 @@ export default function ClassCalendar({
     return map
   }, [data])
 
-  // 수업 이벤트 — 주/일(timeGrid) 보기에서만 시간대별 블록(같은 시작시간 학생 묶음).
+  // 주/일 보기 이벤트 — 학사일정(allDay, 날짜행 아래 중앙정렬) + 시간대별 수업 블록.
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
     const result: EventInput[] = []
+    // 학사일정 — allDay 행에 중앙정렬 텍스트.
+    for (const e of academicEvents) {
+      const color = e.is_system_reserved
+        ? (EVENT_TEXT_COLOR[e.code_name] ?? USER_EVENT_TEXT_COLOR)
+        : USER_EVENT_TEXT_COLOR
+      result.push({
+        title: e.display_name ?? e.code_name,
+        start: e.event_date,
+        allDay: true,
+        backgroundColor: 'transparent',
+        borderColor: 'transparent',
+        textColor: color,
+        editable: false,
+        extendedProps: { kind: 'academic' },
+      })
+    }
     for (const day of data.days) {
       const bySlot = new Map<string, { names: string[]; maxMin: number }>()
       for (const s of day.regularSessions) {
@@ -155,22 +174,31 @@ export default function ClassCalendar({
           borderColor: '#3b82f6',
           textColor: '#1e3a8a',
           editable: false,
-          extendedProps: { names },
+          extendedProps: { kind: 'class', names },
         })
       }
     }
     return result
-  }, [data, isTimeGrid])
+  }, [data, academicEvents, isTimeGrid])
 
   function api() {
     return calendarRef.current?.getApi()
   }
 
+  // 뷰 전환 — 주/일은 오늘 날짜가 포함되도록 이동, 월은 현재 위치 유지.
+  function changeView(v: string) {
+    const a = api()
+    if (!a) return
+    if (v === 'dayGridMonth') a.changeView(v)
+    else a.changeView(v, dateStr(new Date()))
+  }
+
   return (
     <div className="flex h-full flex-col">
-      {/* 커스텀 툴바 — ◀ 년월 ▶ … 월·주·일 (오늘 버튼 없음) */}
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      {/* 커스텀 툴바 — [중앙] ◀ 년월 ▶ / [우] 월·주·일 (오늘 버튼 없음) */}
+      <div className="mb-2 grid grid-cols-3 items-center gap-2">
+        <div />
+        <div className="flex items-center justify-center gap-2">
           <button
             type="button"
             aria-label="이전"
@@ -202,12 +230,12 @@ export default function ClassCalendar({
             ›
           </button>
         </div>
-        <div className="flex gap-1">
+        <div className="flex justify-end gap-1">
           {VIEWS.map(([v, label]) => (
             <button
               key={v}
               type="button"
-              onClick={() => api()?.changeView(v)}
+              onClick={() => changeView(v)}
               aria-pressed={viewType === v}
               className={[
                 'min-h-[40px] min-w-[3.5rem] rounded-md px-6 text-base font-semibold',
@@ -238,7 +266,8 @@ export default function ClassCalendar({
           slotLabelInterval="01:00:00"
           slotMinTime="12:00:00"
           slotMaxTime="23:00:00"
-          allDaySlot={false}
+          allDaySlot
+          allDayText=""
           nowIndicator
           dayMaxEvents={4}
           datesSet={(arg) => {
@@ -246,14 +275,15 @@ export default function ClassCalendar({
             setTitle(arg.view.title)
             onMonthChange(ymFromDatesSet(arg))
           }}
-          // 셀 배경(수업 유무) + 주말/공휴일 날짜색.
+          // 셀 배경: 교습기간 내 amber / 밖 gray (수업 유무 무관) + 주말·공휴일 날짜색.
           dayCellClassNames={(arg) => {
             const ds = dateStr(arg.date)
             const dow = arg.date.getDay()
             const cls: string[] = []
             if (holidayDates.has(ds) || dow === 0) cls.push('shb-sun')
             else if (dow === 6) cls.push('shb-sat')
-            cls.push(dayInfo.has(ds) ? 'shb-has-class' : 'shb-no-class')
+            const inPeriod = studyPeriods.some((p) => ds >= p.start_date && ds <= p.end_date)
+            cls.push(inPeriod ? 'shb-has-class' : 'shb-no-class')
             return cls
           }}
           // 월 보기 셀: 좌측 상단 학사일정 텍스트 / 우측 날짜 + 그 아래 인원수.
@@ -288,8 +318,18 @@ export default function ClassCalendar({
               </div>
             )
           }}
-          // 주/일 보기 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
+          // 주/일 보기: 학사일정(allDay, 중앙정렬 텍스트) / 수업 블록(원생 이름 클릭 → 출결관리).
           eventContent={(arg) => {
+            if (arg.event.extendedProps.kind === 'academic') {
+              return (
+                <div
+                  className="w-full truncate text-center text-xs font-semibold"
+                  style={{ color: arg.event.textColor }}
+                >
+                  {arg.event.title}
+                </div>
+              )
+            }
             const names = (arg.event.extendedProps.names as string[]) ?? []
             return (
               <div className="whitespace-normal break-words px-1 py-0.5 text-xs leading-snug">
