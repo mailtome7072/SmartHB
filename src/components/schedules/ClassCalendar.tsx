@@ -1,141 +1,280 @@
 'use client'
 
 /**
- * 수업 관리 캘린더 (FullCalendar 래퍼) — Sprint 10 T11 (PRD §4.6.1, ADR-006).
+ * 수업 관리 캘린더 (FullCalendar 래퍼) — Sprint 10 T11 + 1차 시각 검증 반영 (PRD §4.6.1, ADR-006).
  *
- * - 일/주/월 뷰 전환 (timeGridDay / timeGridWeek / dayGridMonth)
- * - 정규 수업 = 시간 이벤트 (start_time ~ +class_minutes), 보강 = allDay 이벤트
- * - 이벤트 클릭 → 부모 onEventClick (원생 상세 팝업)
- * - 뷰 이동(prev/next/today) 시 보이는 월 변경 → onMonthChange 로 부모 refetch
+ * 시각 검증 반영:
+ * - 주 시작 월요일 / 창 높이에 맞춘 높이 / 오늘 버튼·년월·뷰 버튼 재배치
+ * - 토·일·공휴일 색 + 학사일정(단원평가·보강데이 등) 배지 표시
+ * - 월 보기: 일자별 수업 인원수 + hover 시 시간대별 명단 툴팁(줄바꿈)
+ * - 주/일 보기: 1시간 단위, 수업시간에 원생 이름 나열(줄바꿈) + 이름 클릭 → 출결관리 이동
+ * - 년월 클릭 → 날짜 선택(date picker) → 해당 일자의 월/주/일 보기
  *
- * static export(R67): 본 컴포넌트는 페이지에서 `dynamic(..., { ssr: false })` 로 로드.
+ * static export(R67): 페이지에서 `dynamic(..., { ssr: false })` 로 로드.
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import koLocale from '@fullcalendar/core/locales/ko'
-import type { EventClickArg, DatesSetArg, EventInput } from '@fullcalendar/core'
+import type { DatesSetArg, EventInput } from '@fullcalendar/core'
 import type { CalendarMonth } from '@/types/calendar'
-import type { StudentDetailTarget } from './StudentDetailPopup'
+import type { ScheduleEventListItem } from '@/types/academic'
 
 interface Props {
   data: CalendarMonth
+  academicEvents: ScheduleEventListItem[]
   /** 보이는 기간이 다른 월로 바뀌면 호출 — 부모가 yearMonth state 갱신 → refetch. */
   onMonthChange: (yearMonth: string) => void
-  onEventClick: (target: StudentDetailTarget) => void
+  /** 원생 이름 클릭(주/일 보기) → 출결관리 이동 + 필터. */
+  onStudentNameClick: (studentName: string) => void
 }
 
-/** "HH:MM" + 분 → "HH:MM:SS" (24시 넘어가면 그대로 다음날 계산은 FullCalendar 가 처리). */
+/** 학사일정 코드명 → 배지 색 (academic CalendarCell 과 동일 팔레트). */
+const EVENT_COLORS: Record<string, { bg: string; border: string }> = {
+  공휴일: { bg: '#fecaca', border: '#ef4444' },
+  보강데이: { bg: '#99f6e4', border: '#14b8a6' },
+  공휴수업일: { bg: '#fbcfe8', border: '#ec4899' },
+  방학: { bg: '#e9d5ff', border: '#a855f7' },
+  휴원일: { bg: '#e5e7eb', border: '#9ca3af' },
+  '단원평가 응시일': { bg: '#bfdbfe', border: '#3b82f6' },
+}
+const USER_EVENT_COLOR = { bg: '#fde68a', border: '#f59e0b' }
+
 function addMinutes(startTime: string, addMin: number): string {
   const [h, m] = startTime.split(':').map(Number)
   const total = h * 60 + m + addMin
-  const eh = Math.floor(total / 60)
-  const em = total % 60
-  return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}:00`
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:00`
 }
 
-/** FullCalendar 의 현재 표시 기준일에서 "YYYY-MM" 추출. */
-function yearMonthFromDatesSet(arg: DatesSetArg): string {
-  // view.currentStart 는 표시 중인 기간의 시작 — 월 뷰는 1일, 주/일 뷰는 해당 날짜.
-  // 월 경계를 안정적으로 잡기 위해 start~end 중간 지점을 사용.
+function ymFromDatesSet(arg: DatesSetArg): string {
   const mid = new Date((arg.start.getTime() + arg.end.getTime()) / 2)
   return `${mid.getFullYear()}-${String(mid.getMonth() + 1).padStart(2, '0')}`
 }
 
 export default function ClassCalendar({
   data,
+  academicEvents,
   onMonthChange,
-  onEventClick,
+  onStudentNameClick,
 }: Props) {
-  const events = useMemo<EventInput[]>(() => {
-    const result: EventInput[] = []
+  const calendarRef = useRef<FullCalendar>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
+  const [viewType, setViewType] = useState('dayGridMonth')
+
+  const isTimeGrid = viewType.startsWith('timeGrid')
+
+  // 공휴일 일자 집합 — 주말/공휴일 셀 색상용.
+  const holidayDates = useMemo(
+    () => new Set(academicEvents.filter((e) => e.code_name === '공휴일').map((e) => e.event_date)),
+    [academicEvents],
+  )
+
+  // 월 보기용: 일자별 인원수 + 시간대별 명단 툴팁.
+  const dayInfo = useMemo(() => {
+    const map = new Map<string, { count: number; tooltip: string }>()
     for (const day of data.days) {
+      const ids = new Set<number>()
+      const bySlot = new Map<string, string[]>()
       for (const s of day.regularSessions) {
-        const base: EventInput = {
-          title: s.studentName,
-          backgroundColor: '#3b82f6',
-          borderColor: '#2563eb',
-          extendedProps: {
-            studentId: s.studentId,
-            studentName: s.studentName,
-            sessionType: 'regular',
-            startTime: s.startTime,
-            classMinutes: s.classMinutes,
-            eventDate: day.eventDate,
-          },
-        }
-        if (s.startTime !== null) {
-          base.start = `${day.eventDate}T${s.startTime}:00`
-          base.end = `${day.eventDate}T${addMinutes(s.startTime, s.classMinutes)}`
-        } else {
-          base.start = day.eventDate
-          base.allDay = true
-        }
-        result.push(base)
+        ids.add(s.studentId)
+        const key = s.startTime ?? '시간미정'
+        const arr = bySlot.get(key) ?? []
+        arr.push(s.studentName)
+        bySlot.set(key, arr)
       }
       for (const s of day.makeupSessions) {
-        result.push({
-          title: `[보강] ${s.studentName}`,
-          start: day.eventDate,
-          allDay: true,
-          backgroundColor: '#10b981',
-          borderColor: '#059669',
-          extendedProps: {
-            studentId: s.studentId,
-            studentName: s.studentName,
-            sessionType: 'makeup',
-            startTime: null,
-            classMinutes: s.classMinutes,
-            eventDate: day.eventDate,
-          },
-        })
+        ids.add(s.studentId)
+        const arr = bySlot.get('보강') ?? []
+        arr.push(s.studentName)
+        bySlot.set('보강', arr)
+      }
+      const tooltip = [...bySlot.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([slot, names]) => `${slot}: ${names.join(', ')}`)
+        .join('\n')
+      if (ids.size > 0) map.set(day.eventDate, { count: ids.size, tooltip })
+    }
+    return map
+  }, [data])
+
+  // 이벤트 빌드 — 학사일정(항상) + 수업(주/일 보기에서만 시간 블록).
+  const events = useMemo<EventInput[]>(() => {
+    const result: EventInput[] = []
+
+    // 학사일정 — 월/주/일 모두 allDay 배지.
+    for (const e of academicEvents) {
+      const color = e.is_system_reserved
+        ? (EVENT_COLORS[e.code_name] ?? USER_EVENT_COLOR)
+        : USER_EVENT_COLOR
+      result.push({
+        title: e.display_name ?? e.code_name,
+        start: e.event_date,
+        allDay: true,
+        backgroundColor: color.bg,
+        borderColor: color.border,
+        textColor: '#1f2937',
+        editable: false,
+        extendedProps: { kind: 'academic' },
+      })
+    }
+
+    // 수업 — 주/일(timeGrid) 보기에서만 시간대별 블록(같은 시작시간 학생 묶음).
+    if (isTimeGrid) {
+      for (const day of data.days) {
+        const bySlot = new Map<string, { names: string[]; maxMin: number }>()
+        for (const s of day.regularSessions) {
+          if (s.startTime === null) continue
+          const cur = bySlot.get(s.startTime) ?? { names: [], maxMin: 0 }
+          cur.names.push(s.studentName)
+          cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
+          bySlot.set(s.startTime, cur)
+        }
+        for (const [startTime, { names, maxMin }] of bySlot) {
+          result.push({
+            start: `${day.eventDate}T${startTime}:00`,
+            end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
+            backgroundColor: '#dbeafe',
+            borderColor: '#3b82f6',
+            textColor: '#1e3a8a',
+            editable: false,
+            extendedProps: { kind: 'class', names },
+          })
+        }
+        // 보강 — allDay 블록(시작시간 없음).
+        if (day.makeupSessions.length > 0) {
+          result.push({
+            start: day.eventDate,
+            allDay: true,
+            backgroundColor: '#d1fae5',
+            borderColor: '#10b981',
+            textColor: '#065f46',
+            editable: false,
+            extendedProps: {
+              kind: 'class',
+              names: day.makeupSessions.map((s) => `${s.studentName}(보강)`),
+            },
+          })
+        }
       }
     }
     return result
-  }, [data])
+  }, [data, academicEvents, isTimeGrid])
 
-  function handleEventClick(arg: EventClickArg) {
-    const p = arg.event.extendedProps
-    onEventClick({
-      studentId: p.studentId as number,
-      studentName: p.studentName as string,
-      sessionType: p.sessionType as 'regular' | 'makeup',
-      startTime: p.startTime as string | null,
-      classMinutes: p.classMinutes as number,
-      eventDate: p.eventDate as string,
-    })
-  }
+  // 년월(타이틀) 클릭 → 숨김 date input picker 열기.
+  useEffect(() => {
+    const titleEl = document.querySelector<HTMLElement>('.fc-toolbar-title')
+    if (!titleEl) return
+    titleEl.style.cursor = 'pointer'
+    titleEl.title = '클릭하여 날짜 선택'
+    const handler = () => {
+      const input = dateInputRef.current
+      if (!input) return
+      if (typeof input.showPicker === 'function') input.showPicker()
+      else input.focus()
+    }
+    titleEl.addEventListener('click', handler)
+    return () => titleEl.removeEventListener('click', handler)
+  }, [viewType, data.yearMonth])
 
   return (
-    <FullCalendar
-      plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-      initialView="dayGridMonth"
-      initialDate={`${data.yearMonth}-01`}
-      locale={koLocale}
-      headerToolbar={{
-        left: 'prev,next today',
-        center: 'title',
-        right: 'dayGridMonth,timeGridWeek,timeGridDay',
-      }}
-      buttonText={{
-        today: '오늘',
-        month: '월',
-        week: '주',
-        day: '일',
-      }}
-      events={events}
-      eventClick={handleEventClick}
-      datesSet={(arg) => onMonthChange(yearMonthFromDatesSet(arg))}
-      slotMinTime="12:00:00"
-      slotMaxTime="23:00:00"
-      allDaySlot
-      allDayText="보강"
-      height="auto"
-      dayMaxEvents={4}
-      nowIndicator
-    />
+    <div className="flex h-full flex-col">
+      <input
+        ref={dateInputRef}
+        type="date"
+        aria-label="날짜로 이동"
+        className="sr-only"
+        onChange={(e) => {
+          const v = e.target.value
+          if (v) calendarRef.current?.getApi().gotoDate(v)
+        }}
+      />
+      <FullCalendar
+        ref={calendarRef}
+        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+        initialView="dayGridMonth"
+        initialDate={`${data.yearMonth}-01`}
+        locale={koLocale}
+        firstDay={1}
+        headerToolbar={{
+          left: 'today',
+          center: 'prev,title,next',
+          right: 'dayGridMonth,timeGridWeek,timeGridDay',
+        }}
+        buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
+        events={events}
+        height="100%"
+        expandRows
+        slotDuration="01:00:00"
+        slotLabelInterval="01:00:00"
+        slotMinTime="12:00:00"
+        slotMaxTime="23:00:00"
+        allDaySlot
+        allDayText="종일"
+        nowIndicator
+        dayMaxEvents={3}
+        datesSet={(arg) => {
+          setViewType(arg.view.type)
+          onMonthChange(ymFromDatesSet(arg))
+        }}
+        // 토·일·공휴일 셀 색상.
+        dayCellClassNames={(arg) => {
+          const ds = `${arg.date.getFullYear()}-${String(arg.date.getMonth() + 1).padStart(2, '0')}-${String(arg.date.getDate()).padStart(2, '0')}`
+          const dow = arg.date.getDay()
+          if (holidayDates.has(ds) || dow === 0) return ['shb-day-holiday']
+          if (dow === 6) return ['shb-day-saturday']
+          return []
+        }}
+        // 월 보기: 일자 셀에 인원수 + 시간대별 명단 툴팁.
+        dayCellContent={(arg) => {
+          const ds = `${arg.date.getFullYear()}-${String(arg.date.getMonth() + 1).padStart(2, '0')}-${String(arg.date.getDate()).padStart(2, '0')}`
+          const info = dayInfo.get(ds)
+          return (
+            <div className="flex w-full items-center justify-between">
+              <span>{arg.dayNumberText}</span>
+              {info !== undefined && (
+                <span
+                  title={info.tooltip}
+                  className="ml-1 cursor-help rounded bg-blue-100 px-1.5 text-xs font-semibold text-blue-800"
+                >
+                  {info.count}명
+                </span>
+              )}
+            </div>
+          )
+        }}
+        // 수업 블록(주/일): 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
+        eventContent={(arg) => {
+          const props = arg.event.extendedProps
+          if (props.kind !== 'class') return undefined // 학사일정/기본 렌더
+          const names = (props.names as string[]) ?? []
+          return (
+            <div className="whitespace-normal break-words px-1 py-0.5 text-xs leading-snug">
+              {names.map((n, i) => {
+                const bare = n.replace(/\(보강\)$/, '')
+                return (
+                  <span key={`${n}-${i}`}>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="cursor-pointer hover:underline"
+                      onClick={(ev) => {
+                        ev.stopPropagation()
+                        onStudentNameClick(bare)
+                      }}
+                    >
+                      {n}
+                    </span>
+                    {i < names.length - 1 ? ', ' : ''}
+                  </span>
+                )
+              })}
+            </div>
+          )
+        }}
+      />
+    </div>
   )
 }

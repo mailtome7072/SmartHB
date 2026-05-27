@@ -64,6 +64,8 @@ pub struct MakeupManagementStudent {
     pub earliest_deadline: Option<String>,
     /// 소멸 임박 플래그 — deadline 월의 `study_periods.end_date - 7일` 이내 도래.
     pub is_imminent: bool,
+    /// 퇴교일 (YYYY-MM-DD) — 재원중 필터용. NULL 이면 재원중. (T11 follow-up)
+    pub withdraw_date: Option<String>,
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -195,12 +197,13 @@ pub(crate) async fn get_makeup_management_data_impl(
             s.id AS student_id, \
             s.name AS student_name, \
             s.serial_no, \
+            s.withdraw_date, \
             COALESCE(SUM(ra.class_minutes), 0) AS remaining_minutes, \
             MIN(ra.makeup_deadline) AS earliest_deadline \
          FROM students s \
          JOIN regular_attendances ra ON ra.student_id = s.id \
          WHERE ra.status = 'absent' AND ra.makeup_attendance_id IS NULL \
-         GROUP BY s.id, s.name, s.serial_no \
+         GROUP BY s.id, s.name, s.serial_no, s.withdraw_date \
          HAVING remaining_minutes > 0 \
          ORDER BY earliest_deadline IS NULL, earliest_deadline ASC, s.name",
     )
@@ -241,6 +244,7 @@ pub(crate) async fn get_makeup_management_data_impl(
             remaining_minutes: r.try_get("remaining_minutes").map_err(|e| e.to_string())?,
             earliest_deadline,
             is_imminent,
+            withdraw_date: r.try_get("withdraw_date").map_err(|e| e.to_string())?,
         });
     }
 

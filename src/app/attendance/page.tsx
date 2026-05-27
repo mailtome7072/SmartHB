@@ -23,6 +23,7 @@ import {
 } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { useAppStore } from '@/stores/app-store'
 import { AbsenceHistoryDialog } from '@/components/attendance/AbsenceHistoryDialog'
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
 import { MakeupManageDialog } from '@/components/attendance/MakeupManageDialog'
@@ -91,6 +92,19 @@ export default function AttendancePage() {
     const handle = setTimeout(() => setDebouncedSearch(searchInput.trim().toLowerCase()), 200)
     return () => clearTimeout(handle)
   }, [searchInput])
+
+  // Sprint 10 T11 follow-up: 수업 관리 캘린더에서 "출결관리 이동" 시 원생 이름 프리셋 소비.
+  // 1회성 — 적용 후 즉시 store 를 비운다. 검색 대상이 퇴교생일 수도 있어 재원중 필터는 해제.
+  const attendanceSearchPreset = useAppStore((s) => s.attendanceSearchPreset)
+  const setAttendanceSearchPreset = useAppStore((s) => s.setAttendanceSearchPreset)
+  useEffect(() => {
+    if (attendanceSearchPreset !== null && attendanceSearchPreset !== '') {
+      setSearchInput(attendanceSearchPreset)
+      setDebouncedSearch(attendanceSearchPreset.trim().toLowerCase())
+      setEnrolledOnly(false)
+      setAttendanceSearchPreset(null)
+    }
+  }, [attendanceSearchPreset, setAttendanceSearchPreset])
 
   // 출결 존재 여부 (생성 버튼 활성 조건)
   const existsQuery = useQuery({

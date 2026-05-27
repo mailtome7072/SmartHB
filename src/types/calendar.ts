@@ -36,4 +36,6 @@ export interface MakeupManagementStudent {
   earliestDeadline: string | null
   /** 소멸 임박 플래그 — deadline 월 교습기간 종료일 -7일 이내 도래. */
   isImminent: boolean
+  /** 퇴교일 (YYYY-MM-DD) — 재원중 필터용. null 이면 재원중. */
+  withdrawDate: string | null
 }
