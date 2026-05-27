@@ -163,7 +163,7 @@ pub async fn match_fee_by_hours(weekly_hours: i64) -> Result<Option<StandardFee>
         .map_err(String::from)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
 

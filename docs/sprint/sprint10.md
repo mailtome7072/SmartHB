@@ -386,8 +386,8 @@
 - ✅ 선행 수업: 미래 결석 → 현재 보강 매칭 동작 (PRD §4.2.3) — 백엔드 단위 테스트 통과 (`create_makeup_supports_future_absence_for_advance_class`)
 - ✅ 캘린더 뷰 일/주/월 전환 + 원생 팝업 + 보강관리 뷰 동작 (PRD §4.6) — T11 (FullCalendar, 사용자 시각 검증 대기)
 - ✅ Sprint 9 dead code 0건 (mark_makeup_absent + batch_create_makeups 완전 제거) — T1 완료 (Session #1, 2026-05-26)
-- ✅ `cargo test` cipher off **272 passed / 0 failed** (T12). cipher on 은 로컬 환경 Strawberry Perl 미설치로 빌드 불가 — CI(`ci.yml`/`deploy.yml`)에서 검증. T11 은 Rust 변경 0건이라 cipher 영향 없음
-- ✅ `cargo clippy --lib -- -D warnings` cipher off clean (T12). cipher on 은 위와 동일 — CI 검증
+- ✅ `cargo test` cipher off **271 passed / 1 flaky** + cipher on **116 passed / 1 flaky** (T12). 유일 실패는 `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` — 단독 실행 통과하는 알려진 flaky 동시성 테스트(carry-over). Strawberry Perl 설치 후 cipher feature 로컬 검증 완료
+- ✅ `cargo clippy --lib -- -D warnings` cipher off/on **모두 clean** (T12). cipher on 은 vendored OpenSSL+SQLCipher 빌드 성공 (`cargo build --features cipher` Finished)
 - ✅ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build`(static export 16/16) 통과 (T11/T12)
 - ✅ 마이그레이션 self-check 통과 (A39) — V108 계획 1건 ↔ 실제 `108__cleanup_makeup_status_check.sql` 1:1 일치
 - ✅ 소멸 + 보강 비즈니스 규칙 단위 테스트 신규 **20건** (T3 7 + T4 1 + T6 6 + T7 1 + T8 calendar 5) 통과 — 계획 18건+ 충족

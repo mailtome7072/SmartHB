@@ -590,7 +590,7 @@ pub async fn count_students(filter: StudentFilter) -> Result<i64, String> {
         .map_err(String::from)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
 

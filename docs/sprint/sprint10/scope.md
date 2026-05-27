@@ -977,4 +977,42 @@ IPC 옵션에서 제외 — UI에서 다이얼로그 닫기 = 퇴교 미실행. 
 1. **cipher on 검증**: 로컬 Strawberry Perl 미설치로 cipher feature 빌드/테스트 불가. CI 에서 반드시 확인 필요. T11 은 프론트 전용이라 Rust 회귀 없음.
 2. **사용자 시각 검증 대기**: 캘린더 뷰(일/주/월 전환, 원생 팝업, 보강관리 강조) + 보강완료/소멸 색상 구분 — 실제 데이터로 시각 검증 필요.
 3. **FullCalendar 신규 의존성**: 5종 (~150KB, dynamic 코드분할). ADR-006 사전 승인. React 19 + static export 빌드 정상 확인됨.
-4. **carry-over (Session #9)**: `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` 병렬 실행 시 가끔 flaky (단독 통과) — calendar 무관, 이번 272 passed run 에서는 통과.
+4. **carry-over (Session #9)**: `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` 병렬 실행 시 가끔 flaky (단독 통과) — calendar 무관.
+
+---
+
+## Session #14 (cipher feature 로컬 검증 환경 구축 + 테스트 게이트 정합, 2026-05-27)
+
+> 사용자 요청: "cipher on 로컬 검증 불가 문제를 해결하고 다시 시도하라."
+
+### 근본 원인 (2단계)
+
+1. **환경**: 이 PC 에 Strawberry Perl 미설치 → `--features cipher` 의 vendored OpenSSL 소스 빌드 실패 (`Locale::Maketext::Simple` 누락). Bash 셸은 git-bash msys perl 을 잡아 더 악화.
+2. **코드 (잠재 결함, codebase 전반)**: `db::test_pool_in_memory()` 는 `#[cfg(all(test, not(feature = "cipher")))]` 게이트 (인메모리 DB 는 SQLCipher 적용 불가 — db.rs 설계 주석). 이 헬퍼를 쓰는 테스트 모듈 11개 중 **attendance/makeup 만 게이트**되어 있고 나머지 8개(academic/audit/students/schedules/fees/codes/**calendar**/**expiration**)는 `#[cfg(test)]` 만 → `cargo test --features cipher` 컴파일 불가. CI 는 cipher 로 **빌드만**(`tauri build --features cipher`) 하고 테스트는 cipher-off 라 미발견.
+
+### 해결
+
+1. **Strawberry Perl 설치** — `winget install StrawberryPerl.StrawberryPerl`. PowerShell 에서 `C:\Strawberry\{c\bin,perl\bin}` 를 PATH 선두에 두고 cargo 실행.
+2. **테스트 게이트 정합** — un-gated 8개 모듈의 `mod tests` 를 `#[cfg(all(test, not(feature = "cipher")))]` 로 통일 (attendance/makeup 패턴). 테스트 전용 cfg 변경이라 cipher-off 동작 불변.
+
+### 검증 결과 (Strawberry Perl PATH, PowerShell)
+
+| 항목 | 결과 |
+|------|------|
+| `cargo build --features cipher` | ✅ Finished (라이브러리+바이너리, OpenSSL+SQLCipher 통합 — CI/배포 동일 경로) |
+| `cargo test --lib --features cipher` | ✅ **116 passed** / 1 flaky / 3 ignored |
+| `cargo clippy --lib --features cipher -- -D warnings` | ✅ Finished clean (게이트아웃 dead_code 경고 0) |
+| `cargo test --lib` (cipher off) | ✅ **271 passed** / 1 flaky / 3 ignored (총 272 보존, 누락 0) |
+| flaky 단독 실행 | ✅ `ensure_cache_loaded_fast_path_is_concurrent_safe` 단독 통과 (5.27s) — 회귀 아님 |
+
+### 수정 파일 (8개, 테스트 cfg only)
+
+| 파일 | 변경 |
+|------|------|
+| calendar.rs, expiration.rs | Sprint 10 추가분 — `mod tests` cipher 게이트 (in-scope) |
+| academic.rs, audit.rs, students.rs, schedules.rs, fees.rs, codes.rs | 기존 모듈 — 동일 게이트로 정합 (cipher-test 컴파일 차단 해소, 사용자 요청 범위) |
+
+### 잔여 (sprint-review 인계 갱신)
+
+- **cipher on 은 이제 로컬 검증 가능** (Strawberry Perl 설치 완료). 이전 인계 1번 항목 해소.
+- flaky 동시성 테스트는 별도 carry-over 로 유지 (cipher 무관).

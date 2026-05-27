@@ -322,7 +322,7 @@ pub(crate) async fn process_withdrawal_makeup_impl(
     Ok(expired_ids)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
     use sqlx::SqlitePool;

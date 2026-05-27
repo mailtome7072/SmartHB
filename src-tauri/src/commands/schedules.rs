@@ -204,7 +204,7 @@ pub async fn get_weekly_hours(student_id: i64) -> Result<i64, String> {
     row.try_get("total").map_err(AppError::Db).map_err(String::from)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
 

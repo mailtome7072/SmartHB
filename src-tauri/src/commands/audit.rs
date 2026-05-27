@@ -200,7 +200,7 @@ pub async fn get_audit_logs(
     list_logs(since_dt, limit).await.map_err(String::from)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
 

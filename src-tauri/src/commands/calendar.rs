@@ -247,7 +247,7 @@ pub(crate) async fn get_makeup_management_data_impl(
     Ok(result)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
 

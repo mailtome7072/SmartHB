@@ -1197,7 +1197,7 @@ pub async fn auto_place_assessment_dates(
 
 // ───────────────────────────────────────────────────────────────── tests
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
     use sqlx::SqlitePool;
