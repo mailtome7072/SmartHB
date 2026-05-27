@@ -49,6 +49,17 @@ function addMinutes(startTime: string, addMin: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:00`
 }
 
+/** "HH:MM[:SS]" → "오전/오후 N시[ M분]" (한국어, 시·분만). 비시각 라벨(보강 등)은 그대로. */
+function formatKoreanTime(slot: string): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(slot)
+  if (!m) return slot
+  const hour = Number(m[1])
+  const min = Number(m[2])
+  const period = hour < 12 ? '오전' : '오후'
+  const h12 = hour % 12 === 0 ? 12 : hour % 12
+  return `${period} ${h12}시${min > 0 ? ` ${min}분` : ''}`
+}
+
 function ymFromDatesSet(arg: DatesSetArg): string {
   const mid = new Date((arg.start.getTime() + arg.end.getTime()) / 2)
   return `${mid.getFullYear()}-${String(mid.getMonth() + 1).padStart(2, '0')}`
@@ -93,7 +104,7 @@ export default function ClassCalendar({
       }
       const tooltip = [...bySlot.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([slot, names]) => `${slot}: ${names.join(', ')}`)
+        .map(([slot, names]) => `${formatKoreanTime(slot)}: ${names.join(', ')}`)
         .join('\n')
       if (ids.size > 0) map.set(day.eventDate, { count: ids.size, tooltip })
     }
@@ -104,7 +115,7 @@ export default function ClassCalendar({
   const events = useMemo<EventInput[]>(() => {
     const result: EventInput[] = []
 
-    // 학사일정 — 월/주/일 모두 allDay 배지.
+    // 학사일정 — 바(블록)가 아니라 코드 명칭 텍스트로 표기 (복수 시 줄바꿈으로 자동 누적).
     for (const e of academicEvents) {
       const color = e.is_system_reserved
         ? (EVENT_COLORS[e.code_name] ?? USER_EVENT_COLOR)
@@ -113,9 +124,9 @@ export default function ClassCalendar({
         title: e.display_name ?? e.code_name,
         start: e.event_date,
         allDay: true,
-        backgroundColor: color.bg,
-        borderColor: color.border,
-        textColor: '#1f2937',
+        backgroundColor: 'transparent',
+        borderColor: 'transparent',
+        textColor: color.border,
         editable: false,
         extendedProps: { kind: 'academic' },
       })
@@ -141,21 +152,6 @@ export default function ClassCalendar({
             textColor: '#1e3a8a',
             editable: false,
             extendedProps: { kind: 'class', names },
-          })
-        }
-        // 보강 — allDay 블록(시작시간 없음).
-        if (day.makeupSessions.length > 0) {
-          result.push({
-            start: day.eventDate,
-            allDay: true,
-            backgroundColor: '#d1fae5',
-            borderColor: '#10b981',
-            textColor: '#065f46',
-            editable: false,
-            extendedProps: {
-              kind: 'class',
-              names: day.makeupSessions.map((s) => `${s.studentName}(보강)`),
-            },
           })
         }
       }
@@ -211,10 +207,9 @@ export default function ClassCalendar({
         slotLabelInterval="01:00:00"
         slotMinTime="12:00:00"
         slotMaxTime="23:00:00"
-        allDaySlot
-        allDayText="종일"
+        allDaySlot={false}
         nowIndicator
-        dayMaxEvents={3}
+        dayMaxEvents={4}
         datesSet={(arg) => {
           setViewType(arg.view.type)
           onMonthChange(ymFromDatesSet(arg))
@@ -227,17 +222,17 @@ export default function ClassCalendar({
           if (dow === 6) return ['shb-day-saturday']
           return []
         }}
-        // 월 보기: 일자 셀에 인원수 + 시간대별 명단 툴팁.
+        // 월 보기: 날짜 숫자 아래 수업 인원수(날짜 크기)를 표기 + 시간대별 명단 툴팁(손가락 커서).
         dayCellContent={(arg) => {
           const ds = `${arg.date.getFullYear()}-${String(arg.date.getMonth() + 1).padStart(2, '0')}-${String(arg.date.getDate()).padStart(2, '0')}`
           const info = dayInfo.get(ds)
           return (
-            <div className="flex w-full items-center justify-between">
+            <div className="flex flex-col items-end leading-tight">
               <span>{arg.dayNumberText}</span>
               {info !== undefined && (
                 <span
                   title={info.tooltip}
-                  className="ml-1 cursor-help rounded bg-blue-100 px-1.5 text-xs font-semibold text-blue-800"
+                  className="cursor-pointer text-base font-bold text-blue-700"
                 >
                   {info.count}명
                 </span>
@@ -245,32 +240,39 @@ export default function ClassCalendar({
             </div>
           )
         }}
-        // 수업 블록(주/일): 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
+        // 학사일정: 코드 명칭 텍스트(색만). 수업 블록(주/일): 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
         eventContent={(arg) => {
           const props = arg.event.extendedProps
-          if (props.kind !== 'class') return undefined // 학사일정/기본 렌더
+          if (props.kind === 'academic') {
+            return (
+              <div
+                className="whitespace-normal break-words px-1 text-xs font-semibold leading-snug"
+                style={{ color: arg.event.textColor }}
+              >
+                {arg.event.title}
+              </div>
+            )
+          }
+          if (props.kind !== 'class') return undefined
           const names = (props.names as string[]) ?? []
           return (
             <div className="whitespace-normal break-words px-1 py-0.5 text-xs leading-snug">
-              {names.map((n, i) => {
-                const bare = n.replace(/\(보강\)$/, '')
-                return (
-                  <span key={`${n}-${i}`}>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="cursor-pointer hover:underline"
-                      onClick={(ev) => {
-                        ev.stopPropagation()
-                        onStudentNameClick(bare)
-                      }}
-                    >
-                      {n}
-                    </span>
-                    {i < names.length - 1 ? ', ' : ''}
+              {names.map((n, i) => (
+                <span key={`${n}-${i}`}>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer hover:underline"
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      onStudentNameClick(n)
+                    }}
+                  >
+                    {n}
                   </span>
-                )
-              })}
+                  {i < names.length - 1 ? ', ' : ''}
+                </span>
+              ))}
             </div>
           )
         }}

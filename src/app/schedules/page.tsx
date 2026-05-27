@@ -13,7 +13,7 @@
 import { useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { getCalendarData, listScheduleEvents } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -52,14 +52,16 @@ export default function SchedulesPage() {
   const setAttendanceSearchPreset = useAppStore((s) => s.setAttendanceSearchPreset)
   const [tab, setTab] = useState<Tab>('calendar')
   const [yearMonth, setYearMonth] = useState(currentYearMonth)
-  // 보강 관리 탭 필터 (출결관리 상단과 동일 UX).
-  const [makeupSearch, setMakeupSearch] = useState('')
+  // 보강 관리 탭 필터 — 재원중 체크 (원생 검색은 2차 검증에서 제거).
   const [makeupEnrolledOnly, setMakeupEnrolledOnly] = useState(true)
 
+  // placeholderData=keepPreviousData: 달 이동 refetch 중에도 직전 데이터 유지 →
+  // 캘린더가 언마운트/재마운트되며 초기 날짜로 튕기는 현상 방지 (오늘/이전/다음 동작 안정화).
   const calendarQuery = useQuery({
     queryKey: ['calendar-data', yearMonth],
     queryFn: () => getCalendarData(yearMonth),
     enabled: tab === 'calendar',
+    placeholderData: keepPreviousData,
   })
 
   const range = useMemo(() => monthRange(yearMonth), [yearMonth])
@@ -67,6 +69,7 @@ export default function SchedulesPage() {
     queryKey: ['calendar-academic', range.from, range.to],
     queryFn: () => listScheduleEvents(range.from, range.to),
     enabled: tab === 'calendar',
+    placeholderData: keepPreviousData,
   })
 
   function goToAttendance(studentName: string) {
@@ -108,32 +111,18 @@ export default function SchedulesPage() {
             </button>
           </div>
 
-          {/* 보강 관리 탭: 원생검색 + 재원중 체크 (출결관리 상단과 동일 기능) */}
+          {/* 보강 관리 탭: 재원중 체크 (원생 검색은 2차 검증 피드백으로 제거) */}
           {tab === 'makeup' && (
-            <div className="flex items-center gap-2">
-              <label htmlFor="makeup-search" className="text-base text-gray-700">
-                원생 검색:
-              </label>
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-base text-gray-700">
               <input
-                id="makeup-search"
-                type="search"
-                value={makeupSearch}
-                onChange={(e) => setMakeupSearch(e.target.value)}
-                placeholder="이름 입력"
-                aria-label="보강 대상 원생 이름 검색"
-                className="min-h-[44px] w-48 rounded-md border-2 border-[var(--border)] px-3 text-base"
+                type="checkbox"
+                checked={makeupEnrolledOnly}
+                onChange={(e) => setMakeupEnrolledOnly(e.target.checked)}
+                aria-label="재원중 원생만 보기"
+                className="h-5 w-5 cursor-pointer accent-[var(--accent)]"
               />
-              <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-base text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={makeupEnrolledOnly}
-                  onChange={(e) => setMakeupEnrolledOnly(e.target.checked)}
-                  aria-label="재원중 원생만 보기"
-                  className="h-5 w-5 cursor-pointer accent-[var(--accent)]"
-                />
-                재원중
-              </label>
-            </div>
+              재원중
+            </label>
           )}
         </header>
 
@@ -155,7 +144,7 @@ export default function SchedulesPage() {
             <div className="h-full overflow-auto">
               <MakeupManagementView
                 yearMonth={yearMonth}
-                search={makeupSearch}
+                search=""
                 enrolledOnly={makeupEnrolledOnly}
               />
             </div>

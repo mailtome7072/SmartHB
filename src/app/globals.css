@@ -150,9 +150,23 @@ h6 { font-size: 18px; }
   color: #fff;
 }
 
-/* 년월 타이틀 — 클릭 가능 힌트 */
+/* 이전/다음 — 진한 네이비 사각 버튼 (목표 디자인) */
+.fc .fc-prev-button,
+.fc .fc-next-button {
+  background-color: #334155;
+  border-color: #334155;
+  color: #fff;
+}
+.fc .fc-prev-button:hover,
+.fc .fc-next-button:hover {
+  background-color: #1e293b;
+  border-color: #1e293b;
+}
+
+/* 년월 타이틀 — 크게/굵게 + 클릭 가능 힌트 */
 .fc .fc-toolbar-title {
-  font-size: 20px;
+  font-size: 24px;
+  font-weight: 700;
 }
 
 /* 토·일·공휴일 셀 색상 (학사 캘린더와 통일) */
