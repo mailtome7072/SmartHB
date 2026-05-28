@@ -146,13 +146,10 @@ h6 { font-size: 18px; }
   background-color: transparent !important;
 }
 
-/* 일 보기 수업 블록: 배경 투명 유지하되 시작시간 윗변 라인만 보이도록 (구분 보강). */
+/* 일 보기 수업 블록: 배경 투명 + 모든 변 grid 라인과 동일 색(수업 없는 블록과 동일 외관). */
 .fc-timeGridDay-view .fc-timegrid-event {
   background-color: transparent !important;
-  border-top: 2px solid #3b82f6 !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-bottom: none !important;
+  border: 1px solid var(--fc-border-color, #ddd) !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
