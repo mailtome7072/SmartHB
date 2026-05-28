@@ -390,7 +390,7 @@ export default function ClassCalendar({
             const names = (arg.event.extendedProps.names as string[]) ?? []
             const cls =
               viewType === 'timeGridDay'
-                ? 'text-base font-bold text-blue-700'
+                ? 'text-base font-bold text-blue-700 text-center'
                 : 'text-xs'
             return (
               <div className={`whitespace-normal break-words px-1 py-0.5 leading-snug ${cls}`}>
