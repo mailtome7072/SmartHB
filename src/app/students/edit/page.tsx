@@ -234,7 +234,9 @@ function StudentDetailContent() {
                             <strong>{student.name}</strong> 원생의 퇴교 처리를 번복하여
                             재원 상태로 되돌립니다.
                             <br />
-                            보강 잔여 처리는 Phase 3 에서 별도 제공됩니다.
+                            퇴교 시 강제 소멸된 결석(자연 만기 전) 은 자동으로 결석 상태로 환원됩니다.
+                            <br />
+                            자연 만기로 이미 소멸된 결석은 환원 대상이 아닙니다.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
