@@ -340,37 +340,38 @@ export default function ClassCalendar({
               </div>
             )
           }}
-          // 월 보기 전용 셀: 좌측 상단 학사일정 + 우측 날짜·인원수. (주/일 보기는 dayHeaderContent 만)
+          // 월 보기 전용 셀: 좌측 상단 학사일정, 우측 상단 날짜, 인원수는 셀 정중앙(1.5x 폰트).
+          // 인원수는 absolute(셀의 day-frame 기준) — day-top 의 형제로 떠 있다.
           dayCellContent={(arg) => {
             if (arg.view.type !== 'dayGridMonth') return undefined
             const ds = dateStr(arg.date)
             const acts = academicByDate.get(ds) ?? []
             const info = dayInfo.get(ds)
             return (
-              <div className="flex w-full justify-between gap-1">
-                <div className="flex min-w-0 flex-col items-start gap-0.5">
-                  {acts.map((a, i) => (
-                    <span
-                      key={i}
-                      className="max-w-full truncate text-xs font-semibold"
-                      style={{ color: a.color }}
-                    >
-                      {a.name}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex flex-col items-end leading-tight">
+              <>
+                <div className="flex w-full justify-between gap-1">
+                  <div className="flex min-w-0 flex-col items-start gap-0.5">
+                    {acts.map((a, i) => (
+                      <span
+                        key={i}
+                        className="max-w-full truncate text-xs font-semibold"
+                        style={{ color: a.color }}
+                      >
+                        {a.name}
+                      </span>
+                    ))}
+                  </div>
                   <span>{arg.dayNumberText}</span>
-                  {info !== undefined && (
-                    <span
-                      title={info.tooltip}
-                      className="cursor-pointer text-base font-bold text-blue-700"
-                    >
-                      {info.count}명
-                    </span>
-                  )}
                 </div>
-              </div>
+                {info !== undefined && (
+                  <span
+                    title={info.tooltip}
+                    className="pointer-events-auto absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer text-2xl font-bold text-blue-700"
+                  >
+                    {info.count}명
+                  </span>
+                )}
+              </>
             )
           }}
           // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.

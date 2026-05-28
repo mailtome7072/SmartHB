@@ -146,6 +146,17 @@ h6 { font-size: 18px; }
   background-color: transparent !important;
 }
 
+/* 일 보기 수업 블록: 배경 투명 유지하되 시작시간 윗변 라인만 보이도록 (구분 보강). */
+.fc-timeGridDay-view .fc-timegrid-event {
+  background-color: transparent !important;
+  border-top: 2px solid #3b82f6 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
 /* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑). 볼드 미적용. */
 .shb-sun .fc-daygrid-day-number {
   color: #b91c1c;
