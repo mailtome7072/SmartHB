@@ -340,50 +340,49 @@ export default function ClassCalendar({
               </div>
             )
           }}
-          // 월 보기 전용 셀: 좌측 상단 학사일정, 우측 상단 날짜, 인원수는 셀 정중앙(1.5x 폰트).
-          // 인원수는 absolute(셀의 day-frame 기준) — day-top 의 형제로 떠 있다.
+          // 월 보기 전용 셀 상단: 좌 학사코드 / 우 "N일" 날짜.
           dayCellContent={(arg) => {
             if (arg.view.type !== 'dayGridMonth') return undefined
             const ds = dateStr(arg.date)
             const acts = academicByDate.get(ds) ?? []
-            const info = dayInfo.get(ds)
             return (
-              <>
-                <div className="flex w-full justify-between gap-1">
-                  <div className="flex min-w-0 flex-col items-start gap-0.5">
-                    {acts.map((a, i) => (
-                      <span
-                        key={i}
-                        className="max-w-full truncate text-xs font-semibold"
-                        style={{ color: a.color }}
-                      >
-                        {a.name}
-                      </span>
-                    ))}
-                  </div>
-                  <span>{arg.dayNumberText}</span>
+              <div className="flex w-full justify-between gap-1">
+                <div className="flex min-w-0 flex-col items-start gap-0.5">
+                  {acts.map((a, i) => (
+                    <span
+                      key={i}
+                      className="max-w-full truncate text-xs font-semibold"
+                      style={{ color: a.color }}
+                    >
+                      {a.name}
+                    </span>
+                  ))}
                 </div>
-                {info !== undefined && (
-                  <span
-                    title={info.tooltip}
-                    style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      fontSize: '24px',
-                      fontWeight: 700,
-                      color: '#1d4ed8',
-                      cursor: 'pointer',
-                      zIndex: 5,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {info.count}명
-                  </span>
-                )}
-              </>
+                <span>{arg.date.getDate()}일</span>
+              </div>
             )
+          }}
+          // 월 보기 인원수 — day-frame 에 직접 DOM 주입(absolute → 셀 정중앙). dayCellContent 의
+          // Fragment 안에 absolute 가 의도대로 day-frame 기준으로 잡히지 않는 환경에서도 동작.
+          dayCellDidMount={(arg) => {
+            if (arg.view.type !== 'dayGridMonth') return
+            const ds = dateStr(arg.date)
+            const info = dayInfo.get(ds)
+            const frame = arg.el.querySelector('.fc-daygrid-day-frame') as HTMLElement | null
+            if (!frame) return
+            frame.style.position = 'relative'
+            const existing = frame.querySelector('.shb-count-badge')
+            if (existing) existing.remove()
+            if (info === undefined) return
+            const badge = document.createElement('div')
+            badge.className = 'shb-count-badge'
+            badge.title = info.tooltip
+            badge.textContent = `${info.count}명`
+            badge.style.cssText =
+              'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+              'font-size:28px;font-weight:700;color:#1d4ed8;cursor:pointer;' +
+              'z-index:5;pointer-events:auto;white-space:nowrap;'
+            frame.appendChild(badge)
           }}
           // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
           // 일 보기는 폰트 2단계 확대 + 파랑 볼드 (text-xs → text-base text-blue-700 font-bold).
