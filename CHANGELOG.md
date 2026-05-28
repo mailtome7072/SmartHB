@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-05-28
+
 ### Added
 - Sprint 10: 소멸 자동 전이 IPC (`src-tauri/src/commands/expiration.rs` 신규) — `expire_overdue_absences` + 3개 트리거 통합 (앱 시작 / 출결 생성 / 교습기간 등록). 소멸기한 도래 + 미보강 결석 → `makeup_expired` 자동 전이, 단위 테스트 7건
 - Sprint 10: 소멸 전이 알림 UI — 앱 시작 / 출결 생성 / 교습기간 등록 후 전이 건수 토스트 (건수 > 0일 때만)
@@ -77,6 +81,10 @@
 
 ### Fixed
 - Sprint 10: V108 마이그레이션 — `makeup_attendances.status` CHECK 제약 단순화 (`'makeup_absent'` 제거). FK 카운터 함정(SQLite code 787) TEMP 테이블 패턴으로 해소. 실데이터 앱 시작 불가 문제 예방
+- Hotfix: 퇴교 번복(`reinstate_student`) 시 `process_withdrawal_makeup`으로 `makeup_expired` 전이된 결석 중 `makeup_deadline >= 현재 YYYY-MM` 항목만 `absent`로 환원 — 자연 만기 항목은 환원 대상 제외, 트랜잭션 내 원자적 처리, audit `student-reinstated.details`에 `revivedAbsenceIds` 추적
+- Hotfix: 퇴교 처리 다이얼로그 AlertDialog controlled 변환 + 명시적 close — 3선택지 클릭 차단 해소. `WithdrawalMakeupDialog` z-50 → z-60 안전망. 퇴교일자 date input `onChange` blur 강제로 Tauri WebView native picker 자동 닫힘
+- Hotfix: 퇴교 번복 다이얼로그 안내 문구 갱신 — "Phase 3 미래형 약속" 제거, 현재 동작(결석 환원 범위) 명시
+- Hotfix: 퇴교 번복 시 `ExternalExpire`가 덮어쓴 `absence_memo` NULL 클리어
 
 ### Sprint 9 Session #12 — 4차 시각 검증 K1~K7 흡수 (2026-05-26)
 
