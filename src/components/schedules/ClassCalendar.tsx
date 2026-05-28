@@ -366,7 +366,18 @@ export default function ClassCalendar({
                 {info !== undefined && (
                   <span
                     title={info.tooltip}
-                    className="pointer-events-auto absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer text-2xl font-bold text-blue-700"
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      fontSize: '24px',
+                      fontWeight: 700,
+                      color: '#1d4ed8',
+                      cursor: 'pointer',
+                      zIndex: 5,
+                      whiteSpace: 'nowrap',
+                    }}
                   >
                     {info.count}명
                   </span>
@@ -375,12 +386,15 @@ export default function ClassCalendar({
             )
           }}
           // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
-          // 일 보기는 폰트 2단계 확대 (text-xs → text-base).
+          // 일 보기는 폰트 2단계 확대 + 파랑 볼드 (text-xs → text-base text-blue-700 font-bold).
           eventContent={(arg) => {
             const names = (arg.event.extendedProps.names as string[]) ?? []
-            const sizeCls = viewType === 'timeGridDay' ? 'text-base' : 'text-xs'
+            const cls =
+              viewType === 'timeGridDay'
+                ? 'text-base font-bold text-blue-700'
+                : 'text-xs'
             return (
-              <div className={`whitespace-normal break-words px-1 py-0.5 leading-snug ${sizeCls}`}>
+              <div className={`whitespace-normal break-words px-1 py-0.5 leading-snug ${cls}`}>
                 {names.map((n, i) => (
                   <span key={`${n}-${i}`}>
                     <span
