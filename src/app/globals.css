@@ -128,12 +128,17 @@ h6 { font-size: 18px; }
   background-color: #f3f4f6;
 }
 
-/* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑) */
+/* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑). 볼드 미적용. */
 .shb-sun .fc-daygrid-day-number {
   color: #b91c1c;
-  font-weight: 700;
 }
 .shb-sat .fc-daygrid-day-number {
   color: #1d4ed8;
-  font-weight: 700;
+}
+
+/* 주/일 보기 시간 표시 열 — 폰트 2단계 축소 (본문 18px → 12px). */
+.fc .fc-timegrid-slot-label,
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-timegrid-axis-cushion {
+  font-size: 12px;
 }

@@ -271,6 +271,13 @@ export default function ClassCalendar({
           expandRows
           slotDuration="01:00:00"
           slotLabelInterval="01:00:00"
+          slotLabelContent={(arg) => {
+            const h = arg.date.getHours()
+            const m = arg.date.getMinutes()
+            const meridiem = h < 12 ? 'am.' : 'pm.'
+            const h12 = h % 12 === 0 ? 12 : h % 12
+            return `${h12}${m > 0 ? `:${String(m).padStart(2, '0')}` : ''}${meridiem}`
+          }}
           slotMinTime="12:00:00"
           slotMaxTime="23:00:00"
           allDaySlot={false}
@@ -329,8 +336,9 @@ export default function ClassCalendar({
               </div>
             )
           }}
-          // 월 보기 셀: 좌측 상단 학사일정 텍스트 / 우측 날짜 + 그 아래 인원수.
+          // 월 보기 전용 셀: 좌측 상단 학사일정 + 우측 날짜·인원수. (주/일 보기는 dayHeaderContent 만)
           dayCellContent={(arg) => {
+            if (arg.view.type !== 'dayGridMonth') return undefined
             const ds = dateStr(arg.date)
             const acts = academicByDate.get(ds) ?? []
             const info = dayInfo.get(ds)
