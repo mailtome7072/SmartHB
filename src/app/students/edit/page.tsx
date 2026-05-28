@@ -56,6 +56,9 @@ function StudentDetailContent() {
   const qc = useQueryClient()
   const [withdrawing, setWithdrawing] = useState(false)
   const [reinstating, setReinstating] = useState(false)
+  // hotfix (Sprint 10 post-merge): AlertDialog 를 controlled 로 관리해야 비동기 흐름 종료 시점에
+  // 명시적으로 닫고 WithdrawalMakeupDialog 를 mount 할 수 있다.
+  const [withdrawAlertOpen, setWithdrawAlertOpen] = useState(false)
   // T8: 퇴교일자는 사용자가 직접 지정 (기본값 오늘)
   const [withdrawDate, setWithdrawDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
@@ -89,6 +92,9 @@ function StudentDetailContent() {
   const handleWithdrawConfirmed = async () => {
     if (!student) return
     if (student.withdraw_date !== null) return
+    // hotfix: AlertDialog 를 명시적으로 먼저 닫아 backdrop 잔존으로 인한
+    // 후속 WithdrawalMakeupDialog 클릭 차단을 방지.
+    setWithdrawAlertOpen(false)
     setWithdrawing(true)
     try {
       // Sprint 10 T10: 잔여 보강 검증 — 있으면 처리 다이얼로그, 없으면 기존 흐름.
@@ -162,7 +168,7 @@ function StudentDetailContent() {
               onSubmit={handleUpdate}
               extraActions={
                 student.withdraw_date === null ? (
-                  <AlertDialog>
+                  <AlertDialog open={withdrawAlertOpen} onOpenChange={setWithdrawAlertOpen}>
                     <AlertDialogTrigger
                       type="button"
                       disabled={withdrawing}
@@ -187,7 +193,12 @@ function StudentDetailContent() {
                           <input
                             type="date"
                             value={withdrawDate}
-                            onChange={(e) => setWithdrawDate(e.target.value)}
+                            onChange={(e) => {
+                              setWithdrawDate(e.target.value)
+                              // hotfix: Tauri WebView 환경에서 native date picker 가 선택 후
+                              // 자동 닫히지 않는 경우가 있어 blur 로 강제 종료.
+                              e.target.blur()
+                            }}
                             className="mt-1 h-11 w-full rounded-md border border-[var(--border)] px-3"
                           />
                         </label>

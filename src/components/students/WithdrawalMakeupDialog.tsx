@@ -74,7 +74,7 @@ export function WithdrawalMakeupDialog({
       role="dialog"
       aria-modal="true"
       aria-label="퇴교 시 미사용 보강 처리"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
     >
       <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-2 text-xl font-bold">퇴교 시 미사용 보강 처리</h2>

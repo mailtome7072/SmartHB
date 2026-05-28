@@ -420,13 +420,56 @@ pub async fn withdraw_student(id: i64, withdraw_date: String) -> Result<(), Stri
     Ok(())
 }
 
-/// 퇴교 처리를 번복한다 — withdraw_date 를 NULL 로 되돌린다.
+/// 퇴교 처리를 번복한다 — withdraw_date 를 NULL 로 되돌리고 퇴교 시 강제 소멸된
+/// 미보강 결석(자연 만기 전) 을 absent 상태로 환원한다.
 ///
-/// **T8 (사용자 이슈 #8)**: 퇴교 처리는 사용자 실수 또는 학부모 변심으로 번복될 수 있다.
-/// 보강 잔여 처리 등 부수 효과는 본 IPC 범위 외 (Phase 3 에서 별도 처리).
+/// **T8 (Sprint 4)**: 퇴교 번복 — withdraw_date NULL 복귀.
+/// **hotfix (Sprint 10 post-merge)**: 퇴교 처리에서 `process_withdrawal_makeup` 으로 강제
+/// 전이된 `makeup_expired` 결석 중 자연 만기 전(`makeup_deadline >= 현재 YYYY-MM`) 항목만
+/// `absent` 로 환원. 자연 만기 소멸은 T5 폐기 정책에 따라 환원 대상 외.
 #[tauri::command]
 pub async fn reinstate_student(id: i64) -> Result<(), String> {
     let pool = db::pool().map_err(String::from)?;
+    let revived_ids = reinstate_student_impl(pool, id).await?;
+    let details = if revived_ids.is_empty() {
+        None
+    } else {
+        Some(format!(r#"{{"revivedAbsenceIds":{:?}}}"#, revived_ids))
+    };
+    audit::try_record(
+        AuditEventType::StudentReinstated,
+        Some(&id.to_string()),
+        details.as_deref(),
+    )
+    .await;
+    Ok(())
+}
+
+pub(crate) async fn reinstate_student_impl(
+    pool: &sqlx::SqlitePool,
+    id: i64,
+) -> Result<Vec<i64>, String> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
+
+    let revived_ids: Vec<i64> = sqlx::query_scalar(
+        "UPDATE regular_attendances \
+         SET status = 'absent', \
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE student_id = ? \
+           AND status = 'makeup_expired' \
+           AND makeup_attendance_id IS NULL \
+           AND makeup_deadline IS NOT NULL \
+           AND makeup_deadline >= strftime('%Y-%m', 'now') \
+         RETURNING id",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| format!("결석 환원 실패: {}", e))?;
+
     let result = sqlx::query(
         "UPDATE students SET \
             withdraw_date = NULL, \
@@ -434,7 +477,7 @@ pub async fn reinstate_student(id: i64) -> Result<(), String> {
          WHERE id = ?",
     )
     .bind(id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(AppError::Db)
     .map_err(String::from)?;
@@ -444,13 +487,11 @@ pub async fn reinstate_student(id: i64) -> Result<(), String> {
             id
         ))));
     }
-    audit::try_record(
-        AuditEventType::StudentReinstated,
-        Some(&id.to_string()),
-        None,
-    )
-    .await;
-    Ok(())
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
+    Ok(revived_ids)
 }
 
 /// `list_students` / `count_students` 가 공유하는 SQL fragment 빌더.
@@ -900,5 +941,67 @@ mod tests {
         let row = sqlx::query(&sql).fetch_one(&pool).await.unwrap();
         let active_count: i64 = row.try_get("cnt").unwrap();
         assert_eq!(active_count, 4, "퇴교 1건 제외 → 4건");
+    }
+
+    /// hotfix (Sprint 10 post-merge): 퇴교 번복 시 강제 소멸된 결석 중 자연 만기 전인 항목만
+    /// absent 로 환원한다. 자연 만기 항목(과거 makeup_deadline)은 그대로 유지.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn reinstate_revives_only_pre_natural_deadline_expired_absences() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+
+        // 학생 1명 — 일단 퇴교 상태
+        sqlx::query(
+            "INSERT INTO students (id, serial_no, name, gender, school_level, grade, enroll_date, withdraw_date) \
+             VALUES (1, '1', '홍길동', 'male', 'elementary', 4, '2026-03-01', '2026-05-28')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 보강 완료 케이스 FK 대상 — id=1
+        sqlx::query(
+            "INSERT INTO makeup_attendances (id, student_id, event_date, year_month, status, class_minutes) \
+             VALUES (1, 1, '2026-05-15', '2026-05', 'makeup_attended', 60)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 결석 A: 자연 만기 전 (이번 달) — 환원 대상
+        // 결석 B: 자연 만기 후 (옛 달) — 환원 대상 외
+        // 결석 C: makeup_expired 이지만 makeup_attendance_id 채워짐 → 환원 대상 외 (보강 완료)
+        sqlx::query(
+            "INSERT INTO regular_attendances \
+                 (student_id, event_date, year_month, status, class_minutes, makeup_deadline, makeup_attendance_id) \
+             VALUES \
+                 (1, '2026-05-22', '2026-05', 'makeup_expired', 60,  strftime('%Y-%m','now'),  NULL), \
+                 (1, '2025-12-10', '2025-12', 'makeup_expired', 60, '2026-01',                 NULL), \
+                 (1, '2026-04-15', '2026-04', 'makeup_expired', 60, '2026-06',                    1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let revived = super::reinstate_student_impl(&pool, 1).await.unwrap();
+        assert_eq!(revived.len(), 1, "환원 대상은 1건 (결석 A)");
+
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT event_date, status FROM regular_attendances WHERE student_id = 1 ORDER BY event_date",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows[0], ("2025-12-10".into(), "makeup_expired".into()), "자연 만기는 유지");
+        assert_eq!(rows[1], ("2026-04-15".into(), "makeup_expired".into()), "보강 완료 expired 는 유지");
+        assert_eq!(rows[2], ("2026-05-22".into(), "absent".into()), "퇴교 강제 expired 는 환원");
+
+        let withdraw_date: Option<String> = sqlx::query_scalar(
+            "SELECT withdraw_date FROM students WHERE id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(withdraw_date.is_none(), "withdraw_date 도 NULL 로 복귀");
     }
 }
