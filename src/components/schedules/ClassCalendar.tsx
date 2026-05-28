@@ -295,12 +295,14 @@ export default function ClassCalendar({
           //   토요일·일요일 (보강데이 없음)                              → gray
           //   그 외 평일                                                  → amber
           // 별도로 주말·공휴일 날짜 숫자 색만 적용 (배경과 독립).
+          // 일(day) 보기는 사용자 지정으로 배경색 없음.
           dayCellClassNames={(arg) => {
             const ds = dateStr(arg.date)
             const dow = arg.date.getDay()
             const cls: string[] = []
             if (holidayDates.has(ds) || dow === 0) cls.push('shb-sun')
             else if (dow === 6) cls.push('shb-sat')
+            if (arg.view.type === 'timeGridDay') return cls
             const inPeriod = studyPeriods.some((p) => ds >= p.start_date && ds <= p.end_date)
             const f = academicFlags.get(ds)
             let amber: boolean
