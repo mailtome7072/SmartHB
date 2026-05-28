@@ -128,6 +128,13 @@ h6 { font-size: 18px; }
   background-color: #f3f4f6;
 }
 
+/* 오늘 셀 — 연한 민트 (사용자 지정 톤). 결합 선택자로 amber/gray 보다 우선. */
+.fc .shb-has-class.fc-day-today,
+.fc .shb-no-class.fc-day-today,
+.fc .fc-day-today {
+  background-color: #dcefd0;
+}
+
 /* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑). 볼드 미적용. */
 .shb-sun .fc-daygrid-day-number {
   color: #b91c1c;
