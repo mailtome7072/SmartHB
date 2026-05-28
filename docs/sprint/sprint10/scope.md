@@ -1070,3 +1070,35 @@ V108 은 makeup_attendances 를 재생성(CHECK 단순화)하는데, `regular_at
 | 파일 | 변경 |
 |------|------|
 | src-tauri/migrations/108__cleanup_makeup_status_check.sql | NULL-복원 재구성으로 FK 787 해소 (번호 108 유지) |
+
+---
+
+## Session #16 (T11 시각 검증 완료, 2026-05-28)
+
+> 1차~7차 시각 검증을 거치며 캘린더 UI 다듬기 — 사용자 "시각검수 완료" 확정 (2026-05-28).
+
+### 시각 검증 라운드 요약 (반영 결과)
+
+| 라운드 | 주요 변경 |
+|--------|-----------|
+| 1차 (14건) | 월요일 시작 / 창 높이 / 토일·공휴일 색·학사일정 표시 / 오늘 / 툴바 배치 / 년월 클릭 date picker / 뷰 버튼 색·너비 / 월셀 인원수+툴팁 / 30분 라인 제거 / 주·일 시간대 원생명 / 이름 클릭→출결관리 / 보강관리 이동 / 보강관리 필터 |
+| 2차 (8건) | 보강관리 원생 검색 위치 부적합 → 제거(재원중 체크 유지) · 달 이동 튕김 → `keepPreviousData` · 학사일정 바→텍스트 · 인원수 위치/폰트 · 툴팁 '오후 4시' 표기 · 종일 행 제거 · 상단 디자인 |
+| 3차 (6건) + 결정적 버그 | 오늘 삭제 / 커스텀 툴바 / 년월 클릭 datepicker 위치 / 셀 배경 amber·gray / 학사일정 좌측 상단 / **주·일 원생명 미표시 → 시작시간 "HH:MM:SS" 초 중복 datetime 무효 버그 수정** |
+| 4차 (5건) | 교습기간 amber 배경 (study period 조회) / 툴바 중앙정렬 / 주·일 → 오늘 / 학사일정 allDay 중앙정렬 행 |
+| 5차 (3건) | 셀 배경 정밀화 (보강데이 우선·정규off·토일) / 단원평가 응시일 기간 확장 / 학사일정 3중 중복 → dayHeader 통합 (날짜/코드/총 N명 수업) |
+| 6차 (3건) | 토·일 볼드 제거 / 시간 열 폰트 12px + 'am./pm.' / 비헤더 셀 학사·인원 표기 제거 (dayCellContent 월 전용 게이트) |
+| 7차 (다회) | 오늘 셀 민트(#DCEFD0) / 일 보기 셀 배경 없음·오늘도 transparent / 일 수업 블록 배경/외곽선 투명 / 일 원생명 파랑 볼드 + 중앙정렬 / 월 인원수 정중앙(dayCellDidMount 직접 주입) 28px 블랙 노볼드 + 'N일' 표기 / 학사 이전·다음 버튼 통일 / 학사일정 텍스트 한글 1자 간격 + pt-1 / 월 셀 hover outline / 주·일 이벤트 hover outline |
+
+### 발견·수정된 핵심 결함 (시각 검증 가치)
+1. **V108 마이그레이션 FK 787** — 실데이터 DB 자식 FK 위반 (Session #15) → NULL-복원 패턴
+2. **주·일 원생명 미표시** — `T${startTime}:00` 이중 콜론으로 datetime 무효 (3차)
+3. **달 이동 시 캘린더 초기 날짜로 튕김** — refetch 중 `data` undefined → remount 루프 → `keepPreviousData`
+
+### 최종 상태
+- 모든 T11 follow-up 라운드 사용자 승인
+- 자동 검증(cargo test/clippy/lint/tsc/build) 통과 유지
+- 작업 트리 클린, 모든 변경 커밋 완료
+
+### 다음 단계
+- `sprint-close` 진입 — ROADMAP Phase 3 완료 표기 + CHANGELOG + develop 직접 머지 ([[workflow-no-pr]])
+- `sprint-review` 진입 — 코드 리뷰 + 회고 작성
