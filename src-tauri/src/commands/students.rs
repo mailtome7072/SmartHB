@@ -454,9 +454,13 @@ pub(crate) async fn reinstate_student_impl(
         .await
         .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
 
+    // absence_memo 도 함께 NULL 로 클리어 — 퇴교 외부 처리 메모(`ExternalExpire`)가
+    // 일괄 덮어쓴 결과이므로 환원 시 의미가 사라진다. `attendance.rs::toggle_attendance`
+    // 의 결석 → 출석 전환 시 동일 패턴(absence_memo=NULL).
     let revived_ids: Vec<i64> = sqlx::query_scalar(
         "UPDATE regular_attendances \
          SET status = 'absent', \
+             absence_memo = NULL, \
              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
          WHERE student_id = ? \
            AND status = 'makeup_expired' \
@@ -968,16 +972,16 @@ mod tests {
         .await
         .unwrap();
 
-        // 결석 A: 자연 만기 전 (이번 달) — 환원 대상
+        // 결석 A: 자연 만기 전 (이번 달) + 외부 처리 메모 — 환원 대상, memo 도 클리어
         // 결석 B: 자연 만기 후 (옛 달) — 환원 대상 외
         // 결석 C: makeup_expired 이지만 makeup_attendance_id 채워짐 → 환원 대상 외 (보강 완료)
         sqlx::query(
             "INSERT INTO regular_attendances \
-                 (student_id, event_date, year_month, status, class_minutes, makeup_deadline, makeup_attendance_id) \
+                 (student_id, event_date, year_month, status, class_minutes, makeup_deadline, makeup_attendance_id, absence_memo) \
              VALUES \
-                 (1, '2026-05-22', '2026-05', 'makeup_expired', 60,  strftime('%Y-%m','now'),  NULL), \
-                 (1, '2025-12-10', '2025-12', 'makeup_expired', 60, '2026-01',                 NULL), \
-                 (1, '2026-04-15', '2026-04', 'makeup_expired', 60, '2026-06',                    1)",
+                 (1, '2026-05-22', '2026-05', 'makeup_expired', 60,  strftime('%Y-%m','now'),  NULL, '환불 처리 완료'), \
+                 (1, '2025-12-10', '2025-12', 'makeup_expired', 60, '2026-01',                 NULL, NULL), \
+                 (1, '2026-04-15', '2026-04', 'makeup_expired', 60, '2026-06',                    1, NULL)",
         )
         .execute(&pool)
         .await
@@ -986,15 +990,19 @@ mod tests {
         let revived = super::reinstate_student_impl(&pool, 1).await.unwrap();
         assert_eq!(revived.len(), 1, "환원 대상은 1건 (결석 A)");
 
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT event_date, status FROM regular_attendances WHERE student_id = 1 ORDER BY event_date",
+        let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT event_date, status, absence_memo FROM regular_attendances WHERE student_id = 1 ORDER BY event_date",
         )
         .fetch_all(&pool)
         .await
         .unwrap();
-        assert_eq!(rows[0], ("2025-12-10".into(), "makeup_expired".into()), "자연 만기는 유지");
-        assert_eq!(rows[1], ("2026-04-15".into(), "makeup_expired".into()), "보강 완료 expired 는 유지");
-        assert_eq!(rows[2], ("2026-05-22".into(), "absent".into()), "퇴교 강제 expired 는 환원");
+        assert_eq!(rows[0].0, "2025-12-10", "자연 만기는 그대로");
+        assert_eq!(rows[0].1, "makeup_expired", "자연 만기 status 유지");
+        assert_eq!(rows[1].0, "2026-04-15", "보강 완료 expired 는 그대로");
+        assert_eq!(rows[1].1, "makeup_expired", "보강 완료 expired status 유지");
+        assert_eq!(rows[2].0, "2026-05-22", "퇴교 강제 expired 가 환원 대상");
+        assert_eq!(rows[2].1, "absent", "status 가 absent 로 환원");
+        assert!(rows[2].2.is_none(), "absence_memo 도 NULL 로 클리어");
 
         let withdraw_date: Option<String> = sqlx::query_scalar(
             "SELECT withdraw_date FROM students WHERE id = 1",
