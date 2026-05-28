@@ -88,4 +88,6 @@ export interface GenerateResult {
   yearMonth: string
   studentCount: number
   attendanceCount: number
+  /** Sprint 10 T4 (PI-05/PI-09): 출결 생성 직후 소멸 자동 전이 결과. */
+  expirationReport: import('./expiration').ExpirationReport
 }

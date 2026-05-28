@@ -110,14 +110,23 @@ export function StudyPeriodEditor({
         end_date: range.end,
       })
       // 등록 후 즉시 확정 — 사용자가 "확정" 버튼 클릭한 흐름 (PRD §4.4.2).
-      await confirmStudyPeriod(created.id)
+      // Sprint 10 T4 (PI-05): create/confirm 모두 응답에 expirationReport 동봉.
+      // 최종 확정 응답의 expirationReport 만 토스트로 표시 (두 호출 사이에 도래 결석 미변동).
+      const confirmed = await confirmStudyPeriod(created.studyPeriod.id)
+      return confirmed.expirationReport
     },
-    onSuccess: async () => {
+    onSuccess: async (report) => {
       // 두 캐시 키 모두 무효화 — ThreeMonthCalendar 의 list 와 본 컴포넌트의 단일 조회.
       await queryClient.invalidateQueries({ queryKey: ['study-periods'] })
       await queryClient.invalidateQueries({ queryKey: ['study-period'] })
       setSelection({ start: null, end: null })
       setConfirmOpen(false)
+      // PI-09: 전이 결과 토스트 (건수 > 0 일 때만). UI 차원에서 inline 알림.
+      if (report.transitionedCount > 0) {
+        setErrorMessage(
+          `교습기간 확정과 함께 소멸기한 도래 결석 ${report.transitionedCount}건이 자동 처리되었습니다.`,
+        )
+      }
     },
     onError: (err) => {
       setConfirmOpen(false)

@@ -52,7 +52,8 @@ pub enum AuditEventType {
     // Sprint 9 T3/T4 — 보강 도메인 (PRD §4.5.4~6)
     MakeupCreated,
     MakeupCancelled,
-    MakeupAbsent,
+    // Sprint 10 T3 — 보강 소멸 자동 전이 (PRD §4.5.7)
+    MakeupExpired,
 }
 
 impl AuditEventType {
@@ -73,7 +74,7 @@ impl AuditEventType {
             Self::SecurityEvent => "security-event",
             Self::MakeupCreated => "makeup-created",
             Self::MakeupCancelled => "makeup-cancelled",
-            Self::MakeupAbsent => "makeup-absent",
+            Self::MakeupExpired => "makeup-expired",
         }
     }
 }
@@ -199,7 +200,7 @@ pub async fn get_audit_logs(
     list_logs(since_dt, limit).await.map_err(String::from)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
 

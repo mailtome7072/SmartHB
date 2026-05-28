@@ -1,4 +1,6 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
-- [Sprint 다음 세션](sprint-next-session.md) — Sprint 9 Session #8 완료 (T1~T8, 8/9). 보강 도메인 + 결석 이력 완성 (백엔드 IPC 7종 + UI 4 다이얼로그). 다음: `/sprint-dev 9` → Session #9 (T9 통합 검증 + A39/A40 프로세스 적용)
+- [Sprint 다음 세션](sprint-next-session.md) — Sprint 10 구현 완료 (T1~T12, T5 폐기). Phase 3 완결 — 소멸 자동 전이 + 퇴교 보강 처리 + 수업 관리 캘린더 뷰(FullCalendar). 다음: sprint-close → sprint-review (cipher on 은 CI 검증)
 - [NTFS power-loss 패턴](ntfs-power-loss-pattern.md) — fs::write+rename 후 데이터가 NULL로 손상, atomic write 헬퍼에 손상 감지+fallback 필수
 - [keyring v3 features 트랩](keyring-v3-features-trap.md) — `keyring = "3"`만 적으면 backend 미연결로 silent set fail. `features = ["apple-native", "windows-native"]` 필수
+- [cipher 테스트 게이트 트랩](cipher-test-gate-trap.md) — `cargo test --features cipher`는 Strawberry Perl + 테스트 모듈 `#[cfg(all(test, not(feature="cipher")))]` 게이트 둘 다 필요. CI는 cipher로 빌드만 해서 미발견
+- [SQLite 마이그레이션 FK 재구성](sqlite-migration-fk-rebuild.md) — sqlx 트랜잭션 내 테이블 재구성+자식 FK는 NULL-복원 패턴 필수(defer 불가). 빈 인메모리 테스트는 FK 못 잡음 → 실DB 시각검증. WAL 복사 주의

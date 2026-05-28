@@ -38,6 +38,13 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 10: 소멸 자동 전이 IPC (`src-tauri/src/commands/expiration.rs` 신규) — `expire_overdue_absences` + 3개 트리거 통합 (앱 시작 / 출결 생성 / 교습기간 등록). 소멸기한 도래 + 미보강 결석 → `makeup_expired` 자동 전이, 단위 테스트 7건
+- Sprint 10: 소멸 전이 알림 UI — 앱 시작 / 출결 생성 / 교습기간 등록 후 전이 건수 토스트 (건수 > 0일 때만)
+- Sprint 10: 퇴교 보강 처리 IPC 2종 — `get_pending_makeup_for_withdrawal` + `process_withdrawal_makeup` (즉시 소멸 / 보강 후 퇴교 / 외부 처리 후 소멸 3선택지), 단위 테스트 6건
+- Sprint 10: 퇴교 보강 처리 UI — `WithdrawalMakeupDialog` (미사용 보강 보유 원생에게만 표시, 원생 관리 퇴교 흐름 통합)
+- Sprint 10: 캘린더 집계 IPC 2종 (`src-tauri/src/commands/calendar.rs` 신규) — `get_calendar_data` (일별 수업 원생 목록) + `get_makeup_management_data` (보강 필요 원생, 소멸기한 임박 순), 단위 테스트 5건
+- Sprint 10: 캘린더 뷰 UI (`/calendar` 라우트) — FullCalendar 일/주/월 뷰, 원생 상세 팝업 (출결/보강 상세 + 출결관리 이동), 보강 관리 전용 뷰 (소멸 임박 7일 강조). 수업 관리 메뉴 활성화. 7라운드 시각 검증 완료
+- Sprint 10: ADR-006 캘린더 라이브러리 선택 (`docs/arch/adr-006-calendar-library.md`) — FullCalendar MIT 채택 (React Big Calendar 대비 일/주/월 뷰 + TypeScript + static export 호환성 우위)
 - Sprint 9: 보강 IPC 백엔드 7종 (`src-tauri/src/commands/makeup.rs` 신규) — `get_pending_absences`, `get_makeup_eligible_dates`, `create_makeup_with_absences`, `cancel_makeup`, `mark_makeup_absent`, `batch_create_makeups`, `get_absence_history`
 - Sprint 9: 보강 비즈니스 규칙 단위 테스트 28건 신규 (T2 9 + T3 9 + T4 7 + T8 3, PRD §6.5 100% 커버)
 - Sprint 9: `audit::AuditEventType` — `MakeupCreated`, `MakeupCancelled`, `MakeupAbsent` 3 variant 추가
@@ -57,11 +64,19 @@
 - Sprint 9 (I2): 헤더 보강 필요 학생 수 표시 + 0명 시 disabled 처리
 - Sprint 9 (I7): 출결표 일자 헤더 — `allowsMakeup=true` 일자 sky-100/sky-800 배경 강조 + "보강데이" title
 
+### Changed
+- Sprint 10: `audit::AuditEventType` — `MakeupExpired` variant 추가 (소멸 자동 전이 감사 로그)
+
 ### Removed
+- Sprint 10 (T1): `mark_makeup_absent` IPC + `batch_create_makeups` IPC 완전 제거 (Sprint 9 J5/J7 사용자 결정 후 dead code 정리)
+- Sprint 10 (T1): `audit::AuditEventType::MakeupAbsent` variant 제거
 - Sprint 9 (J5): 보강 미등원 UI — `MakeupManageDialog`에서 "미등원" 옵션 제거 (사용자 결정 — 보강은 결과 기록 의미)
 - Sprint 9 (J7): `BatchMakeupDialog` 컴포넌트 삭제 — 보강데이 일괄 기능 폐기 (사용자 결정)
 - Sprint 9 (J7): 출결표 헤더 "보강데이 일괄" 버튼 제거
 - Sprint 9 (K7): 출결표 헤더 'N / M 명' 별도 카운터 — 라벨 병기 형태로 통합
+
+### Fixed
+- Sprint 10: V108 마이그레이션 — `makeup_attendances.status` CHECK 제약 단순화 (`'makeup_absent'` 제거). FK 카운터 함정(SQLite code 787) TEMP 테이블 패턴으로 해소. 실데이터 앱 시작 불가 문제 예방
 
 ### Sprint 9 Session #12 — 4차 시각 검증 K1~K7 흡수 (2026-05-26)
 

@@ -31,6 +31,17 @@ export interface UpdateStudyPeriodPayload {
   end_date: string
 }
 
+/**
+ * 교습기간 등록/수정/확정 응답 — Sprint 10 T4 (PI-05/PI-09).
+ *
+ * `src-tauri/src/commands/academic.rs::StudyPeriodResult` 와 1:1 정합.
+ * 응답 자체는 camelCase serde rename. 내부 `studyPeriod` 의 필드는 snake_case 유지.
+ */
+export interface StudyPeriodResult {
+  studyPeriod: StudyPeriod
+  expirationReport: import('./expiration').ExpirationReport
+}
+
 // ─── schedule_codes (T6) ─────────────────────────────────────────────
 
 /** 학사 일정 코드 (3속성 모델). V102 schedule_codes. PRD §4.4.3~4.4.5. */

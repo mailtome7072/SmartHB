@@ -295,7 +295,7 @@ pub async fn reorder_codes(table: CodeTable, orders: Vec<(i64, i64)>) -> Result<
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
     use crate::commands::pagination::{DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT};

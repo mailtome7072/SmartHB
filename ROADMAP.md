@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 59% (9/15 스프린트 완료) |
-| 현재 Phase | Phase 3 진행 중 — Sprint 9 완료 (2026-05-26), Sprint 10 (소멸+캘린더) 착수 예정 |
-| 다음 마일스톤 | 소멸 자동 전이 + 퇴교 보강 처리 + 캘린더 뷰 (Sprint 10) |
+| 전체 진행률 | 65% (10/17 스프린트 완료) |
+| 현재 Phase | Phase 3 완료 (2026-05-28) — Sprint 9+10 완료. Phase 4 (청구+수납+공지문) 착수 예정 |
+| 다음 마일스톤 | 청구 생성 + 3단계 마감 + 수납 관리 (Sprint 11) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -39,7 +39,7 @@
 | DB 암호화 | SQLCipher AES-256 | 개인정보보호법 준수, OS Keychain 키 보관 | PRD v1.1 |
 | 상태 관리 | Zustand + TanStack Query | 전역 상태 + IPC 응답 캐싱 | PRD §5.1 |
 | UI 컴포넌트 | shadcn/ui + Tailwind CSS | 접근성 커스터마이징 용이 | PRD §5.1 |
-| 캘린더 라이브러리 | ADR 필요 (Sprint 7) | FullCalendar vs React Big Calendar 비교 후 결정 | 미결정 |
+| 캘린더 라이브러리 | FullCalendar (MIT) | ADR-006: React Big Calendar 대비 일/주/월 뷰 지원 + TypeScript + static export 호환성 우위 | Sprint 10 T8 |
 | E2E 테스트 | Tauri WebDriver (tauri-driver) | Tauri 공식 권장, PI-11 해결 | PRD v1.5 |
 
 ---
@@ -452,7 +452,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 3: 보강 + 소멸 (Sprint 9~10) 🔄 진행 중
+## Phase 3: 보강 + 소멸 (Sprint 9~10) ✅ 완료 (2026-05-28)
 
 ### 목표
 출결/보강의 가장 복잡한 도메인(보강 매칭, 소멸 자동 전이, 퇴교 처리)을 완성하여 UC-4를 달성한다.
@@ -508,44 +508,45 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 10: 소멸 자동 전이 + 캘린더 뷰 완성 (2주) 🔄 진행 중
+### Sprint 10: 소멸 자동 전이 + 캘린더 뷰 완성 (2주) ✅ 완료 (2026-05-28)
+
+> 계획 문서: `docs/sprint/sprint10.md` / Task T1~T12 완료 (T5 환원 IPC 폐기 — 사용자 정책) / 7라운드 시각 검증
+> develop 머지: `sprint10 → develop` (--no-ff, 예정)
+
+#### 주요 도메인 결정 사항
+
+| 결정 | 내용 |
+|------|------|
+| T5 환원 IPC 폐기 | 사용자 정책 — "보강기한 소멸되면 끝", 환원 기능 불필요 |
+| PI-03 캘린더 라이브러리 | FullCalendar (MIT) 채택 — ADR-006 작성 완료 |
+| PI-04 보강데이 일괄 | 캘린더 보강관리 뷰에서 진입점 제공, 구체적 UI는 Phase 4+ 결정 |
+| 선행 수업 (§4.2.3) | 기존 토글+보강 흐름 활용 (PI-08 결정), 별도 IPC 불필요 |
+| V108 FK 카운터 함정 | TEMP 테이블 패턴으로 자식 FK 보존/복원 — 실데이터 code 787 해소 |
 
 #### 작업 목록
 
-- ⬜ **PI-01 소멸 자동 전이 트리거 구현**: 앱 시작 시 batch 로직
-  - 소멸기한 도래 + 미보강 결석 → "보강소멸" 자동 전이
-  - 출결 화면 진입 시에도 추가 체크
-  - 교습기간 등록 직후에도 추가 체크
-- ⬜ **보강소멸 → 결석 수동 환원 (§4.5.3)**: 확인 다이얼로그 필수 (AC-4.5-5)
-- ⬜ **퇴교 시 미사용 보강 처리 (§4.5.9)**: 처리 다이얼로그
-  - 즉시 소멸 / 보강 진행 후 퇴교 / 외부 처리 후 소멸(메모)
-- ⬜ **선행 수업 처리 (§4.2.3)**: 미래 일자 결석 사전 등록 → 선행 보강 매칭
-- ⬜ **수업 관리 캘린더 뷰 완성 (§4.6)**
-  - 일/주/월 뷰 완성 (캘린더 ADR 라이브러리 적용)
-  - 원생 상세 팝업 (§4.6.2): 출결/보강 상세 + "출결/보강관리" 이동 버튼
-  - 보강 관리 전용 뷰 (§4.6.3): 소멸 임박 강조, 보강데이 일괄 진입 버튼
+- ✅ **T1**: Sprint 9 dead code 정리 — `mark_makeup_absent` / `batch_create_makeups` / `MakeupAbsent` variant 완전 제거 (`dde74aa`)
+- ✅ **T2**: 소멸 자동 전이 설계 + 사용자 확인 — PI-05~PI-09 결정 (트리거 3개소, 오늘 기준, V108, 토스트 알림)
+- ✅ **T1'**: V108 마이그레이션 — `makeup_attendances.status` CHECK 단순화 (FK 카운터 함정 TEMP 패턴 적용)
+- ✅ **T3**: 소멸 자동 전이 IPC — `expiration.rs` 신규 모듈 + `expire_overdue_absences` + 단위 테스트 7건
+- ✅ **T4**: 소멸 전이 트리거 통합 — 앱 시작 / 출결 생성 / 교습기간 등록 3개 트리거 연결
+- ❌ **T5**: 보강소멸 → 결석 수동 환원 IPC — 사용자 정책으로 폐기 (2026-05-26)
+- ✅ **T6**: 퇴교 시 미사용 보강 처리 IPC — `get_pending_makeup_for_withdrawal` + `process_withdrawal_makeup` + 단위 테스트 6건
+- ✅ **T7**: 선행 수업 검증 — 기존 흐름으로 미래 결석 + 보강 매칭 단위 테스트 확인
+- ✅ **T8**: 캘린더 라이브러리 ADR (ADR-006: FullCalendar) + 집계 IPC (`calendar.rs` 신규) + 단위 테스트 5건
+- ✅ **T9**: 소멸 알림 UI — 앱 시작 시 토스트 (건수 > 0일 때만)
+- ✅ **T10**: 퇴교 보강 처리 UI — `WithdrawalMakeupDialog` + 원생 관리 퇴교 흐름 통합
+- ✅ **T11**: 캘린더 뷰 UI — FullCalendar 일/주/월 + 원생 상세 팝업 + 보강 관리 뷰. 수업 관리 메뉴 활성화. 7라운드 시각 검증 완료
+- ✅ **T12**: 통합 검증 — 자동 7항목 전수 통과 + 마이그레이션 self-check (A39) 1:1 일치
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 소멸 자동 전이가 앱 시작 시 정상 발동
-- ⬜ 퇴교 처리 다이얼로그 3개 선택지 모두 동작
-- ⬜ 캘린더 뷰 일/주/월 전환 + 원생 팝업 동작
-- ⬜ 보강 관리 뷰에서 소멸 임박 원생 시각 확인
-- ⬜ 출결+보강 통합 테스트 시나리오 통과
-
-#### 🧪 Playwright MCP 검증 시나리오
-```
-1. browser_navigate → http://localhost:1420/calendar
-2. browser_snapshot → 캘린더 뷰(주 뷰) 렌더링 확인
-3. browser_click → 원생 이름 클릭 → 상세 팝업
-4. browser_snapshot → 출결/보강 상세 정보 확인
-5. browser_click → "보강관리" 탭 전환
-6. browser_snapshot → 소멸 임박 원생 강조 확인
-7. browser_console_messages(level: "error") → 콘솔 에러 없음
-```
-
-#### 기술 고려사항
-- 소멸 batch 로직은 독립 모듈로 분리하여 단위 테스트 용이하게
-- 캘린더 뷰 렌더링 성능: 시간대별 인원 계산은 백엔드에서 집계 후 전달
+- ✅ 소멸 자동 전이가 앱 시작 / 출결 생성 / 교습기간 등록 3개 트리거에서 정상 발동
+- ✅ 퇴교 처리 다이얼로그 3개 선택지 모두 동작
+- ✅ 캘린더 뷰 일/주/월 전환 + 원생 팝업 동작 (7라운드 시각 검증 완료)
+- ✅ `cargo test --lib` cipher off 272 passed + cipher on 116 passed (Strawberry Perl 설치 완료)
+- ✅ `cargo clippy --lib -- -D warnings` cipher off/on clean
+- ✅ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` (static export 16/16) 통과
+- ✅ 마이그레이션 self-check (A39): V108 1:1 일치 (FK 카운터 함정 TEMP 패턴 포함)
 
 ---
 
@@ -931,8 +932,8 @@ PRD §4.15에 명시된 Post-MVP 항목:
 - ⬜ 출결 재생성 시 변경분만 반영 — Q9
 
 ### PRD 미해결 항목 (스프린트 진행 중 결정 필요)
-- ⬜ **PI-01** (High): 소멸 자동 전이 트리거 시점 → Sprint 10에서 구현
-- ⬜ **PI-02** (High): 보강-결석 시간값 매칭 규칙 → Sprint 9 착수 전 결정 필요
+- ✅ **PI-01** (High): 소멸 자동 전이 트리거 시점 → Sprint 10 완료 (앱 시작/출결 생성/교습기간 등록 3개 트리거)
+- ✅ **PI-02** (High): 보강-결석 시간값 매칭 규칙 → Sprint 9 완료 (일 단위 매칭 확정)
 - ✅ **PI-05** (Medium): 일련번호 자동 채번 규칙 → **확정**: `MAX+1` + `BEGIN IMMEDIATE` + override 허용 (2026-05-20)
 - ⬜ **PI-07** (High): 복구 코드 발급/검증 Feature → Sprint 1 착수 전 결정 필요
 

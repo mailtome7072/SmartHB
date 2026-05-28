@@ -23,20 +23,28 @@ interface AppState {
   lockStatus: LockStatus | null
   sidebarOpen: boolean
   selectedPeriodMonth: string | null
+  /**
+   * 수업 관리 캘린더 → 출결 관리 이동 시 전달할 원생 이름 프리셋 (Sprint 10 T11 follow-up).
+   * 출결 관리 페이지가 mount 시 검색어로 소비한 뒤 null 로 비운다 (1회성).
+   */
+  attendanceSearchPreset: string | null
 
   setLockStatus: (status: LockStatus | null) => void
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
   setSelectedPeriodMonth: (month: string | null) => void
+  setAttendanceSearchPreset: (name: string | null) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
   lockStatus: null,
   sidebarOpen: true,
   selectedPeriodMonth: null,
+  attendanceSearchPreset: null,
 
   setLockStatus: (lockStatus) => set({ lockStatus }),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSelectedPeriodMonth: (selectedPeriodMonth) => set({ selectedPeriodMonth }),
+  setAttendanceSearchPreset: (attendanceSearchPreset) => set({ attendanceSearchPreset }),
 }))

@@ -116,3 +116,75 @@ h3 { font-size: 24px; } /* PRD §5.7 헤더 24pt+ 하한 */
 h4 { font-size: 22px; }
 h5 { font-size: 20px; }
 h6 { font-size: 18px; }
+
+/* ── 수업 관리 FullCalendar 커스터마이징 (Sprint 10 T11 시각 검증) ── */
+/* 툴바는 커스텀 React 로 구현 (headerToolbar=false) — FC 버튼 스타일 불필요. */
+
+/* 셀 배경: 학사 캘린더와 동일 — 수업 있는 날 amber-100 / 없는 날 gray-100 */
+.shb-has-class {
+  background-color: #fef3c7;
+}
+.shb-no-class {
+  background-color: #f3f4f6;
+}
+
+/* 월 보기 일자 셀 — 중앙 인원수 배지의 positioning 기준 보장. */
+.fc-daygrid-day-frame {
+  position: relative;
+}
+
+/* 월 보기 셀 hover — 진한 테두리(outline)로 강조. */
+.fc-dayGridMonth-view .fc-daygrid-day:hover {
+  outline: 2px solid #334155;
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
+
+/* 주·일 보기 원생 이름 박스(이벤트) hover — 진한 테두리 강조. */
+.fc-timegrid-event:hover {
+  outline: 2px solid #334155 !important;
+  outline-offset: -2px;
+  z-index: 10;
+}
+
+/* 오늘 셀 — 연한 민트 (사용자 지정 톤). 결합 선택자로 amber/gray 보다 우선. */
+.fc .shb-has-class.fc-day-today,
+.fc .shb-no-class.fc-day-today,
+.fc .fc-day-today {
+  background-color: #dcefd0;
+}
+
+/* 일(day) 보기는 셀 배경색 없음 (오늘 셀 포함, 사용자 지정).
+   FC 내부 --fc-today-bg-color 와 내가 정의한 .fc .fc-day-today 둘 다 무력화. */
+.fc-timeGridDay-view {
+  --fc-today-bg-color: transparent;
+}
+.fc-timeGridDay-view .fc-day-today,
+.fc-timeGridDay-view .fc-timegrid-col,
+.fc-timeGridDay-view td.fc-day-today {
+  background-color: transparent !important;
+}
+
+/* 일 보기 수업 블록: 배경 투명 + 모든 변 투명(셀 배경색과 동일 → 외곽선 불가시). */
+.fc-timeGridDay-view .fc-timegrid-event {
+  background-color: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑). 볼드 미적용. */
+.shb-sun .fc-daygrid-day-number {
+  color: #b91c1c;
+}
+.shb-sat .fc-daygrid-day-number {
+  color: #1d4ed8;
+}
+
+/* 주/일 보기 시간 표시 열 — 폰트 2단계 축소 (본문 18px → 12px). */
+.fc .fc-timegrid-slot-label,
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-timegrid-axis-cushion {
+  font-size: 12px;
+}

@@ -28,12 +28,15 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import {
+  getPendingMakeupForWithdrawal,
   getStudent,
   reinstateStudent,
   updateStudent,
   withdrawStudent,
 } from '@/lib/tauri'
 import type { NewStudent, Student } from '@/types/student'
+import type { WithdrawalPendingMakeup } from '@/types/withdrawal'
+import { WithdrawalMakeupDialog } from '@/components/students/WithdrawalMakeupDialog'
 
 export default function StudentDetailPage() {
   return (
@@ -57,6 +60,9 @@ function StudentDetailContent() {
   const [withdrawDate, setWithdrawDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   )
+  // Sprint 10 T10 (PRD §4.5.9): 잔여 보강 보유 시 처리 다이얼로그.
+  const [pendingWithdrawalMakeup, setPendingWithdrawalMakeup] =
+    useState<WithdrawalPendingMakeup | null>(null)
 
   const { data: student, isLoading, error } = useQuery<Student>({
     queryKey: ['students', 'detail', studentId],
@@ -85,12 +91,31 @@ function StudentDetailContent() {
     if (student.withdraw_date !== null) return
     setWithdrawing(true)
     try {
-      await withdrawStudent(student.id, withdrawDate)
-      qc.invalidateQueries({ queryKey: ['students'] })
-      router.push('/students')
+      // Sprint 10 T10: 잔여 보강 검증 — 있으면 처리 다이얼로그, 없으면 기존 흐름.
+      const pending = await getPendingMakeupForWithdrawal(student.id)
+      if (pending.absences.length === 0) {
+        await withdrawStudent(student.id, withdrawDate)
+        qc.invalidateQueries({ queryKey: ['students'] })
+        router.push('/students')
+        return
+      }
+      // 잔여 보강 있음 — WithdrawalMakeupDialog 가 mount 되며 IPC 호출 담당.
+      setPendingWithdrawalMakeup(pending)
     } finally {
       setWithdrawing(false)
     }
+  }
+
+  const handleWithdrawalMakeupCompleted = () => {
+    setPendingWithdrawalMakeup(null)
+    qc.invalidateQueries({ queryKey: ['students'] })
+    if (student !== undefined) {
+      qc.invalidateQueries({
+        queryKey: ['students', 'detail', student.id],
+      })
+      qc.invalidateQueries({ queryKey: ['attendance-grid'] })
+    }
+    router.push('/students')
   }
 
   const handleReinstateConfirmed = async () => {
@@ -153,7 +178,7 @@ function StudentDetailContent() {
                           <br />
                           기본값은 오늘이며 과거/미래 날짜도 선택 가능합니다.
                           <br />
-                          취소 시 보강 잔여 처리는 Phase 3 에서 별도 제공됩니다.
+                          잔여 보강이 있는 원생은 다음 단계에서 처리 방식을 선택할 수 있습니다 (PRD §4.5.9).
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <div className="px-1 py-2">
@@ -231,6 +256,15 @@ function StudentDetailContent() {
           </>
         )}
       </div>
+      {pendingWithdrawalMakeup !== null && student !== undefined && (
+        <WithdrawalMakeupDialog
+          studentName={student.name}
+          withdrawDate={withdrawDate}
+          pending={pendingWithdrawalMakeup}
+          onCompleted={handleWithdrawalMakeupCompleted}
+          onCancel={() => setPendingWithdrawalMakeup(null)}
+        />
+      )}
     </AppShell>
   )
 }

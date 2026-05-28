@@ -32,7 +32,7 @@
 //! 자체는 fail-soft — 무결성/백업 실패는 startup 실패가 아니라 결과 필드(`integrity_ok=false`,
 //! `backup_available=false`) 로 보고하여 개발 빌드에서도 메인 진입을 허용한다.
 
-use crate::commands::{audit, auth, backup, db, integrity, lock, paths};
+use crate::commands::{audit, auth, backup, db, expiration, integrity, lock, paths};
 use crate::error::AppError;
 use serde::Serialize;
 use std::sync::OnceLock;
@@ -68,6 +68,10 @@ pub struct StartupResult {
     pub lock_force_used: bool,
     pub integrity_ok: bool,
     pub audit_cleaned: u64,
+    /// Sprint 10 T4 (PI-05/PI-09): 앱 시작 직후 소멸 자동 전이 결과.
+    /// `transitioned_count > 0` 시 프론트엔드에서 토스트 표시.
+    /// ExpirationReport 내부는 camelCase, 본 필드명은 snake_case (기존 StartupResult 패턴 유지).
+    pub expiration_report: expiration::ExpirationReport,
 }
 
 /// 백그라운드 task 핸들 묶음 — `OnceLock` 으로 1회 spawn 보장.
@@ -145,7 +149,25 @@ pub async fn app_startup_sequence(
         });
     let audit_cleanup_ms = audit_start.elapsed().as_millis();
 
-    // 5. 백그라운드 task spawn — 재진입 시 중복 spawn 방지.
+    // 5. Sprint 10 T4 (PI-05): 소멸 자동 전이 — 앱 시작 트리거.
+    //    db::initialize 완료 후 pool 사용 가능. fail-soft — 실패해도 startup 자체는 성공.
+    let expiration_report = match expiration::expire_overdue_absences_impl(
+        db::pool().expect("pool initialized above"),
+        None,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[startup] 소멸 자동 전이 실패 (무시): {}", e);
+            expiration::ExpirationReport {
+                transitioned_count: 0,
+                details: vec![],
+            }
+        }
+    };
+
+    // 6. 백그라운드 task spawn — 재진입 시 중복 spawn 방지.
     spawn_background_tasks();
 
     let elapsed_ms = started.elapsed().as_millis();
@@ -170,6 +192,7 @@ pub async fn app_startup_sequence(
         lock_force_used: force_lock,
         integrity_ok,
         audit_cleaned,
+        expiration_report,
     })
 }
 
@@ -252,6 +275,10 @@ mod tests {
             lock_force_used: false,
             integrity_ok: true,
             audit_cleaned: 0,
+            expiration_report: expiration::ExpirationReport {
+                transitioned_count: 0,
+                details: vec![],
+            },
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains(r#""elapsed_ms":1234"#));
@@ -276,6 +303,10 @@ mod tests {
             lock_force_used: false,
             integrity_ok: true,
             audit_cleaned: 0,
+            expiration_report: expiration::ExpirationReport {
+                transitioned_count: 0,
+                details: vec![],
+            },
         };
         let sum = r.parallel_phase_ms + r.password_verify_ms + r.db_init_ms + r.audit_cleanup_ms;
         assert!(sum <= r.elapsed_ms, "breakdown 합 ≤ 총 elapsed");

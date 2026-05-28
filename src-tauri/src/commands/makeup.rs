@@ -1,14 +1,15 @@
 //! 보강 도메인 IPC (Sprint 9~10, PRD §4.5.4~6, §4.5.10).
 //!
-//! Phase 3 — 보강 등록(개별/일괄) + 매칭 + 취소/미등원 + 결석 이력.
+//! Phase 3 — 보강 등록(개별) + 매칭 + 취소 + 결석 이력.
 //! 본 모듈은 attendance.rs 와 별개 도메인 — V107 FK
 //! (`regular_attendances.makeup_attendance_id → makeup_attendances.id`) 를 통해 정규 출결과
-//! 연결되지만, 보강 등록/취소/미등원 트랜잭션은 본 모듈이 담당한다.
+//! 연결되지만, 보강 등록/취소 트랜잭션은 본 모듈이 담당한다.
 //!
-//! ## Sprint 9 진입점
-//! - T2 (본 세션): `get_pending_absences`, `get_makeup_eligible_dates` IPC 2종
-//! - T3: `create_makeup_with_absences` (트랜잭션 매칭)
-//! - T4: `cancel_makeup`, `mark_makeup_absent`, `batch_create_makeups`
+//! ## IPC 목록
+//! - `get_pending_absences`, `get_makeup_eligible_dates` (Sprint 9 T2)
+//! - `create_makeup_with_absences` 트랜잭션 매칭 (Sprint 9 T3)
+//! - `cancel_makeup` (Sprint 9 T4)
+//! - `get_absence_history` (Sprint 9 T8)
 //!
 //! ## PI-02 결정 (사용자, 2026-05-24)
 //! - 옵션 A 일 단위 매칭 — 보강 1일 = 결석 N일 충당. 시간값 비교 없음.
@@ -66,42 +67,6 @@ pub struct MakeupResult {
     pub student_id: i64,
     pub event_date: String,
     pub matched_count: usize,
-}
-
-/// 보강데이 일괄 등록 — 학생 1명분 입력 (T4 `batch_create_makeups`).
-///
-/// 학생별로 `class_minutes` 다를 수 있어 entry 에 포함 (보강데이라도 학생마다 정규
-/// 수업 시간 상이). `event_date` 는 batch 전체 공통.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchMakeupEntry {
-    pub student_id: i64,
-    pub class_minutes: i64,
-    pub absence_ids: Vec<i64>,
-}
-
-/// 보강데이 일괄 등록 페이로드.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchCreateMakeupsPayload {
-    pub event_date: String,
-    pub entries: Vec<BatchMakeupEntry>,
-}
-
-/// 일괄 등록 실패 1건 — 학생 id + 실패 사유 (사용자 친화 메시지).
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchFailure {
-    pub student_id: i64,
-    pub reason: String,
-}
-
-/// 일괄 등록 결과 — 학생별 독립 트랜잭션으로 부분 성공 처리.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchResult {
-    pub succeeded: Vec<MakeupResult>,
-    pub failed: Vec<BatchFailure>,
 }
 
 /// 결석 이력 1건 (T8) — `regular_attendances WHERE status IN ('absent', 'makeup_done', 'makeup_expired')`
@@ -591,138 +556,6 @@ async fn cancel_makeup_impl(pool: &SqlitePool, makeup_id: i64) -> Result<usize, 
         .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
 
     Ok(revert_res.rows_affected() as usize)
-}
-
-// ────────────────────────────────────────────────────────────────────
-// IPC: 보강 미등원 (Sprint 9 T4)
-// ────────────────────────────────────────────────────────────────────
-
-/// 보강 약속에 학생이 등원하지 않은 경우 — 보강 상태를 `makeup_absent` 로 마킹하고
-/// 연결된 결석은 `absent` 로 환원 (결석 상태 유지, 새 결석 미생성).
-///
-/// 보강 행은 보존 (DELETE 안 함) — 미등원 이력 추적 + 차후 분석.
-/// 연결된 결석은 다음 보강 매칭 대상으로 재진입 가능 (`status='absent'` + `makeup_attendance_id=NULL`).
-#[tauri::command]
-pub async fn mark_makeup_absent(makeup_id: i64) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
-    let reverted = mark_makeup_absent_impl(pool, makeup_id).await?;
-    audit::try_record(
-        AuditEventType::MakeupAbsent,
-        Some(&makeup_id.to_string()),
-        Some(&format!(r#"{{"revertedAbsences":{}}}"#, reverted)),
-    )
-    .await;
-    Ok(())
-}
-
-async fn mark_makeup_absent_impl(pool: &SqlitePool, makeup_id: i64) -> Result<usize, String> {
-    // 보강 존재 + 현재 상태 확인 — 이미 makeup_absent 이면 멱등 처리.
-    let row = sqlx::query("SELECT status FROM makeup_attendances WHERE id = ?")
-        .bind(makeup_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("보강 조회 실패: {}", e))?
-        .ok_or_else(|| format!("보강 id={} 를 찾을 수 없습니다.", makeup_id))?;
-    let status: String = row.try_get("status").map_err(|e| e.to_string())?;
-    if status == "makeup_absent" {
-        return Ok(0); // 이미 미등원 처리됨 — 멱등.
-    }
-
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
-
-    sqlx::query(
-        "UPDATE makeup_attendances SET status = 'makeup_absent', \
-             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-         WHERE id = ?",
-    )
-    .bind(makeup_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| format!("보강 미등원 마킹 실패: {}", e))?;
-
-    let revert_res = sqlx::query(
-        "UPDATE regular_attendances \
-         SET makeup_attendance_id = NULL, status = 'absent', \
-             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-         WHERE makeup_attendance_id = ?",
-    )
-    .bind(makeup_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| format!("결석 환원 실패: {}", e))?;
-
-    tx.commit()
-        .await
-        .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
-
-    Ok(revert_res.rows_affected() as usize)
-}
-
-// ────────────────────────────────────────────────────────────────────
-// IPC: 보강데이 일괄 등록 (Sprint 9 T4)
-// ────────────────────────────────────────────────────────────────────
-
-/// 보강데이 — 같은 일자에 여러 학생을 일괄 보강 등록.
-///
-/// **학생별 독립 트랜잭션** — 한 학생 실패해도 다른 학생은 계속 진행 (부분 성공 처리).
-/// 단일 트랜잭션이 아닌 이유: PRD §4.5.5 "실패 원생은 건너뛰고 성공/실패 결과 반환".
-/// 한 학생 실패 (예: 정규 수업 요일) 가 다른 학생들의 정상 등록을 차단하면 UX 손상.
-///
-/// 학생별로 `create_makeup_with_absences_impl` 재사용 — 검증 4종 동일 적용.
-/// 실패 시 사용자 친화 메시지를 `BatchFailure.reason` 에 누적.
-#[tauri::command]
-pub async fn batch_create_makeups(
-    payload: BatchCreateMakeupsPayload,
-) -> Result<BatchResult, String> {
-    let pool = db::pool().map_err(String::from)?;
-    batch_create_makeups_impl(pool, &payload).await
-}
-
-async fn batch_create_makeups_impl(
-    pool: &SqlitePool,
-    payload: &BatchCreateMakeupsPayload,
-) -> Result<BatchResult, String> {
-    if payload.entries.is_empty() {
-        return Err("보강 등록할 원생을 1명 이상 선택해야 합니다.".to_string());
-    }
-
-    let mut succeeded: Vec<MakeupResult> = Vec::with_capacity(payload.entries.len());
-    let mut failed: Vec<BatchFailure> = Vec::new();
-
-    for entry in &payload.entries {
-        let single_payload = CreateMakeupPayload {
-            student_id: entry.student_id,
-            event_date: payload.event_date.clone(),
-            class_minutes: entry.class_minutes,
-            absence_ids: entry.absence_ids.clone(),
-        };
-        match create_makeup_with_absences_impl(pool, &single_payload).await {
-            Ok(result) => {
-                // 학생별 성공 시 audit 기록 — 일괄도 학생별 fire-and-forget.
-                audit::try_record(
-                    AuditEventType::MakeupCreated,
-                    Some(&result.makeup_id.to_string()),
-                    Some(&format!(
-                        r#"{{"studentId":{},"eventDate":"{}","matchedCount":{},"batch":true}}"#,
-                        result.student_id, result.event_date, result.matched_count
-                    )),
-                )
-                .await;
-                succeeded.push(result);
-            }
-            Err(reason) => {
-                failed.push(BatchFailure {
-                    student_id: entry.student_id,
-                    reason,
-                });
-            }
-        }
-    }
-
-    Ok(BatchResult { succeeded, failed })
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1434,173 +1267,6 @@ mod tests {
         assert!(err.contains("찾을 수 없습니다"));
     }
 
-    // ─────────────── T4: mark_makeup_absent ───────────────
-
-    /// 보강 등록 후 미등원 → 보강 status='makeup_absent' + 결석 absent 환원.
-    /// 결석은 다음 보강 매칭 대상으로 재진입 가능 (makeup_attendance_id=NULL).
-    #[tokio::test]
-    async fn mark_makeup_absent_preserves_makeup_but_reverts_absence() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
-        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
-        let r =
-            create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", absences.clone()))
-                .await
-                .expect("등록");
-
-        mark_makeup_absent_impl(&pool, r.makeup_id)
-            .await
-            .expect("미등원 처리");
-
-        // 보강 행 보존 + status='makeup_absent'
-        let m_status: (String,) =
-            sqlx::query_as("SELECT status FROM makeup_attendances WHERE id=?")
-                .bind(r.makeup_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(m_status.0, "makeup_absent");
-
-        // 결석은 absent 환원 + 매칭 NULL (재매칭 가능)
-        let a: (String, Option<i64>) = sqlx::query_as(
-            "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id=?",
-        )
-        .bind(absences[0])
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(a.0, "absent");
-        assert_eq!(a.1, None);
-    }
-
-    /// 이미 makeup_absent 상태인 보강에 재호출 — 멱등 (변경 없음, 에러 없음).
-    #[tokio::test]
-    async fn mark_makeup_absent_is_idempotent() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
-        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
-        let r = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", absences))
-            .await
-            .expect("등록");
-
-        mark_makeup_absent_impl(&pool, r.makeup_id).await.expect("1st");
-        let second = mark_makeup_absent_impl(&pool, r.makeup_id)
-            .await
-            .expect("2nd 멱등");
-        assert_eq!(second, 0, "이미 미등원이면 환원할 결석 없음");
-    }
-
-    // ─────────────── T4: batch_create_makeups ───────────────
-
-    /// 다중 학생 일괄 보강 — 전원 성공 시 succeeded N건, failed 0건.
-    #[tokio::test]
-    async fn batch_create_all_succeed() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let (s1, a1) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
-        // 두 번째 학생은 별도 fixture
-        let s2 = seed_student(
-            &pool,
-            "S002",
-            "2026-01-01",
-            None,
-            &[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)],
-        )
-        .await;
-        let a2 = insert_absence(&pool, s2, "2026-06-16", "2026-06", 90, Some("2026-07")).await;
-        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
-
-        let result = batch_create_makeups_impl(
-            &pool,
-            &BatchCreateMakeupsPayload {
-                event_date: "2026-06-13".to_string(),
-                entries: vec![
-                    BatchMakeupEntry {
-                        student_id: s1,
-                        class_minutes: 60,
-                        absence_ids: a1,
-                    },
-                    BatchMakeupEntry {
-                        student_id: s2,
-                        class_minutes: 90,
-                        absence_ids: vec![a2],
-                    },
-                ],
-            },
-        )
-        .await
-        .expect("batch");
-
-        assert_eq!(result.succeeded.len(), 2);
-        assert_eq!(result.failed.len(), 0);
-    }
-
-    /// 일부 학생 실패 — succeeded/failed 분리 + 성공 학생만 makeup_done.
-    /// 시나리오: s1 정상, s2 의 absence_ids 무효 (미존재).
-    #[tokio::test]
-    async fn batch_create_partial_failure() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let (s1, a1) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
-        let s2 = seed_student(
-            &pool,
-            "S002",
-            "2026-01-01",
-            None,
-            &[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)],
-        )
-        .await;
-        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
-
-        let result = batch_create_makeups_impl(
-            &pool,
-            &BatchCreateMakeupsPayload {
-                event_date: "2026-06-13".to_string(),
-                entries: vec![
-                    BatchMakeupEntry {
-                        student_id: s1,
-                        class_minutes: 60,
-                        absence_ids: a1.clone(),
-                    },
-                    BatchMakeupEntry {
-                        student_id: s2,
-                        class_minutes: 60,
-                        absence_ids: vec![99999], // 미존재
-                    },
-                ],
-            },
-        )
-        .await
-        .expect("batch");
-
-        assert_eq!(result.succeeded.len(), 1);
-        assert_eq!(result.failed.len(), 1);
-        assert_eq!(result.failed[0].student_id, s2);
-        assert!(result.failed[0].reason.contains("찾을 수 없습니다"));
-
-        // s1 의 결석은 makeup_done 으로 정상 처리됨 — s2 실패가 s1 에 영향 없음.
-        let row: (String,) = sqlx::query_as("SELECT status FROM regular_attendances WHERE id=?")
-            .bind(a1[0])
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(row.0, "makeup_done");
-    }
-
-    /// 빈 entries 거부.
-    #[tokio::test]
-    async fn batch_create_rejects_empty_entries() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let err = batch_create_makeups_impl(
-            &pool,
-            &BatchCreateMakeupsPayload {
-                event_date: "2026-06-13".to_string(),
-                entries: vec![],
-            },
-        )
-        .await
-        .expect_err("빈 entries 거부");
-        assert!(err.contains("1명 이상"));
-    }
-
     // ─────────────── T8: get_absence_history ───────────────
 
     /// 결석 이력 — absent/makeup_done/makeup_expired 모두 포함, 출석은 제외.
@@ -1688,5 +1354,40 @@ mod tests {
         assert_eq!(h1[0].event_date, "2026-06-15");
         assert_eq!(h2.len(), 1);
         assert_eq!(h2[0].event_date, "2026-06-16");
+    }
+
+    // ─────────────── Sprint 10 T7 — 선행 수업 (PRD §4.2.3) ───────────────
+
+    /// 선행 수업 시나리오 — 미래 결석(6/20)을 현재 보강(6/13)이 충당.
+    /// 백엔드는 보강일 < 결석일 순서 검증을 하지 않으므로 PRD §4.2.3 시나리오 자연스럽게 지원.
+    /// UI 필터(MakeupRegisterDialog::filteredPending) 는 별도 — UI 차원의 제약.
+    #[tokio::test]
+    async fn create_makeup_supports_future_absence_for_advance_class() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        // 미래 일자 6/20 에 결석 사전 등록 (학부모 통보로 셀 토글한 상태 가정).
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-20"]).await;
+        // 보강 일자 6/13 (토요일, 공휴수업일 코드 등록)
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        // 보강일(6/13) < 결석일(6/20) — 선행 수업 시나리오.
+        let result = create_makeup_with_absences_impl(
+            &pool,
+            &payload(sid, "2026-06-13", absences.clone()),
+        )
+        .await
+        .expect("선행 수업 보강 등록 성공");
+
+        assert_eq!(result.matched_count, 1);
+
+        // 미래 결석이 makeup_done 으로 전이됨 — 매칭된 보강 id 도 연결.
+        let (status, mid): (String, Option<i64>) = sqlx::query_as(
+            "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id = ?",
+        )
+        .bind(absences[0])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "makeup_done");
+        assert_eq!(mid, Some(result.makeup_id));
     }
 }

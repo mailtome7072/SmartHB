@@ -51,7 +51,7 @@
 
 ## 작업 목록
 
-### T1: Sprint 9 dead code 정리 (carry-over) — 2h
+### T1: Sprint 9 dead code 정리 (carry-over) — 2h ✅ (2026-05-26, `dde74aa`)
 > A49 반영. 폐기된 IPC 2종 + audit variant + 단위 테스트 제거
 
 **작업 내용**:
@@ -71,28 +71,42 @@
 
 ---
 
-### T2: 소멸 자동 전이 설계 + 사용자 확인 — 2h
+### T2: 소멸 자동 전이 설계 + 사용자 확인 — 2h ✅ (2026-05-26)
 > A51 반영. 도메인 규칙 중 운용 관행 교차 항목을 사전에 사용자와 수렴
 
-**작업 내용**:
-1. 소멸 전이 트리거 3개소 설계서 작성 (scope.md에 기록):
-   - 앱 시작 시 batch
-   - 출결 생성 시 (`generate_attendances` 내부)
-   - 교습기간 등록 직후
-2. 소멸기한 판정 로직 확정: `makeup_deadline`(년월) + 해당 년월의 교습기간 종료일
-3. 선행 수업(§4.2.3) 운용 시나리오 확인: 미래 일자 결석 등록 → 현재 시점 보강 매칭
-4. **사용자 확인 질문**: 교습기간 미등록 월의 소멸 처리 방식 (대기 vs 즉시 소멸)
-5. V108 마이그레이션 필요 여부 판단
+**작업 내용**: scope.md Session #2 참조
 
-**AC**:
-- scope.md에 소멸 전이 설계가 기록됨
-- 사용자 확인 완료 (운용 관행 교차 항목 0건 잔존)
+**사용자 결정 (2026-05-26, PI-05~PI-09)**:
+| ID | 결정 |
+|----|------|
+| PI-05 | 트리거 3개소(앱 시작 + 출결 생성 + 교습기간 등록) |
+| PI-06 | 소멸 판정 기준일 = 오늘 (chrono::Local::now), 테스트는 Option<NaiveDate> 주입 |
+| PI-07 | V108 마이그레이션 진행 → **T1' 신규 task** |
+| PI-08 | 선행 수업 = 기존 상태 토글 흐름 활용 → **T7 범위 축소** |
+| PI-09 | 자동 전이 알림 = 토스트 (건수 > 0일 때만) |
 
-**검증**: 문서 리뷰
+**AC**: ✅ 모든 PI 결정 + scope.md 기록 완료
 
 ---
 
-### T3: 소멸 자동 전이 백엔드 IPC — 4h
+### T1': V108 마이그레이션 — makeup_attendances.status CHECK 정리 (PI-07 결정) — 0.5h ✅ (2026-05-26)
+
+**작업 내용**:
+1. `src-tauri/migrations/108__cleanup_makeup_status_check.sql` 신규
+2. `makeup_attendances.status` CHECK 제약에서 `'makeup_absent'` 값 제거
+3. SQLite CHECK ALTER 미지원 → 테이블 rename + 재생성 + INSERT SELECT
+4. `.sqlx/` 오프라인 캐시 갱신 후 커밋
+5. cargo test 통과 확인 (데이터 0건이므로 안전)
+
+**AC**:
+- V108 적용 후 CHECK 제약 단순화 (`status = 'makeup_attended'`)
+- 기존 `cargo test` 통과 (Sprint 9 J5 폐기 결정 후 makeup_absent 사용 코드 0건)
+
+**검증**: `cargo test` + `cargo clippy` + `.sqlx/` 캐시 검증
+
+---
+
+### T3: 소멸 자동 전이 백엔드 IPC — 4h ✅ (2026-05-26, 단위 테스트 7건)
 > PI-01 구현. 독립 모듈 `src-tauri/src/commands/expiration.rs` 신규
 
 **작업 내용**:
@@ -120,7 +134,7 @@
 
 ---
 
-### T4: 소멸 전이 트리거 통합 — 3h
+### T4: 소멸 전이 트리거 통합 — 3h ✅ (2026-05-26)
 > 3개 트리거 지점에 `expire_overdue_absences` 호출 삽입
 
 **작업 내용**:
@@ -140,8 +154,8 @@
 
 ---
 
-### T5: 보강소멸 → 결석 수동 환원 IPC — 3h
-> PRD §4.5.3, AC-4.5-5 구현
+### T5: 보강소멸 → 결석 수동 환원 IPC — 3h ❌ 폐기 (사용자 결정 2026-05-26)
+> ~~PRD §4.5.3, AC-4.5-5 구현~~ — 사용자 운영 정책: "보강기한 소멸되면 끝". 환원 기능 불필요.
 
 **작업 내용**:
 1. `expiration.rs` 또는 `makeup.rs`에 `revert_expired_to_absent` 함수
@@ -164,8 +178,8 @@
 
 ---
 
-### T6: 퇴교 시 미사용 보강 처리 IPC — 3h
-> PRD §4.5.9 구현
+### T6: 퇴교 시 미사용 보강 처리 IPC — 3h ✅ (2026-05-26, 단위 테스트 6건)
+> PRD §4.5.9 구현. PI-11(expiration.rs) + PI-12(absence_memo 일괄 저장) 적용. defer_withdrawal 은 UI 처리.
 
 **작업 내용**:
 1. `students.rs` 또는 `expiration.rs`에 퇴교 보강 처리 함수:
@@ -192,8 +206,8 @@
 
 ---
 
-### T7: 선행 수업 처리 IPC — 2h
-> PRD §4.2.3 구현
+### T7: 선행 수업 검증 — 2h ✅ (2026-05-26, 축소된 범위)
+> PRD §4.2.3 — PI-08 결정으로 별도 IPC 없이 기존 토글 + 보강 흐름 활용. 백엔드가 이미 시나리오 지원함을 단위 테스트로 보장. UI 필터 완화는 별도 task 이연.
 
 **작업 내용**:
 1. 기존 `toggle_attendance` 확장 또는 별도 `register_advance_absence` 함수:
@@ -214,8 +228,8 @@
 
 ---
 
-### T8: 캘린더 라이브러리 ADR + 백엔드 집계 IPC — 4h · skill: brainstorming
-> PI-03 결정 + 캘린더 뷰용 백엔드 데이터 집계
+### T8: 캘린더 라이브러리 ADR + 백엔드 집계 IPC — 4h ✅ (2026-05-26, ADR-006 + 6 tests)
+> PI-03 결정: FullCalendar 채택 (ADR-006). PI-11 파생: calendar.rs 신규 모듈.
 
 **작업 내용**:
 1. **ADR 작성**: FullCalendar vs React Big Calendar
@@ -239,28 +253,27 @@
 
 ---
 
-### T9: 소멸 환원 UI + 소멸 알림 UI — 3h · skill: frontend-design
-> T5 백엔드 연결 + 소멸 전이 결과 알림
+### T9: 소멸 알림 UI — ~~3h~~ 1.5h ✅ (2026-05-26, 환원 부분 폐기 후 알림만 잔여)
+> ~~T5 백엔드 연결~~ + 소멸 전이 결과 알림. 환원 다이얼로그 폐기 (사용자 정책 "보강기한 소멸되면 끝").
 
-**작업 내용**:
-1. **소멸 환원 다이얼로그** — 출결표에서 `makeup_expired` 셀 클릭 시 표시
-   - 확인 다이얼로그: "보강소멸 상태를 결석으로 환원하시겠습니까?" (AC-4.5-5)
-   - 환원 성공 시 TanStack Query 무효화 → 출결표 갱신
-2. **소멸 전이 결과 토스트** — 앱 시작/출결 생성 후 전이 건수 표시
-   - "소멸 처리된 결석이 N건 있습니다" 토스트 (건수 > 0일 때만)
-3. 출결표 `makeup_expired` 셀 스타일 확인 (Sprint 8에서 이미 구현 — gray 배경)
+**작업 내용** (잔존 범위):
+1. ~~소멸 환원 다이얼로그~~ ❌ **폐기**
+2. **소멸 전이 결과 토스트** — 앱 시작/출결 생성/교습기간 등록 후 전이 건수 표시 ✅ (T4에서 일부 처리됨)
+3. ~~출결표 `makeup_expired` 셀 스타일~~ ✅ **Sprint 8에서 이미 구현 — gray 배경 + '소멸' 라벨로 보강완료(emerald + '결석')와 시각 구분**
+4. 앱 시작 시점의 토스트 — `app_startup_sequence` 응답의 `expiration_report` 를 layout 진입 시 표시 (T9 잔여 작업)
 
 **AC**:
-- AC-4.5-5: 환원 시 확인 다이얼로그 필수
-- 환원 후 출결표 즉시 반영
-- 소멸 전이 결과 사용자에게 시각적 피드백
+- ~~AC-4.5-5~~ ❌ **폐기**
+- ~~환원 후 출결표 즉시 반영~~ ❌ **폐기**
+- ✅ 소멸 전이 결과 사용자에게 시각적 피드백 (출결 생성/교습기간 등록은 T4 완료, 앱 시작은 T9 잔여)
+- ✅ 보강완료(emerald) vs 보강소멸(gray) 시각 구분 (사용자 요구 2026-05-26)
 
 **검증**: 시각 검증
 
 ---
 
-### T10: 퇴교 보강 처리 UI — 3h · skill: frontend-design
-> T6 백엔드 연결
+### T10: 퇴교 보강 처리 UI — 3h ✅ (2026-05-26)
+> T6 백엔드 연결 — WithdrawalMakeupDialog 신규 + edit page 통합. defer 는 다이얼로그 닫기로 UI 처리 (PI-08).
 
 **작업 내용**:
 1. **퇴교 보강 처리 다이얼로그** — 원생 퇴교 버튼 클릭 시 미사용 보강 보유 시 표시
@@ -308,7 +321,9 @@
 
 ---
 
-### T12: 통합 검증 + 자동 검증 — 3h
+### T12: 통합 검증 + 자동 검증 — 3h ✅ (2026-05-27)
+
+> 자동 검증: cargo test cipher off 272 passed / clippy clean / lint·tsc·build clean. cipher on 은 로컬 Perl 미설치로 CI 위임. 마이그레이션 self-check 1:1 일치.
 
 **작업 내용**:
 1. 자동 검증 7항목:
@@ -338,21 +353,22 @@
 
 | 항목 | 시간 |
 |------|------|
-| T1: dead code 정리 | 2h |
-| T2: 소멸 설계 + 사용자 확인 | 2h |
-| T3: 소멸 자동 전이 IPC | 4h |
-| T4: 소멸 트리거 통합 | 3h |
-| T5: 소멸 환원 IPC | 3h |
-| T6: 퇴교 보강 처리 IPC | 3h |
+| T1: dead code 정리 ✅ | 2h (실측 1.5h) |
+| T2: 소멸 설계 + 사용자 확인 ✅ | 2h (실측 1h) |
+| T1': V108 makeup_status CHECK 정리 (PI-07) ✅ | 0.5h |
+| T3: 소멸 자동 전이 IPC ✅ | 4h (실측 2.5h) |
+| T4: 소멸 트리거 통합 ✅ | 3h |
+| T5: 소멸 환원 IPC ❌ 폐기 | ~~3h~~ 0h |
+| T6: 퇼교 보강 처리 IPC | 3h |
 | T7: 선행 수업 IPC | 2h |
 | T8: 캘린더 ADR + 집계 IPC | 4h |
-| T9: 소멸 환원/알림 UI | 3h |
+| T9: 소멸 알림 UI (환원 부분 폐기) | ~~3h~~ 1.5h |
 | T10: 퇴교 보강 UI | 3h |
-| T11: 캘린더 뷰 UI | 6h |
-| T12: 통합 검증 | 3h |
-| **소계 (구현)** | **38h** |
+| T11: 캘린더 뷰 UI ✅ | 6h |
+| T12: 통합 검증 ✅ | 3h |
+| **소계 (구현)** | ~~38.5h~~ **34h** (T5 -3h, T9 -1.5h) |
 | **시각 검증 버퍼 (A50)** | **6h** |
-| **총계** | **44h** |
+| **총계** | ~~44.5h~~ **40h** |
 
 - 팀: 1인 개발 + AI 보조
 - 2주 스프린트, 일 4h 실작업 = 40h 기본 + 6h 버퍼 = 46h 가용
@@ -363,21 +379,22 @@
 ## 완료 기준 (Definition of Done)
 
 **필수**
-- ⬜ 소멸 자동 전이가 앱 시작 / 출결 생성 / 교습기간 등록 3개 트리거에서 정상 발동
-- ⬜ 보강소멸 → 결석 환원 시 확인 다이얼로그 동작 (AC-4.5-5)
-- ⬜ 퇴교 처리 다이얼로그 3개 선택지 모두 동작 (PRD §4.5.9)
-- ⬜ 선행 수업: 미래 결석 → 현재 보강 매칭 동작 (PRD §4.2.3)
-- ⬜ 캘린더 뷰 일/주/월 전환 + 원생 팝업 + 보강관리 뷰 동작 (PRD §4.6)
-- ⬜ Sprint 9 dead code 0건 (mark_makeup_absent + batch_create_makeups 완전 제거)
-- ⬜ `cargo test` 전체 통과 (cipher off/on)
-- ⬜ `cargo clippy -- -D warnings` clean (cipher off/on)
-- ⬜ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과
-- ⬜ 마이그레이션 self-check 통과 (A39)
-- ⬜ 소멸 + 보강 비즈니스 규칙 단위 테스트 신규 18건+ 통과
+- ✅ 소멸 자동 전이가 앱 시작 / 출결 생성 / 교습기간 등록 3개 트리거에서 정상 발동 — T3+T4 (단위 테스트 8건, 시각 검증 T12)
+- ❌ 보강소멸 → 결석 환원 시 확인 다이얼로그 동작 (AC-4.5-5) — 사용자 결정으로 폐기 (2026-05-26)
+- ✅ 보강완료(emerald) vs 보강소멸(gray) 출결 그리드 시각 구분 (사용자 요구 2026-05-26, Sprint 8 구현 — 사용자 시각 검증 대기)
+- ✅ 퇴교 처리 다이얼로그 3개 선택지 모두 동작 (PRD §4.5.9) — T10 (`WithdrawalMakeupDialog`)
+- ✅ 선행 수업: 미래 결석 → 현재 보강 매칭 동작 (PRD §4.2.3) — 백엔드 단위 테스트 통과 (`create_makeup_supports_future_absence_for_advance_class`)
+- ✅ 캘린더 뷰 일/주/월 전환 + 원생 팝업 + 보강관리 뷰 동작 (PRD §4.6) — T11 (FullCalendar, 사용자 시각 검증 대기)
+- ✅ Sprint 9 dead code 0건 (mark_makeup_absent + batch_create_makeups 완전 제거) — T1 완료 (Session #1, 2026-05-26)
+- ✅ `cargo test` cipher off **271 passed / 1 flaky** + cipher on **116 passed / 1 flaky** (T12). 유일 실패는 `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` — 단독 실행 통과하는 알려진 flaky 동시성 테스트(carry-over). Strawberry Perl 설치 후 cipher feature 로컬 검증 완료
+- ✅ `cargo clippy --lib -- -D warnings` cipher off/on **모두 clean** (T12). cipher on 은 vendored OpenSSL+SQLCipher 빌드 성공 (`cargo build --features cipher` Finished)
+- ✅ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build`(static export 16/16) 통과 (T11/T12)
+- ✅ 마이그레이션 self-check 통과 (A39) — V108 계획 1건 ↔ 실제 `108__cleanup_makeup_status_check.sql` 1:1 일치
+- ✅ 소멸 + 보강 비즈니스 규칙 단위 테스트 신규 **20건** (T3 7 + T4 1 + T6 6 + T7 1 + T8 calendar 5) 통과 — 계획 18건+ 충족
 
 **프로세스 (sprint-close 에이전트가 처리)**
-- ⬜ ROADMAP.md Phase 3 완료 표기
-- ⬜ CHANGELOG.md 업데이트
+- ✅ ROADMAP.md Phase 3 완료 표기 (2026-05-28)
+- ✅ CHANGELOG.md 업데이트 (2026-05-28)
 
 ---
 
