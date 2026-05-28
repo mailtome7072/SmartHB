@@ -1,16 +1,16 @@
 ---
 name: sprint-status
-description: 현재 스프린트 번호와 Phase 위치 추적. Sprint 8 = Phase 2 마지막 마일스톤 (출결 관리).
+description: 현재 스프린트 번호와 Phase 위치 추적. Sprint 11 = Phase 4 첫 마일스톤 (청구+수납).
 metadata:
   type: project
 ---
 
-현재 스프린트: **Sprint 8** (출결 관리 + Sprint 7 carry-over 흡수)
-Phase 위치: Phase 2 마지막 마일스톤
-다음 스프린트: Sprint 9 (Phase 3: 보강 등록 + 매칭)
+현재 스프린트: **Sprint 11** (청구 + 수납 관리, 계획 수립 완료, 구현 대기)
+Phase 위치: Phase 4 (청구+수납+공지문) 첫 번째 스프린트
+다음 스프린트: Sprint 12 (공지문 이미지 + 데이터 가져오기)
 
-**Why:** Sprint 8 완료 = Phase 2 완료. Phase 3/4/5 모두 Phase 2 완료가 선행 조건.
-**How to apply:** Sprint 8 계획은 `docs/sprint/sprint8.md`. 다음 계획 수립 시 Sprint 9 번호 사용.
+**Why:** Phase 3 완료 (2026-05-28, v0.5.0). Phase 4 진입. 마일스톤 M5(청구 완성)는 Sprint 12 기준.
+**How to apply:** Sprint 11 계획은 `docs/sprint/sprint11.md`. 다음 계획 수립 시 Sprint 12 번호 사용.
 
-ROADMAP.md 기준 완료 스프린트: Sprint 1~7 (7/15)
-전체 진행률: 47% -> Sprint 8 완료 시 53%
+ROADMAP.md 기준 완료 스프린트: Sprint 1~10 (10/17)
+전체 진행률: 65%
