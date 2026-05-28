@@ -133,6 +133,14 @@ h6 { font-size: 18px; }
   position: relative;
 }
 
+/* 월 보기 셀 hover — 진한 테두리(outline)로 강조. */
+.fc-dayGridMonth-view .fc-daygrid-day:hover {
+  outline: 2px solid #334155;
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
+
 /* 오늘 셀 — 연한 민트 (사용자 지정 톤). 결합 선택자로 amber/gray 보다 우선. */
 .fc .shb-has-class.fc-day-today,
 .fc .shb-no-class.fc-day-today,
