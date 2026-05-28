@@ -347,7 +347,7 @@ export default function ClassCalendar({
             const acts = academicByDate.get(ds) ?? []
             return (
               <div className="flex w-full justify-between gap-1">
-                <div className="flex min-w-0 flex-col items-start gap-0.5">
+                <div className="flex min-w-0 flex-col items-start gap-0.5 pt-1">
                   {acts.map((a, i) => (
                     <span
                       key={i}
