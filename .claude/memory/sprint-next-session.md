@@ -48,6 +48,12 @@ sprint-close 완료 후:
 
 > "sprint-review 실행해줘."
 
+### 추가 진행 사항 (Session #15~#16)
+- **V108 FK 787 수정** (`d402bb9`) — 실데이터 자식 FK 위반 → NULL-복원 패턴 (인메모리 테스트로 못 잡았던 결함, 시각 검증으로 발견)
+- **T11 캘린더 UI 7라운드 시각 검증 완료** (2026-05-28) — 모든 follow-up 사용자 승인
+  - 주요 발견: 주/일 원생명 미표시(시작시간 초 중복), 달 이동 튕김(keepPreviousData), 학사일정 3중 중복(dayHeader 통합)
+- 메모리 추가: [[sqlite-migration-fk-rebuild]]
+
 ### sprint-close 인계 사항
 1. ROADMAP.md **Phase 3 완료 표기** (Sprint 9~10 → ✅), 대시보드 진행률 갱신 (전체 17 스프린트 기준 — 현재 헤더가 15로 오기재됨, 정정 권장)
 2. CHANGELOG.md 0.4.x 항목 추가 — 소멸 자동 전이, 퇴교 보강 처리, 수업 관리 캘린더 뷰
