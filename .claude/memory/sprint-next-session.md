@@ -1,66 +1,78 @@
 ---
 name: sprint-next-session
-description: "Sprint 8 Session #9 완료 (T1~T9 자동 검증, 9/9). 다음: 사용자 시각 검증 후 sprint-close 실행"
-metadata: 
+description: "Sprint 10 + hotfix 4건 develop 머지 + 수동 검증 완료. 다음: deploy-prod (develop → main + v0.4.x 태그)"
+metadata:
   node_type: memory
   type: project
-  originSessionId: sprint8-session9-t9
+  originSessionId: post-sprint10-hotfix-ready-to-deploy
 ---
 
-Sprint 8 출결 관리 — **모든 T1~T9 자동 작업 완료**. 사용자 시각 검증 + sprint-close 대기.
+Sprint 10 + 본 세션 hotfix 모두 develop 에 머지·푸시 완료 (2026-05-28). 수동 검증 통과. 다음 단계는 **deploy-prod** — develop → main 머지 + `v0.4.x` 태그 push → GitHub Actions 자동 빌드.
 
-## Sprint 8 진행 현황
+## develop 누적 상태
 
-| Task | 내용 | 상태 |
-|------|------|------|
-| T1 | V106 마이그레이션 | ✅ `f72778b` |
-| T2 | 출결 생성 IPC | ✅ `366f880` |
-| T3 | 출결 조회 + 토글 IPC | ✅ `4efc570` |
-| T4 | 출결표 프론트엔드 UI | ✅ `0a20c18` |
-| T4 follow-up | UX 보강 | ✅ `516758c` |
-| T5 | 보강필요시간/소멸기한 단위 테스트 100% | ✅ `5f2f0fd` |
-| T6 | carry-over High 4건 (R40~R43) | ✅ `14b9bfb` |
-| T7 | carry-over Medium-High (R45) Keychain race | ✅ `e89c3a8` |
-| T8 | carry-over Medium 6항목 | ✅ `069f435` |
-| T9 | 통합 검증 (자동 7항목 통과) | ✅ `cda2745` |
-
-검증 상태: cargo test cipher off **221 passed** / cipher on **133 passed** / clippy clean / pnpm lint/tsc/build clean.
-
-## Session #9 (T9) 검증 결과
-
-| 항목 | 결과 |
+| 커밋 | 내용 |
 |------|------|
-| cargo test cipher off | ✅ 221 passed |
-| cargo test cipher on | ✅ 133 passed |
-| clippy off + on | ✅ clean |
-| pnpm lint | ✅ clean |
-| pnpm tsc --noEmit | ✅ clean |
-| pnpm build | ✅ static export 성공 (out/ 정상) |
+| `4e5ab15` | hotfix: 퇴교 번복 시 absence_memo 도 클리어 |
+| `bfd9552` | hotfix(docs): 퇴교 번복 다이얼로그 안내 갱신 |
+| `e921e6c` | hotfix: 퇴교 번복 결석 환원 + UX 보완 (AlertDialog controlled / date picker blur / z-index) |
+| `2b5f482` | Sprint 10 완료 — Phase 3 완결 (소멸 자동 전이 + 퇴교 보강 + 캘린더 뷰) |
 
-## 다음 액션 (선택)
+## 본 세션 hotfix 요약
 
-### A. 사용자 시각 검증 후 sprint-close
-1. `pnpm tauri:dev` 로 앱 기동 → sprint8.md L353-360 항목별 확인
-2. `docs/sprint/sprint8/scope.md` Session #9 사용자 검증 표에 ✅ 마킹
-3. sprint8.md AC-T9-2/T9-3/T9-4 도 ✅ 마킹
-4. 사용자 명령: `"sprint8 구현 완료했어. sprint-close 실행해줘."`
+### 1. reinstate_student 결석 환원 (`e921e6c`)
+- 퇴교 시 `process_withdrawal_makeup` 으로 `makeup_expired` 전이된 결석 중 `makeup_deadline >= 현재 YYYY-MM` 인 항목만 `absent` 로 환원.
+- 자연 만기 소멸은 T5 폐기 정책에 따라 환원 대상 외.
+- 트랜잭션 안에서 결석 환원 + `withdraw_date NULL` 원자적 적용.
+- audit `student-reinstated` details 에 `revivedAbsenceIds:[...]` 추적.
 
-### B. 시각 검증 생략하고 바로 sprint-close
-시각 검증을 다음 세션으로 미루고 문서화 + PR 생성만 진행.
+### 2. 다이얼로그 UX (`e921e6c`)
+- 퇴교 확인 AlertDialog → controlled 변환. `handleWithdrawConfirmed` 진입 시 `setWithdrawAlertOpen(false)` 명시.
+- `WithdrawalMakeupDialog` z-index `50 → 60` (잔존 backdrop 대비 안전망).
+- 퇴교일자 date input `onChange` 안에서 `e.target.blur()` — Tauri WebView native picker 강제 닫힘.
 
-## sprint-close 후 흐름
+### 3. 안내 메시지 정합 (`bfd9552`)
+- 번복 다이얼로그의 "보강 잔여 처리는 Phase 3 에서 별도 제공됩니다." → 현재 동작 명시로 교체.
 
-1. **sprint-close**: ROADMAP 업데이트 + (PR 단계 생략 정책상 PR 미생성 — 직접 머지) + CHANGELOG / DEPLOY.md 업데이트
-2. **sprint-review**: 코드 리뷰 + 자동 검증 + 회고 작성
-3. **deploy-prod**: develop QA 통과 후 main merge + `v{version}` 태그 push
+### 4. absence_memo 클리어 (`4e5ab15`)
+- `ExternalExpire` 가 일괄 덮어쓴 외부 처리 메모를 환원 시 NULL 클리어. `attendance.rs::toggle_attendance` 의 결석→출석 전환 패턴과 동일.
+- 단위 테스트 강화: memo 클리어 검증.
 
-## 잔여 후속 task (Sprint 8 범위 외)
+## 검증 결과 (집 PC)
+- `cargo test --lib` (cipher off): 274 passed (Sprint 10 273 → hotfix +1)
+- `cargo clippy --lib` clean / `pnpm lint` clean / `pnpm tsc` clean
+- 사용자 수동 검증: 퇴교 → 다이얼로그 → 3선택지 클릭 / 번복 → 결석 환원 / 외부 메모 클리어 모두 통과
+- DB 상태 확인: 홍길동 5/22·5/27 모두 정상 (absent + memo null)
 
-- **R48-b**: salt buffer ZeroizeOnDrop 시그니처 광범위 변경 — `Zeroizing<[u8; SALT_LEN]>` 또는 wrapper struct 도입. 별도 후속 sprint task
-- **반응형 폰트/셀 너비**: `--font-size-body: 18px` + h1~h6 + `AttendanceGrid` 셀(140/62/84px) 모두 px 고정 → 모니터 해상도 비례 조정 안 됨. `clamp()` viewport 또는 html font-size 미디어쿼리 + rem 전환. 폰트 변경 시 셀 너비도 동기 필요. ROADMAP.md Sprint 8 "차기 sprint 이연 후보" 에 기록됨
+## 다음 액션 — deploy-prod
+
+새 대화 또는 같은 세션에서:
+
+> "deploy-prod 실행해줘."
+
+deploy-prod 에이전트가 처리:
+1. `harness-ci-gate` 통과 점검 (CHANGELOG / sprint-review 산출물 / 시크릿 등)
+2. `develop → main` 머지 (단일 개발자 정책, PR 생략 가능)
+3. `v0.4.x` 태그 push → GitHub Actions: Windows/macOS 인스톨러 자동 빌드 + Release 첨부
+4. 배포 후 CV 체크리스트 (헬스체크 / 에러 로그)
+
+배포 후 사용자 작업:
+- `DEPLOY.md` 의 ⬜ 항목 처리 → 완료본 `docs/deploy-history/2026-05-28.md` 로 아카이브
+- 다음 스프린트(Sprint 11) 계획 수립은 별도 진입
+
+## Sprint 11 carry-over 메모
+
+> Sprint 10 sprint-review 에서 발견된 finding 5건은 모두 이연. 발견 사항 상세는 `docs/code-reviews/sprint10.md`.
+
+- F1 (Medium): `build_day_schedules` succ_opt().expect() 패닉 가능 (`src-tauri/src/commands/attendance.rs:655`)
+- F2 (Medium): `generate_impl` expire fail-hard vs startup fail-soft 정책 불일치 (`attendance.rs:155`)
+- F3 (Low): `_year_month` 파라미터 미사용 (`calendar.rs:188`)
+- F4 (Low): 보강관리 N+1 쿼리 (`calendar.rs:215`)
+- F5 (Low): `ClassCalendar` viewType 비동기 업데이트 한 프레임 불일치 (`ClassCalendar.tsx:164`)
+- 사이드 메뉴 '보강 관리' (`/makeups`) disabledHint 정리 — Sprint 10 T11 에서 `/schedules` 탭으로 통합됐으나 메뉴 정의는 옛 가정 그대로 (`src/lib/menu-config.ts:21`)
+- flaky: `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` (병렬 시 간헐 실패)
 
 ## 정책 (재확인)
 
-- **PR 단계 생략** — 단일 개발자, 직접 머지 (`gh pr create` 금지)
-- **`/sprint-dev` 사용자 직접 입력** — 에이전트 호출 금지
-- **사용자 메모리 미러 동기화 필수** — `.claude/memory/sprint-next-session.md` 동시 갱신
+- **PR 단계 생략** — 단일 개발자, develop → main 직접 머지 ([[workflow-no-pr]])
+- **메모리 미러 동기화** — 사용자 메모리 + `.claude/memory/` 두 곳 갱신 후 commit

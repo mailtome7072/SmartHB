@@ -28,12 +28,15 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import {
+  getPendingMakeupForWithdrawal,
   getStudent,
   reinstateStudent,
   updateStudent,
   withdrawStudent,
 } from '@/lib/tauri'
 import type { NewStudent, Student } from '@/types/student'
+import type { WithdrawalPendingMakeup } from '@/types/withdrawal'
+import { WithdrawalMakeupDialog } from '@/components/students/WithdrawalMakeupDialog'
 
 export default function StudentDetailPage() {
   return (
@@ -53,10 +56,16 @@ function StudentDetailContent() {
   const qc = useQueryClient()
   const [withdrawing, setWithdrawing] = useState(false)
   const [reinstating, setReinstating] = useState(false)
+  // hotfix (Sprint 10 post-merge): AlertDialog 를 controlled 로 관리해야 비동기 흐름 종료 시점에
+  // 명시적으로 닫고 WithdrawalMakeupDialog 를 mount 할 수 있다.
+  const [withdrawAlertOpen, setWithdrawAlertOpen] = useState(false)
   // T8: 퇴교일자는 사용자가 직접 지정 (기본값 오늘)
   const [withdrawDate, setWithdrawDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   )
+  // Sprint 10 T10 (PRD §4.5.9): 잔여 보강 보유 시 처리 다이얼로그.
+  const [pendingWithdrawalMakeup, setPendingWithdrawalMakeup] =
+    useState<WithdrawalPendingMakeup | null>(null)
 
   const { data: student, isLoading, error } = useQuery<Student>({
     queryKey: ['students', 'detail', studentId],
@@ -83,14 +92,36 @@ function StudentDetailContent() {
   const handleWithdrawConfirmed = async () => {
     if (!student) return
     if (student.withdraw_date !== null) return
+    // hotfix: AlertDialog 를 명시적으로 먼저 닫아 backdrop 잔존으로 인한
+    // 후속 WithdrawalMakeupDialog 클릭 차단을 방지.
+    setWithdrawAlertOpen(false)
     setWithdrawing(true)
     try {
-      await withdrawStudent(student.id, withdrawDate)
-      qc.invalidateQueries({ queryKey: ['students'] })
-      router.push('/students')
+      // Sprint 10 T10: 잔여 보강 검증 — 있으면 처리 다이얼로그, 없으면 기존 흐름.
+      const pending = await getPendingMakeupForWithdrawal(student.id)
+      if (pending.absences.length === 0) {
+        await withdrawStudent(student.id, withdrawDate)
+        qc.invalidateQueries({ queryKey: ['students'] })
+        router.push('/students')
+        return
+      }
+      // 잔여 보강 있음 — WithdrawalMakeupDialog 가 mount 되며 IPC 호출 담당.
+      setPendingWithdrawalMakeup(pending)
     } finally {
       setWithdrawing(false)
     }
+  }
+
+  const handleWithdrawalMakeupCompleted = () => {
+    setPendingWithdrawalMakeup(null)
+    qc.invalidateQueries({ queryKey: ['students'] })
+    if (student !== undefined) {
+      qc.invalidateQueries({
+        queryKey: ['students', 'detail', student.id],
+      })
+      qc.invalidateQueries({ queryKey: ['attendance-grid'] })
+    }
+    router.push('/students')
   }
 
   const handleReinstateConfirmed = async () => {
@@ -137,7 +168,7 @@ function StudentDetailContent() {
               onSubmit={handleUpdate}
               extraActions={
                 student.withdraw_date === null ? (
-                  <AlertDialog>
+                  <AlertDialog open={withdrawAlertOpen} onOpenChange={setWithdrawAlertOpen}>
                     <AlertDialogTrigger
                       type="button"
                       disabled={withdrawing}
@@ -153,7 +184,7 @@ function StudentDetailContent() {
                           <br />
                           기본값은 오늘이며 과거/미래 날짜도 선택 가능합니다.
                           <br />
-                          취소 시 보강 잔여 처리는 Phase 3 에서 별도 제공됩니다.
+                          잔여 보강이 있는 원생은 다음 단계에서 처리 방식을 선택할 수 있습니다 (PRD §4.5.9).
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <div className="px-1 py-2">
@@ -162,7 +193,12 @@ function StudentDetailContent() {
                           <input
                             type="date"
                             value={withdrawDate}
-                            onChange={(e) => setWithdrawDate(e.target.value)}
+                            onChange={(e) => {
+                              setWithdrawDate(e.target.value)
+                              // hotfix: Tauri WebView 환경에서 native date picker 가 선택 후
+                              // 자동 닫히지 않는 경우가 있어 blur 로 강제 종료.
+                              e.target.blur()
+                            }}
                             className="mt-1 h-11 w-full rounded-md border border-[var(--border)] px-3"
                           />
                         </label>
@@ -198,7 +234,9 @@ function StudentDetailContent() {
                             <strong>{student.name}</strong> 원생의 퇴교 처리를 번복하여
                             재원 상태로 되돌립니다.
                             <br />
-                            보강 잔여 처리는 Phase 3 에서 별도 제공됩니다.
+                            퇴교 시 강제 소멸된 결석(자연 만기 전) 은 자동으로 결석 상태로 환원됩니다.
+                            <br />
+                            자연 만기로 이미 소멸된 결석은 환원 대상이 아닙니다.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -231,6 +269,15 @@ function StudentDetailContent() {
           </>
         )}
       </div>
+      {pendingWithdrawalMakeup !== null && student !== undefined && (
+        <WithdrawalMakeupDialog
+          studentName={student.name}
+          withdrawDate={withdrawDate}
+          pending={pendingWithdrawalMakeup}
+          onCompleted={handleWithdrawalMakeupCompleted}
+          onCancel={() => setPendingWithdrawalMakeup(null)}
+        />
+      )}
     </AppShell>
   )
 }

@@ -17,11 +17,20 @@ import type { StartupResult } from '@/types'
 interface SessionState {
   unlocked: boolean
   lastStartup: StartupResult | null
+  /** Sprint 10 T9 — 사용자가 expiration_report 토스트를 닫은 후 재표시 차단 플래그. */
+  expirationNoticeDismissed: boolean
   markUnlocked: (result: StartupResult) => void
+  dismissExpirationNotice: () => void
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
   unlocked: false,
   lastStartup: null,
-  markUnlocked: (result) => set({ unlocked: true, lastStartup: result }),
+  expirationNoticeDismissed: false,
+  markUnlocked: (result) => set({
+    unlocked: true,
+    lastStartup: result,
+    expirationNoticeDismissed: false,
+  }),
+  dismissExpirationNotice: () => set({ expirationNoticeDismissed: true }),
 }))

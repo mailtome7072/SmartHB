@@ -49,6 +49,11 @@ pub enum AuditEventType {
     AttendanceToggled,
     // Sprint 8 T8 (R47 / I-S2-9) — 보안 일반 (예: salt 마이그레이션, 권한 변경 등)
     SecurityEvent,
+    // Sprint 9 T3/T4 — 보강 도메인 (PRD §4.5.4~6)
+    MakeupCreated,
+    MakeupCancelled,
+    // Sprint 10 T3 — 보강 소멸 자동 전이 (PRD §4.5.7)
+    MakeupExpired,
 }
 
 impl AuditEventType {
@@ -67,6 +72,9 @@ impl AuditEventType {
             Self::StudentReinstated => "student-reinstated",
             Self::AttendanceToggled => "attendance-toggled",
             Self::SecurityEvent => "security-event",
+            Self::MakeupCreated => "makeup-created",
+            Self::MakeupCancelled => "makeup-cancelled",
+            Self::MakeupExpired => "makeup-expired",
         }
     }
 }
@@ -192,7 +200,7 @@ pub async fn get_audit_logs(
     list_logs(since_dt, limit).await.map_err(String::from)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
 

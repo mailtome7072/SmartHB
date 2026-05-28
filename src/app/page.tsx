@@ -26,6 +26,18 @@ export default function Home() {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const unlocked = useSessionStore((s) => s.unlocked)
+  // Sprint 10 T9 (PI-09): 앱 시작 시 소멸 자동 전이 결과 토스트.
+  const lastStartup = useSessionStore((s) => s.lastStartup)
+  const expirationNoticeDismissed = useSessionStore(
+    (s) => s.expirationNoticeDismissed,
+  )
+  const dismissExpirationNotice = useSessionStore(
+    (s) => s.dismissExpirationNotice,
+  )
+  const expirationCount =
+    lastStartup?.expiration_report.transitionedCount ?? 0
+  const showExpirationNotice =
+    ready && expirationCount > 0 && !expirationNoticeDismissed
 
   useEffect(() => {
     if (unlocked) {
@@ -73,6 +85,25 @@ export default function Home() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
+      {showExpirationNotice && (
+        <div
+          role="status"
+          className="mx-6 mt-4 flex items-center justify-between rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-base text-amber-900"
+        >
+          <span>
+            앱 시작과 함께 소멸기한 도래 결석 {expirationCount}건이 자동
+            처리되었습니다.
+          </span>
+          <button
+            type="button"
+            onClick={dismissExpirationNotice}
+            aria-label="알림 닫기"
+            className="ml-3 min-h-[32px] min-w-[32px] rounded text-amber-700 hover:bg-amber-100"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <div className="flex flex-col items-center justify-center pt-12">
         <h1 className="mb-4 text-4xl font-bold">스마트해법수학</h1>
         <p className="mb-8 text-lg text-gray-600">정쌤의 교습소 관리 시스템</p>

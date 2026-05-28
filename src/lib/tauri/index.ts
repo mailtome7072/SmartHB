@@ -33,6 +33,13 @@ import type {
   ToggleResult,
 } from '@/types/attendance'
 import type {
+  AbsenceHistoryItem,
+  CreateMakeupPayload,
+  EligibleDate,
+  MakeupResult,
+  PendingAbsence,
+} from '@/types/makeup'
+import type {
   CascadeDeletePreview,
   CreateScheduleCodePayload,
   CreateScheduleEventPayload,
@@ -41,10 +48,20 @@ import type {
   ScheduleEvent,
   ScheduleEventListItem,
   StudyPeriod,
+  StudyPeriodResult,
   UpdateScheduleCodePayload,
   UpdateScheduleEventPayload,
   UpdateStudyPeriodPayload,
 } from '@/types/academic'
+import type { ExpirationReport } from '@/types/expiration'
+import type {
+  WithdrawalChoice,
+  WithdrawalPendingMakeup,
+} from '@/types/withdrawal'
+import type {
+  CalendarMonth,
+  MakeupManagementStudent,
+} from '@/types/calendar'
 import type {
   ScheduleSet,
   StudentSchedule,
@@ -362,6 +379,7 @@ export async function appStartupSequence(
       lock_force_used: forceLock,
       integrity_ok: true,
       audit_cleaned: 0,
+      expiration_report: { transitionedCount: 0, details: [] },
     }
   }
   return inv('app_startup_sequence', {
@@ -438,6 +456,43 @@ export async function reinstateStudent(id: number): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('reinstate_student', { id })
+}
+
+/**
+ * Sprint 10 T6 — 퇴교 시 미보강 결석 조회 (PRD §4.5.9).
+ *
+ * 빈 리스트(`absences.length === 0 && remainingMinutes === 0`) → 보강 잔여 없음 → 일반 `withdrawStudent` 흐름 사용.
+ */
+export async function getPendingMakeupForWithdrawal(
+  studentId: number,
+): Promise<WithdrawalPendingMakeup> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { studentId, remainingMinutes: 0, absences: [] }
+  }
+  return inv('get_pending_makeup_for_withdrawal', {
+    studentId,
+  }) as Promise<WithdrawalPendingMakeup>
+}
+
+/**
+ * Sprint 10 T6 — 퇴교 처리 (PRD §4.5.9, 3가지 선택지).
+ *
+ * 단일 트랜잭션: 보강 일괄 전이 + (external_expire 시) memo 일괄 저장 + withdraw_date 설정.
+ * `defer_withdrawal` 은 IPC 호출 없이 UI 다이얼로그 닫기로 처리.
+ */
+export async function processWithdrawalMakeup(
+  studentId: number,
+  choice: WithdrawalChoice,
+  withdrawDate: string,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('process_withdrawal_makeup', {
+    studentId,
+    choice,
+    withdrawDate,
+  })
 }
 
 /**
@@ -717,43 +772,50 @@ export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
 
 // ─── 교습기간 study_periods (T5) ─────────────────────────────────────
 
+/** Sprint 10 T4: 응답이 `StudyPeriodResult` 로 wrapping — 소멸 자동 전이 결과 동봉. */
 export async function createStudyPeriod(
   payload: CreateStudyPeriodPayload,
-): Promise<StudyPeriod> {
+): Promise<StudyPeriodResult> {
   const inv = await getInvoke()
   if (!inv) {
     return {
-      id: 0,
-      year_month: payload.year_month,
-      start_date: payload.start_date,
-      end_date: payload.end_date,
-      is_confirmed: false,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      studyPeriod: {
+        id: 0,
+        year_month: payload.year_month,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        is_confirmed: false,
+        is_closed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      expirationReport: { transitionedCount: 0, details: [] },
     }
   }
-  return inv('create_study_period', { payload }) as Promise<StudyPeriod>
+  return inv('create_study_period', { payload }) as Promise<StudyPeriodResult>
 }
 
 export async function updateStudyPeriod(
   id: number,
   payload: UpdateStudyPeriodPayload,
-): Promise<StudyPeriod> {
+): Promise<StudyPeriodResult> {
   const inv = await getInvoke()
   if (!inv) {
     return {
-      id,
-      year_month: payload.start_date.slice(0, 7),
-      start_date: payload.start_date,
-      end_date: payload.end_date,
-      is_confirmed: false,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      studyPeriod: {
+        id,
+        year_month: payload.start_date.slice(0, 7),
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        is_confirmed: false,
+        is_closed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      expirationReport: { transitionedCount: 0, details: [] },
     }
   }
-  return inv('update_study_period', { id, payload }) as Promise<StudyPeriod>
+  return inv('update_study_period', { id, payload }) as Promise<StudyPeriodResult>
 }
 
 /** 교습기간 목록 — "YYYY-MM" 범위(포함). */
@@ -773,21 +835,24 @@ export async function getStudyPeriod(yearMonth: string): Promise<StudyPeriod | n
   return inv('get_study_period', { yearMonth }) as Promise<StudyPeriod | null>
 }
 
-export async function confirmStudyPeriod(id: number): Promise<StudyPeriod> {
+export async function confirmStudyPeriod(id: number): Promise<StudyPeriodResult> {
   const inv = await getInvoke()
   if (!inv) {
     return {
-      id,
-      year_month: '',
-      start_date: '',
-      end_date: '',
-      is_confirmed: true,
-      is_closed: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      studyPeriod: {
+        id,
+        year_month: '',
+        start_date: '',
+        end_date: '',
+        is_confirmed: true,
+        is_closed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      expirationReport: { transitionedCount: 0, details: [] },
     }
   }
-  return inv('confirm_study_period', { id }) as Promise<StudyPeriod>
+  return inv('confirm_study_period', { id }) as Promise<StudyPeriodResult>
 }
 
 /** 미확정 교습기간 삭제 — 확정/마감 시 백엔드가 throw. */
@@ -971,15 +1036,58 @@ export async function checkAttendanceExists(yearMonth: string): Promise<boolean>
 export async function generateAttendances(yearMonth: string): Promise<GenerateResult> {
   const inv = await getInvoke()
   if (!inv) {
-    return { yearMonth, studentCount: 0, attendanceCount: 0 }
+    return {
+      yearMonth,
+      studentCount: 0,
+      attendanceCount: 0,
+      expirationReport: { transitionedCount: 0, details: [] },
+    }
   }
   return inv('generate_attendances', { yearMonth }) as Promise<GenerateResult>
+}
+
+/**
+ * Sprint 10 T4 (PI-05): 소멸 자동 전이 수동 호출.
+ *
+ * 트리거 3개소(앱 시작/출결 생성/교습기간 등록)에서 응답에 자동 동봉되지만,
+ * UI 에서 명시적으로 한 번 더 호출하고 싶을 때 사용 (예: 디버깅, 수동 점검 메뉴).
+ */
+export async function expireOverdueAbsences(): Promise<ExpirationReport> {
+  const inv = await getInvoke()
+  if (!inv) return { transitionedCount: 0, details: [] }
+  return inv('expire_overdue_absences') as Promise<ExpirationReport>
+}
+
+/**
+ * Sprint 10 T8/T11 (PRD §4.6.1): 수업 관리 캘린더 — 일자별 정규/보강 수업.
+ *
+ * 백엔드는 raw 일자별 목록만 제공 — 시간대별 합산(AC-4.6-1)은 캘린더 UI 책임.
+ */
+export async function getCalendarData(yearMonth: string): Promise<CalendarMonth> {
+  const inv = await getInvoke()
+  if (!inv) return { yearMonth, days: [] }
+  return inv('get_calendar_data', { yearMonth }) as Promise<CalendarMonth>
+}
+
+/**
+ * Sprint 10 T8/T11 (PRD §4.6.3): 보강 관리 뷰 — 보강 필요 원생(소멸 임박 순).
+ *
+ * 정렬·임박 판정은 백엔드(`calendar.rs`)에서 수행. UI 는 표시만.
+ */
+export async function getMakeupManagementData(
+  yearMonth: string,
+): Promise<MakeupManagementStudent[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_makeup_management_data', { yearMonth }) as Promise<
+    MakeupManagementStudent[]
+  >
 }
 
 /** 출결표 그리드 — 원생 × 일자 + 월간 요약. 50명×31일 < 1초 (PRD §5.7). */
 export async function getAttendanceGrid(yearMonth: string): Promise<AttendanceGrid> {
   const inv = await getInvoke()
-  if (!inv) return { yearMonth, students: [] }
+  if (!inv) return { yearMonth, students: [], daySchedules: [] }
   return inv('get_attendance_grid', { yearMonth }) as Promise<AttendanceGrid>
 }
 
@@ -1022,4 +1130,50 @@ export async function getAttendanceSummary(
     }
   }
   return inv('get_attendance_summary', { studentId, yearMonth }) as Promise<AttendanceSummary>
+}
+
+// ──────────────────── 보강 도메인 (Sprint 9 T2~T4) ────────────────────
+
+/** 원생의 미처리 결석 목록 — 소멸기한 임박순 (NULL 마지막). PRD §4.5.4 다이얼로그 소스. */
+export async function getPendingAbsences(studentId: number): Promise<PendingAbsence[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_pending_absences', { studentId }) as Promise<PendingAbsence[]>
+}
+
+/** 보강 가능 일자 — year_month 내 `allows_makeup_class=1` 학사일정 + 학생 입퇴교 범위. */
+export async function getMakeupEligibleDates(
+  studentId: number,
+  yearMonth: string,
+): Promise<EligibleDate[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_makeup_eligible_dates', { studentId, yearMonth }) as Promise<EligibleDate[]>
+}
+
+/** 보강 등록 + 매칭 (트랜잭션 검증 5종). PI-02 일 단위 채택 — class_minutes 비교 없음. */
+export async function createMakeupWithAbsences(
+  payload: CreateMakeupPayload,
+): Promise<MakeupResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('create_makeup_with_absences', { payload }) as Promise<MakeupResult>
+}
+
+/** 보강 취소 — 연결 결석을 absent 환원 + makeup_attendances DELETE. */
+export async function cancelMakeup(makeupId: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('cancel_makeup', { makeupId })
+}
+
+/** 원생 결석 이력 — absent/makeup_done/makeup_expired 모두 포함, event_date DESC (T8). */
+export async function getAbsenceHistory(
+  studentId: number,
+): Promise<AbsenceHistoryItem[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_absence_history', { studentId }) as Promise<AbsenceHistoryItem[]>
 }
