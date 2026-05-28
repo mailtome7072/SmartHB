@@ -1,15 +1,15 @@
 ---
 name: sprint-next-session
-description: "Sprint 10 sprint-close 완료 — Phase 3 완결. 다음: sprint-review → Sprint 11 (Phase 4 청구+수납)"
+description: "Sprint 10 sprint-review 완료 — Phase 3 완결. 다음: sprint10 → develop 직접 머지 → 수동 검증 → Sprint 11 (Phase 4 청구+수납)"
 metadata:
   node_type: memory
   type: project
-  originSessionId: sprint10-sprint-close
+  originSessionId: sprint10-sprint-review
 ---
 
-Sprint 10 (Phase 3 보강+소멸 완결 sprint) **sprint-close 완료**. 다음 단계: `sprint-review`.
+Sprint 10 (Phase 3 보강+소멸 완결 sprint) **sprint-review 완료**. 다음 단계: `sprint10 → develop 직접 머지 → 수동 검증`.
 
-## Sprint 10 현황 — sprint-close 완료 (2026-05-28)
+## Sprint 10 현황 — sprint-review 완료 (2026-05-28)
 
 | Task | 내용 | 상태 |
 |------|------|------|
@@ -19,30 +19,35 @@ Sprint 10 (Phase 3 보강+소멸 완결 sprint) **sprint-close 완료**. 다음 
 | T10 | 퇴교 보강 UI | ✅ |
 | T11 | 캘린더 뷰 UI (FullCalendar) — 7라운드 시각 검증 완료 | ✅ |
 | T12 | 통합 검증 | ✅ |
-| sprint-close | ROADMAP 완료 표기, CHANGELOG 추가, DEPLOY.md 갱신, sprint-planner MEMORY 갱신 | ✅ |
+| sprint-close | ROADMAP/CHANGELOG/DEPLOY.md 갱신 | ✅ |
+| sprint-review | 코드 리뷰 5건 (Medium 2/Low 3) + 자동 검증 7/7 + 회고 + 산출물 4종 | ✅ |
 
-## sprint-close 완료 내역 (2026-05-28)
+## sprint-review 완료 내역 (2026-05-28)
 
-1. ROADMAP.md — Phase 3 `✅ 완료 (2026-05-28)`, Sprint 10 완료 표기, 대시보드 진행률 65% (10/17), PI-01/PI-02 ✅ 완료
-2. CHANGELOG.md — Sprint 10 Added/Changed/Removed/Fixed 항목 추가
-3. DEPLOY.md — Sprint 9 기록 아카이빙 (`docs/deploy-history/2026-05-26.md`), Sprint 10 체크리스트 신규
-4. sprint10.md DoD — sprint-close 담당 2항목 ✅ 완료
-5. sprint-planner MEMORY.md — "마지막 완료 스프린트: Sprint 10 (2026-05-28)", "다음 스프린트 번호: 11"
+1. 코드 리뷰: Critical 0 / High 0 / Medium 2 (F1 succ_opt expect, F2 expire fail-hard) / Low 3 (F3 _year_month unused, F4 N+1 calendar, F5 viewType 불일치)
+2. 자동 검증: cargo test 273 passed (cipher off) / clippy clean / tsc clean / lint clean / build 16/16
+3. 산출물: `docs/test-reports/sprint10.md` / `docs/code-reviews/sprint10.md` / `docs/risk-register/2026-05-28.md` (R70~R72) / `docs/sprint-retrospectives/sprint10-retrospective.md`
+4. DEPLOY.md: ✅ sprint-review 항목 완료 표기
 
 ## 다음 단계 진입 액션
 
-> "sprint-review 실행해줘."
+sprint10 → develop 직접 머지:
+```bash
+git checkout develop
+git merge sprint10 --no-ff
+```
 
-sprint-review 완료 후 develop QA 통과하면:
-
+수동 스테이징 검증 후:
 > "수동 검증 완료했고 develop QA 통과했어. 프로덕션 배포 준비해줘."
 
-## sprint-review 인계 사항
+## 이연 이슈 (Sprint 11 참고)
 
-1. cipher on 로컬 검증 완료 (Strawberry Perl 설치됨, `a3b4915` 테스트 게이트 정합). cipher-off 동작 불변
-2. 사용자 시각 검증 대기: 캘린더 일/주/월 전환 + 원생 팝업 + 보강관리 강조 + 보강완료(emerald)/소멸(gray) 색 구분
-3. carry-over flaky: `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` 병렬 시 가끔 실패
-4. 산출물 경로: `docs/test-reports/sprint10-*.md`, `docs/sprint-retrospectives/sprint10-retrospective.md`
+| ID | 내용 | 위치 |
+|----|------|------|
+| A58 | F1: succ_opt().expect() → ok_or_else() 전환 | attendance.rs:655 |
+| A59 | F2: generate_impl expire fail-soft 전환 | attendance.rs:155 |
+| A62 | flaky auth 테스트 #[ignore] 마킹 | auth.rs:1132 |
+| A63~A68 | Sprint 9 이월 항목 (N+1, ZeroizeOnDrop, clamp, 한글 검색 등) | — |
 
 ## 정책 (재확인)
 - PR 단계 생략 — sprint10 → develop 직접 머지 ([[workflow-no-pr]])
