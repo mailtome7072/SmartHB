@@ -393,8 +393,8 @@
 - ✅ 소멸 + 보강 비즈니스 규칙 단위 테스트 신규 **20건** (T3 7 + T4 1 + T6 6 + T7 1 + T8 calendar 5) 통과 — 계획 18건+ 충족
 
 **프로세스 (sprint-close 에이전트가 처리)**
-- ⬜ ROADMAP.md Phase 3 완료 표기
-- ⬜ CHANGELOG.md 업데이트
+- ✅ ROADMAP.md Phase 3 완료 표기 (2026-05-28)
+- ✅ CHANGELOG.md 업데이트 (2026-05-28)
 
 ---
 

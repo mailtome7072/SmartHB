@@ -469,7 +469,7 @@ SQLite는 CHECK ALTER 미지원 → 다음 패턴 사용:
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| docs/sprint/sprint10.md | [1회] | T5/T9/DoD 폐기 마킹 |
+| docs/sprint/sprint10.md | [2회] | T5/T9/DoD 폐기 마킹 |
 | docs/sprint/sprint10/scope.md | [5회] | Session #6 추가 |
 
 ### 완료 기준
