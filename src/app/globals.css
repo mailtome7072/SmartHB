@@ -135,10 +135,15 @@ h6 { font-size: 18px; }
   background-color: #dcefd0;
 }
 
-/* 일(day) 보기는 셀 배경색 없음 (사용자 지정). */
+/* 일(day) 보기는 셀 배경색 없음 (오늘 셀 포함, 사용자 지정).
+   FC 내부 --fc-today-bg-color 와 내가 정의한 .fc .fc-day-today 둘 다 무력화. */
+.fc-timeGridDay-view {
+  --fc-today-bg-color: transparent;
+}
 .fc-timeGridDay-view .fc-day-today,
-.fc-timeGridDay-view .fc-timegrid-col {
-  background-color: transparent;
+.fc-timeGridDay-view .fc-timegrid-col,
+.fc-timeGridDay-view td.fc-day-today {
+  background-color: transparent !important;
 }
 
 /* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑). 볼드 미적용. */
