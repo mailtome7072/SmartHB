@@ -173,12 +173,14 @@ export default function ClassCalendar({
         cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
         bySlot.set(s.startTime, cur)
       }
+      const isDay = viewType === 'timeGridDay'
       for (const [startTime, { names, maxMin }] of bySlot) {
         result.push({
           start: `${day.eventDate}T${toIsoTime(startTime)}`,
           end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
-          backgroundColor: '#dbeafe',
-          borderColor: '#3b82f6',
+          // 일 보기는 배경/테두리 없음 (사용자 지정). 주 보기는 옅은 블루 유지.
+          backgroundColor: isDay ? 'transparent' : '#dbeafe',
+          borderColor: isDay ? 'transparent' : '#3b82f6',
           textColor: '#1e3a8a',
           editable: false,
           extendedProps: { kind: 'class', names },
@@ -186,7 +188,7 @@ export default function ClassCalendar({
       }
     }
     return result
-  }, [data, isTimeGrid])
+  }, [data, isTimeGrid, viewType])
 
   function api() {
     return calendarRef.current?.getApi()
@@ -372,10 +374,12 @@ export default function ClassCalendar({
             )
           }}
           // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
+          // 일 보기는 폰트 2단계 확대 (text-xs → text-base).
           eventContent={(arg) => {
             const names = (arg.event.extendedProps.names as string[]) ?? []
+            const sizeCls = viewType === 'timeGridDay' ? 'text-base' : 'text-xs'
             return (
-              <div className="whitespace-normal break-words px-1 py-0.5 text-xs leading-snug">
+              <div className={`whitespace-normal break-words px-1 py-0.5 leading-snug ${sizeCls}`}>
                 {names.map((n, i) => (
                   <span key={`${n}-${i}`}>
                     <span
