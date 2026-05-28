@@ -141,16 +141,8 @@ h6 { font-size: 18px; }
   z-index: 1;
 }
 
-/* 주·일 보기 시간 슬롯 셀 hover — 동일한 진한 테두리 강조.
-   stacking 보장 위해 베이스에 position: relative. !important 로 FC 기본 스타일 우선. */
-.fc-timegrid-slot-lane,
-.fc-timegrid-col {
-  position: relative;
-}
-.fc-timeGridWeek-view .fc-timegrid-slot-lane:hover,
-.fc-timeGridDay-view .fc-timegrid-slot-lane:hover,
-.fc-timeGridWeek-view .fc-timegrid-col:hover,
-.fc-timegrid-slot-lane:hover {
+/* 주·일 보기 원생 이름 박스(이벤트) hover — 진한 테두리 강조. */
+.fc-timegrid-event:hover {
   outline: 2px solid #334155 !important;
   outline-offset: -2px;
   z-index: 10;
