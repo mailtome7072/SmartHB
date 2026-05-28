@@ -212,9 +212,9 @@ export default function ClassCalendar({
             type="button"
             aria-label="이전"
             onClick={() => api()?.prev()}
-            className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-700 text-lg text-white hover:bg-slate-800"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
           >
-            ‹
+            ← 이전
           </button>
           <div className="relative inline-flex items-center justify-center">
             <span className="px-2 text-2xl font-bold text-[var(--foreground)]">{title}</span>
@@ -234,9 +234,9 @@ export default function ClassCalendar({
             type="button"
             aria-label="다음"
             onClick={() => api()?.next()}
-            className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-700 text-lg text-white hover:bg-slate-800"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
           >
-            ›
+            다음 →
           </button>
         </div>
         <div className="flex justify-end gap-1">
@@ -380,7 +380,7 @@ export default function ClassCalendar({
             badge.textContent = `${info.count}명`
             badge.style.cssText =
               'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
-              'font-size:28px;font-weight:700;color:#1d4ed8;cursor:pointer;' +
+              'font-size:28px;font-weight:400;color:#111;cursor:pointer;' +
               'z-index:5;pointer-events:auto;white-space:nowrap;'
             frame.appendChild(badge)
           }}
