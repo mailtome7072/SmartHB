@@ -13,7 +13,7 @@
  * 월중입퇴교 시각 구분 (AC-4.9-2): 행 배경 + 라벨.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { confirmBill, updateBill } from '@/lib/tauri'
 import { CloseReasonDialog } from './CloseReasonDialog'
@@ -87,6 +87,21 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
     setEditValue(String(bill.adjustedAmount))
     onError('')
   }
+
+  // 입력 중 실시간 검증 — 입력 멈춤 후 300ms 뒤 ErrorDialog 자동 표시.
+  // 빈 값/편집 종료 상태는 skip (cancel 시 onBlur 부수효과 회피).
+  useEffect(() => {
+    if (editingId === null) return
+    const trimmed = editValue.trim()
+    if (trimmed === '') return
+    const handle = setTimeout(() => {
+      const parsed = Number(trimmed.replace(/,/g, ''))
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        onError('조정 금액은 0 이상의 숫자여야 합니다.')
+      }
+    }, 300)
+    return () => clearTimeout(handle)
+  }, [editValue, editingId, onError])
 
   const cancelEdit = () => {
     setEditingId(null)
