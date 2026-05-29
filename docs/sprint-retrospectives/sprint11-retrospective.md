@@ -81,8 +81,22 @@ T2(17건), T3(9건), T4(9건) 각 IPC를 작성하면서 단위 테스트를 즉
 | A77 | A66 이월 — salt buffer ZeroizeOnDrop | Medium | `auth.rs` |
 | A78 | A67 이월 — 반응형 폰트/셀 너비 clamp() | Medium | `globals.css` + 컴포넌트 |
 | A79 | A68 이월 — 한글 자모 부분 일치 검색 | Medium | `global-search.tsx` |
+| A80 | R82 — 마감 후 추가 청구 정책 결정 + 구현 | Medium | `billing.rs::generate_bills` + UI 안내 |
 
-**Sprint 12 진입 전 처리 권장**: A69(다이얼로그 게이팅), A71(성능 실측). 나머지는 Sprint 12 T0 carry-over로 흡수.
+**Sprint 12 진입 전 처리 권장**: A69(다이얼로그 게이팅), A71(성능 실측), **A80(마감 정책 결정 — PRD §4.9.7 보강 필요)**. 나머지는 Sprint 12 T0 carry-over로 흡수.
+
+### A80 보강 — 마감 후 추가 청구 정책
+
+post-Sprint 11 사용자 검토에서 발견된 정책 모호 (R82). `generate_bills` 가 INSERT OR IGNORE 라
+마감된 월에 신규 학생이 등록되면 그 학생만 `draft` 로 추가 INSERT 됨. 사용자가 확정·재마감하면
+같은 월에 두 시점의 `closed_at` 이 공존 — 회계상 "마감"의 본질(시점 잠금)과 충돌 가능.
+
+검토 옵션:
+- (a) **마감 후 신규 청구 차단** — `generate_bills` 가 month status='closed' 일 때 거부. 신규 학생은 다음 월부터.
+- (b) **별도 보류 상태** — `pending_after_close` 상태로 추가. 별도 처리 흐름.
+- (c) **현재 동작 유지 + UI 강한 안내** — 마감된 월에 "추가 청구 데이터 생성" 버튼 클릭 시 경고 다이얼로그.
+
+원장 운영 흐름 확인 후 Sprint 12 초반에 결정·구현. PRD §4.9.7 보강 필요.
 
 ---
 
