@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 65% (10/17 스프린트 완료) |
-| 현재 Phase | Phase 3 완료 (2026-05-28) — Sprint 9+10 완료. Phase 4 (청구+수납+공지문) 착수 예정 |
-| 다음 마일스톤 | 청구 생성 + 3단계 마감 + 수납 관리 (Sprint 11) |
+| 전체 진행률 | 71% (11/17 스프린트 완료) |
+| 현재 Phase | Phase 4 진행 중 — Sprint 11 완료 (2026-05-29). Sprint 12 (공지문 이미지 생성) 착수 예정 |
+| 다음 마일스톤 | 공지문 이미지 일괄 생성 + CSV 가져오기 (Sprint 12) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -555,50 +555,45 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 ### 목표
 교습비 청구/수납 전체 흐름(UC-5)과 카카오톡 공지문 이미지 생성을 완성한다.
 
-### Sprint 11: 청구 + 수납 관리 (2주) 🔄 진행 중
+### Sprint 11: 청구 + 수납 관리 (2주) ✅ 완료 (2026-05-29)
+
+> 계획 문서: `docs/sprint/sprint11.md` / Task T0~T9 완료 / Phase 3 carry-over 7건 흡수
+> develop 머지: `sprint11 → develop` 직접 머지 예정 (단일 개발자 정책)
+
+#### 주요 도메인 결정 사항
+
+| 결정 | 내용 |
+|------|------|
+| PI-10 마감 후 수정 사유 UX | 모달 다이얼로그 — 의도적 행위 강조, 실수 방지 |
+| PI-11 마감 해제(reopen) | 불가 — PRD 미언급, 개별 건 수정(사유 필수)만 허용 |
+| PI-12 수납 테이블 분리 | 별도 payments 테이블 — 분할 납부/환불 확장 여지, 감사 로그 분리 |
+| 카드 계열 식별 기준 | `is_card_type` BOOLEAN 플래그 (V109에 포함) |
+| F4 N+1 쿼리 범위 | `calendar.rs` N+1만 — `attendance.rs`는 PRD 성능 충족, carry-over 유지 |
 
 #### 작업 목록
 
-- ⬜ **DB 마이그레이션 V007**: bills + payments 테이블
-- ⬜ **청구 데이터 생성 (§4.9.1)**: 재원 원생 일괄 생성
-  - 청구액 = 표준 교습비 매핑 (주 수업시간)
-  - 중복 생성 차단
-  - IPC 커맨드: `generate_bills`, `list_bills`, `update_bill`
-- ⬜ **월 중 입퇴교 처리 (§4.9.2)**: 시각 구분 표시 + 수동 조정
-- ⬜ **청구 3단계 마감 (§4.9.7)**: 미확정 → 확정 → 마감
-  - 확정 후 수정 시 확인 다이얼로그 (AC-4.9-3)
-  - 마감 액션: 모든 청구 "확정" 시에만 활성화 (AC-4.9-7)
-  - 마감 후 수정 시 사유 입력 필수 (AC-4.9-8)
-- ⬜ **청구 화면 정렬 (§4.9.4)**: 미확정 + 월 중 입퇴교 상단 우선
-- ⬜ **수납 관리 (§4.9.5)**: 입금 여부/일/입금자명/결제수단/카드사
-  - 카드 계열 시 카드사 필수 (AC-4.9-4)
-- ⬜ **입금 일괄 처리 모드 (§4.9.6)**: 미입금 리스트 + 행별 빠른 입력
-  - 최소 20행 표시 (AC-4.9-6)
-  - 미납 원생 자동 추출
-- ⬜ **청구/수납 비즈니스 규칙 테스트**: 매핑, 상태 전이, 마감 제약
+- ✅ **T0**: Phase 3 carry-over 7건 정리 (F1 panic 해소 / F2 fail-soft / F3 미사용 파라미터 / F4 N+1 batch / F5 viewType 프레임 / F6 flaky #[ignore] / F7 보강관리 메뉴 제거)
+- ✅ **T1**: DB 마이그레이션 V109 — bills + payments + payment_methods.is_card_type
+- ✅ **T2**: 청구 생성 IPC 4종 (`generate_bills`, `list_bills`, `get_bill`, `update_bill`, `default_year_month`) + 단위 테스트 17건
+- ✅ **T3**: 청구 상태 머신 IPC 3종 (`confirm_bill`, `confirm_all_bills`, `close_billing_month`, `update_closed_bill`) + audit 3 variants + 단위 테스트 9건
+- ✅ **T4**: 수납 IPC 5종 (`create_payment`, `update_payment`, `list_unpaid_bills`, `batch_update_payments`, `get_billing_summary`) + 단위 테스트 9건
+- ✅ **T5**: 청구 마감 UX 다이얼로그 3종 (`CloseReasonDialog` / `ConfirmBillUpdateDialog` / `CloseMonth`)
+- ✅ **T6**: TypeScript IPC 래퍼 13종 + `src/types/billing.ts` 도메인 타입
+- ✅ **T7**: 청구 관리 UI — `/billing` 라우트 + `BillingGrid` + 사이드 메뉴 활성화
+- ✅ **T8**: 수납 관리 UI — `[청구|수납]` 탭 통합 + `PaymentsView` (입금 일괄 처리)
+- ✅ **T9**: 통합 검증 + AC 전수 마킹 (sprint11.md DoD/AC)
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 청구 생성 → 확정 → 마감 전체 흐름 동작
-- ⬜ 수납 입력 + 입금 일괄 처리 동작
-- ⬜ 마감 후 수정 시 사유 입력 강제 확인
-- ⬜ 청구 50명 생성 3초 이내
-
-#### 🧪 Playwright MCP 검증 시나리오
-```
-1. browser_navigate → http://localhost:1420/billing
-2. browser_click → "청구 데이터 생성" 버튼
-3. browser_snapshot → 청구 목록 생성 확인 (미확정 상태)
-4. browser_click → 개별 청구 "확정" 처리
-5. browser_click → "당월 청구 마감" 버튼
-6. browser_snapshot → 마감 상태 확인
-7. browser_click → 마감 후 금액 수정 시도
-8. browser_snapshot → 사유 입력 다이얼로그 확인
-9. browser_console_messages(level: "error") → 콘솔 에러 없음
-```
-
-#### 기술 고려사항
-- 청구 상태 전이는 백엔드에서 엄격하게 제어 (프론트 우회 방지)
-- 입금 일괄 처리: 낙관적 업데이트 + 실패 시 롤백
+- ✅ 청구 생성 → 확정 → 마감 전체 흐름 동작
+- ✅ 수납 입력 + 입금 일괄 처리 동작
+- ✅ 마감 후 수정 시 사유 입력 강제 확인 (AC-4.9-8)
+- ✅ 마감 전제조건: 모든 청구 confirmed 시에만 마감 활성화 (AC-4.9-7)
+- ✅ 카드 계열 시 카드사 필수 (AC-4.9-4)
+- ✅ 입금 일괄 처리 한 화면 최소 20행 (AC-4.9-6)
+- ✅ Phase 3 carry-over F1~F7 전수 해소
+- ✅ `cargo test --lib` 308 passed / `cargo clippy -- -D warnings` clean
+- ✅ `pnpm lint` / `pnpm tsc --noEmit` / `pnpm build` static export 17 routes 통과
+- ⚠️ 청구 50명 생성 3초 이내 — 인메모리 단위 테스트 0.21s/35 tests. 실측은 사용자 시각 검증으로 이연 (sprint-review risk-register 기록)
 
 ---
 

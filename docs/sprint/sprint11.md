@@ -271,9 +271,9 @@ PI-10 확정: **모달 다이얼로그**. PI-11 확정: **마감 해제 불가**
 - ✅ `pnpm lint` clean / `pnpm tsc --noEmit` clean / `pnpm build` 17 static routes 성공
 
 **프로세스 (sprint-close 에이전트가 처리)**
-- ⬜ ROADMAP.md 업데이트
-- ⬜ CHANGELOG.md 업데이트
-- ⬜ develop 머지
+- ✅ ROADMAP.md 업데이트 (Sprint 11 완료 표기, 진행률 71%)
+- ✅ CHANGELOG.md 업데이트 ([Unreleased] Sprint 11 항목 추가)
+- ⬜ develop 머지 (sprint-review 완료 후 직접 머지)
 
 ---
 

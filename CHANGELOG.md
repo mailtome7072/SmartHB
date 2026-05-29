@@ -37,6 +37,29 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 11: DB 마이그레이션 V109 — `bills` + `payments` 테이블 신규 (청구 3단계 상태 머신 draft/confirmed/closed, 수납 1:1 별도 테이블 PI-12 확정, UNIQUE: `(student_id, bill_year_month)` + `bill_id`, FK: `students(id)` / `bills(id)` / `payment_methods(id)` / `card_companies(id)`)
+- Sprint 11: 청구 IPC 4종 (`src-tauri/src/commands/billing.rs` 신규) — `generate_bills` (재원 원생 일괄, 표준 교습비 매핑, 월중입퇴교 플래그 자동), `list_bills` (미확정+월중입퇴교 상단 우선), `get_bill`, `update_bill` (상태별 수정 제약), `get_default_bill_year_month` — 단위 테스트 17건
+- Sprint 11: 청구 상태 머신 IPC 3종 — `confirm_bill` (단건), `confirm_all_bills` (일괄), `close_billing_month` (전체 confirmed 전제 조건 강제 AC-4.9-7), `update_closed_bill` (close_reason 필수 AC-4.9-8) — 단위 테스트 9건
+- Sprint 11: 수납 IPC 5종 — `create_payment`, `update_payment` (카드 계열 card_company_id 필수 검증 AC-4.9-4), `list_unpaid_bills`, `batch_update_payments` (BEGIN IMMEDIATE 트랜잭션), `get_billing_summary` (총청구액/입금완료액/미납액) — 단위 테스트 9건
+- Sprint 11: audit variants 3종 추가 — `BillConfirmed`, `BillMonthClosed`, `BillClosedModified`
+- Sprint 11: 청구 마감 UX 다이얼로그 3종 — `CloseReasonDialog` (사유 입력 textarea ≥10자, shadcn/ui Dialog), `ConfirmBillUpdateDialog` (확정 후 수정 확인 AC-4.9-3), `CloseMonthDialog` (마감 확인 + 경고 문구)
+- Sprint 11: TypeScript IPC 래퍼 13종 + `src/types/billing.ts` 도메인 타입 — `Bill`, `BillStatus`, `Payment`, `BillingSummary`, `BillListFilter` 등
+- Sprint 11: `/billing` 라우트 신설 + `BillingGrid` 컴포넌트 — 년월 선택, 청구 생성/확정/마감 버튼, 미확정 상단 배너(AC-4.9-5), 월중입퇴교 amber-50 행 구분(AC-4.9-2), TanStack Query 캐싱. 사이드 메뉴 "청구 관리" 활성화
+- Sprint 11: `PaymentsView` 컴포넌트 — [청구|수납] 2탭 통합, 입금 일괄 처리 모드 (max-h-[800px] overflow + sticky thead 최소 20행 AC-4.9-6), 월별 요약(총청구/입금/미납), 카드사 드롭다운 카드 계열 시에만 노출
+
+### Changed
+- Sprint 11: `payment_methods.is_card_type` 컬럼 추가 (V109 ALTER TABLE) — 카드 계열 결제수단 판별 (기존 시드 `code='card'` 1건 마킹)
+- Sprint 11 (T0/F7): 사이드 메뉴 '보강 관리' (`/makeups`) `disabledHint` 제거 — Sprint 10 T11에서 `/schedules` 캘린더 뷰로 통합 완료 (`src/lib/menu-config.ts`)
+- Sprint 11 (T0/F5): `ClassCalendar` viewType 비동기 상태 한 프레임 불일치 해소 (`src/components/schedules/ClassCalendar.tsx`)
+
+### Fixed
+- Sprint 11 (T0/F1): `build_day_schedules` `d.succ_opt().expect()` panic 가능성 해소 — `.ok_or_else()` 안전 전환 (`attendance.rs`)
+- Sprint 11 (T0/F2): `generate_impl` expire 호출 실패 시 fail-soft 전환 — expire 실패해도 출결 생성 성공 반환, expire 에러는 warn 로그만 (`attendance.rs`)
+- Sprint 11 (T0/F3): `calendar.rs` `_year_month` 미사용 파라미터 정리
+- Sprint 11 (T0/F4): 보강관리 N+1 쿼리 → IN batch 1쿼리 (`calendar.rs` 한정) — 루프 내 개별 쿼리를 JOIN/IN 절로 batch 처리
+- Sprint 11 (T0/F6): flaky 테스트 `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` `#[ignore]` 마킹 (동시성 설계 재검토 별도 backlog)
+
 ---
 
 ## [0.5.0] - 2026-05-28
