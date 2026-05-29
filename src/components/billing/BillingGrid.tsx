@@ -157,10 +157,18 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         type="text"
                         inputMode="numeric"
                         value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
+                        onChange={(e) => {
+                          setEditValue(e.target.value)
+                          onError(`[CHANGE] "${e.target.value}"`)
+                        }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') tryCommit(b)
-                          else if (e.key === 'Escape') cancelEdit()
+                          onError(`[KEY] key="${e.key}" editValue="${editValue}"`)
+                          if (e.key === 'Enter') {
+                            onError(`[ENTER 트리거] editValue="${editValue}" → tryCommit 호출 직전`)
+                            tryCommit(b)
+                          } else if (e.key === 'Escape') {
+                            cancelEdit()
+                          }
                         }}
                         autoFocus
                         className="h-9 w-28 rounded-md border-2 border-[var(--accent)] px-2 text-right"
