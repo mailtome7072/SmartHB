@@ -113,6 +113,7 @@ pub fn run() {
             commands::academic::auto_place_assessment_dates,
             commands::attendance::check_attendance_exists,
             commands::attendance::generate_attendances,
+            commands::attendance::count_ungenerated_attendance_students,
             commands::attendance::get_attendance_grid,
             commands::attendance::toggle_attendance,
             commands::attendance::update_absence_memo,

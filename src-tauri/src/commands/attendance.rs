@@ -79,12 +79,9 @@ async fn generate_impl(pool: &SqlitePool, year_month: &str) -> Result<GenerateRe
 
     let (start_date, end_date) = load_confirmed_period(pool, year_month).await?;
 
-    if check_exists_impl(pool, year_month).await? {
-        return Err(format!(
-            "{} 출결이 이미 생성되어 있습니다. 기존 출결을 확인 후 다시 시도하세요.",
-            year_month
-        ));
-    }
+    // hotfix post-Sprint 11: 출결 재호출 차단 폐지 — INSERT OR IGNORE 로 신규 원생만 추가.
+    // 청구 generate_bills 와 동일 패턴 ("추가 출결 데이터 생성" UX 트리거).
+    // UNIQUE (student_id, event_date) 가 중복 차단 안전망.
 
     let off_dates = load_off_dates(pool, &start_date, &end_date).await?;
     let students = load_active_students(pool, &start_date).await?;
@@ -120,8 +117,8 @@ async fn generate_impl(pool: &SqlitePool, year_month: &str) -> Result<GenerateRe
                 let in_enroll_range = d >= enroll_d && withdraw_d.is_none_or(|wd| d <= wd);
                 let date_str = d.format("%Y-%m-%d").to_string();
                 if in_enroll_range && !off_dates.contains(&date_str) {
-                    sqlx::query(
-                        "INSERT INTO regular_attendances \
+                    let res = sqlx::query(
+                        "INSERT OR IGNORE INTO regular_attendances \
                          (student_id, event_date, year_month, status, class_minutes) \
                          VALUES (?, ?, ?, 'present', ?)",
                     )
@@ -132,7 +129,9 @@ async fn generate_impl(pool: &SqlitePool, year_month: &str) -> Result<GenerateRe
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| format!("출결 INSERT 실패: {}", e))?;
-                    inserted += 1;
+                    if res.rows_affected() > 0 {
+                        inserted += 1;
+                    }
                 }
             }
             d = d
@@ -430,6 +429,66 @@ pub struct ToggleResult {
 pub async fn get_attendance_grid(year_month: String) -> Result<AttendanceGrid, String> {
     let pool = pool().map_err(|e| e.to_string())?;
     get_grid_impl(pool, &year_month).await
+}
+
+/// 해당 월에 수업 가능(스케줄 합 > 0)하지만 아직 출결이 생성되지 않은 원생 수.
+/// hotfix post-Sprint 11: 출결 데이터 생성 후 신규 등록 원생에 대한 "추가 출결 데이터 생성" UX.
+#[tauri::command]
+pub async fn count_ungenerated_attendance_students(year_month: String) -> Result<i64, String> {
+    let pool = pool().map_err(|e| e.to_string())?;
+    count_ungenerated_attendance_students_impl(pool, &year_month).await
+}
+
+pub(crate) async fn count_ungenerated_attendance_students_impl(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<i64, String> {
+    validate_year_month(year_month)?;
+    let (period_start, period_end) = ym_to_range(year_month)?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ( \
+            SELECT s.id \
+            FROM students s \
+            INNER JOIN student_schedules sch \
+                   ON sch.student_id = s.id AND sch.effective_to IS NULL \
+            WHERE s.enroll_date <= ? \
+              AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
+              AND s.id NOT IN ( \
+                SELECT DISTINCT student_id FROM regular_attendances WHERE year_month = ? \
+              ) \
+            GROUP BY s.id \
+            HAVING SUM(sch.duration_hours) > 0 \
+         )",
+    )
+    .bind(&period_end)
+    .bind(&period_start)
+    .bind(year_month)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("미생성 출결 원생 수 조회 실패: {}", e))?;
+    Ok(count)
+}
+
+/// YYYY-MM → (월초 YYYY-MM-01, 월말 YYYY-MM-DD) 문자열 쌍.
+fn ym_to_range(year_month: &str) -> Result<(String, String), String> {
+    let year: i32 = year_month[..4]
+        .parse()
+        .map_err(|e: std::num::ParseIntError| e.to_string())?;
+    let month: u32 = year_month[5..]
+        .parse()
+        .map_err(|e: std::num::ParseIntError| e.to_string())?;
+    let first = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+        .ok_or_else(|| format!("월초 일자 생성 실패: {}-{:02}-01", year, month))?;
+    let next_first = if month == 12 {
+        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+    }
+    .ok_or_else(|| "다음 달 일자 생성 실패".to_string())?;
+    let last = next_first
+        .pred_opt()
+        .ok_or_else(|| "월말 일자 계산 실패".to_string())?;
+    Ok((first.to_string(), last.to_string()))
 }
 
 #[tauri::command]
@@ -1109,20 +1168,55 @@ mod tests {
     // ─────── AC-T2-4 ───────
 
     #[tokio::test]
-    async fn generate_blocks_duplicate_month() {
+    async fn generate_idempotent_for_same_students() {
+        // hotfix post-Sprint 11: 재호출 차단 폐지 — INSERT OR IGNORE 로 idempotent.
+        // 동일 학생만 있으면 재호출 시 0 row 추가.
         let pool = test_pool_in_memory().await.expect("pool");
         seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
         seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
 
-        generate_impl(&pool, "2026-06").await.expect("first");
-        let err = generate_impl(&pool, "2026-06")
-            .await
-            .expect_err("두 번째 호출은 실패해야 함");
-        assert!(
-            err.contains("이미 생성"),
-            "에러 메시지에 '이미 생성' 포함 필요: {}",
-            err
-        );
+        let first = generate_impl(&pool, "2026-06").await.expect("first");
+        assert!(first.student_count > 0);
+        let attended_first = first.attendance_count;
+
+        let second = generate_impl(&pool, "2026-06").await.expect("second");
+        assert_eq!(second.student_count, 0, "신규 학생 없으면 0");
+        assert_eq!(second.attendance_count, 0, "신규 row 0");
+
+        // 총 행 수는 첫 호출과 동일 (idempotent)
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM regular_attendances")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(total, attended_first);
+    }
+
+    /// 추가 등록 원생만 INSERT — count_ungenerated 와 함께 "추가 출결 데이터 생성" UX 토대.
+    #[tokio::test]
+    async fn generate_adds_only_new_student_on_rerun() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        let first = generate_impl(&pool, "2026-06").await.expect("first");
+
+        // 신규 학생 추가
+        seed_student(&pool, "S002", "2026-04-01", None, &[(3, 1)]).await;
+
+        // count_ungenerated 가 1 반환
+        let ungenerated = count_ungenerated_attendance_students_impl(&pool, "2026-06").await.expect("count");
+        assert_eq!(ungenerated, 1, "신규 등록 1명 미생성");
+
+        let second = generate_impl(&pool, "2026-06").await.expect("second");
+        assert_eq!(second.student_count, 1, "신규 학생 1명만 추가");
+        assert!(second.attendance_count > 0);
+        // 기존 학생 출결은 그대로 보존
+        let s1_total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE student_id = 1",
+        )
+        .fetch_one(&pool).await.unwrap();
+        assert_eq!(s1_total, first.attendance_count, "S001 기존 출결 보존");
+
+        // 재호출 후 ungenerated 0
+        let ungenerated2 = count_ungenerated_attendance_students_impl(&pool, "2026-06").await.expect("count2");
+        assert_eq!(ungenerated2, 0);
     }
 
     // ─────── AC-T2-5 ───────

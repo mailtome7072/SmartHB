@@ -20,6 +20,7 @@ import {
   checkAttendanceExists,
   generateAttendances,
   getAttendanceGrid,
+  countUngeneratedAttendanceStudents,
 } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -119,6 +120,12 @@ export default function AttendancePage() {
     enabled: existsQuery.data === true,
   })
 
+  // 미생성 원생 수 — hotfix post-Sprint 11. "추가 출결 데이터 생성" UX 트리거.
+  const ungeneratedQuery = useQuery({
+    queryKey: ['attendance-ungenerated', yearMonth],
+    queryFn: () => countUngeneratedAttendanceStudents(yearMonth),
+  })
+
   // 출결 일괄 생성
   const generateMutation = useMutation({
     mutationFn: () => generateAttendances(yearMonth),
@@ -126,6 +133,7 @@ export default function AttendancePage() {
       setError(null)
       void queryClient.invalidateQueries({ queryKey: ['attendance-exists', yearMonth] })
       void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+      void queryClient.invalidateQueries({ queryKey: ['attendance-ungenerated', yearMonth] })
       // Sprint 10 T4 (PI-09): 출결 생성 직후 소멸 자동 전이 결과 알림.
       const count = result.expirationReport.transitionedCount
       setExpirationNotice(
@@ -140,7 +148,14 @@ export default function AttendancePage() {
   // 월 선택 옵션 — 현재 월 + 과거 11개월
   const monthOptions = previousYearMonths(12, currentYearMonth())
 
-  const showGenerateButton = existsQuery.data === false
+  // hotfix post-Sprint 11: 청구 패턴과 동일 — 출결 0건 → "생성", 추가 등록 원생 있으면 "추가 생성".
+  const ungeneratedCount = ungeneratedQuery.data ?? 0
+  const showGenerateButton =
+    existsQuery.data === false || ungeneratedCount > 0
+  const generateButtonLabel =
+    existsQuery.data === false
+      ? '출결 데이터 생성'
+      : `추가 출결 데이터 생성 (${ungeneratedCount}명)`
   const showGrid = existsQuery.data === true && gridQuery.data !== undefined
 
   // 검색어 + 재원중 + 보강대상 필터 — 새 grid 객체를 만들어 AttendanceGrid 에 전달.
@@ -250,7 +265,7 @@ export default function AttendancePage() {
             disabled={generateMutation.isPending}
             className="ml-auto min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
           >
-            {generateMutation.isPending ? '생성 중...' : '출결 생성'}
+            {generateMutation.isPending ? '생성 중...' : generateButtonLabel}
           </button>
         )}
       </header>
@@ -286,13 +301,13 @@ export default function AttendancePage() {
           <p className="text-gray-600">출결 상태 확인 중...</p>
         )}
 
-        {showGenerateButton && (
+        {existsQuery.data === false && (
           <div className="rounded-lg border border-[var(--border)] bg-white p-8 text-center">
             <p className="text-lg text-gray-700">
               {yearMonth.replace('-', '년 ') + '월'} 출결이 아직 생성되지 않았습니다.
             </p>
             <p className="mt-2 text-base text-gray-500">
-              우측 상단의 &ldquo;출결 생성&rdquo; 버튼을 눌러 해당 월 재원 원생의 출결을 일괄 생성하세요.
+              우측 상단의 &ldquo;출결 데이터 생성&rdquo; 버튼을 눌러 해당 월 재원 원생의 출결을 일괄 생성하세요.
             </p>
             <p className="mt-2 text-sm text-gray-500">
               ※ 교습기간이 먼저 확정되어 있어야 합니다 (학사 스케줄 메뉴).

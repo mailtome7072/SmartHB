@@ -1033,6 +1033,12 @@ export async function checkAttendanceExists(yearMonth: string): Promise<boolean>
 }
 
 /** 해당 월 재원 원생 × 수업 요일 일자에 정규 출결 일괄 생성 (AC-4.5-1). */
+export async function countUngeneratedAttendanceStudents(yearMonth: string): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_ungenerated_attendance_students', { yearMonth }) as Promise<number>
+}
+
 export async function generateAttendances(yearMonth: string): Promise<GenerateResult> {
   const inv = await getInvoke()
   if (!inv) {
