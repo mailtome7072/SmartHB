@@ -470,6 +470,99 @@ pub(crate) async fn close_billing_month_impl(
     Ok(closed)
 }
 
+// ─────────────────────── 검색 + 자동 채움 (post-Sprint 11) ───────────────────────
+
+/// 검색 결과 한 행 — 매칭된 학생 + 그 학생의 가장 최근 수납 정보(자동 채움용).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingSearchResult {
+    pub student_id: i64,
+    pub student_name: String,
+    pub latest_payer_name: Option<String>,
+    pub latest_payment_method_id: Option<i64>,
+    pub latest_card_company_id: Option<i64>,
+}
+
+/// 청구·수납 통합 검색 — 원생 이름 / 연락처(`-` 제거 후 완전 일치) / 입금자 이름(완전 일치).
+///
+/// 입금자로 매칭된 경우 그 입금자가 과거 수납한 모든 원생을 결과에 포함.
+/// 각 행에 그 학생의 가장 최근 `is_paid=1` payments 의 (입금자/결제수단/카드사) 정보를 함께 반환 —
+/// 미수납 청구 자동 채움에 사용.
+#[tauri::command]
+pub async fn search_students_for_billing(
+    query: String,
+) -> Result<Vec<BillingSearchResult>, String> {
+    let pool = db::pool().map_err(String::from)?;
+    search_students_for_billing_impl(pool, &query).await
+}
+
+pub(crate) async fn search_students_for_billing_impl(
+    pool: &SqlitePool,
+    query: &str,
+) -> Result<Vec<BillingSearchResult>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query(
+        "WITH matching_ids AS ( \
+            SELECT id FROM students WHERE name = ? \
+            UNION \
+            SELECT id FROM students \
+             WHERE REPLACE(COALESCE(phone_student, ''), '-', '') = ? \
+                OR REPLACE(COALESCE(phone_mother, ''), '-', '') = ? \
+                OR REPLACE(COALESCE(phone_father, ''), '-', '') = ? \
+            UNION \
+            SELECT b.student_id FROM bills b \
+              JOIN payments p ON p.bill_id = b.id \
+             WHERE p.payer_name = ? \
+         ), \
+         latest_per_student AS ( \
+            SELECT b.student_id, p.payer_name, p.payment_method_id, p.card_company_id, \
+                   ROW_NUMBER() OVER ( \
+                     PARTITION BY b.student_id \
+                     ORDER BY p.paid_date DESC, p.created_at DESC \
+                   ) AS rn \
+            FROM payments p JOIN bills b ON b.id = p.bill_id \
+            WHERE p.is_paid = 1 \
+         ) \
+         SELECT s.id AS student_id, s.name AS student_name, \
+                lp.payer_name AS latest_payer_name, \
+                lp.payment_method_id AS latest_payment_method_id, \
+                lp.card_company_id AS latest_card_company_id \
+         FROM students s \
+         LEFT JOIN latest_per_student lp ON lp.student_id = s.id AND lp.rn = 1 \
+         WHERE s.id IN (SELECT id FROM matching_ids) \
+         ORDER BY s.name",
+    )
+    .bind(q)
+    .bind(q)
+    .bind(q)
+    .bind(q)
+    .bind(q)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("청구 검색 실패: {}", e))?;
+
+    rows.into_iter()
+        .map(|r| {
+            Ok(BillingSearchResult {
+                student_id: r.try_get("student_id").map_err(|e| e.to_string())?,
+                student_name: r.try_get("student_name").map_err(|e| e.to_string())?,
+                latest_payer_name: r
+                    .try_get("latest_payer_name")
+                    .map_err(|e| e.to_string())?,
+                latest_payment_method_id: r
+                    .try_get("latest_payment_method_id")
+                    .map_err(|e| e.to_string())?,
+                latest_card_company_id: r
+                    .try_get("latest_card_company_id")
+                    .map_err(|e| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
 /// UI 디폴트 청구년월 — 가장 최근(MAX) 교습기간 월 반환. 없으면 None.
 #[tauri::command]
 pub async fn get_default_billing_year_month() -> Result<Option<String>, String> {

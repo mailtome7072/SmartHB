@@ -83,6 +83,7 @@ pub fn run() {
             commands::billing::list_unpaid_bills,
             commands::billing::batch_update_payments,
             commands::billing::get_billing_summary,
+            commands::billing::search_students_for_billing,
             commands::billing::get_default_billing_year_month,
             commands::codes::list_codes,
             commands::codes::count_codes,

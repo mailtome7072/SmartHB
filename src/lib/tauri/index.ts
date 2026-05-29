@@ -1188,6 +1188,7 @@ export async function getAbsenceHistory(
 
 import type {
   Bill,
+  BillingSearchResult,
   BillingSummary,
   GenerateBillsResult,
   Payment,
@@ -1280,6 +1281,14 @@ export async function getBillingSummary(yearMonth: string): Promise<BillingSumma
     }
   }
   return inv('get_billing_summary', { yearMonth }) as Promise<BillingSummary>
+}
+
+export async function searchStudentsForBilling(
+  query: string,
+): Promise<BillingSearchResult[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('search_students_for_billing', { query }) as Promise<BillingSearchResult[]>
 }
 
 export async function getDefaultBillingYearMonth(): Promise<string | null> {

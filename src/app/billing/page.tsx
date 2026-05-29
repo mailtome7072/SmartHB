@@ -28,7 +28,9 @@ import {
   generateBills,
   getBillingSummary,
   listBills,
+  searchStudentsForBilling,
 } from '@/lib/tauri'
+import type { BillingSearchResult } from '@/types/billing'
 
 function currentYearMonth(): string {
   const d = new Date()
@@ -63,6 +65,26 @@ function BillingContent() {
   const [error, setError] = useState<string | null>(null)
   const [closeMonthOpen, setCloseMonthOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('bills')
+
+  // 검색 — 청구·수납 통합 (원생 이름 / 연락처 / 입금자 이름 완전 일치)
+  const [searchInput, setSearchInput] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState<string>('')
+  const searchQuery = useQuery({
+    queryKey: ['billing-search', appliedSearch],
+    queryFn: () => searchStudentsForBilling(appliedSearch),
+    enabled: appliedSearch.trim().length > 0,
+  })
+  const matchedStudentIds: Set<number> | null =
+    appliedSearch.trim() === ''
+      ? null
+      : new Set((searchQuery.data ?? []).map((r) => r.studentId))
+  const searchResults: BillingSearchResult[] = searchQuery.data ?? []
+
+  const applySearch = () => setAppliedSearch(searchInput)
+  const clearSearch = () => {
+    setSearchInput('')
+    setAppliedSearch('')
+  }
 
   // 디폴트 청구년월 — 오늘 날짜 기준 년월 (hotfix post-Sprint 11 정책).
   // 청구년월 'YYYY-MM' = 해당 연·월 수업 원생의 교습비 청구서.
@@ -180,6 +202,38 @@ function BillingContent() {
             </select>
           </label>
 
+          {/* 통합 검색 — 원생 이름 / 연락처(- 제거 후 완전 일치) / 입금자 이름 */}
+          <input
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return
+              if (e.key === 'Enter') applySearch()
+              else if (e.key === 'Escape') clearSearch()
+            }}
+            placeholder="이름 / 연락처 / 입금자"
+            aria-label="청구·수납 통합 검색"
+            className="h-11 w-56 rounded-md border-2 border-[var(--border)] px-3 text-base"
+          />
+          <button
+            type="button"
+            onClick={applySearch}
+            disabled={searchInput.trim() === ''}
+            className="h-11 rounded-md border border-[var(--accent)] px-3 text-base text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+          >
+            검색
+          </button>
+          {appliedSearch !== '' && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="h-11 rounded-md border border-[var(--border)] px-3 text-base text-gray-700 hover:bg-gray-50"
+            >
+              초기화 ({searchResults.length}건)
+            </button>
+          )}
+
           {tab === 'bills' && showGenerateButton && (
             <button
               type="button"
@@ -264,14 +318,23 @@ function BillingContent() {
 
         {tab === 'bills' && bills.length > 0 && (
           <BillingGrid
-            bills={bills}
+            bills={
+              matchedStudentIds === null
+                ? bills
+                : bills.filter((b) => matchedStudentIds.has(b.studentId))
+            }
             yearMonth={effectiveYearMonth}
             onError={(msg) => setError(msg)}
           />
         )}
 
         {tab === 'payments' && (
-          <PaymentsView yearMonth={effectiveYearMonth} onError={(msg) => setError(msg)} />
+          <PaymentsView
+            yearMonth={effectiveYearMonth}
+            onError={(msg) => setError(msg)}
+            matchedStudentIds={matchedStudentIds}
+            searchResults={searchResults}
+          />
         )}
       </div>
 

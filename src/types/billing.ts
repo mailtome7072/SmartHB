@@ -64,6 +64,15 @@ export interface UnpaidBill {
   midMonthType: MidMonthType | null
 }
 
+export interface BillingSearchResult {
+  studentId: number
+  studentName: string
+  /** 가장 최근 is_paid=1 payments 의 입금자 — 자동 채움용. */
+  latestPayerName: string | null
+  latestPaymentMethodId: number | null
+  latestCardCompanyId: number | null
+}
+
 export interface BillingSummary {
   yearMonth: string
   /**

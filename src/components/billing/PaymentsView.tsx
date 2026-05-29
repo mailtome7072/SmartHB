@@ -14,12 +14,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { batchUpdatePayments, listCodes, listUnpaidBills } from '@/lib/tauri'
-import type { PaymentInput, UnpaidBill } from '@/types/billing'
+import type { BillingSearchResult, PaymentInput, UnpaidBill } from '@/types/billing'
 import type { CodeEntry } from '@/types/code'
 
 interface Props {
   yearMonth: string
   onError: (msg: string) => void
+  /** 통합 검색 매칭 학생 ID 집합. null = 검색 미적용 (모든 미납 표시). */
+  matchedStudentIds: Set<number> | null
+  /** 검색 결과 — 자동 채움(입금일=오늘 + 최근 결제수단/카드사/입금자) 에 사용. */
+  searchResults: BillingSearchResult[]
 }
 
 interface RowDraft {
@@ -47,7 +51,12 @@ function emptyDraft(): RowDraft {
   }
 }
 
-export function PaymentsView({ yearMonth, onError }: Props) {
+export function PaymentsView({
+  yearMonth,
+  onError,
+  matchedStudentIds,
+  searchResults,
+}: Props) {
   const qc = useQueryClient()
   const unpaidQuery = useQuery({
     queryKey: ['unpaid-bills', yearMonth],
@@ -72,7 +81,12 @@ export function PaymentsView({ yearMonth, onError }: Props) {
     }
   }, [unpaidQuery.data])
 
-  const unpaid: UnpaidBill[] = unpaidQuery.data ?? []
+  const allUnpaid: UnpaidBill[] = unpaidQuery.data ?? []
+  // 검색 매칭된 학생의 미납만 노출 (검색 미적용 시 전체).
+  const unpaid: UnpaidBill[] =
+    matchedStudentIds === null
+      ? allUnpaid
+      : allUnpaid.filter((u) => matchedStudentIds.has(u.studentId))
   const paymentMethods: CodeEntry[] = (paymentMethodsQuery.data ?? []).filter(
     (c) => c.is_active,
   )
@@ -83,6 +97,33 @@ export function PaymentsView({ yearMonth, onError }: Props) {
     () => paymentMethods.find((p) => p.code === CARD_PAYMENT_CODE)?.id ?? null,
     [paymentMethods],
   )
+
+  // 검색 결과로 좁혀진 미납 행에 자동 채움 (입금일=오늘 + 최근 결제수단/카드사/입금자).
+  // 사용자는 완료 체크 + 저장만 수행.
+  useEffect(() => {
+    if (matchedStudentIds === null || searchResults.length === 0) return
+    if (unpaid.length === 0) return
+    const today = todayStr()
+    const byStudent = new Map(searchResults.map((r) => [r.studentId, r]))
+    setDrafts((prev) => {
+      const next = { ...prev }
+      let touched = false
+      for (const u of unpaid) {
+        if (prev[u.billId] !== undefined) continue // 이미 사용자가 손댄 행은 건드리지 않음
+        const info = byStudent.get(u.studentId)
+        if (!info) continue
+        next[u.billId] = {
+          isPaid: false, // 사용자가 명시적으로 체크
+          paidDate: today,
+          payerName: info.latestPayerName ?? '',
+          paymentMethodId: info.latestPaymentMethodId,
+          cardCompanyId: info.latestCardCompanyId,
+        }
+        touched = true
+      }
+      return touched ? next : prev
+    })
+  }, [matchedStudentIds, searchResults, unpaid])
 
   const getDraft = (billId: number): RowDraft => drafts[billId] ?? emptyDraft()
 
