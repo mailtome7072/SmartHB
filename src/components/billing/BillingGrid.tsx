@@ -45,11 +45,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
     bill: Bill
     newAmount: number
   } | null>(null)
-  // 임시 디버그 (다음 commit 에서 제거)
-  const [dbgLastKey, setDbgLastKey] = useState('')
-  const [dbgCommitCalls, setDbgCommitCalls] = useState(0)
-  const [dbgOnErrorCalls, setDbgOnErrorCalls] = useState(0)
-  const [dbgLastMsg, setDbgLastMsg] = useState('')
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['bills', yearMonth] })
@@ -99,13 +94,9 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
   }
 
   const tryCommit = (bill: Bill) => {
-    setDbgCommitCalls((c) => c + 1)
     const parsed = Number(editValue.replace(/,/g, ''))
     if (!Number.isFinite(parsed) || parsed < 0) {
-      const msg = '조정 금액은 0 이상의 숫자여야 합니다.'
-      setDbgOnErrorCalls((c) => c + 1)
-      setDbgLastMsg(msg)
-      onError(msg)
+      onError('조정 금액은 0 이상의 숫자여야 합니다.')
       return
     }
     if (parsed === bill.adjustedAmount) {
@@ -122,22 +113,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
 
   return (
     <>
-      {/* 임시 디버그 — 다음 commit 에서 제거 */}
-      <div
-        style={{
-          background: '#fff7d6',
-          border: '2px dashed #b45309',
-          padding: 8,
-          marginBottom: 8,
-          fontFamily: 'monospace',
-          fontSize: 13,
-        }}
-      >
-        DEBUG editValue=&quot;{editValue}&quot; | lastKey={dbgLastKey || '(없음)'}
-        <br />
-        tryCommit 호출: {dbgCommitCalls} | onError 호출: {dbgOnErrorCalls} | lastMsg=&quot;
-        {dbgLastMsg || '(없음)'}&quot;
-      </div>
       <div className="overflow-x-auto rounded-md border border-[var(--border)]">
         <table className="w-full text-base">
           <thead className="bg-gray-100 text-left">
@@ -181,7 +156,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => {
-                          setDbgLastKey(`${e.key}|${e.code}|cmp=${e.nativeEvent.isComposing}`)
+                          if (e.nativeEvent.isComposing) return
                           if (
                             e.key === 'Enter' ||
                             e.code === 'Enter' ||

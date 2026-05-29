@@ -60,27 +60,9 @@ type Tab = 'bills' | 'payments'
 function BillingContent() {
   const qc = useQueryClient()
   const [yearMonth, setYearMonth] = useState<string | null>(null)
-  const [error, setErrorRaw] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [closeMonthOpen, setCloseMonthOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('bills')
-
-  // 임시 디버그 — setError 호출 추적
-  const [dbgSetErrCalls, setDbgSetErrCalls] = useState(0)
-  const [dbgSetErrLog, setDbgSetErrLog] = useState<string[]>([])
-  const setError = (val: string | null) => {
-    // stack 의 1~4번째 줄에서 호출자 식별 (dev mode 함수 이름 노출)
-    const stack = (new Error().stack ?? '')
-      .split('\n')
-      .slice(2, 6)
-      .map((l) => l.trim().replace(/.*\//, ''))
-      .join(' < ')
-    setDbgSetErrCalls((c) => c + 1)
-    setDbgSetErrLog((arr) => [
-      ...arr.slice(-4),
-      `${JSON.stringify(val)} :: ${stack}`,
-    ])
-    setErrorRaw(val)
-  }
 
   // 디폴트 청구년월 — 오늘 날짜 기준 년월 (hotfix post-Sprint 11 정책).
   // 청구년월 'YYYY-MM' = 해당 연·월 수업 원생의 교습비 청구서.
@@ -311,29 +293,6 @@ function BillingContent() {
         message={error ?? ''}
         onClose={() => setError(null)}
       />
-
-      {/* 임시 디버그 — 다음 commit 에서 제거 */}
-      <div
-        style={{
-          position: 'fixed',
-          top: 8,
-          right: 8,
-          background: 'yellow',
-          color: 'black',
-          padding: 8,
-          fontSize: 12,
-          fontFamily: 'monospace',
-          zIndex: 2147483645,
-          maxWidth: 560,
-          border: '2px solid red',
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-        PAGE error = {JSON.stringify(error)}
-        {'\n'}ErrorDialog open = {String(error !== null && error !== '')}
-        {'\n'}setError 호출: {dbgSetErrCalls}
-        {'\n'}최근 호출: {dbgSetErrLog.join(' → ')}
-      </div>
     </AppShell>
   )
 }
