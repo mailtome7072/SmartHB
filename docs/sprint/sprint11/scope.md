@@ -47,11 +47,11 @@ Sprint: 11  |  Date: 2026-05-28  |  Session: #1
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/commands/attendance.rs | [0회] | F1 + F2 (라인 155, 655) |
-| src-tauri/src/commands/calendar.rs | [0회] | F3 + F4 (라인 188, 215) |
-| src-tauri/src/commands/auth.rs | [0회] | F6 (#[ignore] 마킹) |
-| src/components/schedules/ClassCalendar.tsx | [0회] | F5 (라인 164) |
-| src/lib/menu-config.ts | [0회] | F7 (보강 관리 항목 제거) |
+| src-tauri/src/commands/attendance.rs | [2회] | F1 + F2 (라인 155, 655) |
+| src-tauri/src/commands/calendar.rs | [4회 ⚠️] | F3 + F4 (라인 188, 215) |
+| src-tauri/src/commands/auth.rs | [1회] | F6 (#[ignore] 마킹) |
+| src/components/schedules/ClassCalendar.tsx | [1회] | F5 (라인 164) |
+| src/lib/menu-config.ts | [1회] | F7 (보강 관리 항목 제거) |
 | docs/sprint/sprint11/scope.md | [0회] | 본 파일 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
