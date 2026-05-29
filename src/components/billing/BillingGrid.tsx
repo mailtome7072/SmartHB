@@ -88,17 +88,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
     onError('')
   }
 
-  // input 떠날 때(onBlur) 검증 — 빈 값은 skip. 저장/취소 버튼은 onMouseDown preventDefault 로
-  // input focus 를 유지시켜 의도치 않은 검증 팝업을 회피한다.
-  const validateOnBlur = () => {
-    const v = editValue.trim()
-    if (v === '') return
-    const parsed = Number(v.replace(/,/g, ''))
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      onError('조정 금액은 0 이상의 숫자여야 합니다.')
-    }
-  }
-
   const cancelEdit = () => {
     setEditingId(null)
     setEditValue('')
@@ -166,7 +155,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         inputMode="numeric"
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={validateOnBlur}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') tryCommit(b)
                           else if (e.key === 'Escape') cancelEdit()
@@ -205,7 +193,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                       <div className="flex justify-end gap-1">
                         <button
                           type="button"
-                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() => tryCommit(b)}
                           className="h-9 rounded border border-[var(--accent)] bg-[var(--accent)] px-3 text-sm text-white hover:opacity-90"
                         >
@@ -213,7 +200,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         </button>
                         <button
                           type="button"
-                          onMouseDown={(e) => e.preventDefault()}
                           onClick={cancelEdit}
                           className="h-9 rounded border border-[var(--border)] px-3 text-sm text-gray-700 hover:bg-gray-50"
                         >
