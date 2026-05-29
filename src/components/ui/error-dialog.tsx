@@ -4,9 +4,11 @@
  * 전역 에러 다이얼로그 — 빨간 인라인 박스를 대체하는 명시적 확인 모달.
  *
  * 사용처: 각 페이지의 mutation/검증 에러 알림. message 비어있으면(빈 문자열·null) 렌더하지 않음.
- * 다이얼로그 패턴은 Sprint 10/11 `WithdrawalMakeupDialog` / `CloseReasonDialog` 와 동일
- * (native fixed inset modal). z-[70] 으로 기존 다이얼로그(z-[60]) 위에 표시.
+ * `createPortal` 로 `document.body` 직접 렌더 — 부모(AppShell main 의 overflow-y-auto 등)
+ * stacking context 영향 없이 viewport 최상위에 노출.
  */
+
+import { createPortal } from 'react-dom'
 
 interface Props {
   open: boolean
@@ -17,7 +19,8 @@ interface Props {
 
 export function ErrorDialog({ open, title = '오류', message, onClose }: Props) {
   if (!open || message.trim() === '') return null
-  return (
+  if (typeof document === 'undefined') return null
+  const dialog = (
     <div
       role="alertdialog"
       aria-modal="true"
@@ -40,4 +43,5 @@ export function ErrorDialog({ open, title = '오류', message, onClose }: Props)
       </div>
     </div>
   )
+  return createPortal(dialog, document.body)
 }
