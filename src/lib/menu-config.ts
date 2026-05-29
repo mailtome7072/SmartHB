@@ -20,7 +20,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: '출결 관리', href: '/attendance' },
   // 보강 관리는 Sprint 10 T11 에서 `/schedules` 페이지 내 탭으로 통합 — 별도 메뉴 항목 제거 (Sprint 11 F7).
   { label: '단원 평가', href: '/exams', disabledHint: 'Phase 5 에서 제공' },
-  { label: '청구 관리', href: '/billing', disabledHint: 'Phase 4 에서 제공' },
+  { label: '청구 관리', href: '/billing' },
   { label: '공지문', href: '/notices', disabledHint: 'Phase 4 에서 제공' },
   { label: '학습 보고서', href: '/reports', disabledHint: 'Phase 5 에서 제공' },
   { label: '설정', href: '/settings' },
