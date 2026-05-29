@@ -94,6 +94,8 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
   }
 
   const tryCommit = (bill: Bill) => {
+    // 임시 디버그 — 다음 commit 에서 제거
+    onError(`[tryCommit] editValue="${editValue}" billId=${bill.id}`)
     const parsed = Number(editValue.replace(/,/g, ''))
     if (!Number.isFinite(parsed) || parsed < 0) {
       onError('조정 금액은 0 이상의 숫자여야 합니다.')
@@ -156,7 +158,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.nativeEvent.isComposing) return
                           if (
                             e.key === 'Enter' ||
                             e.code === 'Enter' ||
