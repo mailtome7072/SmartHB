@@ -20,6 +20,7 @@ import { GlobalSearch } from '@/components/layout/global-search'
 import { SplashScreen } from '@/components/splash-screen'
 import { BillingGrid } from '@/components/billing/BillingGrid'
 import { CloseMonthDialog } from '@/components/billing/CloseMonthDialog'
+import { PaymentsView } from '@/components/billing/PaymentsView'
 import {
   closeBillingMonth,
   confirmAllBills,
@@ -54,11 +55,14 @@ export default function BillingPage() {
   )
 }
 
+type Tab = 'bills' | 'payments'
+
 function BillingContent() {
   const qc = useQueryClient()
   const [yearMonth, setYearMonth] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [closeMonthOpen, setCloseMonthOpen] = useState(false)
+  const [tab, setTab] = useState<Tab>('bills')
 
   // 초기 yearMonth 결정 — 가장 최근 교습기간 월 (없으면 현재 월).
   const defaultQuery = useQuery({
@@ -126,6 +130,28 @@ function BillingContent() {
       <div className="mx-auto max-w-6xl">
         <h1 className="mb-4 text-2xl font-bold">청구 관리</h1>
 
+        {/* 탭 */}
+        <div className="mb-3 flex gap-1 border-b border-[var(--border)]">
+          {([
+            ['bills', '청구 목록'],
+            ['payments', '수납 관리'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              aria-pressed={tab === key}
+              className={`-mb-px min-h-[44px] border-b-2 px-4 text-base font-semibold ${
+                tab === key
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-transparent text-gray-600 hover:text-[var(--foreground)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* 툴바 — 월 선택 + 액션 버튼 */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <label className="text-base font-medium">
@@ -146,7 +172,7 @@ function BillingContent() {
             </select>
           </label>
 
-          {showGenerateButton && (
+          {tab === 'bills' && showGenerateButton && (
             <button
               type="button"
               onClick={() => generateMutation.mutate()}
@@ -157,7 +183,7 @@ function BillingContent() {
             </button>
           )}
 
-          {draftCount > 0 && (
+          {tab === 'bills' && draftCount > 0 && (
             <button
               type="button"
               onClick={() => confirmAllMutation.mutate()}
@@ -168,7 +194,7 @@ function BillingContent() {
             </button>
           )}
 
-          {showCloseButton && (
+          {tab === 'bills' && showCloseButton && (
             <button
               type="button"
               onClick={() => setCloseMonthOpen(true)}
@@ -178,15 +204,15 @@ function BillingContent() {
             </button>
           )}
 
-          {allClosed && (
+          {tab === 'bills' && allClosed && (
             <span className="rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-600">
               ✓ 마감 완료
             </span>
           )}
         </div>
 
-        {/* 미확정 청구 배너 (AC-4.9-5) */}
-        {draftCount > 0 && (
+        {/* 미확정 청구 배너 (AC-4.9-5) — 청구 탭에서만 */}
+        {tab === 'bills' && draftCount > 0 && (
           <div
             role="status"
             className="mb-3 rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900"
@@ -224,16 +250,20 @@ function BillingContent() {
 
         {billsQuery.isLoading && <p>불러오는 중...</p>}
 
-        {!billsQuery.isLoading && bills.length === 0 && !showGenerateButton && (
+        {tab === 'bills' && !billsQuery.isLoading && bills.length === 0 && !showGenerateButton && (
           <p className="text-gray-600">청구 데이터가 없습니다.</p>
         )}
 
-        {bills.length > 0 && (
+        {tab === 'bills' && bills.length > 0 && (
           <BillingGrid
             bills={bills}
             yearMonth={effectiveYearMonth}
             onError={(msg) => setError(msg)}
           />
+        )}
+
+        {tab === 'payments' && (
+          <PaymentsView yearMonth={effectiveYearMonth} onError={(msg) => setError(msg)} />
         )}
       </div>
 
