@@ -13,7 +13,7 @@
  * 월중입퇴교 시각 구분 (AC-4.9-2): 행 배경 + 라벨.
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { confirmBill, updateBill } from '@/lib/tauri'
 import { CloseReasonDialog } from './CloseReasonDialog'
@@ -88,20 +88,16 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
     onError('')
   }
 
-  // 입력 중 실시간 검증 — 입력 멈춤 후 300ms 뒤 ErrorDialog 자동 표시.
-  // 빈 값/편집 종료 상태는 skip (cancel 시 onBlur 부수효과 회피).
-  useEffect(() => {
-    if (editingId === null) return
-    const trimmed = editValue.trim()
-    if (trimmed === '') return
-    const handle = setTimeout(() => {
-      const parsed = Number(trimmed.replace(/,/g, ''))
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        onError('조정 금액은 0 이상의 숫자여야 합니다.')
-      }
-    }, 300)
-    return () => clearTimeout(handle)
-  }, [editValue, editingId, onError])
+  // input 떠날 때(onBlur) 검증 — 빈 값은 skip. 저장/취소 버튼은 onMouseDown preventDefault 로
+  // input focus 를 유지시켜 의도치 않은 검증 팝업을 회피한다.
+  const validateOnBlur = () => {
+    const v = editValue.trim()
+    if (v === '') return
+    const parsed = Number(v.replace(/,/g, ''))
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      onError('조정 금액은 0 이상의 숫자여야 합니다.')
+    }
+  }
 
   const cancelEdit = () => {
     setEditingId(null)
@@ -170,6 +166,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         inputMode="numeric"
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={validateOnBlur}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') tryCommit(b)
                           else if (e.key === 'Escape') cancelEdit()
@@ -208,6 +205,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                       <div className="flex justify-end gap-1">
                         <button
                           type="button"
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() => tryCommit(b)}
                           className="h-9 rounded border border-[var(--accent)] bg-[var(--accent)] px-3 text-sm text-white hover:opacity-90"
                         >
@@ -215,6 +213,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         </button>
                         <button
                           type="button"
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={cancelEdit}
                           className="h-9 rounded border border-[var(--border)] px-3 text-sm text-gray-700 hover:bg-gray-50"
                         >
