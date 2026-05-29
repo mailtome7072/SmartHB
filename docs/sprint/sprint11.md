@@ -101,21 +101,26 @@ Sprint 9~10 코드 리뷰 발견 사항 + 운용 부채를 일괄 해소한다.
 - ⬜ **F6**: flaky 테스트 `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` -- `#[ignore]` 마킹 + 코멘트 (동시성 설계 재검토는 별도 backlog)
 - ⬜ **F7**: 사이드 메뉴 '보강 관리' (`/makeups`) `disabledHint` 제거 -- Sprint 10 T11에서 `/schedules` 탭으로 통합 완료. `src/lib/menu-config.ts:21`
 
-### T1: DB 마이그레이션 V109 -- bills + payments + is_card_type (3h)
+### T1: DB 마이그레이션 V109 -- bills + payments + payment_methods.is_card_type (3h)
 
 PRD SS4.9 + SS6.2 UNIQUE 제약 준수. PI-12 확정: **별도 payments 테이블**.
 
+> **T1 진입 시 사실 정정 (Session #2)**: 실제 DB 에는 단일 `codes` 테이블 없음 — `payment_methods` / `card_companies` 가 별도 테이블. SQLite Boolean 은 `INTEGER CHECK (X IN (0, 1))` 패턴. `weekly_hours` 는 `standard_fees` 와 정합 위해 INTEGER.
+
 - ⬜ **bills 테이블** 설계 + 마이그레이션 작성
-  - 컬럼: `id`, `student_id` (FK students), `bill_year_month` (TEXT "YYYY-MM"), `weekly_hours` (REAL), `bill_amount` (INTEGER, 원 단위), `adjusted_amount` (INTEGER, 조정 후 금액), `status` (TEXT CHECK: 'draft'/'confirmed'/'closed'), `is_mid_month` (BOOLEAN, 월 중 입퇴교 플래그), `mid_month_type` (TEXT NULL: 'enrolled'/'withdrawn'), `close_reason` (TEXT NULL, 마감 후 수정 사유), `closed_at` (TEXT NULL, 마감 일시), `confirmed_at` (TEXT NULL), `created_at`, `updated_at`
-  - UNIQUE 제약: `(student_id, bill_year_month)`
+  - 컬럼: `id`, `student_id` (FK students), `bill_year_month` (TEXT "YYYY-MM"), `weekly_hours` (**INTEGER**), `bill_amount` (INTEGER, 원 단위), `adjusted_amount` (INTEGER, 조정 후 금액), `status` (TEXT CHECK: 'draft'/'confirmed'/'closed'), `is_mid_month` (INTEGER CHECK IN (0,1), 월 중 입퇴교 플래그), `mid_month_type` (TEXT NULL: 'enrolled'/'withdrawn'), `close_reason` (TEXT NULL, 마감 후 수정 사유), `closed_at` (TEXT NULL, 마감 일시), `confirmed_at` (TEXT NULL), `created_at`, `updated_at`
+  - UNIQUE 제약: `(student_id, bill_year_month)` -- PRD §6.2
   - FK: `student_id REFERENCES students(id)`
+  - CHECK: bill_year_month GLOB, status CHECK, is_mid_month/mid_month_type 정합, closed_at/status 정합
+  - INDEX: bill_year_month, student_id, status
 - ⬜ **payments 테이블** 설계 + 마이그레이션 작성 (PI-12 확정: 별도 테이블)
-  - 컬럼: `id`, `bill_id` (FK bills, UNIQUE -- 1:1 관계), `is_paid` (BOOLEAN DEFAULT 0), `paid_date` (TEXT NULL), `payer_name` (TEXT NULL), `payment_method_id` (FK codes NULL), `card_company_id` (FK codes NULL, 카드 계열 시 필수), `created_at`, `updated_at`
-  - FK: `bill_id REFERENCES bills(id)`
+  - 컬럼: `id`, `bill_id` (FK bills, UNIQUE -- 1:1 관계, ON DELETE CASCADE), `is_paid` (INTEGER CHECK IN (0,1) DEFAULT 0), `paid_date` (TEXT NULL), `payer_name` (TEXT NULL), `payment_method_id` (**FK payment_methods(id)**), `card_company_id` (**FK card_companies(id)**, 카드 계열 시 필수 -- 백엔드 IPC 검증), `created_at`, `updated_at`
   - UNIQUE: `bill_id` (청구 1건당 수납 1건)
-- ⬜ **codes 테이블 `is_card_type` 컬럼 추가** -- 결제수단 카드 계열 식별용
-  - `ALTER TABLE codes ADD COLUMN is_card_type BOOLEAN NOT NULL DEFAULT 0`
-  - 기존 시드 결제수단 중 "신용카드", "체크카드" 계열을 `is_card_type = 1`로 UPDATE
+  - CHECK: paid_date GLOB, is_paid=1 → paid_date NOT NULL 정합
+- ⬜ **`payment_methods.is_card_type` 컬럼 추가** -- 결제수단 카드 계열 식별용
+  - `ALTER TABLE payment_methods ADD COLUMN is_card_type INTEGER NOT NULL DEFAULT 0 CHECK (is_card_type IN (0, 1))`
+  - 기존 시드 중 `code='card'` 한 건을 `is_card_type=1`로 UPDATE (현재 시드 기준)
+  - 추후 '신용카드' / '체크카드' 분리 시드 추가 시 함께 마킹
 - ⬜ `.sqlx/` 오프라인 캐시 갱신 + 커밋
 
 **완료 검증**: `sqlx migrate run` 성공 + `sqlx prepare` 캐시 갱신

@@ -1,93 +1,92 @@
 ---
-Sprint: 11  |  Date: 2026-05-28  |  Session: #1
+Sprint: 11  |  Date: 2026-05-29  |  Session: #2
 ---
 
-> Sprint 11 Session #1 — T0 (Phase 3 carry-over 7건 일괄 정리).
-> 예상 4h. 단순/안전 수정 위주.
+> Sprint 11 Session #2 — T1 (DB 마이그레이션 V109: bills + payments + payment_methods.is_card_type).
+> Session #1 (T0 carry-over) 완료 → 본 세션은 청구·수납 도메인 진입의 스키마 토대.
 
-## 이번 세션의 Task 선정
+## Session #1 (T0) 완료 사항 — 요약
+
+7건 carry-over 일괄 정리 (F1~F7). cargo test 273 passed / clippy / lint / tsc clean. 커밋 `958285c`.
+
+## 발견된 이슈 (T1 진입 시 step-back)
+
+sprint11.md T1 의 일부 가정이 실제 DB 구조와 불일치 → 사용자 확인 후 정정:
+1. `codes` 단일 테이블 없음 → `payment_methods` / `card_companies` 별도 테이블
+2. `is_card_type` 컬럼은 **`payment_methods`** 에 추가
+3. `payments.payment_method_id` FK → **`REFERENCES payment_methods(id)`**
+4. `payments.card_company_id` FK → **`REFERENCES card_companies(id)`**
+5. `bills.weekly_hours` → **`INTEGER`** (`standard_fees` 와 정합)
+6. Boolean 컬럼은 SQLite 패턴 따라 `INTEGER ... CHECK (X IN (0, 1))`
+7. 카드 시드 마킹: 현재 `payment_methods` 는 `code='card'` 한 건만 카드 계열
+
+위 정정은 sprint11.md T1 섹션에도 반영.
+
+## 이번 세션의 Task
 
 | Task | 작업 | 예상 |
 |------|------|------|
-| **T0** | Phase 3 carry-over 7건 정리 (F1~F7) | 4h |
+| **T1** | V109 마이그레이션 작성 (bills + payments + payment_methods.is_card_type) + sqlx prepare 캐시 갱신 | 3h |
 
-> 다음 세션부터 청구·수납 도메인 본격 구현(T1 V109 마이그레이션 → T2~T9). 본 세션은 도메인 진입 전 기술 부채 청산 목적.
+## T1 작업 범위
 
-## T0 작업 범위 — F1~F7
+### V109 — `src-tauri/migrations/109__create_billing_tables.sql`
 
-### F1: succ_opt().expect 패닉 가능 — `attendance.rs:655`
-- `d.succ_opt().expect("date succ")` → `.ok_or_else(|| AppError::Internal(...))` 안전 전환
-- skill: `systematic-debugging` (panic 가능 지점 식별 및 root cause 분석)
+**1. `payment_methods.is_card_type` 컬럼 추가**
+- `ALTER TABLE payment_methods ADD COLUMN is_card_type INTEGER NOT NULL DEFAULT 0 CHECK (is_card_type IN (0, 1));`
+- `UPDATE payment_methods SET is_card_type = 1 WHERE code = 'card';`
 
-### F2: expire fail-soft 정책 일관화 — `attendance.rs:155`
-- `generate_impl` 의 expire 호출 실패 시 fail-soft 전환 (startup 패턴 동일)
-- 출결 생성은 성공 반환, expire 에러는 `eprintln!` warn 로그만
+**2. `bills` 테이블 (PRD §4.9.1~§4.9.7)**
+- 컬럼: id, student_id (FK students), bill_year_month, weekly_hours INTEGER, bill_amount, adjusted_amount, status('draft'/'confirmed'/'closed'), is_mid_month, mid_month_type, close_reason, closed_at, confirmed_at, created_at, updated_at
+- UNIQUE: `(student_id, bill_year_month)` — PRD §6.2
+- CHECK: bill_year_month GLOB, status CHECK, is_mid_month/mid_month_type 정합, closed_at/status 정합
+- INDEX: bill_year_month, student_id, status
 
-### F3: 미사용 파라미터 정리 — `calendar.rs:188`
-- `_year_month` 파라미터 — 실제 사용 여부 재검토 후 제거 또는 활용
-- 단순 prefix `_` 만 붙여 둔 상태면 의도가 모호 → 결정 후 명시
+**3. `payments` 테이블 (PRD §4.9.5~§4.9.6, PI-12 별도 테이블)**
+- 컬럼: id, bill_id (FK bills UNIQUE 1:1), is_paid, paid_date, payer_name, payment_method_id (FK payment_methods), card_company_id (FK card_companies), created_at, updated_at
+- UNIQUE: bill_id (청구 1건당 수납 1건)
+- ON DELETE CASCADE: 청구 삭제 시 수납도 정리
+- CHECK: paid_date GLOB, is_paid=1 → paid_date NOT NULL 정합
 
-### F4: 보강관리 N+1 쿼리 — `calendar.rs:215` (calendar.rs 한정)
-- 루프 내 개별 쿼리를 JOIN 또는 IN 절 batch 처리로 전환
-- 사용자 결정: **calendar.rs 만 수정** (attendance.rs N+1 은 별도 carry-over)
-
-### F5: ClassCalendar viewType 한 프레임 불일치 — `src/components/schedules/ClassCalendar.tsx:164`
-- 비동기 setState 호출과 view 전환 타이밍 정합화
-- `useEffect` 의존성 또는 ref 활용
-
-### F6: flaky 테스트 마킹 — `auth::ensure_cache_loaded_fast_path_is_concurrent_safe`
-- `#[ignore]` 마킹 + 사유 코멘트 ("동시성 설계 재검토 필요, backlog")
-- 단독 실행은 통과하므로 `cargo test -- --ignored` 로 검증 가능 유지
-
-### F7: 사이드 메뉴 정리 — `src/lib/menu-config.ts:21`
-- `{ label: '보강 관리', href: '/makeups', disabledHint: 'Phase 3 에서 제공' }` 항목 제거
-- Sprint 10 T11 에서 `/schedules` 탭으로 통합됨 — 메뉴 중복 제거
+### sqlx 준비
+- `.env` 의 `DATABASE_URL` (`sqlite:./SmartHB-dev.db`) 로 `sqlx migrate run`
+- `sqlx prepare --manifest-path src-tauri/Cargo.toml` 캐시 갱신 (T2 이후 query! 매크로 추가 예정 — T1 본체에는 query! 변경 없으나 일관성 유지)
 
 ## 이번 세션에서 수정할 파일
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/commands/attendance.rs | [2회] | F1 + F2 (라인 155, 655) |
-| src-tauri/src/commands/calendar.rs | [4회 ⚠️] | F3 + F4 (라인 188, 215) |
-| src-tauri/src/commands/auth.rs | [1회] | F6 (#[ignore] 마킹) |
-| src/components/schedules/ClassCalendar.tsx | [1회] | F5 (라인 164) |
-| src/lib/menu-config.ts | [1회] | F7 (보강 관리 항목 제거) |
-| docs/sprint/sprint11/scope.md | [0회] | 본 파일 |
+| src-tauri/migrations/109__create_billing_tables.sql | [1회] | 신규 마이그레이션 |
+| docs/sprint/sprint11.md | [1회] | T1 정정 (codes → payment_methods, weekly_hours INTEGER 등) |
+| docs/sprint/sprint11/scope.md | [수정 중] | 본 파일 (Session #2) |
+| src-tauri/.sqlx/ | [-] | `sqlx prepare` 가 갱신 (자동) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 
-- [x] .github/workflows/ — CI/CD 파이프라인
-- [x] SETUP.sh — 초기화 스크립트
-- [x] src-tauri/migrations/ — V109 는 T1 (다음 세션) 담당
-- [x] src-tauri/tauri.conf.json — Forbidden Area
-- [x] docs/harness-engineering/ — 정책 문서
+- [x] .github/workflows/
+- [x] SETUP.sh
+- [x] src-tauri/tauri.conf.json
+- [x] src-tauri/src/commands/ — T2 이후 IPC 단계
+- [x] docs/harness-engineering/
 
-## 완료 기준 (이번 세션) — T0 AC
+## 완료 기준 (T1 AC)
 
-- [ ] F1: `d.succ_opt()` 패닉 가능 제거 — `Result` 전파 확인
-- [ ] F2: `expire` 실패 시 출결 생성 본 흐름이 success 반환되도록 정합
-- [ ] F3: `_year_month` 사용/제거 결정 후 명시 (이름 변경 또는 삭제)
-- [ ] F4: `calendar.rs:215` N+1 → JOIN/IN 배치 1쿼리로 전환
-- [ ] F5: `ClassCalendar` view 전환 시각적 깜박임 제거 (수동 확인 또는 테스트)
-- [ ] F6: `#[ignore]` 마킹 + 사유 코멘트, 일반 `cargo test` 에서 제외 확인
-- [ ] F7: 사이드 메뉴 '보강 관리' 항목 노출 안 됨 — UI 수동 확인
-- [ ] `cargo test --manifest-path src-tauri/Cargo.toml --lib` 통과 (F6 마킹 후 통과)
-- [ ] `cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings` clean
-- [ ] `pnpm lint` + `pnpm tsc --noEmit` clean
+- [ ] V109 마이그레이션 파일 생성 + 컬럼/UNIQUE/CHECK/FK/INDEX 정의 완성
+- [ ] `sqlx migrate run` 성공 (dev DB 적용)
+- [ ] `.sqlx/` 캐시 갱신 후 변경분 확인
+- [ ] DB 직접 검증: bills/payments 테이블 존재 + payment_methods.is_card_type 컬럼 추가 + code='card' 행이 is_card_type=1
+- [ ] `cargo test --manifest-path src-tauri/Cargo.toml --lib` 통과 (T1 본체는 코드 변경 없으나 회귀 확인)
+- [ ] sprint11.md T1 섹션이 본 정정안과 정합 (codes → payment_methods 등)
 
 ## 세션 종료 조건
 
-- [ ] T0 AC 모두 통과
-- [ ] 단일 또는 분리 커밋 (F별 분리 권장)
-- [ ] 다음 세션 (T1 V109 마이그레이션) 진입점 메모 정리
+- [ ] T1 AC 모두 통과
+- [ ] 단일 커밋 (V109 + sprint11.md 정정 + scope.md)
+- [ ] 다음 세션 (T2 청구 생성 IPC) 진입점 메모
 
-## 발견된 이슈
+## 다음 세션 (T2) 미리보기
 
-(없음 — 진행 중 발견 시 기록)
-
-## 다음 세션 (T1) 미리보기
-
-- V109 마이그레이션 작성 (bills + payments + codes.is_card_type)
-- PRD §6.2 UNIQUE 제약 준수: `(student_id, bill_year_month)`
-- payments 별도 테이블 (PI-12 확정)
-- `sqlx migrate run` + `sqlx prepare` 캐시 갱신
+- `src-tauri/src/commands/billing.rs` 신규 (또는 `fees.rs` 확장)
+- `generate_bills`, `list_bills`, `update_bill`, `get_bill` IPC
+- standard_fees 매핑 + 월 중 입퇴교 플래그 자동 설정
+- 단위 테스트 10건 이상
