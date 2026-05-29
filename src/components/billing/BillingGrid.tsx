@@ -156,10 +156,12 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => {
-                          // 임시 디버그 — 다음 commit 에서 제거
-                          onError(`KEY=${e.key} CODE=${e.code} CMP=${e.nativeEvent.isComposing}`)
                           if (e.nativeEvent.isComposing) return
-                          if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+                          if (
+                            e.key === 'Enter' ||
+                            e.code === 'Enter' ||
+                            e.code === 'NumpadEnter'
+                          ) {
                             tryCommit(b)
                           } else if (e.key === 'Escape') {
                             cancelEdit()
