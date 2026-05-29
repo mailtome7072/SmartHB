@@ -57,7 +57,7 @@ sprint11.md T1 의 일부 가정이 실제 DB 구조와 불일치 → 사용자 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
 | src-tauri/migrations/109__create_billing_tables.sql | [1회] | 신규 마이그레이션 |
-| docs/sprint/sprint11.md | [1회] | T1 정정 (codes → payment_methods, weekly_hours INTEGER 등) |
+| docs/sprint/sprint11.md | [6회 ⚠️] | T1 정정 (codes → payment_methods, weekly_hours INTEGER 등) |
 | docs/sprint/sprint11/scope.md | [수정 중] | 본 파일 (Session #2) |
 | src-tauri/.sqlx/ | [-] | `sqlx prepare` 가 갱신 (자동) |
 
