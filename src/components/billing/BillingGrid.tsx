@@ -95,7 +95,10 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
 
   const tryCommit = (bill: Bill) => {
     const parsed = Number(editValue.replace(/,/g, ''))
+    // 임시 디버그 (다음 commit 에서 제거)
+    console.log('[DEBUG tryCommit]', { editValue, parsed, finite: Number.isFinite(parsed), negative: parsed < 0 })
     if (!Number.isFinite(parsed) || parsed < 0) {
+      console.log('[DEBUG tryCommit] invalid → onError 호출')
       onError('조정 금액은 0 이상의 숫자여야 합니다.')
       return
     }

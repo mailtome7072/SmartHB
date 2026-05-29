@@ -18,6 +18,8 @@ interface Props {
 }
 
 export function ErrorDialog({ open, title = '오류', message, onClose }: Props) {
+  // 임시 디버그 (다음 commit 에서 제거)
+  console.log('[DEBUG ErrorDialog]', { open, messageLen: message.length, message })
   if (!open || message.trim() === '') return null
   if (typeof document === 'undefined') return null
   const dialog = (
