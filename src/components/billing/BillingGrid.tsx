@@ -48,6 +48,8 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
   // 임시 디버그 (다음 commit 에서 제거)
   const [dbgLastKey, setDbgLastKey] = useState('')
   const [dbgCommitCalls, setDbgCommitCalls] = useState(0)
+  const [dbgOnErrorCalls, setDbgOnErrorCalls] = useState(0)
+  const [dbgLastMsg, setDbgLastMsg] = useState('')
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['bills', yearMonth] })
@@ -100,7 +102,10 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
     setDbgCommitCalls((c) => c + 1)
     const parsed = Number(editValue.replace(/,/g, ''))
     if (!Number.isFinite(parsed) || parsed < 0) {
-      onError('조정 금액은 0 이상의 숫자여야 합니다.')
+      const msg = '조정 금액은 0 이상의 숫자여야 합니다.'
+      setDbgOnErrorCalls((c) => c + 1)
+      setDbgLastMsg(msg)
+      onError(msg)
       return
     }
     if (parsed === bill.adjustedAmount) {
@@ -128,8 +133,10 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
           fontSize: 13,
         }}
       >
-        DEBUG editValue=&quot;{editValue}&quot; | lastKey={dbgLastKey || '(없음)'} | tryCommit
-        호출 횟수: {dbgCommitCalls}
+        DEBUG editValue=&quot;{editValue}&quot; | lastKey={dbgLastKey || '(없음)'}
+        <br />
+        tryCommit 호출: {dbgCommitCalls} | onError 호출: {dbgOnErrorCalls} | lastMsg=&quot;
+        {dbgLastMsg || '(없음)'}&quot;
       </div>
       <div className="overflow-x-auto rounded-md border border-[var(--border)]">
         <table className="w-full text-base">

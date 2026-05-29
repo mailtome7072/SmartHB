@@ -293,6 +293,27 @@ function BillingContent() {
         message={error ?? ''}
         onClose={() => setError(null)}
       />
+
+      {/* 임시 디버그 — 다음 commit 에서 제거 */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 8,
+          right: 8,
+          background: 'yellow',
+          color: 'black',
+          padding: 8,
+          fontSize: 12,
+          fontFamily: 'monospace',
+          zIndex: 2147483645,
+          maxWidth: 380,
+          border: '2px solid red',
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        PAGE error = {JSON.stringify(error)}
+        {'\n'}ErrorDialog open = {String(error !== null && error !== '')}
+      </div>
     </AppShell>
   )
 }
