@@ -31,7 +31,7 @@ use crate::commands::audit::{self, AuditEventType};
 use crate::commands::db;
 use crate::error::AppError;
 use chrono::NaiveDate;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 
 // ─────────────────────── 직렬화 타입 ───────────────────────
@@ -555,6 +555,363 @@ fn row_to_bill(r: sqlx::sqlite::SqliteRow) -> Result<Bill, String> {
     })
 }
 
+// ─────────────────────── T4: 수납 (payments) ───────────────────────
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Payment {
+    pub id: i64,
+    pub bill_id: i64,
+    pub is_paid: bool,
+    pub paid_date: Option<String>,
+    pub payer_name: Option<String>,
+    pub payment_method_id: Option<i64>,
+    pub payment_method_label: Option<String>,
+    pub card_company_id: Option<i64>,
+    pub card_company_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentInput {
+    pub bill_id: i64,
+    pub is_paid: bool,
+    pub paid_date: Option<String>,
+    pub payer_name: Option<String>,
+    pub payment_method_id: Option<i64>,
+    pub card_company_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UnpaidBill {
+    pub bill_id: i64,
+    pub student_id: i64,
+    pub student_name: String,
+    pub student_serial_no: String,
+    pub adjusted_amount: i64,
+    pub is_mid_month: bool,
+    pub mid_month_type: Option<String>,
+}
+
+/// 월별 청구·수납 요약 (PRD §4.11.3 대시보드 위젯 선행 준비).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingSummary {
+    pub year_month: String,
+    pub bill_count: i64,
+    pub total_billed: i64,    // adjusted_amount 합계
+    pub total_paid: i64,      // is_paid=1 한정
+    pub total_unpaid: i64,    // total_billed - total_paid
+    pub paid_count: i64,
+    pub unpaid_count: i64,
+}
+
+/// 수납 생성 — bill_id UNIQUE. 동일 청구에 이미 payments 행 있으면 에러 (update_payment 사용).
+#[tauri::command]
+pub async fn create_payment(input: PaymentInput) -> Result<Payment, String> {
+    let pool = db::pool().map_err(String::from)?;
+    create_payment_impl(pool, &input).await
+}
+
+pub(crate) async fn create_payment_impl(
+    pool: &SqlitePool,
+    input: &PaymentInput,
+) -> Result<Payment, String> {
+    validate_payment_input(pool, input).await?;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO payments \
+            (bill_id, is_paid, paid_date, payer_name, payment_method_id, card_company_id) \
+         VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+    )
+    .bind(input.bill_id)
+    .bind(input.is_paid as i64)
+    .bind(&input.paid_date)
+    .bind(&input.payer_name)
+    .bind(input.payment_method_id)
+    .bind(input.card_company_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("수납 생성 실패: {}", e))?;
+    get_payment_impl(pool, id).await
+}
+
+/// 수납 갱신 — id 기반. bill_id 변경 불가 (입력 무시).
+#[tauri::command]
+pub async fn update_payment(id: i64, input: PaymentInput) -> Result<Payment, String> {
+    let pool = db::pool().map_err(String::from)?;
+    update_payment_impl(pool, id, &input).await
+}
+
+pub(crate) async fn update_payment_impl(
+    pool: &SqlitePool,
+    id: i64,
+    input: &PaymentInput,
+) -> Result<Payment, String> {
+    validate_payment_input(pool, input).await?;
+    let res = sqlx::query(
+        "UPDATE payments SET \
+            is_paid = ?, paid_date = ?, payer_name = ?, \
+            payment_method_id = ?, card_company_id = ?, \
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE id = ?",
+    )
+    .bind(input.is_paid as i64)
+    .bind(&input.paid_date)
+    .bind(&input.payer_name)
+    .bind(input.payment_method_id)
+    .bind(input.card_company_id)
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("수납 갱신 실패: {}", e))?;
+    if res.rows_affected() == 0 {
+        return Err(format!("수납을 찾을 수 없습니다 (id={}).", id));
+    }
+    get_payment_impl(pool, id).await
+}
+
+/// 미납 청구 목록 — 입금 일괄 처리 화면용 (AC-4.9-6).
+///
+/// 미납 정의: payments 없음 OR `is_paid=0`. 정렬: 학생명 ASC.
+#[tauri::command]
+pub async fn list_unpaid_bills(year_month: String) -> Result<Vec<UnpaidBill>, String> {
+    let pool = db::pool().map_err(String::from)?;
+    list_unpaid_bills_impl(pool, &year_month).await
+}
+
+pub(crate) async fn list_unpaid_bills_impl(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<Vec<UnpaidBill>, String> {
+    validate_year_month(year_month)?;
+    let rows = sqlx::query(
+        "SELECT b.id AS bill_id, b.student_id, s.name AS student_name, s.serial_no, \
+                b.adjusted_amount, b.is_mid_month, b.mid_month_type \
+         FROM bills b \
+         JOIN students s ON s.id = b.student_id \
+         LEFT JOIN payments p ON p.bill_id = b.id \
+         WHERE b.bill_year_month = ? \
+           AND (p.id IS NULL OR p.is_paid = 0) \
+         ORDER BY s.name ASC",
+    )
+    .bind(year_month)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("미납 청구 조회 실패: {}", e))?;
+
+    rows.into_iter()
+        .map(|r| {
+            Ok(UnpaidBill {
+                bill_id: r.try_get("bill_id").map_err(|e| e.to_string())?,
+                student_id: r.try_get("student_id").map_err(|e| e.to_string())?,
+                student_name: r.try_get("student_name").map_err(|e| e.to_string())?,
+                student_serial_no: r.try_get("serial_no").map_err(|e| e.to_string())?,
+                adjusted_amount: r.try_get("adjusted_amount").map_err(|e| e.to_string())?,
+                is_mid_month: {
+                    let v: i64 = r.try_get("is_mid_month").map_err(|e| e.to_string())?;
+                    v != 0
+                },
+                mid_month_type: r.try_get("mid_month_type").map_err(|e| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
+/// 다수 입금 일괄 처리 — 단일 트랜잭션. 하나라도 실패 시 전체 롤백.
+///
+/// 각 entry 는 bill_id 기준 UPSERT — payments 행 없으면 INSERT, 있으면 UPDATE.
+/// 반환값: 처리된 entry 수 (성공 시 입력 길이와 동일).
+#[tauri::command]
+pub async fn batch_update_payments(items: Vec<PaymentInput>) -> Result<i64, String> {
+    let pool = db::pool().map_err(String::from)?;
+    batch_update_payments_impl(pool, &items).await
+}
+
+pub(crate) async fn batch_update_payments_impl(
+    pool: &SqlitePool,
+    items: &[PaymentInput],
+) -> Result<i64, String> {
+    if items.is_empty() {
+        return Ok(0);
+    }
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    // BEGIN IMMEDIATE 효과
+    sqlx::query("SELECT 1 FROM payments LIMIT 0")
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
+    for item in items {
+        validate_payment_input_in_tx(&mut tx, item).await?;
+        sqlx::query(
+            "INSERT INTO payments \
+                (bill_id, is_paid, paid_date, payer_name, payment_method_id, card_company_id) \
+             VALUES (?, ?, ?, ?, ?, ?) \
+             ON CONFLICT(bill_id) DO UPDATE SET \
+                is_paid = excluded.is_paid, \
+                paid_date = excluded.paid_date, \
+                payer_name = excluded.payer_name, \
+                payment_method_id = excluded.payment_method_id, \
+                card_company_id = excluded.card_company_id, \
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+        )
+        .bind(item.bill_id)
+        .bind(item.is_paid as i64)
+        .bind(&item.paid_date)
+        .bind(&item.payer_name)
+        .bind(item.payment_method_id)
+        .bind(item.card_company_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("수납 UPSERT 실패 (bill_id={}): {}", item.bill_id, e))?;
+    }
+
+    tx.commit()
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    Ok(items.len() as i64)
+}
+
+/// 월별 청구·수납 요약 (PRD §4.11.3 대시보드 위젯 선행 준비).
+#[tauri::command]
+pub async fn get_billing_summary(year_month: String) -> Result<BillingSummary, String> {
+    let pool = db::pool().map_err(String::from)?;
+    get_billing_summary_impl(pool, &year_month).await
+}
+
+pub(crate) async fn get_billing_summary_impl(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<BillingSummary, String> {
+    validate_year_month(year_month)?;
+    let row = sqlx::query(
+        "SELECT \
+            COUNT(*) AS bill_count, \
+            COALESCE(SUM(b.adjusted_amount), 0) AS total_billed, \
+            COALESCE(SUM(CASE WHEN p.is_paid = 1 THEN b.adjusted_amount ELSE 0 END), 0) AS total_paid, \
+            COALESCE(SUM(CASE WHEN p.is_paid = 1 THEN 1 ELSE 0 END), 0) AS paid_count \
+         FROM bills b \
+         LEFT JOIN payments p ON p.bill_id = b.id \
+         WHERE b.bill_year_month = ?",
+    )
+    .bind(year_month)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("청구 요약 조회 실패: {}", e))?;
+
+    let bill_count: i64 = row.try_get("bill_count").map_err(|e| e.to_string())?;
+    let total_billed: i64 = row.try_get("total_billed").map_err(|e| e.to_string())?;
+    let total_paid: i64 = row.try_get("total_paid").map_err(|e| e.to_string())?;
+    let paid_count: i64 = row.try_get("paid_count").map_err(|e| e.to_string())?;
+
+    Ok(BillingSummary {
+        year_month: year_month.to_string(),
+        bill_count,
+        total_billed,
+        total_paid,
+        total_unpaid: total_billed - total_paid,
+        paid_count,
+        unpaid_count: bill_count - paid_count,
+    })
+}
+
+// ─── T4 헬퍼 ───
+
+pub(crate) async fn get_payment_impl(pool: &SqlitePool, id: i64) -> Result<Payment, String> {
+    let row = sqlx::query(
+        "SELECT p.id, p.bill_id, p.is_paid, p.paid_date, p.payer_name, \
+                p.payment_method_id, pm.label AS payment_method_label, \
+                p.card_company_id, cc.label AS card_company_label \
+         FROM payments p \
+         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id \
+         LEFT JOIN card_companies cc ON cc.id = p.card_company_id \
+         WHERE p.id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("수납 조회 실패: {}", e))?
+    .ok_or_else(|| format!("수납을 찾을 수 없습니다 (id={}).", id))?;
+
+    Ok(Payment {
+        id: row.try_get("id").map_err(|e| e.to_string())?,
+        bill_id: row.try_get("bill_id").map_err(|e| e.to_string())?,
+        is_paid: {
+            let v: i64 = row.try_get("is_paid").map_err(|e| e.to_string())?;
+            v != 0
+        },
+        paid_date: row.try_get("paid_date").map_err(|e| e.to_string())?,
+        payer_name: row.try_get("payer_name").map_err(|e| e.to_string())?,
+        payment_method_id: row.try_get("payment_method_id").map_err(|e| e.to_string())?,
+        payment_method_label: row.try_get("payment_method_label").map_err(|e| e.to_string())?,
+        card_company_id: row.try_get("card_company_id").map_err(|e| e.to_string())?,
+        card_company_label: row.try_get("card_company_label").map_err(|e| e.to_string())?,
+    })
+}
+
+/// 카드 계열 결제수단 시 card_company_id 필수 검증 (AC-4.9-4).
+/// is_paid=1 일 때 paid_date 필수 (CHECK 제약과 중복이지만 친화적 메시지).
+async fn validate_payment_input(pool: &SqlitePool, input: &PaymentInput) -> Result<(), String> {
+    if input.is_paid && input.paid_date.is_none() {
+        return Err("입금 완료 상태에는 입금일이 필요합니다.".to_string());
+    }
+    if let Some(pmid) = input.payment_method_id {
+        let is_card: Option<i64> = sqlx::query_scalar(
+            "SELECT is_card_type FROM payment_methods WHERE id = ?",
+        )
+        .bind(pmid)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("결제수단 조회 실패: {}", e))?;
+        match is_card {
+            Some(1) if input.card_company_id.is_none() => {
+                return Err("카드 계열 결제수단은 카드사를 함께 선택해야 합니다.".to_string());
+            }
+            None => {
+                return Err(format!("결제수단을 찾을 수 없습니다 (id={}).", pmid));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// 트랜잭션 안에서 호출하는 변종 — same logic, &mut tx 인자.
+async fn validate_payment_input_in_tx(
+    tx: &mut sqlx::SqliteConnection,
+    input: &PaymentInput,
+) -> Result<(), String> {
+    if input.is_paid && input.paid_date.is_none() {
+        return Err("입금 완료 상태에는 입금일이 필요합니다.".to_string());
+    }
+    if let Some(pmid) = input.payment_method_id {
+        let is_card: Option<i64> = sqlx::query_scalar(
+            "SELECT is_card_type FROM payment_methods WHERE id = ?",
+        )
+        .bind(pmid)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| format!("결제수단 조회 실패: {}", e))?;
+        match is_card {
+            Some(1) if input.card_company_id.is_none() => {
+                return Err("카드 계열 결제수단은 카드사를 함께 선택해야 합니다.".to_string());
+            }
+            None => {
+                return Err(format!("결제수단을 찾을 수 없습니다 (id={}).", pmid));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 // ─────────────────────── 테스트 ───────────────────────
 
 #[cfg(all(test, not(feature = "cipher")))]
@@ -992,5 +1349,290 @@ mod tests {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let closed = close_billing_month_impl(&pool, "2026-05").await.expect("ok");
         assert_eq!(closed, 0);
+    }
+
+    // ─────────────────────── T4 수납 ───────────────────────
+
+    // V001 시드: payment_methods(id=2 card, is_card_type=1 by V109),
+    //            card_companies(id=1 shinhan).
+    const CARD_PAYMENT_METHOD_ID: i64 = 2;
+    const CASH_PAYMENT_METHOD_ID: i64 = 1;
+    const SHINHAN_CARD_ID: i64 = 1;
+
+    #[tokio::test]
+    async fn create_payment_inserts_and_returns_with_labels() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        let p = create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: Some("홍부모".to_string()),
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            },
+        )
+        .await
+        .expect("ok");
+        assert!(p.is_paid);
+        assert_eq!(p.bill_id, bid);
+        assert_eq!(p.payment_method_label.as_deref(), Some("현금"));
+        assert!(p.card_company_label.is_none());
+    }
+
+    #[tokio::test]
+    async fn create_payment_card_requires_card_company() {
+        // AC-4.9-4
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        let err = create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: None,
+                payment_method_id: Some(CARD_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            },
+        )
+        .await;
+        assert!(err.is_err());
+        let msg = err.unwrap_err();
+        assert!(msg.contains("카드"), "에러 메시지에 카드 언급: {}", msg);
+    }
+
+    #[tokio::test]
+    async fn create_payment_card_with_company_succeeds() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        let p = create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: None,
+                payment_method_id: Some(CARD_PAYMENT_METHOD_ID),
+                card_company_id: Some(SHINHAN_CARD_ID),
+            },
+        )
+        .await
+        .expect("ok");
+        assert_eq!(p.payment_method_label.as_deref(), Some("카드"));
+        assert_eq!(p.card_company_label.as_deref(), Some("신한카드"));
+    }
+
+    #[tokio::test]
+    async fn create_payment_rejects_paid_without_date() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        let err = create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: None,
+                payer_name: None,
+                payment_method_id: None,
+                card_company_id: None,
+            },
+        )
+        .await;
+        assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn update_payment_changes_fields() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        let p = create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: false,
+                paid_date: None,
+                payer_name: None,
+                payment_method_id: None,
+                card_company_id: None,
+            },
+        )
+        .await
+        .expect("create");
+
+        let updated = update_payment_impl(
+            &pool,
+            p.id,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-20".to_string()),
+                payer_name: Some("홍부모".to_string()),
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            },
+        )
+        .await
+        .expect("update");
+        assert!(updated.is_paid);
+        assert_eq!(updated.paid_date.as_deref(), Some("2026-05-20"));
+        assert_eq!(updated.payer_name.as_deref(), Some("홍부모"));
+    }
+
+    #[tokio::test]
+    async fn list_unpaid_bills_excludes_paid() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        // 2명: A 미납, B 입금
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
+        seed_schedule(&pool, a, 1, 1).await;
+        seed_schedule(&pool, b, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        // B 입금
+        let b_bill: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id = ?")
+            .bind(b)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: b_bill,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: None,
+                payment_method_id: None,
+                card_company_id: None,
+            },
+        )
+        .await
+        .expect("pay");
+
+        let unpaid = list_unpaid_bills_impl(&pool, "2026-05").await.expect("list");
+        assert_eq!(unpaid.len(), 1);
+        assert_eq!(unpaid[0].student_id, a, "미납인 A 만 반환");
+    }
+
+    #[tokio::test]
+    async fn batch_update_payments_upserts_all_in_transaction() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
+        for s in [a, b] { seed_schedule(&pool, s, 1, 1).await; }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bill_a: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(a).fetch_one(&pool).await.unwrap();
+        let bill_b: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(b).fetch_one(&pool).await.unwrap();
+
+        let processed = batch_update_payments_impl(
+            &pool,
+            &[
+                PaymentInput {
+                    bill_id: bill_a,
+                    is_paid: true,
+                    paid_date: Some("2026-05-15".to_string()),
+                    payer_name: Some("부모A".to_string()),
+                    payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                    card_company_id: None,
+                },
+                PaymentInput {
+                    bill_id: bill_b,
+                    is_paid: true,
+                    paid_date: Some("2026-05-16".to_string()),
+                    payer_name: Some("부모B".to_string()),
+                    payment_method_id: Some(CARD_PAYMENT_METHOD_ID),
+                    card_company_id: Some(SHINHAN_CARD_ID),
+                },
+            ],
+        )
+        .await
+        .expect("batch");
+        assert_eq!(processed, 2);
+
+        let paid_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM payments WHERE is_paid = 1",
+        )
+        .fetch_one(&pool).await.unwrap();
+        assert_eq!(paid_count, 2);
+    }
+
+    #[tokio::test]
+    async fn batch_update_payments_rolls_back_on_card_missing() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
+        for s in [a, b] { seed_schedule(&pool, s, 1, 1).await; }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bill_a: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(a).fetch_one(&pool).await.unwrap();
+        let bill_b: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(b).fetch_one(&pool).await.unwrap();
+
+        // 두 번째 entry 가 카드사 누락 → 전체 롤백 기대.
+        let err = batch_update_payments_impl(
+            &pool,
+            &[
+                PaymentInput {
+                    bill_id: bill_a,
+                    is_paid: true,
+                    paid_date: Some("2026-05-15".to_string()),
+                    payer_name: None,
+                    payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                    card_company_id: None,
+                },
+                PaymentInput {
+                    bill_id: bill_b,
+                    is_paid: true,
+                    paid_date: Some("2026-05-16".to_string()),
+                    payer_name: None,
+                    payment_method_id: Some(CARD_PAYMENT_METHOD_ID),
+                    card_company_id: None,
+                },
+            ],
+        )
+        .await;
+        assert!(err.is_err());
+
+        let paid_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payments")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(paid_count, 0, "전체 롤백 — A 입금도 반영 안 됨");
+    }
+
+    #[tokio::test]
+    async fn get_billing_summary_computes_totals() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
+        let c = seed_student(&pool, "3", "원생C", "2026-01-01", None).await;
+        for s in [a, b, c] { seed_schedule(&pool, s, 1, 1).await; }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        // A 만 입금
+        let bill_a: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(a).fetch_one(&pool).await.unwrap();
+        create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bill_a, is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: None, payment_method_id: None, card_company_id: None,
+            },
+        )
+        .await
+        .expect("pay");
+
+        let s = get_billing_summary_impl(&pool, "2026-05").await.expect("ok");
+        assert_eq!(s.bill_count, 3);
+        assert_eq!(s.total_billed, 300_000);
+        assert_eq!(s.total_paid, 100_000);
+        assert_eq!(s.total_unpaid, 200_000);
+        assert_eq!(s.paid_count, 1);
+        assert_eq!(s.unpaid_count, 2);
     }
 }
