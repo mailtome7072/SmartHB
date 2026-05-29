@@ -21,6 +21,7 @@ import { SplashScreen } from '@/components/splash-screen'
 import { BillingGrid } from '@/components/billing/BillingGrid'
 import { CloseMonthDialog } from '@/components/billing/CloseMonthDialog'
 import { PaymentsView } from '@/components/billing/PaymentsView'
+import { ErrorDialog } from '@/components/ui/error-dialog'
 import {
   closeBillingMonth,
   confirmAllBills,
@@ -255,15 +256,6 @@ function BillingContent() {
           </div>
         )}
 
-        {error !== null && error !== '' && (
-          <div
-            role="alert"
-            className="mb-3 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-sm text-[var(--danger)]"
-          >
-            {error}
-          </div>
-        )}
-
         {billsQuery.isLoading && <p>불러오는 중...</p>}
 
         {tab === 'bills' && !billsQuery.isLoading && bills.length === 0 && !showGenerateButton && (
@@ -295,6 +287,12 @@ function BillingContent() {
           onCancel={() => setCloseMonthOpen(false)}
         />
       )}
+
+      <ErrorDialog
+        open={error !== null && error !== ''}
+        message={error ?? ''}
+        onClose={() => setError(null)}
+      />
     </AppShell>
   )
 }
