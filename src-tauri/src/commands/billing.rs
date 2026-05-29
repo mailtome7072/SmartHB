@@ -27,6 +27,7 @@
 //! - 월중입퇴교 플래그: `enroll_date` 또는 `withdraw_date` 가 해당 월 범위 안이면 1.
 
 use crate::commands::attendance::validate_year_month;
+use crate::commands::audit::{self, AuditEventType};
 use crate::commands::db;
 use crate::error::AppError;
 use chrono::NaiveDate;
@@ -300,6 +301,17 @@ pub(crate) async fn update_bill_impl(
         .execute(pool)
         .await
         .map_err(|e| format!("청구 수정 실패: {}", e))?;
+        // Sprint 11 T3: 마감 후 수정은 audit 로그로 추적 (AC-4.9-8 운영 추적).
+        audit::try_record(
+            AuditEventType::BillClosedModified,
+            Some(&id.to_string()),
+            Some(&format!(
+                r#"{{"adjustedAmount":{},"closeReason":{}}}"#,
+                adjusted_amount,
+                serde_json::to_string(reason).unwrap_or_else(|_| "\"\"".to_string()),
+            )),
+        )
+        .await;
     } else {
         sqlx::query(
             "UPDATE bills SET adjusted_amount = ?, \
@@ -314,6 +326,148 @@ pub(crate) async fn update_bill_impl(
     }
 
     get_bill_impl(pool, id).await
+}
+
+// ─────────────────────── T3: 상태 머신 ───────────────────────
+
+/// 청구 단건 확정 — `draft` → `confirmed` (PRD §4.9.3).
+///
+/// `confirmed` / `closed` 상태에서 호출 시 거부 (재확정·재진입 불가).
+#[tauri::command]
+pub async fn confirm_bill(id: i64) -> Result<Bill, String> {
+    let pool = db::pool().map_err(String::from)?;
+    confirm_bill_impl(pool, id).await
+}
+
+pub(crate) async fn confirm_bill_impl(pool: &SqlitePool, id: i64) -> Result<Bill, String> {
+    let current: Option<String> = sqlx::query_scalar("SELECT status FROM bills WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("청구 상태 조회 실패: {}", e))?;
+    let status = current.ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
+    if status != "draft" {
+        return Err(format!(
+            "확정은 미확정(draft) 상태에서만 가능합니다 (현재: {}).",
+            status
+        ));
+    }
+    sqlx::query(
+        "UPDATE bills SET status='confirmed', \
+             confirmed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+         WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("청구 확정 실패: {}", e))?;
+    audit::try_record(
+        AuditEventType::BillConfirmed,
+        Some(&id.to_string()),
+        None,
+    )
+    .await;
+    get_bill_impl(pool, id).await
+}
+
+/// 월 전체 미확정 청구 일괄 확정. 반환값은 전이된 건수.
+#[tauri::command]
+pub async fn confirm_all_bills(year_month: String) -> Result<i64, String> {
+    let pool = db::pool().map_err(String::from)?;
+    confirm_all_bills_impl(pool, &year_month).await
+}
+
+pub(crate) async fn confirm_all_bills_impl(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<i64, String> {
+    validate_year_month(year_month)?;
+    let res = sqlx::query(
+        "UPDATE bills SET status='confirmed', \
+             confirmed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+         WHERE bill_year_month = ? AND status = 'draft'",
+    )
+    .bind(year_month)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("청구 일괄 확정 실패: {}", e))?;
+    let affected = res.rows_affected() as i64;
+    audit::try_record(
+        AuditEventType::BillConfirmed,
+        Some(year_month),
+        Some(&format!(r#"{{"batch":true,"count":{}}}"#, affected)),
+    )
+    .await;
+    Ok(affected)
+}
+
+/// 월 전체 마감 (PRD §4.9.7, AC-4.9-7).
+///
+/// 전제: 해당 월 모든 청구가 `confirmed`. `draft` 가 1건이라도 있으면 에러 + 미확정 건수 메시지.
+/// PI-11 확정: 마감 해제(reopen) 불가 — 본 IPC 의 역연산은 제공하지 않음.
+#[tauri::command]
+pub async fn close_billing_month(year_month: String) -> Result<i64, String> {
+    let pool = db::pool().map_err(String::from)?;
+    close_billing_month_impl(pool, &year_month).await
+}
+
+pub(crate) async fn close_billing_month_impl(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<i64, String> {
+    validate_year_month(year_month)?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    sqlx::query("SELECT 1 FROM bills LIMIT 0")
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bills WHERE bill_year_month = ? AND status = 'draft'",
+    )
+    .bind(year_month)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| format!("미확정 청구 카운트 실패: {}", e))?;
+
+    if pending > 0 {
+        return Err(format!(
+            "미확정 청구가 {}건 남아 있어 마감할 수 없습니다. 먼저 확정해 주세요.",
+            pending
+        ));
+    }
+
+    let res = sqlx::query(
+        "UPDATE bills SET status='closed', \
+             closed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+         WHERE bill_year_month = ? AND status = 'confirmed'",
+    )
+    .bind(year_month)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("청구 마감 실패: {}", e))?;
+
+    tx.commit()
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
+    let closed = res.rows_affected() as i64;
+    audit::try_record(
+        AuditEventType::BillMonthClosed,
+        Some(year_month),
+        Some(&format!(r#"{{"closedCount":{}}}"#, closed)),
+    )
+    .await;
+    Ok(closed)
 }
 
 /// UI 디폴트 청구년월 — 가장 최근(MAX) 교습기간 월 반환. 없으면 None.
@@ -712,5 +866,131 @@ mod tests {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let ym = get_default_billing_year_month_impl(&pool).await.expect("ok");
         assert!(ym.is_none());
+    }
+
+    // ─────────────────────── T3 상태 머신 ───────────────────────
+
+    /// 청구 1건 생성 + bill_id 반환 헬퍼.
+    async fn seed_bill(pool: &SqlitePool, year_month: &str) -> i64 {
+        let sid = seed_student(pool, "1", "원생A", "2026-01-01", None).await;
+        seed_schedule(pool, sid, 1, 1).await;
+        seed_standard_fee(pool, 1, 100_000).await;
+        generate_bills_impl(pool, year_month).await.expect("gen");
+        sqlx::query_scalar("SELECT id FROM bills LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .expect("bill id")
+    }
+
+    #[tokio::test]
+    async fn confirm_bill_transitions_draft_to_confirmed() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        let bill = confirm_bill_impl(&pool, bid).await.expect("ok");
+        assert_eq!(bill.status, "confirmed");
+        assert!(bill.confirmed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn confirm_bill_rejects_already_confirmed() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        confirm_bill_impl(&pool, bid).await.expect("first");
+        let err = confirm_bill_impl(&pool, bid).await;
+        assert!(err.is_err(), "재확정 불가");
+    }
+
+    #[tokio::test]
+    async fn confirm_bill_rejects_closed() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        sqlx::query("UPDATE bills SET status='closed', closed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
+            .bind(bid).execute(&pool).await.unwrap();
+        let err = confirm_bill_impl(&pool, bid).await;
+        assert!(err.is_err(), "마감된 청구는 확정 불가");
+    }
+
+    #[tokio::test]
+    async fn confirm_bill_rejects_nonexistent() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let err = confirm_bill_impl(&pool, 999).await;
+        assert!(err.is_err(), "존재하지 않는 청구 거부");
+    }
+
+    #[tokio::test]
+    async fn confirm_all_bills_transitions_only_drafts() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        // 3건 — 2건 draft, 1건은 이미 confirmed 로 강제 전이
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
+        let c = seed_student(&pool, "3", "원생C", "2026-01-01", None).await;
+        for s in [a, b, c] { seed_schedule(&pool, s, 1, 1).await; }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        sqlx::query("UPDATE bills SET status='confirmed', confirmed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE student_id=?")
+            .bind(c).execute(&pool).await.unwrap();
+
+        let affected = confirm_all_bills_impl(&pool, "2026-05").await.expect("ok");
+        assert_eq!(affected, 2, "draft 2건만 영향");
+
+        let cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM bills WHERE bill_year_month='2026-05' AND status='confirmed'",
+        )
+        .fetch_one(&pool).await.unwrap();
+        assert_eq!(cnt, 3, "전체 3건 confirmed");
+    }
+
+    #[tokio::test]
+    async fn confirm_all_bills_zero_when_no_drafts() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let affected = confirm_all_bills_impl(&pool, "2026-05").await.expect("ok");
+        assert_eq!(affected, 0);
+    }
+
+    #[tokio::test]
+    async fn close_billing_month_rejects_when_pending_drafts() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
+        for s in [a, b] { seed_schedule(&pool, s, 1, 1).await; }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        // 1건만 confirmed, 1건은 draft 유지
+        sqlx::query("UPDATE bills SET status='confirmed', confirmed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE student_id=?")
+            .bind(a).execute(&pool).await.unwrap();
+
+        let err = close_billing_month_impl(&pool, "2026-05").await;
+        assert!(err.is_err(), "draft 1건 남으면 마감 불가");
+        let msg = err.unwrap_err();
+        assert!(msg.contains("1건"), "메시지에 미확정 건수 포함: {}", msg);
+
+        // draft 가 그대로 남아있는지 확인 (롤백)
+        let draft_cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM bills WHERE bill_year_month='2026-05' AND status='draft'",
+        )
+        .fetch_one(&pool).await.unwrap();
+        assert_eq!(draft_cnt, 1, "롤백되어 draft 보존");
+    }
+
+    #[tokio::test]
+    async fn close_billing_month_transitions_confirmed_to_closed() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        confirm_bill_impl(&pool, bid).await.expect("confirm");
+
+        let closed = close_billing_month_impl(&pool, "2026-05").await.expect("ok");
+        assert_eq!(closed, 1);
+
+        let bill = get_bill_impl(&pool, bid).await.expect("get");
+        assert_eq!(bill.status, "closed");
+        assert!(bill.closed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn close_billing_month_with_no_bills_succeeds() {
+        // AC-4.9-7 의 전제 — 미확정 0건이면 마감 OK. 청구가 아예 없는 월도 동일하게 0건 마감.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let closed = close_billing_month_impl(&pool, "2026-05").await.expect("ok");
+        assert_eq!(closed, 0);
     }
 }

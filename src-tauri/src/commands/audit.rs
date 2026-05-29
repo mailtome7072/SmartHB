@@ -54,6 +54,10 @@ pub enum AuditEventType {
     MakeupCancelled,
     // Sprint 10 T3 — 보강 소멸 자동 전이 (PRD §4.5.7)
     MakeupExpired,
+    // Sprint 11 T3 — 청구 상태 머신 (PRD §4.9.3, §4.9.7)
+    BillConfirmed,
+    BillMonthClosed,
+    BillClosedModified,
 }
 
 impl AuditEventType {
@@ -75,6 +79,9 @@ impl AuditEventType {
             Self::MakeupCreated => "makeup-created",
             Self::MakeupCancelled => "makeup-cancelled",
             Self::MakeupExpired => "makeup-expired",
+            Self::BillConfirmed => "bill-confirmed",
+            Self::BillMonthClosed => "bill-month-closed",
+            Self::BillClosedModified => "bill-closed-modified",
         }
     }
 }
