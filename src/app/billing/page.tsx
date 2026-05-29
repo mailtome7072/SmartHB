@@ -252,7 +252,7 @@ function BillingContent() {
           </div>
         )}
 
-        {error !== null && (
+        {error !== null && error !== '' && (
           <div
             role="alert"
             className="mb-3 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-sm text-[var(--danger)]"
