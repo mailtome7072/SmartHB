@@ -235,6 +235,16 @@ export default function AttendancePage() {
               aria-label="원생 이름 검색"
               className="min-h-[44px] w-48 rounded-md border-2 border-[var(--border)] px-3 text-base"
             />
+            {showGenerateButton && (
+              <button
+                type="button"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+                className="min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
+              >
+                {generateMutation.isPending ? '생성 중...' : generateButtonLabel}
+              </button>
+            )}
             <label className="ml-2 flex min-h-[44px] cursor-pointer items-center gap-2 text-base text-gray-700">
               <input
                 type="checkbox"
@@ -258,7 +268,8 @@ export default function AttendancePage() {
           </div>
         )}
 
-        {showGenerateButton && (
+        {/* 출결 0건 — 그리드 없는 빈 상태에서는 헤더 우측에 표시 */}
+        {showGenerateButton && !showGrid && (
           <button
             type="button"
             onClick={() => generateMutation.mutate()}
