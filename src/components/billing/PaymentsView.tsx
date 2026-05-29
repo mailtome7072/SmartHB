@@ -107,6 +107,7 @@ export function PaymentsView({ yearMonth, onError }: Props) {
 
   const batchMutation = useMutation({
     mutationFn: (items: PaymentInput[]) => batchUpdatePayments(items),
+    onMutate: () => onError(''),
     onSuccess: () => {
       onError('')
       setDrafts({})

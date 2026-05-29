@@ -83,6 +83,7 @@ function BillingContent() {
 
   const generateMutation = useMutation({
     mutationFn: () => generateBills(effectiveYearMonth),
+    onMutate: () => setError(null),
     onSuccess: () => {
       setError(null)
       qc.invalidateQueries({ queryKey: ['bills', effectiveYearMonth] })
@@ -93,6 +94,7 @@ function BillingContent() {
 
   const confirmAllMutation = useMutation({
     mutationFn: () => confirmAllBills(effectiveYearMonth),
+    onMutate: () => setError(null),
     onSuccess: () => {
       setError(null)
       qc.invalidateQueries({ queryKey: ['bills', effectiveYearMonth] })
@@ -103,6 +105,7 @@ function BillingContent() {
 
   const closeMonthMutation = useMutation({
     mutationFn: () => closeBillingMonth(effectiveYearMonth),
+    onMutate: () => setError(null),
     onSuccess: () => {
       setError(null)
       setCloseMonthOpen(false)

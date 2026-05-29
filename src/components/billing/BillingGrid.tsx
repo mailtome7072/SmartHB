@@ -53,7 +53,11 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
 
   const confirmMutation = useMutation({
     mutationFn: (id: number) => confirmBill(id),
-    onSuccess: invalidate,
+    onMutate: () => onError(''),
+    onSuccess: () => {
+      invalidate()
+      onError('')
+    },
     onError: (e) => onError(e instanceof Error ? e.message : String(e)),
   })
 
@@ -67,11 +71,13 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
       amount: number
       reason: string | null
     }) => updateBill(id, amount, reason),
+    onMutate: () => onError(''),
     onSuccess: () => {
       invalidate()
       setEditingId(null)
       setEditValue('')
       setPendingUpdate(null)
+      onError('')
     },
     onError: (e) => onError(e instanceof Error ? e.message : String(e)),
   })
