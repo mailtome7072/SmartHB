@@ -2,6 +2,7 @@ pub mod academic;
 pub mod attendance;
 pub mod audit;
 pub mod auth;
+pub mod billing;
 pub mod backup;
 pub mod calendar;
 pub mod codes;
