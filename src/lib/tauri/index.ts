@@ -1264,6 +1264,7 @@ export async function getBillingSummary(yearMonth: string): Promise<BillingSumma
   if (!inv) {
     return {
       yearMonth,
+      totalBillableStudents: 0,
       billCount: 0,
       totalBilled: 0,
       totalPaid: 0,

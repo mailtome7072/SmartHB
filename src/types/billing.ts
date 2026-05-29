@@ -66,6 +66,12 @@ export interface UnpaidBill {
 
 export interface BillingSummary {
   yearMonth: string
+  /**
+   * 해당 월에 수업을 진행한 원생 수 (hotfix post-Sprint 11).
+   * 청구년월 'YYYY-MM' 은 그 해·달 수업 원생의 교습비 청구서를 의미.
+   * `totalBillableStudents > billCount` 일 때 UI 는 "추가 청구 데이터 생성" 라벨 표시.
+   */
+  totalBillableStudents: number
   billCount: number
   totalBilled: number
   totalPaid: number

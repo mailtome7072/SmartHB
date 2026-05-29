@@ -595,10 +595,17 @@ pub struct UnpaidBill {
 }
 
 /// 월별 청구·수납 요약 (PRD §4.11.3 대시보드 위젯 선행 준비).
+///
+/// `total_billable_students` (hotfix post-Sprint 11): 해당 월에 **수업을 진행한 원생 수**.
+/// 청구년월 'YYYY-MM' 은 그 해·달 수업 원생의 교습비 청구서를 의미한다 (예: '2026-05' = 2026년 5월).
+/// 정의: `enroll_date <= 월말 AND (withdraw_date IS NULL OR withdraw_date >= 월초)`
+///       AND 현재 유효 스케줄(`effective_to IS NULL`) 의 `duration_hours` 합 > 0
+/// "추가 청구 데이터 생성" UX 트리거: `total_billable_students > bill_count`.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct BillingSummary {
     pub year_month: String,
+    pub total_billable_students: i64,
     pub bill_count: i64,
     pub total_billed: i64,    // adjusted_amount 합계
     pub total_paid: i64,      // is_paid=1 한정
@@ -791,6 +798,8 @@ pub(crate) async fn get_billing_summary_impl(
     year_month: &str,
 ) -> Result<BillingSummary, String> {
     validate_year_month(year_month)?;
+    let (period_start, period_end) = year_month_range(year_month)?;
+
     let row = sqlx::query(
         "SELECT \
             COUNT(*) AS bill_count, \
@@ -806,6 +815,25 @@ pub(crate) async fn get_billing_summary_impl(
     .await
     .map_err(|e| format!("청구 요약 조회 실패: {}", e))?;
 
+    // 해당 월에 수업을 진행한 원생 수 (스케줄 합 > 0 인 청구 대상). hotfix post-Sprint 11.
+    let total_billable_students: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ( \
+            SELECT s.id \
+            FROM students s \
+            INNER JOIN student_schedules sch \
+                ON sch.student_id = s.id AND sch.effective_to IS NULL \
+            WHERE s.enroll_date <= ? \
+              AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
+            GROUP BY s.id \
+            HAVING SUM(sch.duration_hours) > 0 \
+         )",
+    )
+    .bind(&period_end)
+    .bind(&period_start)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("청구 대상 원생 수 조회 실패: {}", e))?;
+
     let bill_count: i64 = row.try_get("bill_count").map_err(|e| e.to_string())?;
     let total_billed: i64 = row.try_get("total_billed").map_err(|e| e.to_string())?;
     let total_paid: i64 = row.try_get("total_paid").map_err(|e| e.to_string())?;
@@ -813,6 +841,7 @@ pub(crate) async fn get_billing_summary_impl(
 
     Ok(BillingSummary {
         year_month: year_month.to_string(),
+        total_billable_students,
         bill_count,
         total_billed,
         total_paid,
@@ -1628,11 +1657,42 @@ mod tests {
         .expect("pay");
 
         let s = get_billing_summary_impl(&pool, "2026-05").await.expect("ok");
+        assert_eq!(s.total_billable_students, 3, "수업 받은 원생 3명");
         assert_eq!(s.bill_count, 3);
         assert_eq!(s.total_billed, 300_000);
         assert_eq!(s.total_paid, 100_000);
         assert_eq!(s.total_unpaid, 200_000);
         assert_eq!(s.paid_count, 1);
         assert_eq!(s.unpaid_count, 2);
+    }
+
+    /// hotfix post-Sprint 11: 수업 받은 원생 수 > 청구 건수 시 "추가 청구 데이터 생성" UX 트리거.
+    #[tokio::test]
+    async fn summary_total_billable_excludes_no_schedule_and_out_of_month() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        // 청구 대상 2명 (스케줄 있음)
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-05-15", None).await; // 월중입교
+        for s in [a, b] { seed_schedule(&pool, s, 1, 1).await; }
+        // 스케줄 없음 → 제외
+        seed_student(&pool, "3", "원생C", "2026-01-01", None).await;
+        // 4월말 퇴교 → 5월 청구 대상 아님
+        seed_student(&pool, "4", "원생D", "2026-01-01", Some("2026-04-30")).await;
+
+        seed_standard_fee(&pool, 1, 100_000).await;
+        // 1명만 청구 생성 (A) — B 는 청구 미생성
+        sqlx::query(
+            "INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount, status) \
+             VALUES (?, '2026-05', 1, 100000, 100000, 'draft')",
+        )
+        .bind(a)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let s = get_billing_summary_impl(&pool, "2026-05").await.expect("ok");
+        assert_eq!(s.total_billable_students, 2, "A + B (스케줄 있고 5월 재원)");
+        assert_eq!(s.bill_count, 1, "A 만 청구 생성됨");
+        // → UI 는 "추가 청구 데이터 생성" 버튼 표시 (2 > 1)
     }
 }

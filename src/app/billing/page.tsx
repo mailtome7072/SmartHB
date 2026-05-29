@@ -26,7 +26,6 @@ import {
   confirmAllBills,
   generateBills,
   getBillingSummary,
-  getDefaultBillingYearMonth,
   listBills,
 } from '@/lib/tauri'
 
@@ -64,13 +63,9 @@ function BillingContent() {
   const [closeMonthOpen, setCloseMonthOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('bills')
 
-  // 초기 yearMonth 결정 — 가장 최근 교습기간 월 (없으면 현재 월).
-  const defaultQuery = useQuery({
-    queryKey: ['default-billing-year-month'],
-    queryFn: getDefaultBillingYearMonth,
-  })
-  const effectiveYearMonth =
-    yearMonth ?? defaultQuery.data ?? currentYearMonth()
+  // 디폴트 청구년월 — 오늘 날짜 기준 년월 (hotfix post-Sprint 11 정책).
+  // 청구년월 'YYYY-MM' = 해당 연·월 수업 원생의 교습비 청구서.
+  const effectiveYearMonth = yearMonth ?? currentYearMonth()
 
   const billsQuery = useQuery({
     queryKey: ['bills', effectiveYearMonth],
@@ -123,7 +118,16 @@ function BillingContent() {
   const confirmedCount = bills.filter((b) => b.status === 'confirmed').length
   const allClosed = bills.length > 0 && bills.every((b) => b.status === 'closed')
   const showCloseButton = bills.length > 0 && draftCount === 0 && confirmedCount > 0
-  const showGenerateButton = bills.length === 0
+  // 청구 생성 버튼 표시/라벨 조건 (hotfix post-Sprint 11):
+  // - bills 0건 → "청구 데이터 생성"
+  // - bills>0 & totalBillableStudents>billCount → "추가 청구 데이터 생성"
+  // - bills>0 & 모두 청구 → 버튼 숨김
+  const ungeneratedCount = summary
+    ? Math.max(0, summary.totalBillableStudents - summary.billCount)
+    : 0
+  const showGenerateButton = bills.length === 0 || ungeneratedCount > 0
+  const generateButtonLabel =
+    bills.length === 0 ? '청구 데이터 생성' : `추가 청구 데이터 생성 (${ungeneratedCount}명)`
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
@@ -179,7 +183,7 @@ function BillingContent() {
               disabled={generateMutation.isPending}
               className="h-11 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
-              {generateMutation.isPending ? '생성 중...' : '청구 데이터 생성'}
+              {generateMutation.isPending ? '생성 중...' : generateButtonLabel}
             </button>
           )}
 
@@ -222,10 +226,19 @@ function BillingContent() {
         )}
 
         {/* 요약 */}
-        {summary && summary.billCount > 0 && (
-          <div className="mb-3 grid grid-cols-2 gap-3 rounded-md border border-[var(--border)] bg-gray-50 p-3 text-sm md:grid-cols-4">
+        {summary && (summary.totalBillableStudents > 0 || summary.billCount > 0) && (
+          <div className="mb-3 grid grid-cols-2 gap-3 rounded-md border border-[var(--border)] bg-gray-50 p-3 text-sm md:grid-cols-3 lg:grid-cols-5">
             <div>
-              청구 건수: <strong>{summary.billCount}</strong>
+              총수업원생: <strong>{summary.totalBillableStudents}명</strong>
+            </div>
+            <div>
+              청구 건수:{' '}
+              <strong>
+                {summary.billCount}건
+                {ungeneratedCount > 0 && (
+                  <span className="ml-1 text-amber-700">/ 미생성 {ungeneratedCount}명</span>
+                )}
+              </strong>
             </div>
             <div>
               청구 총액: <strong>{summary.totalBilled.toLocaleString()}원</strong>
