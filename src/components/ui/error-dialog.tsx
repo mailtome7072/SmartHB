@@ -29,7 +29,7 @@ export function ErrorDialog({ open, title = '오류', message, onClose }: Props)
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9998,
+        zIndex: 2147483646,
         background: 'rgba(0,0,0,0.5)',
         display: 'flex',
         alignItems: 'center',
