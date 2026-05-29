@@ -57,7 +57,6 @@ export function ErrorDialog({ open, title = '오류', message, onClose }: Props)
           <button
             type="button"
             onClick={onClose}
-            autoFocus
             style={{
               minHeight: 44,
               minWidth: 100,
