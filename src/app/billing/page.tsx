@@ -60,9 +60,18 @@ type Tab = 'bills' | 'payments'
 function BillingContent() {
   const qc = useQueryClient()
   const [yearMonth, setYearMonth] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
   const [closeMonthOpen, setCloseMonthOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('bills')
+
+  // 임시 디버그 — setError 호출 추적
+  const [dbgSetErrCalls, setDbgSetErrCalls] = useState(0)
+  const [dbgSetErrLog, setDbgSetErrLog] = useState<string[]>([])
+  const setError = (val: string | null) => {
+    setDbgSetErrCalls((c) => c + 1)
+    setDbgSetErrLog((arr) => [...arr.slice(-4), JSON.stringify(val)])
+    setErrorRaw(val)
+  }
 
   // 디폴트 청구년월 — 오늘 날짜 기준 년월 (hotfix post-Sprint 11 정책).
   // 청구년월 'YYYY-MM' = 해당 연·월 수업 원생의 교습비 청구서.
@@ -313,6 +322,8 @@ function BillingContent() {
       >
         PAGE error = {JSON.stringify(error)}
         {'\n'}ErrorDialog open = {String(error !== null && error !== '')}
+        {'\n'}setError 호출: {dbgSetErrCalls}
+        {'\n'}최근 호출: {dbgSetErrLog.join(' → ')}
       </div>
     </AppShell>
   )
