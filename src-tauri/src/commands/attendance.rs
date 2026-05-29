@@ -151,8 +151,25 @@ async fn generate_impl(pool: &SqlitePool, year_month: &str) -> Result<GenerateRe
         .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
 
     // Sprint 10 T4 (PI-05): 출결 생성 직후 소멸 자동 전이 — 같은 월의 deadline 도래 결석을 일괄 전이.
-    let expiration_report =
-        crate::commands::expiration::expire_overdue_absences_impl(pool, None).await?;
+    // Sprint 11 F2: fail-soft 전환 — expire 실패가 출결 생성 본 흐름을 막지 않도록 warn 로그만 남김.
+    // startup 트리거(`startup::run`) 와 동일 정책. 사용자는 다음 트리거(다음 달 출결 생성 / 앱 재시작) 에서 재시도.
+    let expiration_report = match crate::commands::expiration::expire_overdue_absences_impl(
+        pool, None,
+    )
+    .await
+    {
+        Ok(report) => report,
+        Err(e) => {
+            eprintln!(
+                "[attendance::generate] 소멸 자동 전이 실패 (출결 생성은 성공): {}",
+                e
+            );
+            crate::commands::expiration::ExpirationReport {
+                transitioned_count: 0,
+                details: Vec::new(),
+            }
+        }
+    };
 
     Ok(GenerateResult {
         year_month: year_month.to_string(),
@@ -652,7 +669,10 @@ async fn build_day_schedules(
                 entry.0 = entry.0 || new_makeup;
                 entry.1 = entry.1 || new_block;
             }
-            d = d.succ_opt().expect("date succ");
+            // Sprint 11 F1: succ_opt() 는 NaiveDate::MAX 도달 시 None 반환 — panic 대신 Result 전파.
+            d = d
+                .succ_opt()
+                .ok_or_else(|| format!("일자 다음 날짜 계산 실패: {}", d))?;
         }
     }
 

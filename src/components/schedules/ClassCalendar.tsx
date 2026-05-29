@@ -195,7 +195,10 @@ export default function ClassCalendar({
   }
 
   // 뷰 전환 — 주/일은 오늘 날짜가 포함되도록 이동, 월은 현재 위치 유지.
+  // Sprint 11 F5: setViewType 을 클릭 시점에 명시적으로 호출하여 한 프레임 동안의
+  // 버튼 highlight / events memo 불일치를 제거. datesSet 콜백의 setViewType 은 동일 값이라 no-op.
   function changeView(v: string) {
+    setViewType(v)
     const a = api()
     if (!a) return
     if (v === 'dayGridMonth') a.changeView(v)

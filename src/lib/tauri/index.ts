@@ -1177,3 +1177,106 @@ export async function getAbsenceHistory(
   if (!inv) return []
   return inv('get_absence_history', { studentId }) as Promise<AbsenceHistoryItem[]>
 }
+
+// ─────────────────────── Sprint 11 청구·수납 도메인 ───────────────────────
+
+import type {
+  Bill,
+  BillingSummary,
+  GenerateBillsResult,
+  Payment,
+  PaymentInput,
+  UnpaidBill,
+} from '@/types/billing'
+
+export async function generateBills(yearMonth: string): Promise<GenerateBillsResult> {
+  const inv = await getInvoke()
+  if (!inv) return { yearMonth, generatedCount: 0, skippedCount: 0 }
+  return inv('generate_bills', { yearMonth }) as Promise<GenerateBillsResult>
+}
+
+export async function listBills(yearMonth: string): Promise<Bill[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_bills', { yearMonth }) as Promise<Bill[]>
+}
+
+export async function getBill(id: number): Promise<Bill> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] getBill 호출 불가')
+  return inv('get_bill', { id }) as Promise<Bill>
+}
+
+export async function updateBill(
+  id: number,
+  adjustedAmount: number,
+  closeReason: string | null,
+): Promise<Bill> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] updateBill 호출 불가')
+  return inv('update_bill', { id, adjustedAmount, closeReason }) as Promise<Bill>
+}
+
+export async function confirmBill(id: number): Promise<Bill> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] confirmBill 호출 불가')
+  return inv('confirm_bill', { id }) as Promise<Bill>
+}
+
+export async function confirmAllBills(yearMonth: string): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('confirm_all_bills', { yearMonth }) as Promise<number>
+}
+
+export async function closeBillingMonth(yearMonth: string): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('close_billing_month', { yearMonth }) as Promise<number>
+}
+
+export async function createPayment(input: PaymentInput): Promise<Payment> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] createPayment 호출 불가')
+  return inv('create_payment', { input }) as Promise<Payment>
+}
+
+export async function updatePayment(id: number, input: PaymentInput): Promise<Payment> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] updatePayment 호출 불가')
+  return inv('update_payment', { id, input }) as Promise<Payment>
+}
+
+export async function listUnpaidBills(yearMonth: string): Promise<UnpaidBill[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_unpaid_bills', { yearMonth }) as Promise<UnpaidBill[]>
+}
+
+export async function batchUpdatePayments(items: PaymentInput[]): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('batch_update_payments', { items }) as Promise<number>
+}
+
+export async function getBillingSummary(yearMonth: string): Promise<BillingSummary> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      yearMonth,
+      billCount: 0,
+      totalBilled: 0,
+      totalPaid: 0,
+      totalUnpaid: 0,
+      paidCount: 0,
+      unpaidCount: 0,
+    }
+  }
+  return inv('get_billing_summary', { yearMonth }) as Promise<BillingSummary>
+}
+
+export async function getDefaultBillingYearMonth(): Promise<string | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_default_billing_year_month') as Promise<string | null>
+}
