@@ -68,8 +68,17 @@ function BillingContent() {
   const [dbgSetErrCalls, setDbgSetErrCalls] = useState(0)
   const [dbgSetErrLog, setDbgSetErrLog] = useState<string[]>([])
   const setError = (val: string | null) => {
+    // stack 의 1~4번째 줄에서 호출자 식별 (dev mode 함수 이름 노출)
+    const stack = (new Error().stack ?? '')
+      .split('\n')
+      .slice(2, 6)
+      .map((l) => l.trim().replace(/.*\//, ''))
+      .join(' < ')
     setDbgSetErrCalls((c) => c + 1)
-    setDbgSetErrLog((arr) => [...arr.slice(-4), JSON.stringify(val)])
+    setDbgSetErrLog((arr) => [
+      ...arr.slice(-4),
+      `${JSON.stringify(val)} :: ${stack}`,
+    ])
     setErrorRaw(val)
   }
 
@@ -315,7 +324,7 @@ function BillingContent() {
           fontSize: 12,
           fontFamily: 'monospace',
           zIndex: 2147483645,
-          maxWidth: 380,
+          maxWidth: 560,
           border: '2px solid red',
           whiteSpace: 'pre-wrap',
         }}
