@@ -13,7 +13,7 @@
  * 캐싱: TanStack Query `['bills', yearMonth]` + `['billing-summary', yearMonth]`.
  */
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -63,11 +63,6 @@ function BillingContent() {
   const [error, setError] = useState<string | null>(null)
   const [closeMonthOpen, setCloseMonthOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('bills')
-
-  // 임시 디버그 — error state 변화 추적 (다음 commit 에서 제거)
-  useEffect(() => {
-    console.log('[DEBUG BillingPage] error =', error)
-  }, [error])
 
   // 디폴트 청구년월 — 오늘 날짜 기준 년월 (hotfix post-Sprint 11 정책).
   // 청구년월 'YYYY-MM' = 해당 연·월 수업 원생의 교습비 청구서.
@@ -298,28 +293,6 @@ function BillingContent() {
         message={error ?? ''}
         onClose={() => setError(null)}
       />
-
-      {/* 임시 디버그 표시 — 화면 우상단 노란 박스 */}
-      <div
-        style={{
-          position: 'fixed',
-          top: 8,
-          right: 8,
-          background: 'yellow',
-          color: 'black',
-          padding: 8,
-          fontSize: 12,
-          fontFamily: 'monospace',
-          zIndex: 99999,
-          maxWidth: 360,
-          border: '2px solid red',
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-        DEBUG{'\n'}
-        error = {JSON.stringify(error)}{'\n'}
-        ErrorDialog open = {String(error !== null && error !== '')}
-      </div>
     </AppShell>
   )
 }

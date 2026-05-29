@@ -95,10 +95,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
 
   const tryCommit = (bill: Bill) => {
     const parsed = Number(editValue.replace(/,/g, ''))
-    // 임시 디버그 (다음 commit 에서 제거)
-    console.log('[DEBUG tryCommit]', { editValue, parsed, finite: Number.isFinite(parsed), negative: parsed < 0 })
     if (!Number.isFinite(parsed) || parsed < 0) {
-      console.log('[DEBUG tryCommit] invalid → onError 호출')
       onError('조정 금액은 0 이상의 숫자여야 합니다.')
       return
     }
@@ -157,18 +154,10 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         type="text"
                         inputMode="numeric"
                         value={editValue}
-                        onChange={(e) => {
-                          setEditValue(e.target.value)
-                          onError(`[CHANGE] "${e.target.value}"`)
-                        }}
+                        onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => {
-                          onError(`[KEY] key="${e.key}" editValue="${editValue}"`)
-                          if (e.key === 'Enter') {
-                            onError(`[ENTER 트리거] editValue="${editValue}" → tryCommit 호출 직전`)
-                            tryCommit(b)
-                          } else if (e.key === 'Escape') {
-                            cancelEdit()
-                          }
+                          if (e.key === 'Enter') tryCommit(b)
+                          else if (e.key === 'Escape') cancelEdit()
                         }}
                         autoFocus
                         className="h-9 w-28 rounded-md border-2 border-[var(--accent)] px-2 text-right"
