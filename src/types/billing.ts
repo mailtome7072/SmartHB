@@ -25,6 +25,26 @@ export interface Bill {
   closeReason: string | null
   closedAt: string | null
   confirmedAt: string | null
+  /** payments.is_paid=1 행 존재 시 true — BillingGrid 수납완료 라벨용. */
+  isPaid: boolean
+}
+
+export interface PaymentViewRow {
+  billId: number
+  paymentId: number | null
+  studentId: number
+  studentName: string
+  studentSerialNo: string
+  adjustedAmount: number
+  isMidMonth: boolean
+  midMonthType: MidMonthType | null
+  isPaid: boolean
+  paidDate: string | null
+  payerName: string | null
+  paymentMethodId: number | null
+  paymentMethodLabel: string | null
+  cardCompanyId: number | null
+  cardCompanyLabel: string | null
 }
 
 export interface GenerateBillsResult {

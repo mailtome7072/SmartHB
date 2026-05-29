@@ -55,6 +55,8 @@ pub struct Bill {
     pub close_reason: Option<String>,
     pub closed_at: Option<String>,
     pub confirmed_at: Option<String>,
+    /// payments.is_paid=1 행이 존재하면 true (수납완료 라벨용).
+    pub is_paid: bool,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -205,9 +207,11 @@ pub(crate) async fn list_bills_impl(
     let rows = sqlx::query(
         "SELECT b.id, b.student_id, s.name AS student_name, s.serial_no, s.grade, s.school_level, \
                 b.bill_year_month, b.weekly_hours, b.bill_amount, b.adjusted_amount, b.status, \
-                b.is_mid_month, b.mid_month_type, b.close_reason, b.closed_at, b.confirmed_at \
+                b.is_mid_month, b.mid_month_type, b.close_reason, b.closed_at, b.confirmed_at, \
+                COALESCE(p.is_paid, 0) AS is_paid \
          FROM bills b \
          JOIN students s ON s.id = b.student_id \
+         LEFT JOIN payments p ON p.bill_id = b.id \
          WHERE b.bill_year_month = ? \
          ORDER BY \
             CASE b.status WHEN 'draft' THEN 0 WHEN 'confirmed' THEN 1 ELSE 2 END ASC, \
@@ -233,9 +237,11 @@ pub(crate) async fn get_bill_impl(pool: &SqlitePool, id: i64) -> Result<Bill, St
     let row = sqlx::query(
         "SELECT b.id, b.student_id, s.name AS student_name, s.serial_no, s.grade, s.school_level, \
                 b.bill_year_month, b.weekly_hours, b.bill_amount, b.adjusted_amount, b.status, \
-                b.is_mid_month, b.mid_month_type, b.close_reason, b.closed_at, b.confirmed_at \
+                b.is_mid_month, b.mid_month_type, b.close_reason, b.closed_at, b.confirmed_at, \
+                COALESCE(p.is_paid, 0) AS is_paid \
          FROM bills b \
          JOIN students s ON s.id = b.student_id \
+         LEFT JOIN payments p ON p.bill_id = b.id \
          WHERE b.id = ?",
     )
     .bind(id)
@@ -470,6 +476,96 @@ pub(crate) async fn close_billing_month_impl(
     Ok(closed)
 }
 
+/// 수납 관리 뷰 한 행 — 청구 + payments 정보 통합 (post-Sprint 11 hotfix).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentViewRow {
+    pub bill_id: i64,
+    pub payment_id: Option<i64>,
+    pub student_id: i64,
+    pub student_name: String,
+    pub student_serial_no: String,
+    pub adjusted_amount: i64,
+    pub is_mid_month: bool,
+    pub mid_month_type: Option<String>,
+    pub is_paid: bool,
+    pub paid_date: Option<String>,
+    pub payer_name: Option<String>,
+    pub payment_method_id: Option<i64>,
+    pub payment_method_label: Option<String>,
+    pub card_company_id: Option<i64>,
+    pub card_company_label: Option<String>,
+}
+
+/// 해당 월의 모든 청구 + 수납 정보 통합 조회 — PaymentsView 가 사용.
+#[tauri::command]
+pub async fn list_payment_view(year_month: String) -> Result<Vec<PaymentViewRow>, String> {
+    let pool = db::pool().map_err(String::from)?;
+    list_payment_view_impl(pool, &year_month).await
+}
+
+pub(crate) async fn list_payment_view_impl(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<Vec<PaymentViewRow>, String> {
+    validate_year_month(year_month)?;
+    let rows = sqlx::query(
+        "SELECT b.id AS bill_id, p.id AS payment_id, b.student_id, \
+                s.name AS student_name, s.serial_no, b.adjusted_amount, \
+                b.is_mid_month, b.mid_month_type, \
+                COALESCE(p.is_paid, 0) AS is_paid, \
+                p.paid_date, p.payer_name, \
+                p.payment_method_id, pm.label AS payment_method_label, \
+                p.card_company_id, cc.label AS card_company_label \
+         FROM bills b \
+         JOIN students s ON s.id = b.student_id \
+         LEFT JOIN payments p ON p.bill_id = b.id \
+         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id \
+         LEFT JOIN card_companies cc ON cc.id = p.card_company_id \
+         WHERE b.bill_year_month = ? \
+         ORDER BY \
+            COALESCE(p.is_paid, 0) ASC, \
+            b.is_mid_month DESC, \
+            s.name ASC",
+    )
+    .bind(year_month)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("수납 뷰 조회 실패: {}", e))?;
+
+    rows.into_iter()
+        .map(|r| {
+            Ok(PaymentViewRow {
+                bill_id: r.try_get("bill_id").map_err(|e| e.to_string())?,
+                payment_id: r.try_get("payment_id").map_err(|e| e.to_string())?,
+                student_id: r.try_get("student_id").map_err(|e| e.to_string())?,
+                student_name: r.try_get("student_name").map_err(|e| e.to_string())?,
+                student_serial_no: r.try_get("serial_no").map_err(|e| e.to_string())?,
+                adjusted_amount: r.try_get("adjusted_amount").map_err(|e| e.to_string())?,
+                is_mid_month: {
+                    let v: i64 = r.try_get("is_mid_month").map_err(|e| e.to_string())?;
+                    v != 0
+                },
+                mid_month_type: r.try_get("mid_month_type").map_err(|e| e.to_string())?,
+                is_paid: {
+                    let v: i64 = r.try_get("is_paid").map_err(|e| e.to_string())?;
+                    v != 0
+                },
+                paid_date: r.try_get("paid_date").map_err(|e| e.to_string())?,
+                payer_name: r.try_get("payer_name").map_err(|e| e.to_string())?,
+                payment_method_id: r.try_get("payment_method_id").map_err(|e| e.to_string())?,
+                payment_method_label: r
+                    .try_get("payment_method_label")
+                    .map_err(|e| e.to_string())?,
+                card_company_id: r.try_get("card_company_id").map_err(|e| e.to_string())?,
+                card_company_label: r
+                    .try_get("card_company_label")
+                    .map_err(|e| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
 // ─────────────────────── 검색 + 자동 채움 (post-Sprint 11) ───────────────────────
 
 /// 검색 결과 한 행 — 매칭된 학생 + 그 학생의 가장 최근 수납 정보(자동 채움용).
@@ -645,6 +741,10 @@ fn row_to_bill(r: sqlx::sqlite::SqliteRow) -> Result<Bill, String> {
         close_reason: r.try_get("close_reason").map_err(|e| e.to_string())?,
         closed_at: r.try_get("closed_at").map_err(|e| e.to_string())?,
         confirmed_at: r.try_get("confirmed_at").map_err(|e| e.to_string())?,
+        is_paid: {
+            let v: i64 = r.try_get("is_paid").map_err(|e| e.to_string())?;
+            v != 0
+        },
     })
 }
 

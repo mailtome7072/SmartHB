@@ -58,6 +58,8 @@ export default function BillingPage() {
 }
 
 type Tab = 'bills' | 'payments'
+type BillFilter = 'all' | 'confirmed' | 'draft'
+type PaymentFilter = 'all' | 'paid' | 'unpaid'
 
 function BillingContent() {
   const qc = useQueryClient()
@@ -65,6 +67,10 @@ function BillingContent() {
   const [error, setError] = useState<string | null>(null)
   const [closeMonthOpen, setCloseMonthOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('bills')
+
+  // 상태 필터 — 탭별 별도
+  const [billFilter, setBillFilter] = useState<BillFilter>('all')
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all')
 
   // 검색 — 청구·수납 통합 (원생 이름 / 연락처 / 입금자 이름 완전 일치)
   const [searchInput, setSearchInput] = useState('')
@@ -234,6 +240,60 @@ function BillingContent() {
             </button>
           )}
 
+          {/* 탭별 상태 필터 — 검색 input 우측 */}
+          {tab === 'bills' && (
+            <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="청구 상태 필터">
+              {(
+                [
+                  ['all', '전체'],
+                  ['confirmed', '확정'],
+                  ['draft', '미확정'],
+                ] as const
+              ).map(([key, label]) => (
+                <label
+                  key={key}
+                  className="flex min-h-[44px] cursor-pointer items-center gap-1 text-gray-700"
+                >
+                  <input
+                    type="radio"
+                    name="bill-filter"
+                    value={key}
+                    checked={billFilter === key}
+                    onChange={() => setBillFilter(key)}
+                    className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          )}
+          {tab === 'payments' && (
+            <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="수납 상태 필터">
+              {(
+                [
+                  ['all', '전체'],
+                  ['paid', '수납완료'],
+                  ['unpaid', '미수납'],
+                ] as const
+              ).map(([key, label]) => (
+                <label
+                  key={key}
+                  className="flex min-h-[44px] cursor-pointer items-center gap-1 text-gray-700"
+                >
+                  <input
+                    type="radio"
+                    name="payment-filter"
+                    value={key}
+                    checked={paymentFilter === key}
+                    onChange={() => setPaymentFilter(key)}
+                    className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          )}
+
           {tab === 'bills' && showGenerateButton && (
             <button
               type="button"
@@ -318,11 +378,13 @@ function BillingContent() {
 
         {tab === 'bills' && bills.length > 0 && (
           <BillingGrid
-            bills={
-              matchedStudentIds === null
-                ? bills
-                : bills.filter((b) => matchedStudentIds.has(b.studentId))
-            }
+            bills={bills.filter((b) => {
+              if (matchedStudentIds !== null && !matchedStudentIds.has(b.studentId))
+                return false
+              if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
+              if (billFilter === 'draft' && b.status !== 'draft') return false
+              return true
+            })}
             yearMonth={effectiveYearMonth}
             onError={(msg) => setError(msg)}
           />
@@ -334,6 +396,7 @@ function BillingContent() {
             onError={(msg) => setError(msg)}
             matchedStudentIds={matchedStudentIds}
             searchResults={searchResults}
+            paymentFilter={paymentFilter}
           />
         )}
       </div>

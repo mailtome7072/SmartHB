@@ -13,17 +13,23 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { batchUpdatePayments, listCodes, listUnpaidBills } from '@/lib/tauri'
-import type { BillingSearchResult, PaymentInput, UnpaidBill } from '@/types/billing'
+import { batchUpdatePayments, listCodes, listPaymentView } from '@/lib/tauri'
+import type {
+  BillingSearchResult,
+  PaymentInput,
+  PaymentViewRow,
+} from '@/types/billing'
 import type { CodeEntry } from '@/types/code'
 
 interface Props {
   yearMonth: string
   onError: (msg: string) => void
-  /** 통합 검색 매칭 학생 ID 집합. null = 검색 미적용 (모든 미납 표시). */
+  /** 통합 검색 매칭 학생 ID 집합. null = 검색 미적용. */
   matchedStudentIds: Set<number> | null
   /** 검색 결과 — 자동 채움(입금일=오늘 + 최근 결제수단/카드사/입금자) 에 사용. */
   searchResults: BillingSearchResult[]
+  /** 수납 상태 필터 — 'all' / 'paid' / 'unpaid'. */
+  paymentFilter: 'all' | 'paid' | 'unpaid'
 }
 
 interface RowDraft {
@@ -56,11 +62,12 @@ export function PaymentsView({
   onError,
   matchedStudentIds,
   searchResults,
+  paymentFilter,
 }: Props) {
   const qc = useQueryClient()
-  const unpaidQuery = useQuery({
-    queryKey: ['unpaid-bills', yearMonth],
-    queryFn: () => listUnpaidBills(yearMonth),
+  const viewQuery = useQuery({
+    queryKey: ['payment-view', yearMonth],
+    queryFn: () => listPaymentView(yearMonth),
   })
   const paymentMethodsQuery = useQuery({
     queryKey: ['codes', 'payment-methods'],
@@ -71,22 +78,24 @@ export function PaymentsView({
     queryFn: () => listCodes('card-companies', 100, 0),
   })
 
-  // billId → 임시 입력 상태
+  // billId → 임시 입력 상태 (미수납 행만 편집 가능)
   const [drafts, setDrafts] = useState<Record<number, RowDraft>>({})
 
-  // unpaid 목록 갱신 시 drafts 초기화
+  // 데이터 갱신 시 drafts 초기화
   useEffect(() => {
-    if (unpaidQuery.data) {
+    if (viewQuery.data) {
       setDrafts({})
     }
-  }, [unpaidQuery.data])
+  }, [viewQuery.data])
 
-  const allUnpaid: UnpaidBill[] = unpaidQuery.data ?? []
-  // 검색 매칭된 학생의 미납만 노출 (검색 미적용 시 전체).
-  const unpaid: UnpaidBill[] =
-    matchedStudentIds === null
-      ? allUnpaid
-      : allUnpaid.filter((u) => matchedStudentIds.has(u.studentId))
+  const allRows: PaymentViewRow[] = viewQuery.data ?? []
+  // 검색 + 수납 상태 필터 동시 적용.
+  const rows: PaymentViewRow[] = allRows.filter((r) => {
+    if (matchedStudentIds !== null && !matchedStudentIds.has(r.studentId)) return false
+    if (paymentFilter === 'paid' && !r.isPaid) return false
+    if (paymentFilter === 'unpaid' && r.isPaid) return false
+    return true
+  })
   const paymentMethods: CodeEntry[] = (paymentMethodsQuery.data ?? []).filter(
     (c) => c.is_active,
   )
@@ -99,21 +108,22 @@ export function PaymentsView({
   )
 
   // 검색 결과로 좁혀진 미납 행에 자동 채움 (입금일=오늘 + 최근 결제수단/카드사/입금자).
-  // 사용자는 완료 체크 + 저장만 수행.
+  // 사용자는 완료 체크 + 저장만 수행. 수납완료 행은 건드리지 않음.
   useEffect(() => {
     if (matchedStudentIds === null || searchResults.length === 0) return
-    if (unpaid.length === 0) return
+    if (rows.length === 0) return
     const today = todayStr()
     const byStudent = new Map(searchResults.map((r) => [r.studentId, r]))
     setDrafts((prev) => {
       const next = { ...prev }
       let touched = false
-      for (const u of unpaid) {
-        if (prev[u.billId] !== undefined) continue // 이미 사용자가 손댄 행은 건드리지 않음
-        const info = byStudent.get(u.studentId)
+      for (const r of rows) {
+        if (r.isPaid) continue // 수납완료는 read-only
+        if (prev[r.billId] !== undefined) continue
+        const info = byStudent.get(r.studentId)
         if (!info) continue
-        next[u.billId] = {
-          isPaid: false, // 사용자가 명시적으로 체크
+        next[r.billId] = {
+          isPaid: false,
           paidDate: today,
           payerName: info.latestPayerName ?? '',
           paymentMethodId: info.latestPaymentMethodId,
@@ -123,7 +133,7 @@ export function PaymentsView({
       }
       return touched ? next : prev
     })
-  }, [matchedStudentIds, searchResults, unpaid])
+  }, [matchedStudentIds, searchResults, rows])
 
   const getDraft = (billId: number): RowDraft => drafts[billId] ?? emptyDraft()
 
@@ -152,7 +162,7 @@ export function PaymentsView({
     onSuccess: () => {
       onError('')
       setDrafts({})
-      qc.invalidateQueries({ queryKey: ['unpaid-bills', yearMonth] })
+      qc.invalidateQueries({ queryKey: ['payment-view', yearMonth] })
       qc.invalidateQueries({ queryKey: ['billing-summary', yearMonth] })
     },
     onError: (e) => onError(e instanceof Error ? e.message : String(e)),
@@ -170,20 +180,23 @@ export function PaymentsView({
     batchMutation.mutate(items)
   }
 
-  if (unpaidQuery.isLoading) return <p>불러오는 중...</p>
-  if (unpaid.length === 0) {
+  if (viewQuery.isLoading) return <p>불러오는 중...</p>
+  if (rows.length === 0) {
     return (
       <div className="rounded-md border border-[var(--border)] bg-gray-50 p-6 text-center text-gray-600">
-        미납 청구가 없습니다.
+        해당 조건의 청구가 없습니다.
       </div>
     )
   }
+
+  const paidCount = rows.filter((r) => r.isPaid).length
+  const unpaidCount = rows.length - paidCount
 
   return (
     <>
       <div className="mb-3 flex items-center justify-between">
         <p className="text-base">
-          미납 청구 <strong>{unpaid.length}건</strong>
+          청구 <strong>{rows.length}건</strong> · 수납완료 {paidCount} · 미수납 {unpaidCount}
           {dirtyEntries.length > 0 && (
             <span className="ml-2 text-sm text-amber-700">
               · 변경 {dirtyEntries.length}건
@@ -216,10 +229,14 @@ export function PaymentsView({
             </tr>
           </thead>
           <tbody>
-            {unpaid.map((b) => {
+            {rows.map((b) => {
               const d = getDraft(b.billId)
               const isCard = cardMethodId !== null && d.paymentMethodId === cardMethodId
-              const rowBg = b.isMidMonth ? 'bg-amber-50' : ''
+              const rowBg = b.isPaid
+                ? 'bg-emerald-50'
+                : b.isMidMonth
+                  ? 'bg-amber-50'
+                  : ''
               return (
                 <tr key={b.billId} className={`border-t border-[var(--border)] ${rowBg}`}>
                   <td className="px-3 py-2">{b.studentSerialNo}</td>
@@ -230,82 +247,109 @@ export function PaymentsView({
                         ({b.midMonthType === 'enrolled' ? '월중입교' : '월중퇴교'})
                       </span>
                     )}
+                    {b.isPaid && (
+                      <span className="ml-1 rounded-full bg-emerald-200 px-1.5 py-0.5 text-xs text-emerald-900">
+                        수납완료
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold">
                     {b.adjustedAmount.toLocaleString()}
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={d.isPaid}
-                      onChange={(e) => togglePaid(b.billId, e.target.checked)}
-                      className="h-5 w-5"
-                      aria-label="입금 완료"
-                    />
+                    {b.isPaid ? (
+                      <span className="text-emerald-700">✓</span>
+                    ) : (
+                      <input
+                        type="checkbox"
+                        checked={d.isPaid}
+                        onChange={(e) => togglePaid(b.billId, e.target.checked)}
+                        className="h-5 w-5"
+                        aria-label="입금 완료"
+                      />
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="date"
-                      value={d.paidDate}
-                      onChange={(e) => updateDraft(b.billId, { paidDate: e.target.value })}
-                      disabled={!d.isPaid}
-                      className="h-9 w-36 rounded border border-[var(--border)] px-2 disabled:bg-gray-100"
-                    />
+                    {b.isPaid ? (
+                      <span className="text-sm text-gray-700">{b.paidDate ?? '—'}</span>
+                    ) : (
+                      <input
+                        type="date"
+                        value={d.paidDate}
+                        onChange={(e) => updateDraft(b.billId, { paidDate: e.target.value })}
+                        disabled={!d.isPaid}
+                        className="h-9 w-36 rounded border border-[var(--border)] px-2 disabled:bg-gray-100"
+                      />
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={d.payerName}
-                      onChange={(e) => updateDraft(b.billId, { payerName: e.target.value })}
-                      placeholder="이름"
-                      className="h-9 w-28 rounded border border-[var(--border)] px-2"
-                    />
+                    {b.isPaid ? (
+                      <span className="text-sm text-gray-700">{b.payerName ?? '—'}</span>
+                    ) : (
+                      <input
+                        type="text"
+                        value={d.payerName}
+                        onChange={(e) => updateDraft(b.billId, { payerName: e.target.value })}
+                        placeholder="이름"
+                        className="h-9 w-28 rounded border border-[var(--border)] px-2"
+                      />
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    <select
-                      value={d.paymentMethodId ?? ''}
-                      onChange={(e) =>
-                        updateDraft(b.billId, {
-                          paymentMethodId: e.target.value === '' ? null : Number(e.target.value),
-                          cardCompanyId:
-                            e.target.value === '' || Number(e.target.value) !== cardMethodId
-                              ? null
-                              : d.cardCompanyId,
-                        })
-                      }
-                      className="h-9 w-28 rounded border border-[var(--border)] px-2"
-                    >
-                      <option value="">선택</option>
-                      {paymentMethods.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
+                    {b.isPaid ? (
+                      <span className="text-sm text-gray-700">{b.paymentMethodLabel ?? '—'}</span>
+                    ) : (
+                      <select
+                        value={d.paymentMethodId ?? ''}
+                        onChange={(e) =>
+                          updateDraft(b.billId, {
+                            paymentMethodId:
+                              e.target.value === '' ? null : Number(e.target.value),
+                            cardCompanyId:
+                              e.target.value === '' ||
+                              Number(e.target.value) !== cardMethodId
+                                ? null
+                                : d.cardCompanyId,
+                          })
+                        }
+                        className="h-9 w-28 rounded border border-[var(--border)] px-2"
+                      >
+                        <option value="">선택</option>
+                        {paymentMethods.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    <select
-                      value={d.cardCompanyId ?? ''}
-                      onChange={(e) =>
-                        updateDraft(b.billId, {
-                          cardCompanyId: e.target.value === '' ? null : Number(e.target.value),
-                        })
-                      }
-                      disabled={!isCard}
-                      className={`h-9 w-32 rounded border px-2 disabled:bg-gray-100 ${
-                        isCard && d.cardCompanyId === null
-                          ? 'border-[var(--danger)]'
-                          : 'border-[var(--border)]'
-                      }`}
-                      aria-invalid={isCard && d.cardCompanyId === null ? 'true' : undefined}
-                    >
-                      <option value="">{isCard ? '카드사 선택 (필수)' : '—'}</option>
-                      {cardCompanies.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
+                    {b.isPaid ? (
+                      <span className="text-sm text-gray-700">{b.cardCompanyLabel ?? '—'}</span>
+                    ) : (
+                      <select
+                        value={d.cardCompanyId ?? ''}
+                        onChange={(e) =>
+                          updateDraft(b.billId, {
+                            cardCompanyId: e.target.value === '' ? null : Number(e.target.value),
+                          })
+                        }
+                        disabled={!isCard}
+                        className={`h-9 w-32 rounded border px-2 disabled:bg-gray-100 ${
+                          isCard && d.cardCompanyId === null
+                            ? 'border-[var(--danger)]'
+                            : 'border-[var(--border)]'
+                        }`}
+                        aria-invalid={isCard && d.cardCompanyId === null ? 'true' : undefined}
+                      >
+                        <option value="">{isCard ? '카드사 선택 (필수)' : '—'}</option>
+                        {cardCompanies.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                 </tr>
               )

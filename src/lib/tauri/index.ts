@@ -1193,6 +1193,7 @@ import type {
   GenerateBillsResult,
   Payment,
   PaymentInput,
+  PaymentViewRow,
   UnpaidBill,
 } from '@/types/billing'
 
@@ -1281,6 +1282,12 @@ export async function getBillingSummary(yearMonth: string): Promise<BillingSumma
     }
   }
   return inv('get_billing_summary', { yearMonth }) as Promise<BillingSummary>
+}
+
+export async function listPaymentView(yearMonth: string): Promise<PaymentViewRow[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_payment_view', { yearMonth }) as Promise<PaymentViewRow[]>
 }
 
 export async function searchStudentsForBilling(

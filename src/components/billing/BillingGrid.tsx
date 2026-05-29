@@ -192,6 +192,11 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                     >
                       {STATUS_LABEL[b.status]}
                     </span>
+                    {b.isPaid && (
+                      <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-sm text-emerald-900">
+                        수납완료
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-sm text-amber-900">
                     {b.midMonthType !== null ? MID_MONTH_LABEL[b.midMonthType] : ''}
