@@ -89,186 +89,186 @@
 
 ## 작업 목록
 
-### T0: Phase 3 carry-over 정리 (4h)
+### T0: Phase 3 carry-over 정리 (4h) ✅ 2026-05-28 `958285c`
 
 Sprint 9~10 코드 리뷰 발견 사항 + 운용 부채를 일괄 해소한다.
 
-- ⬜ **F1**: `build_day_schedules` `d.succ_opt().expect("date succ")` -> `.ok_or_else(|| ...)` 안전 전환 (`attendance.rs:655`) -- skill: systematic-debugging
-- ⬜ **F2**: `generate_impl` expire 호출 실패 시 fail-soft 전환 -- expire 실패해도 출결 생성은 성공 반환, expire 에러는 warn 로그만 (`attendance.rs:155`)
-- ⬜ **F3**: `_year_month` 미사용 파라미터 제거 또는 활용 (`calendar.rs:188`)
-- ⬜ **F4**: 보강관리 N+1 쿼리 -- `calendar.rs:215` 루프 내 개별 쿼리를 JOIN 또는 IN 절로 batch 처리
-- ⬜ **F5**: `ClassCalendar` viewType 비동기 상태 한 프레임 불일치 해소 (`src/components/schedules/ClassCalendar.tsx:164`)
-- ⬜ **F6**: flaky 테스트 `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` -- `#[ignore]` 마킹 + 코멘트 (동시성 설계 재검토는 별도 backlog)
-- ⬜ **F7**: 사이드 메뉴 '보강 관리' (`/makeups`) `disabledHint` 제거 -- Sprint 10 T11에서 `/schedules` 탭으로 통합 완료. `src/lib/menu-config.ts:21`
+- ✅ **F1**: `build_day_schedules` `d.succ_opt().expect("date succ")` -> `.ok_or_else(|| ...)` 안전 전환 (`attendance.rs:655`) -- skill: systematic-debugging
+- ✅ **F2**: `generate_impl` expire 호출 실패 시 fail-soft 전환 -- expire 실패해도 출결 생성은 성공 반환, expire 에러는 warn 로그만 (`attendance.rs:155`)
+- ✅ **F3**: `_year_month` 미사용 파라미터 제거 또는 활용 (`calendar.rs:188`)
+- ✅ **F4**: 보강관리 N+1 쿼리 -- `calendar.rs:215` 루프 내 개별 쿼리를 JOIN 또는 IN 절로 batch 처리
+- ✅ **F5**: `ClassCalendar` viewType 비동기 상태 한 프레임 불일치 해소 (`src/components/schedules/ClassCalendar.tsx:164`)
+- ✅ **F6**: flaky 테스트 `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` -- `#[ignore]` 마킹 + 코멘트 (동시성 설계 재검토는 별도 backlog)
+- ✅ **F7**: 사이드 메뉴 '보강 관리' (`/makeups`) `disabledHint` 제거 -- Sprint 10 T11에서 `/schedules` 탭으로 통합 완료. `src/lib/menu-config.ts:21`
 
-### T1: DB 마이그레이션 V109 -- bills + payments + payment_methods.is_card_type (3h)
+### T1: DB 마이그레이션 V109 -- bills + payments + payment_methods.is_card_type (3h) ✅ 2026-05-28 `3a2ebcc`
 
 PRD SS4.9 + SS6.2 UNIQUE 제약 준수. PI-12 확정: **별도 payments 테이블**.
 
 > **T1 진입 시 사실 정정 (Session #2)**: 실제 DB 에는 단일 `codes` 테이블 없음 — `payment_methods` / `card_companies` 가 별도 테이블. SQLite Boolean 은 `INTEGER CHECK (X IN (0, 1))` 패턴. `weekly_hours` 는 `standard_fees` 와 정합 위해 INTEGER.
 
-- ⬜ **bills 테이블** 설계 + 마이그레이션 작성
+- ✅ **bills 테이블** 설계 + 마이그레이션 작성
   - 컬럼: `id`, `student_id` (FK students), `bill_year_month` (TEXT "YYYY-MM"), `weekly_hours` (**INTEGER**), `bill_amount` (INTEGER, 원 단위), `adjusted_amount` (INTEGER, 조정 후 금액), `status` (TEXT CHECK: 'draft'/'confirmed'/'closed'), `is_mid_month` (INTEGER CHECK IN (0,1), 월 중 입퇴교 플래그), `mid_month_type` (TEXT NULL: 'enrolled'/'withdrawn'), `close_reason` (TEXT NULL, 마감 후 수정 사유), `closed_at` (TEXT NULL, 마감 일시), `confirmed_at` (TEXT NULL), `created_at`, `updated_at`
   - UNIQUE 제약: `(student_id, bill_year_month)` -- PRD §6.2
   - FK: `student_id REFERENCES students(id)`
   - CHECK: bill_year_month GLOB, status CHECK, is_mid_month/mid_month_type 정합, closed_at/status 정합
   - INDEX: bill_year_month, student_id, status
-- ⬜ **payments 테이블** 설계 + 마이그레이션 작성 (PI-12 확정: 별도 테이블)
+- ✅ **payments 테이블** 설계 + 마이그레이션 작성 (PI-12 확정: 별도 테이블)
   - 컬럼: `id`, `bill_id` (FK bills, UNIQUE -- 1:1 관계, ON DELETE CASCADE), `is_paid` (INTEGER CHECK IN (0,1) DEFAULT 0), `paid_date` (TEXT NULL), `payer_name` (TEXT NULL), `payment_method_id` (**FK payment_methods(id)**), `card_company_id` (**FK card_companies(id)**, 카드 계열 시 필수 -- 백엔드 IPC 검증), `created_at`, `updated_at`
   - UNIQUE: `bill_id` (청구 1건당 수납 1건)
   - CHECK: paid_date GLOB, is_paid=1 → paid_date NOT NULL 정합
-- ⬜ **`payment_methods.is_card_type` 컬럼 추가** -- 결제수단 카드 계열 식별용
+- ✅ **`payment_methods.is_card_type` 컬럼 추가** -- 결제수단 카드 계열 식별용
   - `ALTER TABLE payment_methods ADD COLUMN is_card_type INTEGER NOT NULL DEFAULT 0 CHECK (is_card_type IN (0, 1))`
   - 기존 시드 중 `code='card'` 한 건을 `is_card_type=1`로 UPDATE (현재 시드 기준)
   - 추후 '신용카드' / '체크카드' 분리 시드 추가 시 함께 마킹
-- ⬜ `.sqlx/` 오프라인 캐시 갱신 + 커밋
+- ✅ `.sqlx/` 오프라인 캐시 갱신 + 커밋
 
 **완료 검증**: `sqlx migrate run` 성공 + `sqlx prepare` 캐시 갱신
 
-### T2: 청구 생성 IPC (4h)
+### T2: 청구 생성 IPC (4h) ✅ 2026-05-28 `273b370`
 
-- ⬜ **`generate_bills` IPC** -- `src-tauri/src/commands/fees.rs` (기존 모듈 확장 또는 `billing.rs` 신규)
+- ✅ **`generate_bills` IPC** -- `src-tauri/src/commands/fees.rs` (기존 모듈 확장 또는 `billing.rs` 신규)
   - 재원 원생(`withdraw_date IS NULL`) 일괄 청구 생성
   - `weekly_hours` -> 표준 교습비 매핑 (기존 `standard_fees` 테이블 활용)
   - 동일 월 중복 생성 차단 (AC-4.9-1, UNIQUE 제약)
   - 월 중 입교(`enroll_date` 해당 월 내) / 월 중 퇴교(`withdraw_date` 해당 월 내) 플래그 자동 설정
   - 디폴트 청구년월: 마지막 교습기간 월 (PRD SS4.9.1)
   - `BEGIN IMMEDIATE` 트랜잭션
-- ⬜ **`list_bills` IPC** -- 월별 청구 목록 조회
+- ✅ **`list_bills` IPC** -- 월별 청구 목록 조회
   - 정렬: 미확정 + 월 중 입퇴교 상단 우선 (AC-4.9-4)
   - 원생명, 학년, 주 수업시간, 청구액, 조정액, 상태, 입퇴교 구분 포함
-- ⬜ **`update_bill` IPC** -- 개별 청구 금액 조정
+- ✅ **`update_bill` IPC** -- 개별 청구 금액 조정
   - 상태별 수정 제약: draft(자유) / confirmed(확인 다이얼로그 필수 -- 프론트 책임) / closed(사유 입력 필수 -- 백엔드 검증)
   - 마감 상태에서 `close_reason` NULL이면 에러 반환 (AC-4.9-8)
-- ⬜ **`get_bill` IPC** -- 단건 조회
-- ⬜ **단위 테스트** 10건 이상
+- ✅ **`get_bill` IPC** -- 단건 조회
+- ✅ **단위 테스트** 10건 이상
   - 정상 생성 + 중복 차단 + 월 중 입퇴교 플래그 + 표준교습비 매핑 + 마감 후 사유 미입력 차단
 
-### T3: 청구 상태 머신 IPC (3h)
+### T3: 청구 상태 머신 IPC (3h) ✅ 2026-05-28 `a524a2a`
 
 청구 3단계 상태 전이를 백엔드에서 엄격하게 제어한다. 프론트엔드 우회 방지.
 PI-11 확정: **마감 해제 불가** -- 마감 후에는 개별 건 수정(사유 필수)만 허용.
 
-- ⬜ **`confirm_bill` IPC** -- draft -> confirmed 전이
+- ✅ **`confirm_bill` IPC** -- draft -> confirmed 전이
   - 단건 확정
-- ⬜ **`confirm_all_bills` IPC** -- 해당 월 전체 일괄 확정 (미확정 건만)
-- ⬜ **`close_billing_month` IPC** -- 월 전체 마감
+- ✅ **`confirm_all_bills` IPC** -- 해당 월 전체 일괄 확정 (미확정 건만)
+- ✅ **`close_billing_month` IPC** -- 월 전체 마감
   - 전제 조건: 해당 월 모든 청구가 confirmed 상태 (AC-4.9-7)
   - 미확정 건 존재 시 에러 반환 + 미확정 건수 포함
   - 모든 bills 상태 -> closed + `closed_at` 기록
   - reopen(마감 해제) IPC 불요 (PI-11 확정: 마감 해제 불가)
-- ⬜ **`update_closed_bill` IPC** -- closed 상태에서 금액 수정
+- ✅ **`update_closed_bill` IPC** -- closed 상태에서 금액 수정
   - `close_reason` 필수 입력 (NULL/빈문자열 차단)
   - `audit::BillClosedModified` variant 추가
-- ⬜ **단위 테스트** 8건 이상
+- ✅ **단위 테스트** 8건 이상
   - 상태 전이 정상/차단 + 마감 전제조건 위반 + 마감 후 사유 검증 + 마감 해제 시도 차단
 
-### T4: 수납 IPC (3h)
+### T4: 수납 IPC (3h) ✅ 2026-05-28 `aa9650a`
 
-- ⬜ **`create_payment` / `update_payment` IPC**
+- ✅ **`create_payment` / `update_payment` IPC**
   - 입금 등록: `is_paid`, `paid_date`, `payer_name`, `payment_method_id`, `card_company_id`
   - 카드 계열 결제수단 시 `card_company_id` 필수 검증 (AC-4.9-4)
   - 카드 계열 판별: codes 테이블의 `is_card_type` BOOLEAN 플래그로 판별 (T1 V109에서 추가)
-- ⬜ **`list_unpaid_bills` IPC** -- 미납 청구 목록 (입금 일괄 처리용)
+- ✅ **`list_unpaid_bills` IPC** -- 미납 청구 목록 (입금 일괄 처리용)
   - 최소 20행 반환 가능 (AC-4.9-6)
-- ⬜ **`batch_update_payments` IPC** -- 다수 입금 일괄 처리
+- ✅ **`batch_update_payments` IPC** -- 다수 입금 일괄 처리
   - 배열 입력으로 다건 동시 처리
   - `BEGIN IMMEDIATE` 트랜잭션
-- ⬜ **`get_billing_summary` IPC** -- 월별 요약 (총 청구액 / 입금 완료액 / 미납액)
+- ✅ **`get_billing_summary` IPC** -- 월별 요약 (총 청구액 / 입금 완료액 / 미납액)
   - 대시보드 SS4.11.3 위젯 데이터 선행 준비
-- ⬜ **단위 테스트** 7건 이상
+- ✅ **단위 테스트** 7건 이상
   - 카드사 조건부 필수 + 일괄 처리 + 미납 추출
 
-### T5: 청구 마감 UX -- 마감 후 수정 사유 (2h)
+### T5: 청구 마감 UX -- 마감 후 수정 사유 (2h) ✅ 2026-05-28 `0af5744`
 
 PI-10 확정: **모달 다이얼로그**. PI-11 확정: **마감 해제 불가** (reopen 버튼 불요).
 
-- ⬜ **마감 후 수정 사유 모달** -- `CloseReasonDialog` (shadcn/ui Dialog 기반)
+- ✅ **마감 후 수정 사유 모달** -- `CloseReasonDialog` (shadcn/ui Dialog 기반)
   - 마감 상태 청구 수정 시 자동 팝업 (모달로 의도적 행위 강조)
   - 사유 입력 필드 (textarea, 최소 10자 이상)
   - 확인/취소 버튼
   - 확인 시 `update_closed_bill` IPC 호출 (close_reason 포함)
-- ⬜ **확정 후 수정 확인 다이얼로그** -- 간단 확인 (AC-4.9-3)
-- ⬜ **마감 확인 다이얼로그** -- "당월 청구 마감" 버튼 클릭 시 강한 확인
+- ✅ **확정 후 수정 확인 다이얼로그** -- 간단 확인 (AC-4.9-3)
+- ✅ **마감 확인 다이얼로그** -- "당월 청구 마감" 버튼 클릭 시 강한 확인
   - "마감 후에는 수정 시 사유 입력이 필요합니다" 경고 문구
 
-### T6: TypeScript IPC 래퍼 + 도메인 타입 (1.5h)
+### T6: TypeScript IPC 래퍼 + 도메인 타입 (1.5h) ✅ 2026-05-29 `6f5e238`
 
-- ⬜ **`src/types/billing.ts`** -- 도메인 타입 정의
+- ✅ **`src/types/billing.ts`** -- 도메인 타입 정의
   - `Bill`, `BillStatus`, `Payment`, `BillingSummary`, `BillListFilter` 등
-- ⬜ **`src/lib/tauri/index.ts`** -- IPC 래퍼 추가
+- ✅ **`src/lib/tauri/index.ts`** -- IPC 래퍼 추가
   - `generateBills`, `listBills`, `getBill`, `updateBill`
   - `confirmBill`, `confirmAllBills`, `closeBillingMonth`
   - `updateClosedBill`, `createPayment`, `updatePayment`
   - `listUnpaidBills`, `batchUpdatePayments`, `getBillingSummary`
   - dev mode fallback 포함
 
-### T7: 청구 관리 UI (4h) -- skill: frontend-design
+### T7: 청구 관리 UI (4h) -- skill: frontend-design ✅ 2026-05-29 `4e51d48`
 
-- ⬜ **`/billing` 라우트** -- `src/app/billing/page.tsx`
-- ⬜ **청구 목록 컴포넌트** -- `BillingGrid`
+- ✅ **`/billing` 라우트** -- `src/app/billing/page.tsx`
+- ✅ **청구 목록 컴포넌트** -- `BillingGrid`
   - 년월 선택 (디폴트: 마지막 교습기간 월)
   - "청구 데이터 생성" 버튼 (중복 생성 차단 + 확인 다이얼로그)
   - 테이블: 원생명 / 학년 / 주 수업시간 / 표준 청구액 / 조정 청구액 / 상태 / 입퇴교 구분
   - 정렬: 미확정 + 월 중 입퇴교 상단 우선 (AC-4.9-4)
   - 미확정 청구 상단 배너 (AC-4.9-5)
   - 월 중 입퇴교 원생 시각 구분 -- 배경색 + 입교일/퇴교일 라벨 (AC-4.9-2)
-- ⬜ **개별 청구 수정** -- 인라인 금액 편집 또는 수정 다이얼로그
+- ✅ **개별 청구 수정** -- 인라인 금액 편집 또는 수정 다이얼로그
   - 상태별 수정 제약 UI 적용 (T5 다이얼로그 연동)
-- ⬜ **일괄 확정 버튼** + **개별 확정 버튼**
-- ⬜ **"당월 청구 마감" 버튼** -- 모든 청구 confirmed 시에만 활성화 (AC-4.9-7). 마감 해제(reopen) 버튼 불요 (PI-11 확정)
-- ⬜ **TanStack Query** 캐싱 + 낙관적 업데이트
-- ⬜ **사이드바 메뉴 활성화** -- `menu-config.ts` '청구 관리' `disabledHint` 제거
+- ✅ **일괄 확정 버튼** + **개별 확정 버튼**
+- ✅ **"당월 청구 마감" 버튼** -- 모든 청구 confirmed 시에만 활성화 (AC-4.9-7). 마감 해제(reopen) 버튼 불요 (PI-11 확정)
+- ✅ **TanStack Query** 캐싱 + 낙관적 업데이트
+- ✅ **사이드바 메뉴 활성화** -- `menu-config.ts` '청구 관리' `disabledHint` 제거
 
-### T8: 수납 관리 UI (3h) -- skill: frontend-design
+### T8: 수납 관리 UI (3h) -- skill: frontend-design ✅ 2026-05-29 `e6463ca`
 
-- ⬜ **수납 관리 탭/섹션** -- 청구 화면 내 탭 또는 별도 섹션
-- ⬜ **수납 입력 컴포넌트** -- `PaymentForm`
+- ✅ **수납 관리 탭/섹션** -- 청구 화면 내 탭 또는 별도 섹션
+- ✅ **수납 입력 컴포넌트** -- `PaymentForm`
   - 입금 체크박스 + 입금일 + 입금자명 + 결제수단 드롭다운 + 카드사 드롭다운 (카드 계열 시에만 노출)
   - 카드 계열 판별: 결제수단의 `is_card_type` 플래그 기반으로 카드사 필드 활성/비활성
-- ⬜ **입금 일괄 처리 모드** -- `BatchPaymentView`
+- ✅ **입금 일괄 처리 모드** -- `BatchPaymentView`
   - 미입금 청구 리스트 한 화면 표시 (최소 20행, AC-4.9-6)
   - 행별 빠른 입력: 체크박스 + 입금일 + 입금자명 + 결제수단
   - "일괄 확정" 버튼
-- ⬜ **미납 원생 추출 리스트** -- 미입금 원생 별도 표시 (안내 목적)
-- ⬜ **월별 요약 표시** -- 총 청구액 / 입금 완료액 / 미납액
+- ✅ **미납 원생 추출 리스트** -- 미입금 원생 별도 표시 (안내 목적)
+- ✅ **월별 요약 표시** -- 총 청구액 / 입금 완료액 / 미납액
 
-### T9: 통합 검증 (3h)
+### T9: 통합 검증 (3h) ✅ 2026-05-29
 
-- ⬜ **자동 검증 7항목**
-  1. `cargo test --manifest-path src-tauri/Cargo.toml` 전체 통과
-  2. `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` clean
-  3. `pnpm lint` 통과
-  4. `pnpm tsc --noEmit` 통과
-  5. `pnpm build` (static export) 성공
-  6. `sqlx prepare --manifest-path src-tauri/Cargo.toml` `.sqlx/` 최신
-  7. 마이그레이션 self-check (A39): V109와 실제 migrations 1:1 일치
-- ⬜ **AC 마킹** -- 아래 AC 전수 검증 후 체크
-  - AC-4.9-1: 청구액 = 표준 교습비 매핑 기본값
-  - AC-4.9-2: 월 중 입퇴교 시각 구분
-  - AC-4.9-3: 확정 후 수정 시 확인 다이얼로그
-  - AC-4.9-4: 카드 계열 시 카드사 필수
-  - AC-4.9-5: 미확정 청구 상단 배너
-  - AC-4.9-6: 일괄 처리 최소 20행
-  - AC-4.9-7: 마감 전제조건 (모두 확정)
-  - AC-4.9-8: 마감 후 수정 사유 필수
+- ✅ **자동 검증 7항목**
+  1. ✅ `cargo test --manifest-path src-tauri/Cargo.toml --lib`: **308 passed / 0 failed / 4 ignored** (F6 포함)
+  2. ✅ `cargo clippy --lib -- -D warnings` clean
+  3. ✅ `pnpm lint` clean (ESLint warnings/errors 0)
+  4. ✅ `pnpm tsc --noEmit` clean
+  5. ✅ `pnpm build` static export 성공 — 17 routes (`/billing` 신규 포함)
+  6. ✅ `cargo sqlx prepare` — "no queries found" (매크로 미사용, 정상)
+  7. ✅ 마이그레이션 self-check: V109 의 bills/payments/payment_methods.is_card_type 가 sqlx migrate 적용 후 DB 스키마와 1:1 일치 확인 (T1 시점 검증)
+- ✅ **AC 마킹** -- 전수 검증 완료
+  - ✅ AC-4.9-1: 청구액 = 표준 교습비 매핑 — `generate_bills_impl` standard_fees lookup + INSERT OR IGNORE UNIQUE 중복 차단
+  - ✅ AC-4.9-2: 월중입퇴교 시각 구분 — `BillingGrid` / `PaymentsView` 행 amber-50 + 라벨 ("월중입교"/"월중퇴교")
+  - ✅ AC-4.9-3: 확정 후 수정 확인 다이얼로그 — `ConfirmBillUpdateDialog`
+  - ✅ AC-4.9-4: 카드 계열 시 카드사 필수 — `validate_payment_input` 백엔드 거부 + UI 빨간 테두리/aria-invalid
+  - ✅ AC-4.9-5: 미확정 청구 상단 배너 — `/billing` 페이지 draftCount>0 일 때 amber 배너
+  - ✅ AC-4.9-6: 일괄 처리 한 화면 ≥20행 — `PaymentsView` max-h-[800px] overflow + sticky thead
+  - ✅ AC-4.9-7: 마감 전제조건 (모두 confirmed) — `close_billing_month_impl` 미확정 카운트 거부 + 단위 테스트 `close_billing_month_rejects_when_pending_drafts`
+  - ✅ AC-4.9-8: 마감 후 수정 사유 필수 — `update_bill_impl` close_reason NULL/공백 거부 + `CloseReasonDialog` 10자 이상 + audit `BillClosedModified`
 
 ---
 
 ## 완료 기준 (Definition of Done)
 
 **필수**
-- ⬜ 청구 생성 -> 확정 -> 마감 전체 흐름 동작
-- ⬜ 수납 입력 + 입금 일괄 처리 동작
-- ⬜ 마감 후 수정 시 사유 입력 강제 확인 (AC-4.9-8)
-- ⬜ 마감 전제조건: 해당 월 모든 청구 confirmed (AC-4.9-7)
-- ⬜ 월 중 입퇴교 시각 구분 표시 (AC-4.9-2)
-- ⬜ 카드 계열 시 카드사 필수 입력 (AC-4.9-4)
-- ⬜ 청구 50명 생성 3초 이내 (PRD SS5.6)
-- ⬜ 입금 일괄 처리 한 화면 최소 20행 (AC-4.9-6)
-- ⬜ carry-over F1~F7 전수 해소
-- ⬜ `cargo test` 전체 통과 + `cargo clippy -- -D warnings` clean
-- ⬜ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 통과
+- ✅ 청구 생성 → 확정 → 마감 전체 흐름 동작 (T2/T3 IPC + T7 UI)
+- ✅ 수납 입력 + 입금 일괄 처리 동작 (T4 IPC + T8 PaymentsView)
+- ✅ 마감 후 수정 시 사유 입력 강제 확인 (AC-4.9-8) — `update_bill_impl` 거부 + `CloseReasonDialog` 사유 ≥10자
+- ✅ 마감 전제조건: 해당 월 모든 청구 confirmed (AC-4.9-7) — `close_billing_month_impl` 미확정 카운트 거부
+- ✅ 월 중 입퇴교 시각 구분 표시 (AC-4.9-2) — `BillingGrid` / `PaymentsView` amber-50 행 + 라벨
+- ✅ 카드 계열 시 카드사 필수 입력 (AC-4.9-4) — `validate_payment_input` + `PaymentsView` 휴리스틱 안내
+- ⚠️ 청구 50명 생성 3초 이내 (PRD SS5.6) — 단위 테스트 인메모리는 0.21s/35 tests. 실측 50명 dev DB 검증은 사용자 시각 검증으로 이연
+- ✅ 입금 일괄 처리 한 화면 최소 20행 (AC-4.9-6) — `max-h-[800px] overflow + sticky thead`
+- ✅ carry-over F1~F7 전수 해소 (T0, `958285c`)
+- ✅ `cargo test` 308 passed / `cargo clippy -- -D warnings` clean
+- ✅ `pnpm lint` clean / `pnpm tsc --noEmit` clean / `pnpm build` 17 static routes 성공
 
 **프로세스 (sprint-close 에이전트가 처리)**
 - ⬜ ROADMAP.md 업데이트
