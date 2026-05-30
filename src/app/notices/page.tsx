@@ -395,6 +395,8 @@ function NoticesContent() {
   // ── 저장 템플릿 ──
   const templatesQuery = useQuery({ queryKey: ['notice-layouts'], queryFn: listNoticeLayouts })
   const templates = useMemo(() => templatesQuery.data ?? [], [templatesQuery.data])
+  // 목록 표시는 이름 내림차순.
+  const sortedTemplates = useMemo(() => [...templates].sort((a, b) => b.localeCompare(a)), [templates])
 
   // 작성/저장할 템플릿 이름. 디폴트: '공지문{저장개수+1}'.
   const [templateName, setTemplateName] = useState('')
@@ -412,6 +414,10 @@ function NoticesContent() {
     if (name === '') {
       setError('템플릿 이름을 입력해 주세요.')
       return
+    }
+    // 동명 템플릿 존재 시 덮어쓰기 확인 (저장=확인, 취소=중단)
+    if (templates.includes(name) && typeof window !== 'undefined') {
+      if (!window.confirm(`'${name}' 공지문이 이미 있습니다. 덮어쓰시겠습니까?`)) return
     }
     try {
       await saveNoticeLayoutNamed(name, layout)
@@ -883,7 +889,7 @@ function NoticesContent() {
               <p className="text-xs text-gray-400">저장된 템플릿이 없습니다.</p>
             ) : (
               <ul className="flex flex-col gap-1">
-                {templates.map((name) => (
+                {sortedTemplates.map((name) => (
                   <li key={name} className="flex items-center gap-1">
                     <button
                       type="button"
