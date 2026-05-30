@@ -131,6 +131,8 @@ function NoticesContent() {
   const [hoverPreview, setHoverPreview] = useState<{ name: string; url: string } | null>(null)
   // 미리보기는 마우스 포인터 우측 하단을 따라다닌다.
   const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  // 배경서식 드롭다운(콤보박스) 열림 상태.
+  const [assetMenuOpen, setAssetMenuOpen] = useState(false)
   const showAssetPreview = useCallback(async (name: string) => {
     const cached = previewCache.current.get(name)
     if (cached) {
@@ -375,43 +377,83 @@ function NoticesContent() {
                 >
                   업로드
                 </button>
-                <span className="text-xs text-gray-500">콤보박스에 마우스를 올리면 선택 배경 미리보기</span>
+                <span className="text-xs text-gray-500">목록에서 파일명에 마우스를 올리면 미리보기</span>
               </div>
               {assets.length === 0 ? (
                 <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
                   업로드된 배경서식이 없습니다.
                 </p>
               ) : (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={layout?.backgroundAsset ?? ''}
-                    onChange={(e) =>
-                      layout && updateLayout({ ...layout, backgroundAsset: e.target.value || null })
-                    }
-                    onMouseEnter={(e) => {
-                      if (layout?.backgroundAsset) {
-                        setMousePos({ x: e.clientX, y: e.clientY })
-                        void showAssetPreview(layout.backgroundAsset)
-                      }
-                    }}
-                    onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
-                    onMouseLeave={() => setHoverPreview(null)}
-                    className="h-9 min-w-[220px] max-w-full rounded-md border border-[var(--border)] px-2 text-sm"
+                <div className="relative inline-block">
+                  {/* 콤보박스 버튼 */}
+                  <button
+                    type="button"
+                    onClick={() => setAssetMenuOpen((o) => !o)}
+                    className="flex h-9 min-w-[240px] items-center justify-between gap-2 rounded-md border border-[var(--border)] px-2 text-sm hover:bg-gray-50"
                   >
-                    <option value="">선택 안 함</option>
-                    {assets.map((a) => (
-                      <option key={a.name} value={a.name}>{a.name}</option>
-                    ))}
-                  </select>
-                  {layout?.backgroundAsset && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAsset(layout.backgroundAsset!)}
-                      className="h-9 rounded-md border border-[var(--border)] px-3 text-sm text-gray-700 hover:bg-red-50 hover:text-[var(--danger)]"
-                    >
-                      삭제
-                    </button>
+                    <span className={`truncate ${layout?.backgroundAsset ? 'font-medium' : 'text-gray-500'}`}>
+                      {layout?.backgroundAsset ?? '배경서식 선택'}
+                    </span>
+                    <span className="text-gray-500">▾</span>
+                  </button>
+
+                  {assetMenuOpen && (
+                    <>
+                      {/* 바깥 클릭 닫기 */}
+                      <div className="fixed inset-0 z-30" onClick={() => setAssetMenuOpen(false)} />
+                      <ul className="absolute left-0 top-full z-40 mt-1 max-h-60 w-[280px] overflow-y-auto rounded-md border border-[var(--border)] bg-white shadow-lg">
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (layout) updateLayout({ ...layout, backgroundAsset: null })
+                              setAssetMenuOpen(false)
+                            }}
+                            className="w-full px-3 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-50"
+                          >
+                            선택 안 함
+                          </button>
+                        </li>
+                        {assets.map((a) => {
+                          const selected = layout?.backgroundAsset === a.name
+                          return (
+                            <li
+                              key={a.name}
+                              className={`flex items-center gap-2 border-t border-[var(--border)] px-3 py-1.5 ${selected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                              onMouseEnter={(e) => {
+                                setMousePos({ x: e.clientX, y: e.clientY })
+                                void showAssetPreview(a.name)
+                              }}
+                              onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
+                              onMouseLeave={() => setHoverPreview(null)}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (layout) updateLayout({ ...layout, backgroundAsset: a.name })
+                                  setAssetMenuOpen(false)
+                                }}
+                                className={`flex-1 truncate text-left text-sm ${selected ? 'font-semibold text-[var(--accent)]' : 'text-gray-800'}`}
+                                title={a.name}
+                              >
+                                {selected ? '✓ ' : ''}{a.name}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAsset(a.name)}
+                                aria-label={`${a.name} 삭제`}
+                                className="rounded px-1.5 text-sm text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+                              >
+                                ✕
+                              </button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </>
                   )}
+
+                  {/* 마우스 포인터 우측 하단 추종 미리보기 (1.5배) */}
                   {hoverPreview && (
                     <div
                       className="pointer-events-none fixed z-50 rounded-md border border-[var(--border)] bg-white p-1 shadow-lg"
