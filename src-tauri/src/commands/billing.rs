@@ -817,6 +817,33 @@ pub struct BillingSummary {
     pub unpaid_count: i64,
 }
 
+/// 결제수단별 수납 집계 (월별 집계 탭) — is_paid=1 한정, 청구액(adjusted_amount) 기준 총액.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentMethodSummary {
+    /// 결제수단 코드 ID. 미지정(legacy 데이터에서 NULL) 시 None.
+    pub payment_method_id: Option<i64>,
+    pub payment_method_label: String,
+    pub paid_count: i64,
+    pub total_paid: i64,
+}
+
+/// 기간(연도 'YYYY' 또는 월 'YYYY-MM') 청구·수납 집계 (월별 집계 탭).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingPeriodStats {
+    /// 요청 기간 문자열 — 'YYYY'(연도) 또는 'YYYY-MM'(월).
+    pub period: String,
+    pub bill_count: i64,
+    pub total_billed: i64,
+    pub paid_count: i64,
+    pub total_paid: i64,
+    pub total_unpaid: i64,
+    pub unpaid_count: i64,
+    /// 결제수단별 수납 총액 (is_paid=1 한정).
+    pub by_method: Vec<PaymentMethodSummary>,
+}
+
 /// 수납 생성 — bill_id UNIQUE. 동일 청구에 이미 payments 행 있으면 에러 (update_payment 사용).
 #[tauri::command]
 pub async fn create_payment(input: PaymentInput) -> Result<Payment, String> {
@@ -1051,6 +1078,90 @@ pub(crate) async fn get_billing_summary_impl(
         total_unpaid: total_billed - total_paid,
         paid_count,
         unpaid_count: bill_count - paid_count,
+    })
+}
+
+/// 기간 문자열을 `bill_year_month LIKE` 패턴으로 변환 + 검증.
+/// - 'YYYY' (4자리 숫자) → 연도 집계 → "YYYY-%"
+/// - 'YYYY-MM' → 월 집계 → "YYYY-MM" (와일드카드 없음 = 정확 일치)
+fn period_like_pattern(period: &str) -> Result<String, String> {
+    if period.len() == 4 && period.bytes().all(|b| b.is_ascii_digit()) {
+        return Ok(format!("{}-%", period));
+    }
+    validate_year_month(period)?;
+    Ok(period.to_string())
+}
+
+/// 기간(연도 'YYYY' 또는 월 'YYYY-MM') 청구·수납 집계 + 결제수단별 수납 총액 (월별 집계 탭).
+#[tauri::command]
+pub async fn get_billing_period_stats(period: String) -> Result<BillingPeriodStats, String> {
+    let pool = db::pool().map_err(String::from)?;
+    get_billing_period_stats_impl(pool, &period).await
+}
+
+pub(crate) async fn get_billing_period_stats_impl(
+    pool: &SqlitePool,
+    period: &str,
+) -> Result<BillingPeriodStats, String> {
+    let pattern = period_like_pattern(period)?;
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) AS bill_count, \
+                COALESCE(SUM(b.adjusted_amount), 0) AS total_billed, \
+                COALESCE(SUM(CASE WHEN p.is_paid = 1 THEN b.adjusted_amount ELSE 0 END), 0) AS total_paid, \
+                COALESCE(SUM(CASE WHEN p.is_paid = 1 THEN 1 ELSE 0 END), 0) AS paid_count \
+         FROM bills b \
+         LEFT JOIN payments p ON p.bill_id = b.id \
+         WHERE b.bill_year_month LIKE ?",
+    )
+    .bind(&pattern)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("기간 집계 조회 실패: {}", e))?;
+
+    let bill_count: i64 = row.try_get("bill_count").map_err(|e| e.to_string())?;
+    let total_billed: i64 = row.try_get("total_billed").map_err(|e| e.to_string())?;
+    let total_paid: i64 = row.try_get("total_paid").map_err(|e| e.to_string())?;
+    let paid_count: i64 = row.try_get("paid_count").map_err(|e| e.to_string())?;
+
+    let method_rows = sqlx::query(
+        "SELECT p.payment_method_id AS pm_id, \
+                COALESCE(pm.label, '미지정') AS pm_label, \
+                COUNT(p.id) AS paid_count, \
+                COALESCE(SUM(b.adjusted_amount), 0) AS total_paid \
+         FROM payments p \
+         JOIN bills b ON b.id = p.bill_id \
+         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id \
+         WHERE b.bill_year_month LIKE ? AND p.is_paid = 1 \
+         GROUP BY p.payment_method_id \
+         ORDER BY COALESCE(pm.display_order, 9999), pm.label",
+    )
+    .bind(&pattern)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("결제수단별 수납 집계 조회 실패: {}", e))?;
+
+    let by_method = method_rows
+        .into_iter()
+        .map(|r| {
+            Ok(PaymentMethodSummary {
+                payment_method_id: r.try_get("pm_id").map_err(|e| e.to_string())?,
+                payment_method_label: r.try_get("pm_label").map_err(|e| e.to_string())?,
+                paid_count: r.try_get("paid_count").map_err(|e| e.to_string())?,
+                total_paid: r.try_get("total_paid").map_err(|e| e.to_string())?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(BillingPeriodStats {
+        period: period.to_string(),
+        bill_count,
+        total_billed,
+        paid_count,
+        total_paid,
+        total_unpaid: total_billed - total_paid,
+        unpaid_count: bill_count - paid_count,
+        by_method,
     })
 }
 
@@ -1977,6 +2088,90 @@ mod tests {
         assert_eq!(s.total_unpaid, 200_000);
         assert_eq!(s.paid_count, 1);
         assert_eq!(s.unpaid_count, 2);
+    }
+
+    #[tokio::test]
+    async fn billing_period_stats_groups_by_method() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
+        let c = seed_student(&pool, "3", "원생C", "2026-01-01", None).await;
+        for s in [a, b, c] {
+            seed_schedule(&pool, s, 1, 1).await;
+        }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bill_of = |sid: i64| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, i64>("SELECT id FROM bills WHERE student_id=?")
+                    .bind(sid)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap()
+            }
+        };
+        // A, B → 현금 / C → 카드 / 미수납 없음 가정
+        batch_update_payments_impl(
+            &pool,
+            &[
+                PaymentInput {
+                    bill_id: bill_of(a).await,
+                    is_paid: true,
+                    paid_date: Some("2026-05-10".to_string()),
+                    payer_name: None,
+                    payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                    card_company_id: None,
+                },
+                PaymentInput {
+                    bill_id: bill_of(b).await,
+                    is_paid: true,
+                    paid_date: Some("2026-05-11".to_string()),
+                    payer_name: None,
+                    payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                    card_company_id: None,
+                },
+                PaymentInput {
+                    bill_id: bill_of(c).await,
+                    is_paid: true,
+                    paid_date: Some("2026-05-12".to_string()),
+                    payer_name: None,
+                    payment_method_id: Some(CARD_PAYMENT_METHOD_ID),
+                    card_company_id: Some(1),
+                },
+            ],
+        )
+        .await
+        .expect("pay");
+
+        // 월 집계 — 현금 1그룹(2명) + 카드 1그룹(1명)
+        let month = get_billing_period_stats_impl(&pool, "2026-05")
+            .await
+            .expect("month stats");
+        assert_eq!(month.bill_count, 3);
+        assert_eq!(month.paid_count, 3);
+        assert_eq!(month.total_paid, 300_000);
+        let cash = month
+            .by_method
+            .iter()
+            .find(|r| r.payment_method_id == Some(CASH_PAYMENT_METHOD_ID))
+            .expect("현금 그룹");
+        assert_eq!(cash.paid_count, 2);
+        assert_eq!(cash.total_paid, 200_000);
+        let card = month
+            .by_method
+            .iter()
+            .find(|r| r.payment_method_id == Some(CARD_PAYMENT_METHOD_ID))
+            .expect("카드 그룹");
+        assert_eq!(card.paid_count, 1);
+        assert_eq!(card.total_paid, 100_000);
+
+        // 연도 집계 — 2026 전체. 본 테스트 데이터는 모두 2026-05 이므로 월 집계와 동일.
+        let year = get_billing_period_stats_impl(&pool, "2026")
+            .await
+            .expect("year stats");
+        assert_eq!(year.bill_count, 3, "연도 집계는 'YYYY-%' LIKE 매칭");
+        assert_eq!(year.total_paid, 300_000);
     }
 
     /// hotfix post-Sprint 11: 수업 받은 원생 수 > 청구 건수 시 "추가 청구 데이터 생성" UX 트리거.

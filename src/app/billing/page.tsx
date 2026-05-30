@@ -19,6 +19,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { SplashScreen } from '@/components/splash-screen'
 import { BillingGrid } from '@/components/billing/BillingGrid'
+import { BillingSummaryView } from '@/components/billing/BillingSummaryView'
 import { CloseMonthDialog } from '@/components/billing/CloseMonthDialog'
 import { PaymentsView } from '@/components/billing/PaymentsView'
 import { ErrorDialog } from '@/components/ui/error-dialog'
@@ -57,7 +58,7 @@ export default function BillingPage() {
   )
 }
 
-type Tab = 'bills' | 'payments'
+type Tab = 'bills' | 'payments' | 'summary'
 type BillFilter = 'all' | 'confirmed' | 'draft' | 'closed'
 type PaymentFilter = 'all' | 'paid' | 'unpaid'
 
@@ -172,6 +173,7 @@ function BillingContent() {
           {([
             ['bills', '청구 목록'],
             ['payments', '수납 관리'],
+            ['summary', '월별 집계'],
           ] as const).map(([key, label]) => (
             <button
               key={key}
@@ -191,54 +193,62 @@ function BillingContent() {
 
         {/* 툴바 — 월 선택 + 액션 버튼 */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <label className="text-base font-medium">
-            청구년월
-            <select
-              value={effectiveYearMonth}
-              onChange={(e) => setYearMonth(e.target.value)}
-              className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
-            >
-              {monthOptions.includes(effectiveYearMonth) ? null : (
-                <option value={effectiveYearMonth}>{effectiveYearMonth}</option>
-              )}
-              {monthOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* 청구년월 — 월별 집계 탭은 자체 기간(년/월) 선택을 사용하므로 숨김 */}
+          {tab !== 'summary' && (
+            <label className="text-base font-medium">
+              청구년월
+              <select
+                value={effectiveYearMonth}
+                onChange={(e) => setYearMonth(e.target.value)}
+                className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
+              >
+                {monthOptions.includes(effectiveYearMonth) ? null : (
+                  <option value={effectiveYearMonth}>{effectiveYearMonth}</option>
+                )}
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
-          {/* 통합 검색 — 원생 이름 / 연락처(- 제거 후 완전 일치) / 입금자 이름 */}
-          <input
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing) return
-              if (e.key === 'Enter') applySearch()
-              else if (e.key === 'Escape') clearSearch()
-            }}
-            placeholder="이름 / 연락처 / 입금자"
-            aria-label="청구·수납 통합 검색"
-            className="h-11 w-56 rounded-md border-2 border-[var(--border)] px-3 text-base"
-          />
-          <button
-            type="button"
-            onClick={applySearch}
-            disabled={searchInput.trim() === ''}
-            className="h-11 rounded-md border border-[var(--accent)] px-3 text-base text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
-          >
-            검색
-          </button>
-          {appliedSearch !== '' && (
-            <button
-              type="button"
-              onClick={clearSearch}
-              className="h-11 rounded-md border border-[var(--border)] px-3 text-base text-gray-700 hover:bg-gray-50"
-            >
-              초기화 ({searchResults.length}건)
-            </button>
+          {/* 통합 검색 — 원생 이름 / 연락처(- 제거 후 완전 일치) / 입금자 이름.
+              월별 집계 탭은 자체 기간 선택만 사용하므로 검색 컨트롤 숨김. */}
+          {tab !== 'summary' && (
+            <>
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return
+                  if (e.key === 'Enter') applySearch()
+                  else if (e.key === 'Escape') clearSearch()
+                }}
+                placeholder="이름 / 연락처 / 입금자"
+                aria-label="청구·수납 통합 검색"
+                className="h-11 w-56 rounded-md border-2 border-[var(--border)] px-3 text-base"
+              />
+              <button
+                type="button"
+                onClick={applySearch}
+                disabled={searchInput.trim() === ''}
+                className="h-11 rounded-md border border-[var(--accent)] px-3 text-base text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+              >
+                검색
+              </button>
+              {appliedSearch !== '' && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="h-11 rounded-md border border-[var(--border)] px-3 text-base text-gray-700 hover:bg-gray-50"
+                >
+                  초기화 ({searchResults.length}건)
+                </button>
+              )}
+            </>
           )}
 
           {/* 마감 완료 배지 — 상태 필터 앞에 위치 (모든 청구 마감 시) */}
@@ -346,8 +356,8 @@ function BillingContent() {
           </div>
         )}
 
-        {/* 요약 */}
-        {summary && (summary.totalBillableStudents > 0 || summary.billCount > 0) && (
+        {/* 요약 — 월별 집계 탭은 자체 StatCard 가 있어 중복 숨김 */}
+        {tab !== 'summary' && summary && (summary.totalBillableStudents > 0 || summary.billCount > 0) && (
           <div className="mb-3 grid grid-cols-2 gap-3 rounded-md border border-[var(--border)] bg-gray-50 p-3 text-sm md:grid-cols-3 lg:grid-cols-5">
             <div>
               총수업원생: <strong>{summary.totalBillableStudents}명</strong>
@@ -403,6 +413,8 @@ function BillingContent() {
             paymentFilter={paymentFilter}
           />
         )}
+
+        {tab === 'summary' && <BillingSummaryView defaultYearMonth={effectiveYearMonth} />}
       </div>
 
       {summary && (

@@ -93,6 +93,26 @@ export interface BillingSearchResult {
   latestCardCompanyId: number | null
 }
 
+/** 결제수단별 수납 집계 (월별 집계 탭). is_paid=1 한정. */
+export interface PaymentMethodSummary {
+  paymentMethodId: number | null
+  paymentMethodLabel: string
+  paidCount: number
+  totalPaid: number
+}
+
+/** 기간(연도 'YYYY' 또는 월 'YYYY-MM') 청구·수납 집계 (월별 집계 탭). */
+export interface BillingPeriodStats {
+  period: string
+  billCount: number
+  totalBilled: number
+  paidCount: number
+  totalPaid: number
+  totalUnpaid: number
+  unpaidCount: number
+  byMethod: PaymentMethodSummary[]
+}
+
 export interface BillingSummary {
   yearMonth: string
   /**
