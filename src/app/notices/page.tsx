@@ -163,8 +163,6 @@ function NoticesContent() {
   }, [toast])
   // 확인 모달 (window.confirm 대체 — Tauri 웹뷰 호환)
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null)
-  // 다른 이름으로 저장 입력 모달 (null = 닫힘)
-  const [saveAsValue, setSaveAsValue] = useState<string | null>(null)
 
   // 청구년월 — 청구 생성된 월만
   const monthsQuery = useQuery({ queryKey: ['billed-months'], queryFn: listBilledMonths })
@@ -479,10 +477,6 @@ function NoticesContent() {
   const handleSaveNotice = () => {
     if (!layout) return
     requestSave(templateName)
-  }
-  const handleSaveAs = () => {
-    if (!layout) return
-    setSaveAsValue('')
   }
   const handleLoadTemplate = async (name: string) => {
     try {
@@ -924,14 +918,6 @@ function NoticesContent() {
             >
               공지문 저장
             </button>
-            <button
-              type="button"
-              onClick={handleSaveAs}
-              disabled={!layout}
-              className="h-9 rounded-md border border-[var(--accent)] text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
-            >
-              다른 이름으로 저장
-            </button>
 
             <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs text-gray-500">
               저장된 템플릿
@@ -1004,52 +990,6 @@ function NoticesContent() {
         </div>
       )}
 
-      {/* 다른 이름으로 저장 모달 */}
-      {saveAsValue !== null && (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl">
-            <h2 className="mb-3 text-lg font-bold">다른 이름으로 저장</h2>
-            <input
-              autoFocus
-              type="text"
-              value={saveAsValue}
-              onChange={(e) => setSaveAsValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return
-                if (e.key === 'Enter') {
-                  const n = saveAsValue
-                  setSaveAsValue(null)
-                  requestSave(n)
-                } else if (e.key === 'Escape') {
-                  setSaveAsValue(null)
-                }
-              }}
-              placeholder="템플릿 이름"
-              className="mb-4 h-10 w-full rounded-md border-2 border-[var(--border)] px-3 text-base"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setSaveAsValue(null)}
-                className="min-h-[44px] flex-1 rounded-md border-2 border-[var(--border)] px-4 text-base text-gray-700 hover:bg-gray-50"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const n = saveAsValue ?? ''
-                  setSaveAsValue(null)
-                  requestSave(n)
-                }}
-                className="min-h-[44px] flex-1 rounded-md bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90"
-              >
-                저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </AppShell>
   )
 }
