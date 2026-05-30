@@ -405,15 +405,14 @@ function NoticesContent() {
   // 목록 표시는 이름 내림차순.
   const sortedTemplates = useMemo(() => [...templates].sort((a, b) => b.localeCompare(a)), [templates])
 
-  // 작성/저장할 템플릿 이름. 디폴트: '공지문{저장개수+1}'.
+  // 작성/저장할 템플릿 이름. 비어있을 때만 디폴트('공지문{저장개수+1}') 채움 →
+  // 저장/불러오기 후 입력값이 유지된다 (목록 변동으로 덮어쓰지 않음).
   const [templateName, setTemplateName] = useState('')
-  const nameInitialized = useRef(false)
   useEffect(() => {
-    if (!nameInitialized.current && templatesQuery.data) {
+    if (templatesQuery.data && templateName.trim() === '') {
       setTemplateName(`공지문${templates.length + 1}`)
-      nameInitialized.current = true
     }
-  }, [templatesQuery.data, templates.length])
+  }, [templatesQuery.data, templates.length, templateName])
 
   const handleSaveNotice = async () => {
     if (!layout) return
