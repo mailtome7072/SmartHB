@@ -1362,6 +1362,34 @@ export async function getNoticeLayout(): Promise<NoticeLayout> {
   return inv('get_notice_layout') as Promise<NoticeLayout>
 }
 
+/** 저장된 공지문 템플릿 이름 목록. */
+export async function listNoticeLayouts(): Promise<string[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_notice_layouts') as Promise<string[]>
+}
+
+/** 현재 레이아웃을 이름 붙여 템플릿으로 저장. */
+export async function saveNoticeLayoutNamed(name: string, layout: NoticeLayout): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('save_notice_layout_named', { name, layout }) as Promise<void>
+}
+
+/** 이름으로 저장된 템플릿 조회. */
+export async function getNoticeLayoutNamed(name: string): Promise<NoticeLayout> {
+  const inv = await getInvoke()
+  if (!inv) return { backgroundAsset: null, textboxes: [] }
+  return inv('get_notice_layout_named', { name }) as Promise<NoticeLayout>
+}
+
+/** 이름 템플릿 삭제. */
+export async function deleteNoticeLayoutNamed(name: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('delete_notice_layout_named', { name }) as Promise<void>
+}
+
 /** 단건 공지문 PNG 저장. image 는 PNG 바이트 배열. 저장 경로 반환. */
 export async function saveNoticeImage(
   yearMonth: string,

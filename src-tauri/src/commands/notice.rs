@@ -15,10 +15,11 @@
 use crate::commands::db;
 use crate::commands::paths;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{Row, SqlitePool};
 use std::path::{Path, PathBuf};
 
 const KEY_NOTICE_LAYOUT: &str = "notice_layout";
+const KEY_NOTICE_LAYOUT_NAMES: &str = "notice_layout_names";
 const ALLOWED_IMAGE_EXTS: [&str; 3] = ["png", "jpg", "jpeg"];
 
 // ─────────────────────── 직렬화 타입 ───────────────────────
@@ -251,6 +252,111 @@ pub async fn get_notice_layout() -> Result<NoticeLayout, String> {
         }
         None => Ok(NoticeLayout::default_layout()),
     }
+}
+
+// ─── 이름 있는 공지문 레이아웃(템플릿) 저장/조회 ───
+
+fn named_layout_key(name: &str) -> String {
+    format!("notice_layout::{}", name)
+}
+
+async fn read_layout_names(pool: &SqlitePool) -> Result<Vec<String>, String> {
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
+        .bind(KEY_NOTICE_LAYOUT_NAMES)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("레이아웃 목록 조회 실패: {}", e))?;
+    match row {
+        Some(r) => {
+            let json: String = r.try_get("value").map_err(|e| e.to_string())?;
+            Ok(serde_json::from_str(&json).unwrap_or_default())
+        }
+        None => Ok(vec![]),
+    }
+}
+
+async fn upsert_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("설정 저장 실패: {}", e))?;
+    Ok(())
+}
+
+/// 저장된 공지문 템플릿 이름 목록 (가나다순).
+#[tauri::command]
+pub async fn list_notice_layouts() -> Result<Vec<String>, String> {
+    let pool = db::pool().map_err(String::from)?;
+    read_layout_names(pool).await
+}
+
+/// 현재 레이아웃을 이름을 붙여 템플릿으로 저장 (다른 이름으로 저장).
+#[tauri::command]
+pub async fn save_notice_layout_named(name: String, layout: NoticeLayout) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("템플릿 이름을 입력해 주세요.".to_string());
+    }
+    if name.contains("::") {
+        return Err("템플릿 이름에 '::' 는 사용할 수 없습니다.".to_string());
+    }
+    let pool = db::pool().map_err(String::from)?;
+    let layout_json =
+        serde_json::to_string(&layout).map_err(|e| format!("레이아웃 직렬화 실패: {}", e))?;
+    upsert_setting(pool, &named_layout_key(&name), &layout_json).await?;
+
+    let mut names = read_layout_names(pool).await?;
+    if !names.contains(&name) {
+        names.push(name);
+        names.sort();
+        let names_json =
+            serde_json::to_string(&names).map_err(|e| format!("목록 직렬화 실패: {}", e))?;
+        upsert_setting(pool, KEY_NOTICE_LAYOUT_NAMES, &names_json).await?;
+    }
+    Ok(())
+}
+
+/// 이름으로 저장된 템플릿 조회 — 없으면 기본값.
+#[tauri::command]
+pub async fn get_notice_layout_named(name: String) -> Result<NoticeLayout, String> {
+    let pool = db::pool().map_err(String::from)?;
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
+        .bind(named_layout_key(&name))
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("템플릿 조회 실패: {}", e))?;
+    match row {
+        Some(r) => {
+            let json: String = r.try_get("value").map_err(|e| e.to_string())?;
+            Ok(serde_json::from_str(&json).unwrap_or_else(|_| NoticeLayout::default_layout()))
+        }
+        None => Ok(NoticeLayout::default_layout()),
+    }
+}
+
+/// 이름 템플릿 삭제.
+#[tauri::command]
+pub async fn delete_notice_layout_named(name: String) -> Result<(), String> {
+    let pool = db::pool().map_err(String::from)?;
+    sqlx::query("DELETE FROM app_settings WHERE key = ?")
+        .bind(named_layout_key(&name))
+        .execute(pool)
+        .await
+        .map_err(|e| format!("템플릿 삭제 실패: {}", e))?;
+    let names: Vec<String> = read_layout_names(pool)
+        .await?
+        .into_iter()
+        .filter(|n| n != &name)
+        .collect();
+    let names_json = serde_json::to_string(&names).map_err(|e| format!("목록 직렬화 실패: {}", e))?;
+    upsert_setting(pool, KEY_NOTICE_LAYOUT_NAMES, &names_json).await?;
+    Ok(())
 }
 
 // ─────────────────────── T4: 공지문 이미지 저장 ───────────────────────

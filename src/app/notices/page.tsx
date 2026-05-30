@@ -22,13 +22,17 @@ import { ErrorDialog } from '@/components/ui/error-dialog'
 import {
   checkNoticeOutputExists,
   deleteNoticeAsset,
+  deleteNoticeLayoutNamed,
   getNoticeLayout,
+  getNoticeLayoutNamed,
   listBilledMonths,
   listBills,
   listNoticeAssets,
+  listNoticeLayouts,
   readNoticeAsset,
   saveNoticeAsset,
   saveNoticeLayout,
+  saveNoticeLayoutNamed,
 } from '@/lib/tauri'
 import {
   bytesToDataUrl,
@@ -53,6 +57,9 @@ function boxLabel(tb: TextboxConfig): string {
 }
 
 const LEFT_PANEL_WIDTH = 240 // 좌측 원생 패널 고정 너비(최소)
+const RIGHT_WIDTH_KEY = 'smarthb.notice.rightWidth'
+const RIGHT_MIN = 160
+const RIGHT_MAX = 440
 
 function currentYearMonth(): string {
   const d = new Date()
@@ -313,6 +320,85 @@ function NoticesContent() {
   }, [bgDataUrl])
   const scale = Math.min(avail.w / bgDims.w, avail.h / bgDims.h) || 0.1
 
+  // ── 저장 템플릿 ──
+  const templatesQuery = useQuery({ queryKey: ['notice-layouts'], queryFn: listNoticeLayouts })
+  const templates = templatesQuery.data ?? []
+
+  const handleSaveNotice = async () => {
+    if (!layout) return
+    try {
+      await saveNoticeLayout(layout)
+      setError('✅ 공지문 레이아웃이 저장되었습니다.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '저장 실패')
+    }
+  }
+  const handleSaveAs = async () => {
+    if (!layout || typeof window === 'undefined') return
+    const name = window.prompt('다른 이름으로 저장 — 템플릿 이름을 입력하세요.')
+    if (!name || name.trim() === '') return
+    try {
+      await saveNoticeLayoutNamed(name.trim(), layout)
+      await templatesQuery.refetch()
+      setError(`✅ '${name.trim()}' 템플릿으로 저장되었습니다.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '다른 이름으로 저장 실패')
+    }
+  }
+  const handleLoadTemplate = async (name: string) => {
+    try {
+      const loaded = await getNoticeLayoutNamed(name)
+      updateLayout(loaded)
+      setSelectedBoxIdx(0)
+      setError(`'${name}' 템플릿을 불러왔습니다.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '템플릿 불러오기 실패')
+    }
+  }
+  const handleDeleteTemplate = async (name: string) => {
+    try {
+      await deleteNoticeLayoutNamed(name)
+      await templatesQuery.refetch()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '템플릿 삭제 실패')
+    }
+  }
+
+  // ── 우측 패널 스플리터 (너비 localStorage 저장) ──
+  const canvasRowRef = useRef<HTMLDivElement>(null)
+  const [rightWidth, setRightWidth] = useState<number>(220)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = Number(window.localStorage.getItem(RIGHT_WIDTH_KEY))
+    if (saved >= RIGHT_MIN && saved <= RIGHT_MAX) setRightWidth(saved)
+  }, [])
+  const draggingRight = useRef(false)
+  const onRightSplitDown = () => {
+    draggingRight.current = true
+    if (typeof document !== 'undefined') document.body.style.userSelect = 'none'
+  }
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRight.current || !canvasRowRef.current) return
+      const rect = canvasRowRef.current.getBoundingClientRect()
+      const w = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, rect.right - e.clientX))
+      setRightWidth(w)
+    }
+    const onUp = () => {
+      if (!draggingRight.current) return
+      draggingRight.current = false
+      document.body.style.userSelect = ''
+      window.localStorage.setItem(RIGHT_WIDTH_KEY, String(Math.round(rightWidth)))
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [rightWidth])
+
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="flex h-full flex-col">
@@ -492,8 +578,8 @@ function NoticesContent() {
               </div>
             )}
 
-            {/* 표시 필드 체크박스(좌) + 미리보기 캔버스 */}
-            <div className="flex min-h-0 flex-1 gap-2">
+            {/* 표시 필드 체크박스(좌) + 미리보기 캔버스 + 저장 패널(우) */}
+            <div ref={canvasRowRef} className="flex min-h-0 flex-1 gap-2">
               {/* 좌측: 표시 필드 토글 + 선택 박스 폰트 컨트롤 */}
               <div className="flex w-44 shrink-0 flex-col gap-2 pt-1">
                 {/* 선택된 텍스트박스 폰트 컨트롤 (위) — 캔버스에서 박스 클릭 시 대상 변경 */}
@@ -679,6 +765,68 @@ function NoticesContent() {
                   배경서식을 업로드하거나 선택하면 편집 미리보기가 표시됩니다.
                 </p>
               )}
+              </div>
+
+              {/* 우측 스플리터 */}
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                onMouseDown={onRightSplitDown}
+                className="w-1.5 shrink-0 cursor-col-resize rounded bg-gray-200 hover:bg-[var(--accent)]"
+                title="드래그하여 저장 패널 너비 조절"
+              />
+
+              {/* 우측: 저장 패널 */}
+              <div
+                className="flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-2"
+                style={{ width: rightWidth }}
+              >
+                <button
+                  type="button"
+                  onClick={handleSaveNotice}
+                  disabled={!layout}
+                  className="h-9 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  공지문 저장
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAs}
+                  disabled={!layout}
+                  className="h-9 rounded-md border border-[var(--accent)] text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+                >
+                  다른 이름으로 저장
+                </button>
+
+                <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs text-gray-500">
+                  저장된 템플릿
+                </div>
+                {templates.length === 0 ? (
+                  <p className="text-xs text-gray-400">저장된 템플릿이 없습니다.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {templates.map((name) => (
+                      <li key={name} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadTemplate(name)}
+                          className="flex-1 truncate rounded px-2 py-1 text-left text-sm text-gray-800 hover:bg-gray-50"
+                          title={`${name} 불러오기`}
+                        >
+                          {name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(name)}
+                          aria-label={`${name} 삭제`}
+                          className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
 
