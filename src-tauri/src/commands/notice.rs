@@ -42,7 +42,13 @@ fn default_enabled() -> bool {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TextboxConfig {
-    pub field_type: String, // "bill_month" | "student_name" | "bill_amount"
+    /// 고유 키 (구버전 호환: 누락 시 빈 문자열 → 프론트가 field_type 으로 대체).
+    #[serde(default)]
+    pub id: String,
+    pub field_type: String, // "bill_month" | "student_name" | "bill_amount" | "custom"
+    /// 사용자 정의 박스("custom")의 표시 텍스트. 데이터 필드는 None.
+    #[serde(default)]
+    pub text: Option<String>,
     /// 체크 시에만 배경 위에 표시·생성된다. (구버전 레이아웃 호환: 누락 시 true)
     #[serde(default = "default_enabled")]
     pub enabled: bool,
@@ -68,7 +74,9 @@ impl NoticeLayout {
     /// 저장된 레이아웃이 없을 때의 기본값 — 3종 텍스트박스 비율 기본 배치(배경 대비).
     fn default_layout() -> Self {
         let mk = |field: &str, y_ratio: f64| TextboxConfig {
+            id: field.to_string(),
             field_type: field.to_string(),
+            text: None,
             enabled: true,
             x_ratio: 0.1,
             y_ratio,

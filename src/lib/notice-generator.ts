@@ -41,15 +41,20 @@ function formatBillMonth(yearMonth: string): string {
   return `${y}년 ${Number(m)}월`
 }
 
-/** 텍스트박스 field_type 에 해당하는 표시 텍스트. */
-export function noticeFieldText(field: NoticeFieldType, data: NoticeStudentData): string {
-  switch (field) {
+/** 텍스트박스의 표시 텍스트. custom 은 사용자 입력 text, 데이터 필드는 원생 데이터. */
+export function noticeFieldText(
+  tb: { fieldType: NoticeFieldType; text?: string | null },
+  data: NoticeStudentData,
+): string {
+  switch (tb.fieldType) {
     case 'bill_month':
       return formatBillMonth(data.billYearMonth)
     case 'student_name':
       return data.studentName
     case 'bill_amount':
       return `${wonFormatter.format(data.billAmount)}원` // AC-4.10-1 천단위 콤마
+    case 'custom':
+      return tb.text ?? ''
     default:
       return ''
   }
@@ -122,7 +127,7 @@ async function renderNoticePng(opts: GenerateOptions, data: NoticeStudentData): 
     if (tb.enabled === false) continue // 체크 해제된 항목은 생성에서 제외
     const box = document.createElement('div')
     applyTextboxStyle(box, tb, opts.width, opts.height)
-    box.textContent = noticeFieldText(tb.fieldType, data)
+    box.textContent = noticeFieldText(tb, data)
     container.appendChild(box)
   }
 

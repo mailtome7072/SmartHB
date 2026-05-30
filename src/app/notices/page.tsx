@@ -43,6 +43,13 @@ const FIELD_LABEL: Record<NoticeFieldType, string> = {
   bill_month: '청구월',
   student_name: '원생명',
   bill_amount: '청구액',
+  custom: '텍스트',
+}
+
+/** 체크박스/편집 라벨 — custom 은 입력 텍스트(없으면 '텍스트'). */
+function boxLabel(tb: TextboxConfig): string {
+  if (tb.fieldType === 'custom') return tb.text?.trim() || '텍스트'
+  return FIELD_LABEL[tb.fieldType]
 }
 
 const LEFT_PANEL_WIDTH = 240 // 좌측 원생 패널 고정 너비(최소)
@@ -184,6 +191,34 @@ function NoticesContent() {
       ...layout,
       textboxes: layout.textboxes.map((tb, i) => (i === idx ? { ...tb, ...patch } : tb)),
     })
+  }
+
+  // 사용자 정의(custom) 텍스트박스 추가 — 중앙 부근 기본 배치.
+  const addTextbox = () => {
+    if (!layout) return
+    const newBox: TextboxConfig = {
+      id: `custom-${Date.now()}`,
+      fieldType: 'custom',
+      text: '텍스트',
+      enabled: true,
+      xRatio: 0.3,
+      yRatio: 0.45,
+      wRatio: 0.4,
+      hRatio: 0.1,
+      fontRatio: 0.5,
+      fontWeight: 'normal',
+      fontColor: '#1A1A1A',
+      textAlign: 'center',
+    }
+    updateLayout({ ...layout, textboxes: [...layout.textboxes, newBox] })
+    setSelectedBoxIdx(layout.textboxes.length) // 새 박스 선택
+  }
+
+  // custom 텍스트박스 삭제 (데이터 필드 3종은 삭제 불가).
+  const removeTextbox = (idx: number) => {
+    if (!layout) return
+    updateLayout({ ...layout, textboxes: layout.textboxes.filter((_, i) => i !== idx) })
+    setSelectedBoxIdx(0)
   }
 
   // 선택된 텍스트박스가 체크 해제(비활성)면 폰트 컨트롤 비활성.
@@ -465,9 +500,19 @@ function NoticesContent() {
                 {layout && layout.textboxes[selectedBoxIdx] && (
                   <div className={`flex flex-col gap-2 text-sm ${selDisabled ? 'opacity-50' : ''}`}>
                     <span className="text-xs text-gray-500">
-                      편집: {FIELD_LABEL[layout.textboxes[selectedBoxIdx].fieldType]}
+                      편집: {boxLabel(layout.textboxes[selectedBoxIdx])}
                       {selDisabled && ' (체크 해제됨)'}
                     </span>
+                    {layout.textboxes[selectedBoxIdx].fieldType === 'custom' && (
+                      <input
+                        type="text"
+                        disabled={selDisabled}
+                        value={layout.textboxes[selectedBoxIdx].text ?? ''}
+                        onChange={(e) => updateBox(selectedBoxIdx, { text: e.target.value })}
+                        placeholder="표시할 텍스트"
+                        className="h-9 w-full rounded border border-[var(--border)] px-2 disabled:cursor-not-allowed"
+                      />
+                    )}
                     <label className="flex items-center gap-1">
                       Size
                       <input
@@ -531,16 +576,36 @@ function NoticesContent() {
                 {/* 표시 필드 체크박스 (아래) */}
                 <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-2">
                   {(layout?.textboxes ?? []).map((tb, i) => (
-                    <label key={tb.fieldType} className="flex cursor-pointer items-center gap-1 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={tb.enabled !== false}
-                        onChange={(e) => updateBox(i, { enabled: e.target.checked })}
-                        className="h-4 w-4"
-                      />
-                      {FIELD_LABEL[tb.fieldType]}
-                    </label>
+                    <div key={tb.id || tb.fieldType} className="flex items-center gap-1">
+                      <label className="flex flex-1 cursor-pointer items-center gap-1 truncate text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={tb.enabled !== false}
+                          onChange={(e) => updateBox(i, { enabled: e.target.checked })}
+                          className="h-4 w-4 shrink-0"
+                        />
+                        <span className="truncate" title={boxLabel(tb)}>{boxLabel(tb)}</span>
+                      </label>
+                      {tb.fieldType === 'custom' && (
+                        <button
+                          type="button"
+                          onClick={() => removeTextbox(i)}
+                          aria-label="텍스트박스 삭제"
+                          className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   ))}
+                  <button
+                    type="button"
+                    onClick={addTextbox}
+                    disabled={!layout}
+                    className="mt-1 h-9 rounded-md border border-dashed border-[var(--accent)] text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    + 텍스트박스 추가
+                  </button>
                 </div>
               </div>
 
@@ -567,7 +632,7 @@ function NoticesContent() {
                       const boxH = tb.hRatio * bgDims.h
                       return (
                         <Rnd
-                          key={tb.fieldType}
+                          key={tb.id || tb.fieldType}
                           scale={scale}
                           bounds="parent"
                           position={{ x: tb.xRatio * bgDims.w, y: tb.yRatio * bgDims.h }}
@@ -602,7 +667,7 @@ function NoticesContent() {
                               cursor: 'move',
                             }}
                           >
-                            {noticeFieldText(tb.fieldType, previewData)}
+                            {noticeFieldText(tb, previewData)}
                           </div>
                         </Rnd>
                       )

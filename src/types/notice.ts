@@ -13,14 +13,18 @@ export interface NoticeAsset {
   modifiedMs: number
 }
 
-export type NoticeFieldType = 'bill_month' | 'student_name' | 'bill_amount'
+export type NoticeFieldType = 'bill_month' | 'student_name' | 'bill_amount' | 'custom'
 
 /**
  * 텍스트박스 1종 설정 — 배경 원본 해상도 대비 비율(0..1)로 관리.
  * 미리보기 표시 배율/생성 원본 해상도와 무관하게 동일 레이아웃 유지.
  */
 export interface TextboxConfig {
+  /** 고유 키 (구버전 호환: 빈 값이면 fieldType 으로 대체). */
+  id: string
   fieldType: NoticeFieldType
+  /** 사용자 정의 박스(custom)의 표시 텍스트. 데이터 필드는 null. */
+  text?: string | null
   /** 체크 시에만 배경 위에 표시·생성. */
   enabled: boolean
   xRatio: number // 배경 폭 대비 좌측 (0..1)
