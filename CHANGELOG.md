@@ -40,21 +40,21 @@
 ### Added
 - post-Sprint 11 (develop 보완): 앱 잠금 인증을 6자리 숫자 PIN 으로 전환 — `LockScreen` / `RecoveryCodeInput` 입력 전환, 백엔드 `validate_pin` (길이 6 + ascii digit) 진입점 재검증, dev autologin + `.env.example` 6자리 PIN 대응 (ADR-007: `docs/arch/adr-007-pin-authentication.md`)
 - post-Sprint 11 (develop 보완): ADR-007 신규 작성 — 6자리 숫자 PIN 보안 트레이드오프 명시 수용, 복구코드 12자리 유지 결정
+- post-Sprint 11 (develop 보완): 청구 관리 '월별 집계' 탭 — 년/월 토글(연도 `YYYY-%` 집계 / 월 집계), 요약 박스 + 결제수단별 수납총액(열 배치). 백엔드 `get_billing_period_stats(period)` IPC + `BillingPeriodStats`/`PaymentMethodSummary` 타입. 단위 테스트: `billing_period_stats_groups_by_method`
+- post-Sprint 11 (develop 보완): 월별 집계 기간 선택을 실제 청구 생성된 년월로 한정 — `list_billed_months` IPC (`bills` distinct `bill_year_month` DESC), 집계 탭 드롭다운이 생성된 청구 없는 년월은 표시하지 않음. 단위 테스트: `list_billed_months_returns_distinct_desc`
 
 ### Changed
 - post-Sprint 11 (develop 보완): 청구 탭 상태 필터에 '마감' 추가 + 옵션별 건수 표기(전체/확정/미확정/마감), '마감 완료' 배지를 상태 필터 앞쪽으로 이동
 - post-Sprint 11 (develop 보완): 수납 탭 필터 건수 표기(전체/수납완료/미수납) 추가
 - post-Sprint 11 (develop 보완): 마감 후 수정 사유 게이트 완화(10자 이상 → 비어있지 않음)
 - post-Sprint 11 (develop 보완): 입금일 선택 시 달력 닫고 입금자 칸으로 포커스 이동 UX
+- post-Sprint 11 (develop 보완): 월별 집계 탭 — 청구 데이터 0건 시 현재 년월을 디폴트로 표시하여 빈 화면 대신 "0건" 상태 노출
 
 ### Fixed
 - post-Sprint 11 (develop 보완): 확정 버튼 비활성 버그 수정 — 마감 후 수정 사유 게이트 10자 조건으로 인한 오작동 해소
 - post-Sprint 11 (develop 보완): 수납완료 행 수납 취소 기능 추가 (`batch_update_payments` 재사용, 신규 IPC 없음) — 잘못 입력된 수납 정정 가능
 - post-Sprint 11 (develop 보완): 입금 완료 시 결제수단 필수 검증 — 백엔드 `validate_payment_input` 2곳 + 프론트 가드/빨간 테두리. 신규 단위 테스트: `create_payment_rejects_paid_without_method`, `batch_cancel_payment_resets_is_paid`
 - post-Sprint 11 (develop 보완): 수납완료된 청구는 수정 불가 — `update_bill_impl` 가 `is_paid` 기준으로 거부 + 프론트 금액 편집 비활성. 신규 단위 테스트: `update_bill_paid_rejected`
-
-### Added
-- post-Sprint 11 (develop 보완): 청구 관리 '월별 집계' 탭 — 년/월 토글(연도 `YYYY-%` 집계 / 월 집계), 요약 박스 + 결제수단별 수납총액(열 배치). 백엔드 `get_billing_period_stats(period)` IPC + `BillingPeriodStats`/`PaymentMethodSummary` 타입
 
 ### Removed
 - post-Sprint 11 (develop 보완): **청구 '마감(closed)' 개념 전면 폐기** (원장 결정, 2026-05-30). 청구 상태는 미확정→확정 2단계로 축소. 제거 항목: `close_billing_month` IPC, `CloseMonthDialog`/`CloseReasonDialog` 컴포넌트, "당월 청구 마감" 버튼·"마감 완료" 배지·'마감' 상태 필터, audit `BillMonthClosed`/`BillClosedModified`, `update_bill` 의 `close_reason` 파라미터. DB 마이그레이션 **V111** — `bills` 재구성으로 `status` CHECK(draft/confirmed) + `close_reason`/`closed_at` 컬럼 제거(기존 closed → confirmed 흡수). PRD §4.9.7 갱신, AC-4.9-7/8 폐기, AC-4.9-9 신설(수납완료 청구 수정 불가)

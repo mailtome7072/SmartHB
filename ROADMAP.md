@@ -22,7 +22,7 @@
 | 항목 | 내용 |
 |------|------|
 | 전체 진행률 | 71% (11/17 스프린트 완료) |
-| 현재 Phase | Phase 4 진행 중 — Sprint 11 완료 (2026-05-29) + post-Sprint 11 develop 보완 2건 (2026-05-30). Sprint 12 (공지문 이미지 생성) 착수 예정 |
+| 현재 Phase | Phase 4 진행 중 — Sprint 11 완료 (2026-05-29) + post-Sprint 11 develop 보완 6커밋 (2026-05-30): PIN 인증·청구 검수 보완 2건 + 월별 집계 탭·마감 폐기·기간 한정·빈 데이터 디폴트 4건. Sprint 12 (공지문 이미지 생성) 착수 예정 |
 | 다음 마일스톤 | 공지문 이미지 일괄 생성 + CSV 가져오기 (Sprint 12) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
@@ -614,6 +614,27 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 - 백엔드 `validate_pin` (len 6 + ascii digit) — `set_password` / `reset_password_with_code` 재검증
 - dev autologin + `.env.example` 6자리 PIN 대응
 - ADR-007 신규 작성 (`docs/arch/adr-007-pin-authentication.md`) — 보안 트레이드오프 명시, 복구코드 12자리 유지
+
+커밋 `70c59a1` — 청구 관리 '월별 집계' 탭 추가:
+- 3번째 탭 '월별 집계' 신설. 년/월 토글(연도 `YYYY-%` 집계 / 월 집계), 요약 박스 + 결제수단별 수납총액(열 배치)
+- 백엔드 `get_billing_period_stats(period)` IPC + `BillingPeriodStats`/`PaymentMethodSummary` 타입 신규
+- 신규 단위 테스트: `billing_period_stats_groups_by_method`
+
+커밋 `c1ae063` — 청구 '마감(closed)' 개념 전면 폐기 (원장 결정):
+- 청구 상태 2단계(미확정→확정)로 축소. V111 마이그레이션 — `bills` 재구성 (`status` CHECK(draft/confirmed), `close_reason`/`closed_at` 제거, closed→confirmed 흡수, payments CASCADE 백업/복원)
+- 제거: `close_billing_month` IPC, `CloseMonthDialog`/`CloseReasonDialog`, 마감 버튼/배지/필터, audit `BillMonthClosed`/`BillClosedModified`, `update_bill` `close_reason` 파라미터
+- 수납완료(is_paid) 청구 금액 수정 거부로 전환. PRD §4.9.7 폐기 반영, AC-4.9-9 신설
+- 신규 단위 테스트: `update_bill_paid_rejected`
+- 자동 검증: cargo test 326건 통과 / clippy clean / pnpm lint + tsc clean / V111 실DB 시각검증(closed→confirmed 변환 + payment 보존 + FK 0위반)
+
+커밋 `2a964b0` — 월별 집계 기간 선택을 청구 생성된 년월로 한정:
+- `list_billed_months` IPC 신규 (`bills` distinct `bill_year_month` DESC) — 청구가 없는 년월은 드롭다운에 표시하지 않음
+- 신규 단위 테스트: `list_billed_months_returns_distinct_desc`
+
+커밋 `29fbe93` — 월별 집계 빈 데이터 시 디폴트 년월 현재 년월로:
+- 청구 데이터 0건일 때 현재 년월을 디폴트로 사용하여 "0건" 상태 정상 노출 (빈 화면 방지)
+
+> post-Sprint 11 4커밋 자동 검증 (2026-05-30): cargo test 326건 통과 / clippy -D warnings clean / pnpm lint clean / pnpm tsc clean
 
 ---
 
