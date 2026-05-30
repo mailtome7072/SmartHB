@@ -1328,6 +1328,13 @@ export async function listNoticeAssets(): Promise<NoticeAsset[]> {
   return inv('list_notice_assets') as Promise<NoticeAsset[]>
 }
 
+/** 배경서식 바이트 읽기 (미리보기/생성용). number[] 반환. */
+export async function readNoticeAsset(filename: string): Promise<number[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('read_notice_asset', { filename }) as Promise<number[]>
+}
+
 /** 배경서식 저장. data 는 이미지 바이트 배열(number[]). 저장된 파일명 반환. */
 export async function saveNoticeAsset(filename: string, data: number[]): Promise<string> {
   const inv = await getInvoke()

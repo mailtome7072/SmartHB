@@ -88,6 +88,7 @@ pub fn run() {
             commands::billing::search_students_for_billing,
             commands::billing::get_default_billing_year_month,
             commands::notice::list_notice_assets,
+            commands::notice::read_notice_asset,
             commands::notice::save_notice_asset,
             commands::notice::delete_notice_asset,
             commands::notice::save_notice_layout,

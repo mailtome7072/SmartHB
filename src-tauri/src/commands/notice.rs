@@ -162,6 +162,14 @@ pub async fn list_notice_assets() -> Result<Vec<NoticeAsset>, String> {
     Ok(out)
 }
 
+/// 배경서식 바이트 읽기 — 미리보기/생성용. `assets/{filename}` 의 내용을 Vec<u8> 로 반환.
+#[tauri::command]
+pub async fn read_notice_asset(filename: String) -> Result<Vec<u8>, String> {
+    let safe = sanitize_component(&filename);
+    let target = paths::assets_dir().join(&safe);
+    std::fs::read(&target).map_err(|e| format!("배경서식 읽기 실패: {}", e))
+}
+
 /// 배경서식 저장 — `assets/{filename}`. 동일 파일명은 덮어쓰기(프론트에서 확인).
 #[tauri::command]
 pub async fn save_notice_asset(filename: String, data: Vec<u8>) -> Result<String, String> {
