@@ -453,75 +453,10 @@ function NoticesContent() {
               </div>
             )}
 
-            {/* 폰트 툴바 */}
-            {layout && layout.textboxes[selectedBoxIdx] && (
-              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md bg-gray-50 p-2 text-sm">
-                <select
-                  value={selectedBoxIdx}
-                  onChange={(e) => setSelectedBoxIdx(Number(e.target.value))}
-                  className="h-9 rounded border border-[var(--border)] px-2"
-                >
-                  {layout.textboxes.map((tb, i) => (
-                    <option key={tb.fieldType} value={i}>{FIELD_LABEL[tb.fieldType]}</option>
-                  ))}
-                </select>
-                <label className="flex items-center gap-1">
-                  폰트크기
-                  <input
-                    type="range"
-                    min={10}
-                    max={100}
-                    value={Math.round(layout.textboxes[selectedBoxIdx].fontRatio * 100)}
-                    onChange={(e) => updateBox(selectedBoxIdx, { fontRatio: Number(e.target.value) / 100 })}
-                  />
-                  <span className="w-8 text-right">
-                    {Math.round(layout.textboxes[selectedBoxIdx].fontRatio * 100)}%
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  title="굵게"
-                  aria-label="굵게"
-                  onClick={() =>
-                    updateBox(selectedBoxIdx, {
-                      fontWeight: layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'normal' : 'bold',
-                    })
-                  }
-                  className={`flex h-9 w-9 items-center justify-center rounded border text-xs ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
-                >
-                  🅱️
-                </button>
-                <input
-                  type="color"
-                  value={layout.textboxes[selectedBoxIdx].fontColor}
-                  onChange={(e) => updateBox(selectedBoxIdx, { fontColor: e.target.value })}
-                  className="h-9 w-10 cursor-pointer rounded border border-[var(--border)]"
-                  title="글자 색"
-                  aria-label="글자 색"
-                />
-                {([
-                  ['left', '왼쪽 정렬'],
-                  ['center', '가운데 정렬'],
-                  ['right', '오른쪽 정렬'],
-                ] as const).map(([al, label]) => (
-                  <button
-                    key={al}
-                    type="button"
-                    title={label}
-                    aria-label={label}
-                    onClick={() => updateBox(selectedBoxIdx, { textAlign: al })}
-                    className={`flex h-9 w-9 items-center justify-center rounded border ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50 text-[var(--accent)]' : 'border-[var(--border)] text-gray-700'}`}
-                  >
-                    <AlignIcon align={al} />
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* 표시 필드 체크박스(좌) + 미리보기 캔버스 */}
             <div className="flex min-h-0 flex-1 gap-2">
-              {/* 좌측: 표시할 필드 토글 — 체크 시 배경 위에 텍스트박스 표시·생성 */}
-              <div className="flex w-20 shrink-0 flex-col gap-2 pt-1">
+              {/* 좌측: 표시 필드 토글 + 선택 박스 폰트 컨트롤 */}
+              <div className="flex w-44 shrink-0 flex-col gap-2 pt-1">
                 {(layout?.textboxes ?? []).map((tb, i) => (
                   <label key={tb.fieldType} className="flex cursor-pointer items-center gap-1 text-sm text-gray-700">
                     <input
@@ -533,6 +468,66 @@ function NoticesContent() {
                     {FIELD_LABEL[tb.fieldType]}
                   </label>
                 ))}
+
+                {/* 선택된 텍스트박스 폰트 컨트롤 (캔버스에서 박스 클릭 시 대상 변경) */}
+                {layout && layout.textboxes[selectedBoxIdx] && (
+                  <div className="mt-1 flex flex-col gap-2 border-t border-[var(--border)] pt-2 text-sm">
+                    <span className="text-xs text-gray-500">편집: {FIELD_LABEL[layout.textboxes[selectedBoxIdx].fieldType]}</span>
+                    <label className="flex items-center gap-1">
+                      Size
+                      <input
+                        type="range"
+                        min={10}
+                        max={100}
+                        value={Math.round(layout.textboxes[selectedBoxIdx].fontRatio * 100)}
+                        onChange={(e) => updateBox(selectedBoxIdx, { fontRatio: Number(e.target.value) / 100 })}
+                        className="w-[60%]"
+                      />
+                      <span className="w-8 text-right text-xs">
+                        {Math.round(layout.textboxes[selectedBoxIdx].fontRatio * 100)}%
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        title="굵게"
+                        aria-label="굵게"
+                        onClick={() =>
+                          updateBox(selectedBoxIdx, {
+                            fontWeight: layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'normal' : 'bold',
+                          })
+                        }
+                        className={`flex h-9 w-9 items-center justify-center rounded border text-xs ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
+                      >
+                        🅱️
+                      </button>
+                      <input
+                        type="color"
+                        value={layout.textboxes[selectedBoxIdx].fontColor}
+                        onChange={(e) => updateBox(selectedBoxIdx, { fontColor: e.target.value })}
+                        className="h-9 w-9 cursor-pointer rounded border border-[var(--border)]"
+                        title="글자 색"
+                        aria-label="글자 색"
+                      />
+                      {([
+                        ['left', '왼쪽 정렬'],
+                        ['center', '가운데 정렬'],
+                        ['right', '오른쪽 정렬'],
+                      ] as const).map(([al, label]) => (
+                        <button
+                          key={al}
+                          type="button"
+                          title={label}
+                          aria-label={label}
+                          onClick={() => updateBox(selectedBoxIdx, { textAlign: al })}
+                          className={`flex h-9 w-9 items-center justify-center rounded border ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50 text-[var(--accent)]' : 'border-[var(--border)] text-gray-700'}`}
+                        >
+                          <AlignIcon align={al} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 미리보기 캔버스 (가용 영역 채움) */}
