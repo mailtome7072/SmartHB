@@ -445,16 +445,8 @@ function NoticesContent() {
   // 목록 표시는 이름 내림차순.
   const sortedTemplates = useMemo(() => [...templates].sort((a, b) => b.localeCompare(a)), [templates])
 
-  // 작성/저장할 템플릿 이름. 최초 1회만 디폴트('공지문{저장개수+1}') 채움 →
-  // 이후 저장/불러오기/삭제로 비우면 그대로 유지(자동 재채움 안 함).
+  // 작성/저장할 템플릿 이름. 디폴트 없음 — 빈 상태로 시작, 사용자가 직접 입력.
   const [templateName, setTemplateName] = useState('')
-  const nameInitialized = useRef(false)
-  useEffect(() => {
-    if (!nameInitialized.current && templatesQuery.data) {
-      setTemplateName(`공지문${templates.length + 1}`)
-      nameInitialized.current = true
-    }
-  }, [templatesQuery.data, templates.length])
 
   // 실제 저장 — 이름 확정 후 호출.
   const doSaveTemplate = async (name: string) => {
@@ -490,7 +482,7 @@ function NoticesContent() {
   }
   const handleSaveAs = () => {
     if (!layout) return
-    setSaveAsValue(`공지문${templates.length + 1}`)
+    setSaveAsValue('')
   }
   const handleLoadTemplate = async (name: string) => {
     try {
