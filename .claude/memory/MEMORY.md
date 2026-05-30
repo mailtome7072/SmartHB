@@ -1,7 +1,7 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
 - [Sprint 다음 세션](sprint-next-session.md) — post-Sprint 11 develop 보완 7커밋 + sprint-close/review 완료. 이후 Sprint 12(공지문) 진행 중. 다음 세션 진입 시 가장 먼저 확인
 - [Sprint 13 PIN 옵션화](sprint13-pin-optional.md) — 실행 시 PIN 인증 옵션화(C안: 키체인 자동 스킵) Sprint 13 예정. 설계·제약·ADR 요건 기록됨
-- [단원평가 취소](exam-feature-cancelled.md) — 단원평가 메뉴(/exams) 개발 전면 취소. 다음 계획 시 Phase 5 범위 제외 + 학습보고서 종속성 확인 필요
+- [Phase 5 취소](exam-feature-cancelled.md) — 단원평가(/exams) + 학습보고서(/reports) 개발 전면 취소. 다음 계획 시 Phase 5 통째 제외, 메뉴 2개 제거
 - [NTFS power-loss 패턴](ntfs-power-loss-pattern.md) — fs::write+rename 후 데이터가 NULL로 손상, atomic write 헬퍼에 손상 감지+fallback 필수
 - [keyring v3 features 트랩](keyring-v3-features-trap.md) — `keyring = "3"`만 적으면 backend 미연결로 silent set fail. `features = ["apple-native", "windows-native"]` 필수
 - [cipher 테스트 게이트 트랩](cipher-test-gate-trap.md) — `cargo test --features cipher`는 Strawberry Perl + 테스트 모듈 `#[cfg(all(test, not(feature="cipher")))]` 게이트 둘 다 필요. CI는 cipher로 빌드만 해서 미발견
