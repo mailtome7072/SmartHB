@@ -22,7 +22,7 @@
 | 항목 | 내용 |
 |------|------|
 | 전체 진행률 | 71% (11/17 스프린트 완료) |
-| 현재 Phase | Phase 4 진행 중 — Sprint 11 완료 (2026-05-29). Sprint 12 (공지문 이미지 생성) 착수 예정 |
+| 현재 Phase | Phase 4 진행 중 — Sprint 11 완료 (2026-05-29) + post-Sprint 11 develop 보완 2건 (2026-05-30). Sprint 12 (공지문 이미지 생성) 착수 예정 |
 | 다음 마일스톤 | 공지문 이미지 일괄 생성 + CSV 가져오기 (Sprint 12) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
@@ -594,6 +594,26 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 - ✅ `cargo test --lib` 308 passed / `cargo clippy -- -D warnings` clean
 - ✅ `pnpm lint` / `pnpm tsc --noEmit` / `pnpm build` static export 17 routes 통과
 - ⚠️ 청구 50명 생성 3초 이내 — 인메모리 단위 테스트 0.21s/35 tests. 실측은 사용자 시각 검증으로 이연 (sprint-review risk-register 기록)
+
+#### post-Sprint 11 develop 보완 (2026-05-30)
+
+> 정식 sprint 브랜치 없이 develop 에 직접 커밋 (단일 개발자 PR 생략 정책).
+> 검수 후 발견된 8건 UX/보안 보강 + PIN 인증 전환(ADR-007) 2커밋.
+
+커밋 `945e4a7` — 청구/수납 검수 후속 보완 8건:
+- 청구 탭 상태 필터 '마감' 추가 + 옵션별 건수 표기 / '마감 완료' 배지 위치 이동
+- 수납 탭 필터 건수 표기 / 마감 후 수정 사유 게이트 완화 / 입금일 달력 닫힘 + 포커스 이동
+- 수납완료 행 수납 취소 기능 (`batch_update_payments` 재사용)
+- 입금 시 결제수단 필수 검증 (백엔드 2곳 + 프론트 가드)
+- 수납완료된 마감 청구 수정 불가 (`update_bill_impl` 거부 + 프론트 비활성)
+- 신규 단위 테스트 3건: `create_payment_rejects_paid_without_method`, `batch_cancel_payment_resets_is_paid`, `update_bill_closed_paid_rejected`
+- 자동 검증: cargo test 315건 통과 / clippy clean / pnpm lint clean / tsc clean
+
+커밋 `c93399e` — 앱 잠금 인증 6자리 숫자 PIN 전환 (ADR-007):
+- `LockScreen` / `RecoveryCodeInput` 입력을 6자리 숫자 PIN 으로 전환
+- 백엔드 `validate_pin` (len 6 + ascii digit) — `set_password` / `reset_password_with_code` 재검증
+- dev autologin + `.env.example` 6자리 PIN 대응
+- ADR-007 신규 작성 (`docs/arch/adr-007-pin-authentication.md`) — 보안 트레이드오프 명시, 복구코드 12자리 유지
 
 ---
 

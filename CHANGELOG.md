@@ -38,6 +38,22 @@
 ## [Unreleased]
 
 ### Added
+- post-Sprint 11 (develop 보완): 앱 잠금 인증을 6자리 숫자 PIN 으로 전환 — `LockScreen` / `RecoveryCodeInput` 입력 전환, 백엔드 `validate_pin` (길이 6 + ascii digit) 진입점 재검증, dev autologin + `.env.example` 6자리 PIN 대응 (ADR-007: `docs/arch/adr-007-pin-authentication.md`)
+- post-Sprint 11 (develop 보완): ADR-007 신규 작성 — 6자리 숫자 PIN 보안 트레이드오프 명시 수용, 복구코드 12자리 유지 결정
+
+### Changed
+- post-Sprint 11 (develop 보완): 청구 탭 상태 필터에 '마감' 추가 + 옵션별 건수 표기(전체/확정/미확정/마감), '마감 완료' 배지를 상태 필터 앞쪽으로 이동
+- post-Sprint 11 (develop 보완): 수납 탭 필터 건수 표기(전체/수납완료/미수납) 추가
+- post-Sprint 11 (develop 보완): 마감 후 수정 사유 게이트 완화(10자 이상 → 비어있지 않음)
+- post-Sprint 11 (develop 보완): 입금일 선택 시 달력 닫고 입금자 칸으로 포커스 이동 UX
+
+### Fixed
+- post-Sprint 11 (develop 보완): 확정 버튼 비활성 버그 수정 — 마감 후 수정 사유 게이트 10자 조건으로 인한 오작동 해소
+- post-Sprint 11 (develop 보완): 수납완료 행 수납 취소 기능 추가 (`batch_update_payments` 재사용, 신규 IPC 없음) — 잘못 입력된 수납 정정 가능
+- post-Sprint 11 (develop 보완): 입금 완료 시 결제수단 필수 검증 — 백엔드 `validate_payment_input` 2곳 + 프론트 가드/빨간 테두리. 신규 단위 테스트: `create_payment_rejects_paid_without_method`, `batch_cancel_payment_resets_is_paid`
+- post-Sprint 11 (develop 보완): 수납완료된 마감 청구는 수정 불가 — `update_bill_impl` 거부 + 프론트 금액 편집 비활성. 신규 단위 테스트: `update_bill_closed_paid_rejected`
+
+### Added
 - Sprint 11: DB 마이그레이션 V109 — `bills` + `payments` 테이블 신규 (청구 3단계 상태 머신 draft/confirmed/closed, 수납 1:1 별도 테이블 PI-12 확정, UNIQUE: `(student_id, bill_year_month)` + `bill_id`, FK: `students(id)` / `bills(id)` / `payment_methods(id)` / `card_companies(id)`)
 - Sprint 11: 청구 IPC 4종 (`src-tauri/src/commands/billing.rs` 신규) — `generate_bills` (재원 원생 일괄, 표준 교습비 매핑, 월중입퇴교 플래그 자동), `list_bills` (미확정+월중입퇴교 상단 우선), `get_bill`, `update_bill` (상태별 수정 제약), `get_default_bill_year_month` — 단위 테스트 17건
 - Sprint 11: 청구 상태 머신 IPC 3종 — `confirm_bill` (단건), `confirm_all_bills` (일괄), `close_billing_month` (전체 confirmed 전제 조건 강제 AC-4.9-7), `update_closed_bill` (close_reason 필수 AC-4.9-8) — 단위 테스트 9건
