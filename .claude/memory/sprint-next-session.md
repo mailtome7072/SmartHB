@@ -1,73 +1,56 @@
 ---
 name: sprint-next-session
-description: "post-Sprint 11 hotfix 다수 + 3건 일괄처리 사용자 검수 대기 중. 다음 세션: 검수 + deploy-prod"
+description: "post-Sprint 11 develop 보완 다수 완료 + sprint-close/review 완료. 다음 세션: 수동검증 잔여 항목 후 deploy-prod 또는 Sprint 12 계획"
 metadata:
   node_type: memory
   type: project
-  originSessionId: post-sprint11-pending-user-review
+  originSessionId: post-sprint11-develop-batch-2026-05-30
 ---
 
-Sprint 11 완료 (develop 머지 `dfc5925`) 이후 사용자 시각 검증 진행 중. 다수 hotfix가
-develop 에 적용됐고, **2026-05-29 진행 마지막 commit (`419ea36`) 의 3건 일괄처리는
-사용자 검수 대기 상태** — 다음 세션 진입 시 가장 먼저 확인.
+Sprint 11 머지(`dfc5925`) 이후 develop 에 직접 보완을 계속 누적 중. **PR 단계 생략** ([[workflow-no-pr]]).
+2026-05-30 세션에서 청구/수납·인증 대규모 보완 완료 + sprint-close/sprint-review 2회 완료.
 
-## ⏳ 다음 세션 시작 시 — 사용자 검수 대기 (3건)
-
-**commit**: `419ea36 feat(billing): 수납완료 라벨 + 청구/수납 상태 필터 라디오`
-
-| # | 검수 항목 | 확인 위치 | 기대 동작 |
-|---|---------|---------|---------|
-| 1 | 청구 그리드 **수납완료 라벨** | `/billing` 청구 탭의 청구 행 상태 컬럼 | `Bill.isPaid=true` 청구 옆에 emerald 배지 "수납완료" 표시 |
-| 2 | 청구 탭 **상태 필터** | `/billing` 청구년월 우측 (검색 input 옆) | 라디오 3개: 전체/확정/미확정. 디폴트 전체. 선택 시 청구 그리드 필터 |
-| 3 | 수납 탭 **상태 필터 + 수납완료 행 표시** | `/billing` 수납 탭 동일 위치 | 라디오 3개: 전체/수납완료/미수납. 디폴트 전체. 수납완료 행은 read-only(✓ + 날짜·입금자·결제수단·카드사 텍스트) + emerald-50 배경 |
-
-검수 시작 시: `pnpm tauri:dev` 실행 → `/billing` 진입 → 청구 데이터 생성 후 일부 수납 처리하여 위 3건 확인.
-
-검수 통과 시 → deploy-prod 진입. 미통과면 후속 hotfix.
-
-## develop 누적 hotfix 요약 (Sprint 11 머지 후 → 현재)
+## 2026-05-30 세션 커밋 (develop, 검증 완료)
 
 | 커밋 | 내용 |
 |------|------|
-| `419ea36` ⏳ **검수 대기** | 수납완료 라벨 + 청구/수납 상태 필터 라디오 + PaymentsView refactor (list_payment_view IPC) |
-| `b7a59d1` | 청구·수납 통합 검색 + 미수납 자동 채움 (search_students_for_billing + 입금일=오늘) |
-| `3398e3c` | 메뉴 '청구 관리' → '청구/수납 관리' |
-| `c1fbfdd` | V110 마이그레이션 — payment_methods 중복 시드 정리 (other/locCash 삭제) |
-| `33f3962` | docs: R82/A80 — 마감 후 추가 청구 정책 carry-over |
-| `4871e2b` | 출결 '추가 출결 데이터 생성' 버튼을 검색 input 우측으로 이동 |
-| `cd1a233` | 출결 추가 데이터 생성 UX (generate_attendances INSERT OR IGNORE + count_ungenerated IPC) |
-| `9244034` | 디버그 정리 — ErrorDialog 정상 동작 확인 후 |
-| `b0f760a` | ErrorDialog autoFocus 제거 — Enter 키 즉시 닫기 race 해소 (핵심 fix) |
-| `7d89a0c` | 인라인 빨간 박스 → ErrorDialog 모달 (createPortal + inline style) |
-| `9141658` | mutation onMutate 에서 setError(null) 자동 클리어 |
-| `f5a9cc5` | error 박스 빈 문자열 렌더 차단 |
-| `67d05ae` | 청구년월 디폴트 = 오늘 / "추가 청구 데이터 생성" 버튼 + 총수업원생수 표시 (BillingSummary.totalBillableStudents) |
-| (이전) `dfc5925` | Sprint 11 완료 머지 |
+| `945e4a7` | 청구/수납 검수 후속 8건 (마감필터·건수표기·확정버튼버그·달력포커스·수납취소·결제수단필수·수납완료마감잠금) |
+| `c93399e` | 앱 잠금 인증 **6자리 숫자 PIN** 전환 (ADR-007, validate_pin) |
+| `70c59a1` | 청구 관리 **'월별 집계' 탭** (년/월 토글, 결제수단별 수납총액 열 배치, get_billing_period_stats IPC) |
+| `c1ae063` | **청구 '마감(closed)' 개념 전면 폐기** (원장 결정). V111 마이그레이션 — bills 재구성(status 2단계, close_reason/closed_at 제거). PRD §4.9.7/AC 갱신 |
+| `2a964b0` | 월별 집계 기간 선택을 청구 생성된 년월로 한정 (list_billed_months IPC) |
+| `29fbe93` | 월별 집계 — 청구 0건 시 디폴트 년월=현재 년월 |
+| `fb2a491` | review F1 — update_bill 존재확인+수납여부 1쿼리 통합 |
+| (docs) | sprint-close/review 산출물 2회: CHANGELOG/ROADMAP/DEPLOY, test-report, risk-register(R83~R87), 회고 2건, code-review |
 
-## 핵심 학습 (메모리 후보)
+## 핵심 도메인 변경 (다음 세션 주의)
 
-1. **ErrorDialog autoFocus + Enter 키 race**: confirm 버튼 autoFocus → Enter 키의 KeyUp 이 자동 click 트리거 → 모달이 떴다 즉시 닫힘. 해결: autoFocus 제거. 일반 패턴이라 별도 메모리 등재 검토.
-2. **createPortal + inline style**: AppShell 의 main.overflow-y-auto stacking context 우회. Tailwind JIT 누락 위험 차단.
-3. **dev 서버 HMR 갱신 지연**: 새 컴포넌트 추가 후 사용자 환경에서 강제 새로고침 필요할 수 있음.
+- **청구 상태 2단계**: 미확정(draft) → 확정(confirmed). **마감(closed) 폐기**. `close_billing_month`/CloseMonthDialog/CloseReasonDialog 제거됨. 다시 마감 언급 금지.
+- **수납완료 잠금**: `payments.is_paid=1` 청구는 status 무관 금액 수정 거부(`update_bill_impl`) + 프론트 편집 비활성. (구 "마감+수납완료" 규칙 대체)
+- **인증 = 6자리 숫자 PIN** (ADR-007). 보안 트레이드오프(10^6 키스페이스, 클라우드 DB 오프라인 브루트포스) 명시 수용. 복구코드 12자리 유지. 마이그레이션: dev 자격증명 재설정 필요(평문 DB라 데이터 무손실), prod 미출시.
+- **마이그레이션 현황**: V111 추가 (bills 재구성). 다음 번호는 V112~ 또는 도메인 블록.
 
-## Sprint 12 carry-over (R82/A80 외)
+## ⏳ 다음 세션 시작 시 — 남은 일
 
-- A69: F1 `CloseMonthDialog` summaryQuery 의존 게이팅
-- A70: F3 PaymentsView dirtyEntries payerName-only 소실
-- A71: 청구 50명 3초 이내 실측
-- **A80: 마감 후 추가 청구 정책 결정** ← post-Sprint 11 신규 등록
-- (외 Sprint 10 이연 항목들 A74~A79)
+1. **DEPLOY.md 수동 검증 잔여 항목** (sprint-review 가 ⬜ 로 추가):
+   - 월별 집계 탭(년/월 토글·결제수단별 열), 드롭다운 생성년월 한정, 0건 현재년월 디폴트, 마감 제거 회귀, V111 적용 확인
+   - (사용자는 세션 중 시각검증 완료 의사 밝힘 — DEPLOY.md 항목 ✅ 정리만 남았을 수 있음)
+2. **Notion 업데이트 필요** (sprint-review 권고, 사용자 확인 후): 데이터 모델(V111 bills 재구성/status 2단계/close 컬럼 제거), 기능 명세(마감 폐기 §4.9.7). [[notion]] 규칙 — 페이지 ID 미입력 상태일 수 있음.
+3. **deploy-prod** 또는 **Sprint 12 계획** 진입.
 
-## 다음 단계 (검수 통과 후)
+## carry-over (이전 리뷰)
 
-1. **deploy-prod** — develop → main 머지 + 다음 버전 태그 (`v0.5.1` 또는 `v0.6.0`)
-2. **Sprint 12 계획** — `phase-planner` 또는 `sprint-planner` 진입
-   - Phase 4 마무리: 공지문 이미지 생성 (PRD §4.10)
-   - 대시보드 위젯 §4.11.3 본격화
-   - A80 마감 정책 결정 포함
+- review F2 (Low): 월별 집계 년/월 토글이 radio 아닌 checkbox — **사용자가 '체크박스' 명시 요청**이라 의도된 설계(수정 안 함).
+- A69/A70/A71/A80(마감 정책은 폐기로 무효화)/A74~A79 (Sprint 10~11 이연)
+- A81(Medium, update_bill 트랜잭션 분리 — fb2a491 에서 1쿼리 통합으로 일부 해소), A82, A84
+
+## 다음 단계 (배포)
+
+1. **deploy-prod** — develop → main 직접 머지 + 다음 버전 태그. 누적 변경 규모상 `v0.6.0` 권장 (월별집계 신규 + 마감 제거 + PIN). `deploy-prod` 가 `[Unreleased]` → 버전 전환.
+2. **Sprint 12 계획** — 공지문 이미지 생성(§4.10), 대시보드 위젯(§4.11.3).
 
 ## 정책 (재확인)
 
-- **PR 단계 생략** — develop 머지 / develop → main 머지 모두 직접 ([[workflow-no-pr]])
+- **PR 단계 생략** — develop/main 머지 모두 직접 ([[workflow-no-pr]])
 - **메모리 미러 동기화** — 사용자 메모리 + `.claude/memory/` 두 곳 갱신 후 commit
 - 사용자 메모리 미러: `/Users/skyang/.claude/projects/-Users-skyang-Projects-SmartHB/memory/`
