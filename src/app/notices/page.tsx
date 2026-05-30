@@ -133,6 +133,10 @@ function NoticesContent() {
   const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   // 배경서식 드롭다운(콤보박스) 열림 상태.
   const [assetMenuOpen, setAssetMenuOpen] = useState(false)
+  // 드롭다운이 닫히면 미리보기도 정리 (선택 시 항목 언마운트로 onMouseLeave 누락 방지).
+  useEffect(() => {
+    if (!assetMenuOpen) setHoverPreview(null)
+  }, [assetMenuOpen])
   const showAssetPreview = useCallback(async (name: string) => {
     const cached = previewCache.current.get(name)
     if (cached) {
@@ -189,6 +193,7 @@ function NoticesContent() {
     try {
       await deleteNoticeAsset(name)
       previewCache.current.delete(name)
+      setHoverPreview(null)
       await assetsQuery.refetch()
       if (layout?.backgroundAsset === name) updateLayout({ ...layout, backgroundAsset: null })
     } catch (e) {
