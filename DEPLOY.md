@@ -53,7 +53,7 @@ Phase 4 첫 마일스톤 — 청구+수납 도메인 완성 + 검수 후 보완 
 - ✅ sprint11 → develop 직접 머지 (단일 개발자 정책)
 - ✅ sprint-review 에이전트 재실행 (post-Sprint 11 보완 2건 대상)
 - ✅ sprint-close 문서화 (post-Sprint 11 보완 4커밋: `70c59a1` `c1ae063` `2a964b0` `29fbe93`)
-- ⬜ sprint-review 에이전트 실행 (post-Sprint 11 보완 4커밋 대상)
+- ✅ sprint-review 에이전트 실행 (post-Sprint 11 보완 4커밋 대상)
 - ⬜ pnpm tauri:dev 실행하여 앱 동작 수동 확인 (스테이징 검증)
   - ✅ `/billing` 페이지 진입 → "청구 데이터 생성" 버튼 → 청구 목록/금액 확인 (사용자 검증 완료)
   - ✅ 청구 탭 상태 필터 — 전체/확정/미확정 건수 표기 확인 (마감 상태 폐기됨) (사용자 검증 완료)

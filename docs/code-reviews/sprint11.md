@@ -51,3 +51,39 @@
 ## 결론
 
 Critical 0건, High 0건, Medium 2건(F1 다이얼로그 게이팅, F3 payerName 소실), Low 2건(F2 TOCTOU, F4 테스트 SQL 직접 삽입). 프로덕션 배포 차단 요인 없음. F1/F3는 ROADMAP에 등록하여 Sprint 12 또는 Phase 4 마감 시 처리 권장.
+
+---
+
+# post-Sprint 11 develop 보완 4커밋 코드 리뷰 (2026-05-30 추가)
+
+> 대상: `70c59a1` `c1ae063` `2a964b0` `29fbe93` — 월별 집계 탭 + 마감 폐기 + 기간 한정 + 빈 데이터 디폴트
+> 리뷰 일자: 2026-05-30
+> 자동 검증 결과: cargo test 312 passed (cipher off) / clippy clean / lint clean / tsc clean / build OK
+
+## 발견 사항 (2건)
+
+### 🟡 F1 — update_bill_impl current_status dead variable (Medium, 미수정)
+
+- 위치: `src-tauri/src/commands/billing.rs:287~293`
+- 내용: `current_status` 조회 결과를 `ok_or_else()?`로 존재 확인만 하고 status 값 자체는 미사용. `SELECT status`와 `SELECT is_paid` 두 번 쿼리 왕복. clippy 경고 없이 통과하나 설계 비효율 및 R83 미해소.
+- 실패 시나리오: 단일 PC 앱이라 실제 레이스 없음. 그러나 status + is_paid를 단일 LEFT JOIN으로 조회하지 않아 미세 불일치 window 존재 (R83 지속).
+- 조치: `SELECT b.status, COALESCE(p.is_paid, 0) AS is_paid FROM bills b LEFT JOIN payments p ON p.bill_id=b.id WHERE b.id=?` 단일 쿼리로 통합. Sprint 12 carry-over (R86).
+
+### 🔵 F2 — BillingSummaryView 년/월 토글에 checkbox 사용 (Low, 미수정)
+
+- 위치: `src/components/billing/BillingSummaryView.tsx:90`
+- 내용: 상호 배타 토글에 `type="checkbox"` 사용. 의미론 측면에서 `type="radio"`가 올바름. 스크린리더가 "체크박스 2개"로 안내 → 50대 사용자 접근성 기준(PRD §5.7) 미충족 가능.
+- 실패 시나리오: 동작은 정상(onChange에서 mode 강제 전환). 접근성 도구 사용자만 혼란 가능. 시각 동작은 완전 정상.
+- 조치: `type="radio"` + `name="billing-mode"` + `role="radiogroup"` 전환. 1줄 변경. Sprint 12 carry-over (R87).
+
+## 영역별 추가 점검
+
+- 보안 (backend.md Critical) — V111 마이그레이션: `_payments_backup` TEMP TABLE 패턴 안전. DROP bills 전 payments 비워서 CASCADE 데이터 소실 방지 확인. `PRAGMA foreign_keys`는 앱 연결 레벨에서 ON — 마이그레이션 트랜잭션 내 TEMP TABLE은 정상 동작. closed→confirmed 변환 누락 없음 확인 (`CASE WHEN status='closed' THEN 'confirmed' ELSE status END`).
+- 보안 (backend.md High) — `period_like_pattern`: 'YYYY'→4자리 digit 체크→"YYYY-%" 변환. 5자리 입력('20260' 등)은 `validate_year_month` 통과 실패(len≠7)로 에러 반환 확인. LIKE 와일드카드 위치 안전('2026-'으로 다른 연도 누수 없음). 인덱스 재생성 확인(`idx_bills_year_month/student/status` V111에서 재생성).
+- 프론트엔드 (frontend.md Critical) — `dangerouslySetInnerHTML` 미사용. `invoke()` 직접 호출 없음. 민감 정보 미노출.
+- 프론트엔드 (frontend.md High) — `BillingSummaryView` useEffect 의존성: `[monthOptions, selectedMonth]` / `[yearOptions, selectedYear]` — monthOptions는 useMemo 안정화(billed 참조가 바뀌지 않으면 재생성 없음), selectedMonth/selectedYear는 state이므로 무한루프 없음. 조건부 setSelectedMonth는 `!monthOptions.includes(selectedMonth)` 가드로 중단됨 확인.
+- AI 생성 코드 추가 체크 — V111 마이그레이션 실DB 시각검증 사용자 완료. 신규 단위 테스트 3건 모두 happy path + edge case 커버.
+
+## 결론
+
+Critical 0건, High 0건, Medium 1건(F1 dead variable + 2쿼리 비효율), Low 1건(F2 checkbox 의미론). V111 마이그레이션 안전성 확인. 마감 개념 제거 완전성 확인(타입·쿼리·감사·UI 잔재 없음). 프로덕션 배포 차단 요인 없음.
