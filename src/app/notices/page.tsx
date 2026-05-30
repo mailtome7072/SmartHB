@@ -7,7 +7,7 @@
  * 미리보기는 가용 영역에 맞춰 scale 로 축소 표시(react-rnd `scale` 로 드래그 좌표 보정),
  * 생성은 배경 원본 해상도로 렌더 → 텍스트도 비례 확대. 폰트는 박스 높이×fontRatio 로 자동 연동.
  *
- * - 좌/우 패널 사이 드래그 스플리터 (너비 localStorage 저장)
+ * - 좌측 원생 패널은 고정 너비, 우측 편집 캔버스가 나머지 공간 차지
  * - 패널 높이는 창 높이에 연동 (h-full + 내부 스크롤)
  * - 배경서식 파일명 hover 미리보기
  */
@@ -45,9 +45,7 @@ const FIELD_LABEL: Record<NoticeFieldType, string> = {
   bill_amount: '청구액',
 }
 
-const LEFT_WIDTH_KEY = 'smarthb.notice.leftWidth'
-const LEFT_MIN = 220
-const LEFT_MAX = 560
+const LEFT_PANEL_WIDTH = 240 // 좌측 원생 패널 고정 너비(최소)
 
 function currentYearMonth(): string {
   const d = new Date()
@@ -261,41 +259,6 @@ function NoticesContent() {
     }
   }
 
-  // ── 스플리터 (좌 패널 너비, localStorage 저장) ──
-  const [leftWidth, setLeftWidth] = useState<number>(320)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const saved = Number(window.localStorage.getItem(LEFT_WIDTH_KEY))
-    if (saved >= LEFT_MIN && saved <= LEFT_MAX) setLeftWidth(saved)
-  }, [])
-  const rowRef = useRef<HTMLDivElement>(null)
-  const draggingSplit = useRef(false)
-  const onSplitDown = () => {
-    draggingSplit.current = true
-    if (typeof document !== 'undefined') document.body.style.userSelect = 'none'
-  }
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const onMove = (e: MouseEvent) => {
-      if (!draggingSplit.current || !rowRef.current) return
-      const rect = rowRef.current.getBoundingClientRect()
-      const w = Math.min(LEFT_MAX, Math.max(LEFT_MIN, e.clientX - rect.left))
-      setLeftWidth(w)
-    }
-    const onUp = () => {
-      if (!draggingSplit.current) return
-      draggingSplit.current = false
-      document.body.style.userSelect = ''
-      window.localStorage.setItem(LEFT_WIDTH_KEY, String(Math.round(leftWidth)))
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [leftWidth])
-
   // ── 미리보기 가용 영역 측정 → scale (창 크기 연동) ──
   const previewWrapRef = useRef<HTMLDivElement>(null)
   const [avail, setAvail] = useState<{ w: number; h: number }>({ w: 600, h: 600 })
@@ -316,11 +279,11 @@ function NoticesContent() {
       <div className="flex h-full flex-col">
         <h1 className="mb-3 text-2xl font-bold">공지문 생성</h1>
 
-        <div ref={rowRef} className="flex min-h-0 flex-1">
-          {/* 좌측: 원생 리스트 */}
+        <div className="flex min-h-0 flex-1 gap-3">
+          {/* 좌측: 원생 리스트 (고정 너비) */}
           <section
             className="flex flex-col overflow-hidden rounded-md border border-[var(--border)] p-3"
-            style={{ width: leftWidth, flex: '0 0 auto' }}
+            style={{ width: LEFT_PANEL_WIDTH, flex: '0 0 auto' }}
           >
             <label className="mb-2 block text-base font-medium">
               청구년월
@@ -366,15 +329,6 @@ function NoticesContent() {
               </>
             )}
           </section>
-
-          {/* 스플리터 */}
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            onMouseDown={onSplitDown}
-            className="mx-1 w-1.5 shrink-0 cursor-col-resize rounded bg-gray-200 hover:bg-[var(--accent)]"
-            title="드래그하여 패널 너비 조절"
-          />
 
           {/* 우측: 편집 캔버스 */}
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[var(--border)] p-3">
