@@ -290,6 +290,16 @@ pub(crate) async fn update_bill_impl(
     let status = current_status.ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
 
     if status == "closed" {
+        // 수납완료된 마감 청구는 수정 불가 — 이미 수금이 끝난 청구의 금액 변경 방지.
+        let paid: Option<i64> =
+            sqlx::query_scalar("SELECT is_paid FROM payments WHERE bill_id = ?")
+                .bind(id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| format!("수납 상태 조회 실패: {}", e))?;
+        if paid == Some(1) {
+            return Err("수납완료된 마감 청구는 수정할 수 없습니다.".to_string());
+        }
         let reason = close_reason
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -1084,6 +1094,9 @@ async fn validate_payment_input(pool: &SqlitePool, input: &PaymentInput) -> Resu
     if input.is_paid && input.paid_date.is_none() {
         return Err("입금 완료 상태에는 입금일이 필요합니다.".to_string());
     }
+    if input.is_paid && input.payment_method_id.is_none() {
+        return Err("입금 완료 상태에는 결제수단이 필요합니다.".to_string());
+    }
     if let Some(pmid) = input.payment_method_id {
         let is_card: Option<i64> = sqlx::query_scalar(
             "SELECT is_card_type FROM payment_methods WHERE id = ?",
@@ -1112,6 +1125,9 @@ async fn validate_payment_input_in_tx(
 ) -> Result<(), String> {
     if input.is_paid && input.paid_date.is_none() {
         return Err("입금 완료 상태에는 입금일이 필요합니다.".to_string());
+    }
+    if input.is_paid && input.payment_method_id.is_none() {
+        return Err("입금 완료 상태에는 결제수단이 필요합니다.".to_string());
     }
     if let Some(pmid) = input.payment_method_id {
         let is_card: Option<i64> = sqlx::query_scalar(
@@ -1409,6 +1425,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn update_bill_closed_paid_rejected() {
+        // 수납완료된 마감 청구는 사유가 있어도 수정 불가.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        seed_schedule(&pool, sid, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bill_id: i64 = sqlx::query_scalar("SELECT id FROM bills LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        // 수납완료 처리
+        batch_update_payments_impl(
+            &pool,
+            &[PaymentInput {
+                bill_id,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: None,
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            }],
+        )
+        .await
+        .expect("pay");
+        // 마감으로 전이
+        sqlx::query(
+            "UPDATE bills SET status='closed', closed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+        )
+        .bind(bill_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let err = update_bill_impl(&pool, bill_id, 80_000, Some("월말 환불 처리")).await;
+        assert!(err.is_err(), "수납완료된 마감 청구는 사유가 있어도 거부");
+    }
+
+    #[tokio::test]
     async fn update_bill_negative_amount_rejected() {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let sid = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
@@ -1667,6 +1722,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_payment_rejects_paid_without_method() {
+        // #6: 입금 완료인데 결제수단 미선택이면 거부.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let bid = seed_bill(&pool, "2026-05").await;
+        let err = create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-20".to_string()),
+                payer_name: None,
+                payment_method_id: None,
+                card_company_id: None,
+            },
+        )
+        .await;
+        assert!(err.is_err(), "결제수단 누락 시 거부되어야 함");
+    }
+
+    #[tokio::test]
+    async fn batch_cancel_payment_resets_is_paid() {
+        // #5: is_paid=false + 입금정보 null 로 재UPSERT 하면 수납취소.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let s = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        seed_schedule(&pool, s, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bid: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(s)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        // 먼저 수납완료
+        batch_update_payments_impl(
+            &pool,
+            &[PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: Some("홍부모".to_string()),
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            }],
+        )
+        .await
+        .expect("pay");
+        // 수납취소
+        batch_update_payments_impl(
+            &pool,
+            &[PaymentInput {
+                bill_id: bid,
+                is_paid: false,
+                paid_date: None,
+                payer_name: None,
+                payment_method_id: None,
+                card_company_id: None,
+            }],
+        )
+        .await
+        .expect("cancel");
+        let unpaid = list_unpaid_bills_impl(&pool, "2026-05").await.expect("list");
+        assert_eq!(unpaid.len(), 1, "수납취소 후 미납으로 복귀");
+    }
+
+    #[tokio::test]
     async fn update_payment_changes_fields() {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let bid = seed_bill(&pool, "2026-05").await;
@@ -1726,7 +1846,7 @@ mod tests {
                 is_paid: true,
                 paid_date: Some("2026-05-15".to_string()),
                 payer_name: None,
-                payment_method_id: None,
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
                 card_company_id: None,
             },
         )
@@ -1843,7 +1963,7 @@ mod tests {
             &PaymentInput {
                 bill_id: bill_a, is_paid: true,
                 paid_date: Some("2026-05-15".to_string()),
-                payer_name: None, payment_method_id: None, card_company_id: None,
+                payer_name: None, payment_method_id: Some(CASH_PAYMENT_METHOD_ID), card_company_id: None,
             },
         )
         .await

@@ -58,7 +58,7 @@ export default function BillingPage() {
 }
 
 type Tab = 'bills' | 'payments'
-type BillFilter = 'all' | 'confirmed' | 'draft'
+type BillFilter = 'all' | 'confirmed' | 'draft' | 'closed'
 type PaymentFilter = 'all' | 'paid' | 'unpaid'
 
 function BillingContent() {
@@ -148,6 +148,7 @@ function BillingContent() {
   const summary = summaryQuery.data
   const draftCount = bills.filter((b) => b.status === 'draft').length
   const confirmedCount = bills.filter((b) => b.status === 'confirmed').length
+  const closedCount = bills.filter((b) => b.status === 'closed').length
   const allClosed = bills.length > 0 && bills.every((b) => b.status === 'closed')
   const showCloseButton = bills.length > 0 && draftCount === 0 && confirmedCount > 0
   // 청구 생성 버튼 표시/라벨 조건 (hotfix post-Sprint 11):
@@ -240,16 +241,24 @@ function BillingContent() {
             </button>
           )}
 
-          {/* 탭별 상태 필터 — 검색 input 우측 */}
+          {/* 마감 완료 배지 — 상태 필터 앞에 위치 (모든 청구 마감 시) */}
+          {tab === 'bills' && allClosed && (
+            <span className="rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-600">
+              ✓ 마감 완료
+            </span>
+          )}
+
+          {/* 탭별 상태 필터 — 검색 input 우측 (옵션별 건수 표기) */}
           {tab === 'bills' && (
             <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="청구 상태 필터">
               {(
                 [
-                  ['all', '전체'],
-                  ['confirmed', '확정'],
-                  ['draft', '미확정'],
+                  ['all', '전체', bills.length],
+                  ['confirmed', '확정', confirmedCount],
+                  ['draft', '미확정', draftCount],
+                  ['closed', '마감', closedCount],
                 ] as const
-              ).map(([key, label]) => (
+              ).map(([key, label, count]) => (
                 <label
                   key={key}
                   className="flex min-h-[44px] cursor-pointer items-center gap-1 text-gray-700"
@@ -262,7 +271,7 @@ function BillingContent() {
                     onChange={() => setBillFilter(key)}
                     className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
                   />
-                  {label}
+                  {label}({count})
                 </label>
               ))}
             </div>
@@ -271,11 +280,11 @@ function BillingContent() {
             <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="수납 상태 필터">
               {(
                 [
-                  ['all', '전체'],
-                  ['paid', '수납완료'],
-                  ['unpaid', '미수납'],
+                  ['all', '전체', summary?.billCount ?? 0],
+                  ['paid', '수납완료', summary?.paidCount ?? 0],
+                  ['unpaid', '미수납', summary?.unpaidCount ?? 0],
                 ] as const
-              ).map(([key, label]) => (
+              ).map(([key, label, count]) => (
                 <label
                   key={key}
                   className="flex min-h-[44px] cursor-pointer items-center gap-1 text-gray-700"
@@ -288,7 +297,7 @@ function BillingContent() {
                     onChange={() => setPaymentFilter(key)}
                     className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
                   />
-                  {label}
+                  {label}({count})
                 </label>
               ))}
             </div>
@@ -324,12 +333,6 @@ function BillingContent() {
             >
               당월 청구 마감
             </button>
-          )}
-
-          {tab === 'bills' && allClosed && (
-            <span className="rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-600">
-              ✓ 마감 완료
-            </span>
           )}
         </div>
 
@@ -383,6 +386,7 @@ function BillingContent() {
                 return false
               if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
               if (billFilter === 'draft' && b.status !== 'draft') return false
+              if (billFilter === 'closed' && b.status !== 'closed') return false
               return true
             })}
             yearMonth={effectiveYearMonth}

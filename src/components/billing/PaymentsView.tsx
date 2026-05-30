@@ -38,6 +38,8 @@ interface RowDraft {
   payerName: string
   paymentMethodId: number | null
   cardCompanyId: number | null
+  /** 수납완료 행의 수납취소 예정 표시 — 저장 시 is_paid=false 로 되돌린다. */
+  cancel: boolean
 }
 
 const CARD_PAYMENT_CODE = 'card'
@@ -54,6 +56,7 @@ function emptyDraft(): RowDraft {
     payerName: '',
     paymentMethodId: null,
     cardCompanyId: null,
+    cancel: false,
   }
 }
 
@@ -128,6 +131,7 @@ export function PaymentsView({
           payerName: info.latestPayerName ?? '',
           paymentMethodId: info.latestPaymentMethodId,
           cardCompanyId: info.latestCardCompanyId,
+          cancel: false,
         }
         touched = true
       }
@@ -151,8 +155,17 @@ export function PaymentsView({
     })
   }
 
+  // 수납완료 행의 수납취소 토글 (저장 전까지는 예정 상태).
+  const toggleCancel = (billId: number, cancel: boolean) => {
+    updateDraft(billId, { cancel })
+  }
+
+  // 변경 대상: 입금 체크 / 결제수단 선택 / 수납취소 예정 중 하나라도 있으면 dirty.
   const dirtyEntries = useMemo(
-    () => Object.entries(drafts).filter(([, d]) => d.isPaid || d.paymentMethodId !== null),
+    () =>
+      Object.entries(drafts).filter(
+        ([, d]) => d.isPaid || d.paymentMethodId !== null || d.cancel,
+      ),
     [drafts],
   )
 
@@ -169,14 +182,35 @@ export function PaymentsView({
   })
 
   const handleSave = () => {
-    const items: PaymentInput[] = dirtyEntries.map(([billId, d]) => ({
-      billId: Number(billId),
-      isPaid: d.isPaid,
-      paidDate: d.isPaid ? d.paidDate : null,
-      payerName: d.payerName.trim() === '' ? null : d.payerName.trim(),
-      paymentMethodId: d.paymentMethodId,
-      cardCompanyId: d.cardCompanyId,
-    }))
+    // #6: 입금 완료(취소 예정 아님) 인데 결제수단 미선택이면 저장 차단.
+    const missingMethod = dirtyEntries.some(
+      ([, d]) => !d.cancel && d.isPaid && d.paymentMethodId === null,
+    )
+    if (missingMethod) {
+      onError('입금 완료 항목은 결제수단을 반드시 선택해 주세요.')
+      return
+    }
+    const items: PaymentInput[] = dirtyEntries.map(([billId, d]) => {
+      // 수납취소 예정 — is_paid=false 로 되돌리고 입금 정보 초기화.
+      if (d.cancel) {
+        return {
+          billId: Number(billId),
+          isPaid: false,
+          paidDate: null,
+          payerName: null,
+          paymentMethodId: null,
+          cardCompanyId: null,
+        }
+      }
+      return {
+        billId: Number(billId),
+        isPaid: d.isPaid,
+        paidDate: d.isPaid ? d.paidDate : null,
+        payerName: d.payerName.trim() === '' ? null : d.payerName.trim(),
+        paymentMethodId: d.paymentMethodId,
+        cardCompanyId: d.cardCompanyId,
+      }
+    })
     batchMutation.mutate(items)
   }
 
@@ -258,7 +292,29 @@ export function PaymentsView({
                   </td>
                   <td className="px-3 py-2">
                     {b.isPaid ? (
-                      <span className="text-emerald-700">✓</span>
+                      d.cancel ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm font-medium text-[var(--danger)]">취소 예정</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleCancel(b.billId, false)}
+                            className="h-8 rounded border border-[var(--border)] px-2 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            되돌리기
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className="text-emerald-700">✓</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleCancel(b.billId, true)}
+                            className="h-8 rounded border border-[var(--danger)] px-2 text-xs text-[var(--danger)] hover:bg-red-50"
+                          >
+                            수납취소
+                          </button>
+                        </div>
+                      )
                     ) : (
                       <input
                         type="checkbox"
@@ -276,7 +332,13 @@ export function PaymentsView({
                       <input
                         type="date"
                         value={d.paidDate}
-                        onChange={(e) => updateDraft(b.billId, { paidDate: e.target.value })}
+                        onChange={(e) => {
+                          updateDraft(b.billId, { paidDate: e.target.value })
+                          // 날짜 선택 시 달력을 닫고 다음 입력(입금자)으로 포커스 이동.
+                          if (typeof document !== 'undefined') {
+                            document.getElementById(`payer-${b.billId}`)?.focus()
+                          }
+                        }}
                         disabled={!d.isPaid}
                         className="h-9 w-36 rounded border border-[var(--border)] px-2 disabled:bg-gray-100"
                       />
@@ -287,6 +349,7 @@ export function PaymentsView({
                       <span className="text-sm text-gray-700">{b.payerName ?? '—'}</span>
                     ) : (
                       <input
+                        id={`payer-${b.billId}`}
                         type="text"
                         value={d.payerName}
                         onChange={(e) => updateDraft(b.billId, { payerName: e.target.value })}
@@ -312,9 +375,14 @@ export function PaymentsView({
                                 : d.cardCompanyId,
                           })
                         }
-                        className="h-9 w-28 rounded border border-[var(--border)] px-2"
+                        className={`h-9 w-28 rounded border px-2 ${
+                          d.isPaid && d.paymentMethodId === null
+                            ? 'border-[var(--danger)]'
+                            : 'border-[var(--border)]'
+                        }`}
+                        aria-invalid={d.isPaid && d.paymentMethodId === null ? 'true' : undefined}
                       >
-                        <option value="">선택</option>
+                        <option value="">{d.isPaid ? '선택 (필수)' : '선택'}</option>
                         {paymentMethods.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.label}

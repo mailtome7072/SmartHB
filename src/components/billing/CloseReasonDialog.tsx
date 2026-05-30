@@ -11,7 +11,9 @@
 
 import { useState } from 'react'
 
-const MIN_REASON_LENGTH = 10
+// 백엔드 update_bill 요건과 정합: 공백 제외 1자 이상이면 충분 (AC-4.9-8 "사유 입력 필수").
+// 과거 10자 게이트는 백엔드보다 과하게 엄격해 확정 버튼이 비활성으로 남는 문제가 있었다.
+const MIN_REASON_LENGTH = 1
 
 interface Props {
   open: boolean
@@ -41,7 +43,7 @@ export function CloseReasonDialog({
 
   const handleConfirm = async () => {
     if (!reasonValid) {
-      setError(`사유를 ${MIN_REASON_LENGTH}자 이상 입력해 주세요.`)
+      setError('수정 사유를 입력해 주세요.')
       return
     }
     setSubmitting(true)
@@ -83,7 +85,7 @@ export function CloseReasonDialog({
         </div>
 
         <label className="mb-3 block text-sm font-medium text-gray-700">
-          수정 사유 (최소 {MIN_REASON_LENGTH}자)
+          수정 사유 (필수)
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -92,12 +94,6 @@ export function CloseReasonDialog({
             className="mt-1 w-full rounded-md border-2 border-[var(--border)] px-3 py-2 text-base"
             disabled={submitting}
           />
-          <span
-            className={`text-xs ${reasonValid ? 'text-gray-500' : 'text-gray-400'}`}
-            aria-live="polite"
-          >
-            {trimmed.length} / {MIN_REASON_LENGTH}+ 자
-          </span>
         </label>
 
         {error !== null && (

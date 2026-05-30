@@ -170,6 +170,14 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         autoFocus
                         className="h-9 w-28 rounded-md border-2 border-[var(--accent)] px-2 text-right"
                       />
+                    ) : b.status === 'closed' && b.isPaid ? (
+                      // 수납완료된 마감 청구는 수정 불가 (금액 편집 비활성).
+                      <span
+                        className="font-semibold text-gray-500"
+                        title="수납완료된 마감 청구는 수정할 수 없습니다."
+                      >
+                        {b.adjustedAmount.toLocaleString()}
+                      </span>
                     ) : (
                       <button
                         type="button"
