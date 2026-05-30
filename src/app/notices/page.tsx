@@ -430,10 +430,6 @@ function NoticesContent() {
                 업로드
               </button>
 
-              {/* 안내 — 우측 정렬 */}
-              <span className="ml-auto text-xs text-gray-500">
-                목록에서 파일명에 마우스를 올리면 미리보기
-              </span>
             </div>
 
             {/* 마우스 포인터 우측 하단 추종 미리보기 (1.5배) */}
