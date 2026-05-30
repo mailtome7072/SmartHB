@@ -332,41 +332,19 @@ function NoticesContent() {
 
           {/* 우측: 편집 캔버스 */}
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[var(--border)] p-3">
-            {/* 배경서식 관리 */}
-            <div className="mb-2">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-base font-medium">배경서식</span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) void handleUpload(f)
-                    e.target.value = ''
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="h-9 rounded-md border border-[var(--accent)] px-3 text-sm text-[var(--accent)] hover:bg-blue-50"
-                >
-                  업로드
-                </button>
-                <span className="text-xs text-gray-500">목록에서 파일명에 마우스를 올리면 미리보기</span>
-              </div>
+            {/* 배경서식 관리 — 한 줄: 콤보박스 + 업로드, 안내 텍스트 우측 */}
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-base font-medium">배경서식</span>
+
               {assets.length === 0 ? (
-                <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                  업로드된 배경서식이 없습니다.
-                </p>
+                <span className="text-sm text-gray-600">업로드된 배경서식이 없습니다.</span>
               ) : (
                 <div className="relative inline-block">
                   {/* 콤보박스 버튼 */}
                   <button
                     type="button"
                     onClick={() => setAssetMenuOpen((o) => !o)}
-                    className="flex h-9 min-w-[240px] items-center justify-between gap-2 rounded-md border border-[var(--border)] px-2 text-sm hover:bg-gray-50"
+                    className="flex h-9 min-w-[220px] items-center justify-between gap-2 rounded-md border border-[var(--border)] px-2 text-sm hover:bg-gray-50"
                   >
                     <span className={`truncate ${layout?.backgroundAsset ? 'font-medium' : 'text-gray-500'}`}>
                       {layout?.backgroundAsset ?? '배경서식 선택'}
@@ -429,30 +407,55 @@ function NoticesContent() {
                       </ul>
                     </>
                   )}
-
-                  {/* 마우스 포인터 우측 하단 추종 미리보기 (1.5배) */}
-                  {hoverPreview && (
-                    <div
-                      className="pointer-events-none fixed z-50 rounded-md border border-[var(--border)] bg-white p-1 shadow-lg"
-                      style={{
-                        left:
-                          typeof window !== 'undefined'
-                            ? Math.min(mousePos.x + 14, window.innerWidth - 350)
-                            : mousePos.x + 14,
-                        top:
-                          typeof window !== 'undefined'
-                            ? Math.min(mousePos.y + 14, window.innerHeight - 340)
-                            : mousePos.y + 14,
-                      }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={hoverPreview.url} alt={`${hoverPreview.name} 미리보기`} className="max-h-72 max-w-[330px] object-contain" />
-                      <p className="mt-1 max-w-[330px] truncate text-center text-xs text-gray-600">{hoverPreview.name}</p>
-                    </div>
-                  )}
                 </div>
               )}
+
+              {/* 업로드 */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void handleUpload(f)
+                  e.target.value = ''
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="h-9 rounded-md border border-[var(--accent)] px-3 text-sm text-[var(--accent)] hover:bg-blue-50"
+              >
+                업로드
+              </button>
+
+              {/* 안내 — 우측 정렬 */}
+              <span className="ml-auto text-xs text-gray-500">
+                목록에서 파일명에 마우스를 올리면 미리보기
+              </span>
             </div>
+
+            {/* 마우스 포인터 우측 하단 추종 미리보기 (1.5배) */}
+            {hoverPreview && (
+              <div
+                className="pointer-events-none fixed z-50 rounded-md border border-[var(--border)] bg-white p-1 shadow-lg"
+                style={{
+                  left:
+                    typeof window !== 'undefined'
+                      ? Math.min(mousePos.x + 14, window.innerWidth - 350)
+                      : mousePos.x + 14,
+                  top:
+                    typeof window !== 'undefined'
+                      ? Math.min(mousePos.y + 14, window.innerHeight - 340)
+                      : mousePos.y + 14,
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={hoverPreview.url} alt={`${hoverPreview.name} 미리보기`} className="max-h-72 max-w-[330px] object-contain" />
+                <p className="mt-1 max-w-[330px] truncate text-center text-xs text-gray-600">{hoverPreview.name}</p>
+              </div>
+            )}
 
             {/* 폰트 툴바 */}
             {layout && layout.textboxes[selectedBoxIdx] && (
