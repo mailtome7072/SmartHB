@@ -126,6 +126,13 @@ export default function NoticesPage() {
 
 function NoticesContent() {
   const [error, setError] = useState<string | null>(null)
+  // 성공/안내 토스트 (오류 다이얼로그와 분리, 3초 자동 닫힘)
+  const [toast, setToast] = useState<string | null>(null)
+  useEffect(() => {
+    if (!toast) return
+    const id = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(id)
+  }, [toast])
 
   // 청구년월 — 청구 생성된 월만
   const monthsQuery = useQuery({ queryKey: ['billed-months'], queryFn: listBilledMonths })
@@ -368,7 +375,7 @@ function NoticesContent() {
         })),
         onProgress: (done, total) => setProgress({ done, total }),
       })
-      setError(`✅ ${result.saved}건 생성 완료. 저장 위치: output/${yearMonth.replace('-', '')}/`)
+      setToast(`✅ ${result.saved}건 생성 완료. 저장 위치: output/${yearMonth.replace('-', '')}/`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '공지문 생성 실패')
     } finally {
@@ -422,7 +429,7 @@ function NoticesContent() {
     try {
       await saveNoticeLayoutNamed(name, layout)
       await templatesQuery.refetch()
-      setError(`✅ '${name}' 템플릿으로 저장되었습니다.`)
+      setToast(`✅ '${name}' 템플릿으로 저장되었습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
     }
@@ -436,7 +443,7 @@ function NoticesContent() {
       await saveNoticeLayoutNamed(name.trim(), layout)
       await templatesQuery.refetch()
       setTemplateName(name.trim())
-      setError(`✅ '${name.trim()}' 템플릿으로 저장되었습니다.`)
+      setToast(`✅ '${name.trim()}' 템플릿으로 저장되었습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '다른 이름으로 저장 실패')
     }
@@ -447,7 +454,7 @@ function NoticesContent() {
       updateLayout(normalizeLayout(loaded))
       setSelectedBoxIdx(0)
       setTemplateName(name)
-      setError(`'${name}' 템플릿을 불러왔습니다.`)
+      setToast(`'${name}' 템플릿을 불러왔습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '템플릿 불러오기 실패')
     }
@@ -916,6 +923,13 @@ function NoticesContent() {
       </div>
 
       <ErrorDialog open={error !== null && error !== ''} message={error ?? ''} onClose={() => setError(null)} />
+
+      {/* 성공/안내 토스트 */}
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md bg-gray-900/90 px-4 py-2 text-sm text-white shadow-lg">
+          {toast}
+        </div>
+      )}
     </AppShell>
   )
 }
