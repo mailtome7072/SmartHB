@@ -23,7 +23,9 @@ import { appStartupSequence, checkAuthStatus, setPassword } from '@/lib/tauri'
 import { SplashScreen } from '@/components/splash-screen'
 import type { AuthStatus, StartupResult } from '@/types'
 
-const MIN_PASSWORD_LENGTH = 8
+// ADR-007: 앱 잠금은 6자리 숫자 PIN.
+const PIN_LENGTH = 6
+const PIN_PATTERN = /^\d{6}$/
 
 export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult) => void }) {
   const [status, setStatus] = useState<AuthStatus | null>(null)
@@ -40,7 +42,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
   }, [])
 
   // V30 (Sprint 7 post-review): dev 빌드 자동 로그인 우회. 환경 변수
-  // `NEXT_PUBLIC_DEV_AUTOLOGIN` 에 평문 비밀번호 (8자 이상) 가 설정되어 있으면 자동 입력 + 제출.
+  // `NEXT_PUBLIC_DEV_AUTOLOGIN` 에 6자리 숫자 PIN 이 설정되어 있으면 자동 입력 + 제출 (ADR-007).
   // 이미 한 번 `set_password` 한 상태 (`status==='locked'`) 에서만 우회 — 첫 설치 시 마법사는
   // 사용자가 직접 진행.
   //
@@ -51,7 +53,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
   // 빌드. CI 환경에서는 환경 변수 미설정 상태가 기본이라 안전.
   useEffect(() => {
     const devPw = process.env.NEXT_PUBLIC_DEV_AUTOLOGIN
-    if (status !== 'locked' || !devPw || devPw.length < MIN_PASSWORD_LENGTH) return
+    if (status !== 'locked' || !devPw || !PIN_PATTERN.test(devPw)) return
     if (submitting) return
     setPasswordInput(devPw)
     // 다음 tick 에서 form submit — state 갱신 후 동기 호출이라 안전한 microtask.
@@ -78,20 +80,20 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
   }
 
   const isInitialSetup = status === 'not-initialized'
-  const title = isInitialSetup ? '비밀번호 설정' : '비밀번호 입력'
+  const title = isInitialSetup ? 'PIN 번호 설정' : 'PIN 번호 입력'
   const subtitle = isInitialSetup
-    ? '앱 보호를 위해 비밀번호를 설정해주세요.'
-    : '계속하려면 비밀번호를 입력해주세요.'
+    ? '앱 보호를 위해 6자리 숫자 PIN 을 설정해주세요.'
+    : '계속하려면 6자리 PIN 번호를 입력해주세요.'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`비밀번호는 최소 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.`)
+    if (!PIN_PATTERN.test(password)) {
+      setError(`PIN 번호는 ${PIN_LENGTH}자리 숫자여야 합니다.`)
       return
     }
     if (isInitialSetup && password !== confirm) {
-      setError('비밀번호와 확인 입력이 일치하지 않습니다.')
+      setError('PIN 번호와 확인 입력이 일치하지 않습니다.')
       return
     }
     setSubmitting(true)
@@ -120,9 +122,9 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
         </header>
 
         <div className="space-y-4">
-          <PasswordField
+          <PinField
             id="password"
-            label="비밀번호"
+            label="PIN 번호"
             value={password}
             onChange={setPasswordInput}
             show={showPassword}
@@ -131,9 +133,9 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
             hasError={error !== null}
           />
           {isInitialSetup && (
-            <PasswordField
+            <PinField
               id="confirm"
-              label="비밀번호 확인"
+              label="PIN 번호 확인"
               value={confirm}
               onChange={setConfirm}
               show={showPassword}
@@ -173,7 +175,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
   )
 }
 
-interface PasswordFieldProps {
+interface PinFieldProps {
   id: string
   label: string
   value: string
@@ -184,18 +186,13 @@ interface PasswordFieldProps {
   hasError: boolean
 }
 
-/** V37b — 마지막 입력 문자 종류 감지. 한글 자모/음절 / 영문 / 숫자 / 특수 / null(빈 입력). */
-function detectInputMode(text: string): '한글' | '영문' | '숫자' | '특수' | null {
-  if (text.length === 0) return null
-  const ch = text[text.length - 1]
-  // U+1100~ 한글 자모, U+3130~ 한글 호환 자모, U+AC00~ 한글 음절
-  if (/[ᄀ-ᇿ㄰-㆏가-힣]/.test(ch)) return '한글'
-  if (/[a-zA-Z]/.test(ch)) return '영문'
-  if (/[0-9]/.test(ch)) return '숫자'
-  return '특수'
-}
-
-function PasswordField({
+/**
+ * 6자리 숫자 PIN 입력 필드 (ADR-007).
+ *
+ * 숫자 외 입력은 onChange 단계에서 필터링하고 6자리로 제한한다. 모바일/터치 환경에서는
+ * `inputMode="numeric"` 으로 숫자 키패드가 노출된다. 기본은 가림(●), 보기 토글 제공.
+ */
+function PinField({
   id,
   label,
   value,
@@ -204,11 +201,7 @@ function PasswordField({
   onToggleShow,
   autoFocus,
   hasError,
-}: PasswordFieldProps) {
-  // V37b (Sprint 7 post-review): 한글 차단 제거 → 사용자가 한글 비밀번호도 가능. 단, 마지막
-  // 입력 문자의 종류를 실시간 배지로 표시하여 의도와 다른 IME 모드 즉시 인지 가능.
-  const [composing, setComposing] = useState(false)
-  const mode = composing ? '한글' : detectInputMode(value)
+}: PinFieldProps) {
   return (
     <div className="space-y-2">
       <label htmlFor={id} className="block text-base font-medium">
@@ -219,47 +212,30 @@ function PasswordField({
           id={id}
           type={show ? 'text' : 'password'}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => setComposing(false)}
-          autoComplete={id === 'password' ? 'current-password' : 'new-password'}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+          autoComplete="off"
           autoFocus={autoFocus}
-          lang="en"
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
-          inputMode="text"
-          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-32 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+          inputMode="numeric"
+          maxLength={PIN_LENGTH}
+          placeholder={'●'.repeat(PIN_LENGTH)}
+          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-24 text-center text-2xl tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
             hasError ? 'border-[var(--danger)]' : 'border-[var(--border)]'
           }`}
         />
-        {/* V37b — 입력 모드 배지 (한글일 때 강조). */}
-        {mode !== null && (
-          <span
-            aria-live="polite"
-            title="마지막으로 입력한 문자 종류"
-            className={`absolute right-[72px] top-1/2 flex h-[44px] min-w-[44px] -translate-y-1/2 items-center justify-center rounded-md px-2 text-sm ${
-              mode === '한글'
-                ? 'bg-orange-100 font-semibold text-orange-700'
-                : 'bg-gray-100 text-gray-700'
-            }`}
-          >
-            {mode}
-          </span>
-        )}
-        {/* V36 — 보기/숨김 버튼. */}
+        {/* 보기/숨김 버튼. */}
         <button
           type="button"
           onClick={onToggleShow}
-          aria-label={show ? '비밀번호 가리기' : '비밀번호 표시'}
+          aria-label={show ? 'PIN 가리기' : 'PIN 표시'}
           className="absolute right-2 top-1/2 flex h-[44px] min-w-[60px] -translate-y-1/2 items-center justify-center rounded-md border border-[var(--border)] bg-white px-2 text-sm text-gray-700 hover:bg-gray-50"
         >
           {show ? '숨김' : '보기'}
         </button>
       </div>
-      <p className="text-xs text-gray-500">
-        입력 문자 종류가 우측에 표시됩니다. 의도와 다르면 키보드 한/영 전환 후 다시 입력하세요.
-      </p>
+      <p className="text-xs text-gray-500">숫자 {PIN_LENGTH}자리를 입력하세요.</p>
     </div>
   )
 }

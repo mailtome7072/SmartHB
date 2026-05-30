@@ -37,6 +37,9 @@ pub const SALT_LEN: usize = 32;
 /// SQLCipher 키 길이 (AES-256 = 32바이트).
 pub const KEY_LEN: usize = 32;
 
+/// 앱 잠금 PIN 길이 (ADR-007 — 6자리 숫자).
+pub(crate) const PIN_LEN: usize = 6;
+
 /// OS Keychain service 식별자. recovery 모듈 등 같은 crate 의 다른 인증 관련 모듈에서 재사용.
 pub(crate) const KEYRING_SERVICE: &str = "SmartHB";
 
@@ -282,6 +285,18 @@ pub fn generate_salt() -> [u8; SALT_LEN] {
     let mut salt = [0u8; SALT_LEN];
     rand::rngs::OsRng.fill_bytes(&mut salt);
     salt
+}
+
+/// 앱 잠금 PIN 형식 검증 (ADR-007) — 정확히 6자리 ASCII 숫자.
+///
+/// UI(`LockScreen`)가 1차로 강제하지만, IPC 직접 호출 우회를 방어하기 위해
+/// `set_password` / `reset_password_with_code` 진입점에서 재검증한다.
+pub(crate) fn validate_pin(pin: &str) -> Result<(), AppError> {
+    if pin.len() == PIN_LEN && pin.bytes().all(|b| b.is_ascii_digit()) {
+        Ok(())
+    } else {
+        Err(AppError::Auth("PIN 번호는 6자리 숫자여야 합니다.".to_string()))
+    }
 }
 
 /// Keychain `Entry` 핸들을 생성한다. `Entry::new` 자체는 OS 핸들만 생성하는 단순 객체이므로
@@ -610,9 +625,8 @@ pub async fn set_password(password: String) -> Result<(), String> {
         ))
     })?;
     let password = Zeroizing::new(password);
-    if password.is_empty() {
-        return Err(AppError::Auth("비밀번호가 비어있습니다.".to_string()).into());
-    }
+    // ADR-007: 앱 잠금은 6자리 숫자 PIN. UI 우회 방어를 위해 진입점에서 재검증.
+    validate_pin(&password).map_err(String::from)?;
     eprintln!("[auth] set_password 진입");
     let salt = generate_salt();
     let key = derive_key_async(password, salt).await.map_err(String::from)?;
@@ -703,6 +717,22 @@ mod tests {
         let key1 = derive_key("test_password", &salt);
         let key2 = derive_key("test_password", &salt);
         assert_eq!(key1.as_bytes(), key2.as_bytes());
+    }
+
+    #[test]
+    fn validate_pin_accepts_six_digits() {
+        // ADR-007: 정확히 6자리 숫자만 허용.
+        assert!(validate_pin("123456").is_ok());
+        assert!(validate_pin("000000").is_ok());
+    }
+
+    #[test]
+    fn validate_pin_rejects_invalid() {
+        assert!(validate_pin("12345").is_err(), "5자리 거부");
+        assert!(validate_pin("1234567").is_err(), "7자리 거부");
+        assert!(validate_pin("").is_err(), "빈 입력 거부");
+        assert!(validate_pin("12a456").is_err(), "숫자 외 문자 거부");
+        assert!(validate_pin("12 456").is_err(), "공백 거부");
     }
 
     #[test]

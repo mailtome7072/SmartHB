@@ -26,7 +26,7 @@
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::auth::{
     cache_credentials, delete_key_from_keyring, derive_key_async, generate_salt, keyring_entry_for,
-    keyring_get_or_none, store_key_in_keyring, store_salt,
+    keyring_get_or_none, store_key_in_keyring, store_salt, validate_pin,
 };
 use crate::error::AppError;
 use argon2::{
@@ -167,9 +167,8 @@ pub async fn verify_recovery_code(code: String) -> Result<bool, String> {
 #[tauri::command]
 pub async fn reset_password_with_code(code: String, new_password: String) -> Result<(), String> {
     let new_password = Zeroizing::new(new_password);
-    if new_password.is_empty() {
-        return Err(AppError::Auth("새 비밀번호가 비어있습니다.".to_string()).into());
-    }
+    // ADR-007: 새 잠금 인증도 6자리 숫자 PIN.
+    validate_pin(&new_password).map_err(String::from)?;
     let valid = verify_recovery_code(code).await?;
     if !valid {
         return Err(AppError::Auth("복구 코드가 일치하지 않습니다.".to_string()).into());

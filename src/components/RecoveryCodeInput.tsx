@@ -14,7 +14,9 @@ import { useState } from 'react'
 import { resetPasswordWithCode } from '@/lib/tauri'
 import { normalizeRecoveryCode } from '@/lib/recovery-code'
 
-const MIN_PASSWORD_LENGTH = 8
+// ADR-007: 새 잠금 인증도 6자리 숫자 PIN.
+const PIN_LENGTH = 6
+const PIN_PATTERN = /^\d{6}$/
 const CODE_LEN = 12
 
 interface RecoveryCodeInputProps {
@@ -26,7 +28,7 @@ interface RecoveryCodeInputProps {
 
 export function RecoveryCodeInput({ onReset, onCancel }: RecoveryCodeInputProps) {
   const [code, setCode] = useState('')
-  const [newPassword, setNewPassword] = useState('')
+  const [newPin, setNewPin] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -40,17 +42,17 @@ export function RecoveryCodeInput({ onReset, onCancel }: RecoveryCodeInputProps)
       setError(`복구 코드는 ${CODE_LEN}자리여야 합니다.`)
       return
     }
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError(`새 비밀번호는 최소 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.`)
+    if (!PIN_PATTERN.test(newPin)) {
+      setError(`새 PIN 번호는 ${PIN_LENGTH}자리 숫자여야 합니다.`)
       return
     }
-    if (newPassword !== confirm) {
-      setError('새 비밀번호와 확인 입력이 일치하지 않습니다.')
+    if (newPin !== confirm) {
+      setError('새 PIN 번호와 확인 입력이 일치하지 않습니다.')
       return
     }
     setSubmitting(true)
     try {
-      await resetPasswordWithCode(code, newPassword)
+      await resetPasswordWithCode(code, newPin)
       onReset()
     } catch (e) {
       setError(typeof e === 'string' ? e : '복구 코드가 일치하지 않습니다.')
@@ -93,32 +95,38 @@ export function RecoveryCodeInput({ onReset, onCancel }: RecoveryCodeInputProps)
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="newPassword" className="block text-base font-medium">
-              새 비밀번호
+            <label htmlFor="newPin" className="block text-base font-medium">
+              새 PIN 번호 (6자리 숫자)
             </label>
             <input
-              id="newPassword"
+              id="newPin"
               type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              autoComplete="new-password"
-              className={`h-[56px] w-full rounded-lg border-2 px-4 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={PIN_LENGTH}
+              placeholder={'●'.repeat(PIN_LENGTH)}
+              className={`h-[56px] w-full rounded-lg border-2 px-4 text-center text-2xl tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
                 error !== null ? 'border-[var(--danger)]' : 'border-[var(--border)]'
               }`}
             />
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="confirmPassword" className="block text-base font-medium">
-              새 비밀번호 확인
+            <label htmlFor="confirmPin" className="block text-base font-medium">
+              새 PIN 번호 확인
             </label>
             <input
-              id="confirmPassword"
+              id="confirmPin"
               type="password"
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              autoComplete="new-password"
-              className={`h-[56px] w-full rounded-lg border-2 px-4 text-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+              onChange={(e) => setConfirm(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={PIN_LENGTH}
+              placeholder={'●'.repeat(PIN_LENGTH)}
+              className={`h-[56px] w-full rounded-lg border-2 px-4 text-center text-2xl tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
                 error !== null ? 'border-[var(--danger)]' : 'border-[var(--border)]'
               }`}
             />
