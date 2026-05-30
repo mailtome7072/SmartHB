@@ -133,6 +133,10 @@ function NoticesContent() {
     const id = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(id)
   }, [toast])
+  // 확인 모달 (window.confirm 대체 — Tauri 웹뷰 호환)
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null)
+  // 다른 이름으로 저장 입력 모달 (null = 닫힘)
+  const [saveAsValue, setSaveAsValue] = useState<string | null>(null)
 
   // 청구년월 — 청구 생성된 월만
   const monthsQuery = useQuery({ queryKey: ['billed-months'], queryFn: listBilledMonths })
@@ -354,9 +358,17 @@ function NoticesContent() {
       return
     }
     const exists = await checkNoticeOutputExists(yearMonth)
-    if (exists && typeof window !== 'undefined') {
-      if (!window.confirm(`${yearMonth} 폴더에 기존 공지문이 있습니다. 덮어쓰시겠습니까?`)) return
+    if (exists) {
+      setConfirmDialog({
+        message: `${yearMonth} 폴더에 기존 공지문이 있습니다. 덮어쓰시겠습니까?`,
+        onConfirm: () => void runGenerate(targets),
+      })
+      return
     }
+    void runGenerate(targets)
+  }
+  const runGenerate = async (targets: Bill[]) => {
+    if (!layout || !bgDataUrl) return
     setGenerating(true)
     setProgress({ done: 0, total: targets.length })
     try {
@@ -414,38 +426,41 @@ function NoticesContent() {
     }
   }, [templatesQuery.data, templates.length, templateName])
 
-  const handleSaveNotice = async () => {
+  // 실제 저장 — 이름 확정 후 호출.
+  const doSaveTemplate = async (name: string) => {
     if (!layout) return
-    const name = templateName.trim()
-    if (name === '') {
-      setError('템플릿 이름을 입력해 주세요.')
-      return
-    }
-    // 동명 템플릿 존재 시 덮어쓰기 확인 (저장=확인, 취소=중단)
-    if (templates.includes(name) && typeof window !== 'undefined') {
-      if (!window.confirm(`'${name}' 공지문이 이미 있습니다. 덮어쓰시겠습니까?`)) return
-    }
     try {
       await saveNoticeLayoutNamed(name, layout)
       await templatesQuery.refetch()
+      setTemplateName(name)
       setToast(`✅ '${name}' 템플릿으로 저장되었습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
     }
   }
-  const handleSaveAs = async () => {
-    if (!layout || typeof window === 'undefined') return
-    const suggested = `공지문${templates.length + 1}`
-    const name = window.prompt('다른 이름으로 저장 — 템플릿 이름을 입력하세요.', suggested)
-    if (!name || name.trim() === '') return
-    try {
-      await saveNoticeLayoutNamed(name.trim(), layout)
-      await templatesQuery.refetch()
-      setTemplateName(name.trim())
-      setToast(`✅ '${name.trim()}' 템플릿으로 저장되었습니다.`)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '다른 이름으로 저장 실패')
+  // 이름 저장 시도 — 동명 존재하면 덮어쓰기 확인 모달, 아니면 즉시 저장.
+  const requestSave = (name: string) => {
+    const n = name.trim()
+    if (n === '') {
+      setError('템플릿 이름을 입력해 주세요.')
+      return
     }
+    if (templates.includes(n)) {
+      setConfirmDialog({
+        message: `'${n}' 공지문이 이미 있습니다. 덮어쓰시겠습니까?`,
+        onConfirm: () => void doSaveTemplate(n),
+      })
+    } else {
+      void doSaveTemplate(n)
+    }
+  }
+  const handleSaveNotice = () => {
+    if (!layout) return
+    requestSave(templateName)
+  }
+  const handleSaveAs = () => {
+    if (!layout) return
+    setSaveAsValue(`공지문${templates.length + 1}`)
   }
   const handleLoadTemplate = async (name: string) => {
     try {
@@ -927,6 +942,82 @@ function NoticesContent() {
       {toast && (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md bg-gray-900/90 px-4 py-2 text-sm text-white shadow-lg">
           {toast}
+        </div>
+      )}
+
+      {/* 확인 모달 (덮어쓰기 등) */}
+      {confirmDialog && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl">
+            <p className="mb-4 text-base text-gray-800">{confirmDialog.message}</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="min-h-[44px] flex-1 rounded-md border-2 border-[var(--border)] px-4 text-base text-gray-700 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const fn = confirmDialog.onConfirm
+                  setConfirmDialog(null)
+                  fn()
+                }}
+                className="min-h-[44px] flex-1 rounded-md bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 다른 이름으로 저장 모달 */}
+      {saveAsValue !== null && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl">
+            <h2 className="mb-3 text-lg font-bold">다른 이름으로 저장</h2>
+            <input
+              autoFocus
+              type="text"
+              value={saveAsValue}
+              onChange={(e) => setSaveAsValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return
+                if (e.key === 'Enter') {
+                  const n = saveAsValue
+                  setSaveAsValue(null)
+                  requestSave(n)
+                } else if (e.key === 'Escape') {
+                  setSaveAsValue(null)
+                }
+              }}
+              placeholder="템플릿 이름"
+              className="mb-4 h-10 w-full rounded-md border-2 border-[var(--border)] px-3 text-base"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSaveAsValue(null)}
+                className="min-h-[44px] flex-1 rounded-md border-2 border-[var(--border)] px-4 text-base text-gray-700 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const n = saveAsValue ?? ''
+                  setSaveAsValue(null)
+                  requestSave(n)
+                }}
+                className="min-h-[44px] flex-1 rounded-md bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90"
+              >
+                저장
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </AppShell>
