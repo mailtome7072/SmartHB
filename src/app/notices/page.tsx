@@ -554,16 +554,6 @@ function NoticesContent() {
                       편집: {boxLabel(layout.textboxes[selectedBoxIdx])}
                       {selDisabled && ' (체크 해제됨)'}
                     </span>
-                    {layout.textboxes[selectedBoxIdx].fieldType === 'custom' && (
-                      <input
-                        type="text"
-                        disabled={selDisabled}
-                        value={layout.textboxes[selectedBoxIdx].text ?? ''}
-                        onChange={(e) => updateBox(selectedBoxIdx, { text: e.target.value })}
-                        placeholder="표시할 텍스트"
-                        className="h-9 w-full rounded border border-[var(--border)] px-2 disabled:cursor-not-allowed"
-                      />
-                    )}
                     <label className="flex items-center gap-1">
                       Size
                       <input
