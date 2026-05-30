@@ -228,6 +228,31 @@ function NoticesContent() {
     setSelectedBoxIdx(0)
   }
 
+  // 체크박스 행 (데이터 필드/추가 박스 공통)
+  const renderBoxRow = (tb: TextboxConfig, i: number) => (
+    <div key={tb.id || tb.fieldType} className="flex items-center gap-1">
+      <label className="flex flex-1 cursor-pointer items-center gap-1 truncate text-sm text-gray-700">
+        <input
+          type="checkbox"
+          checked={tb.enabled !== false}
+          onChange={(e) => updateBox(i, { enabled: e.target.checked })}
+          className="h-4 w-4 shrink-0"
+        />
+        <span className="truncate" title={boxLabel(tb)}>{boxLabel(tb)}</span>
+      </label>
+      {tb.fieldType === 'custom' && (
+        <button
+          type="button"
+          onClick={() => removeTextbox(i)}
+          aria-label="텍스트박스 삭제"
+          className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  )
+
   // 선택된 텍스트박스가 체크 해제(비활성)면 폰트 컨트롤 비활성.
   const selDisabled =
     !layout?.textboxes[selectedBoxIdx] || layout.textboxes[selectedBoxIdx].enabled === false
@@ -616,29 +641,10 @@ function NoticesContent() {
 
                 {/* 표시 필드 체크박스 (아래) */}
                 <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-2">
-                  {(layout?.textboxes ?? []).map((tb, i) => (
-                    <div key={tb.id || tb.fieldType} className="flex items-center gap-1">
-                      <label className="flex flex-1 cursor-pointer items-center gap-1 truncate text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={tb.enabled !== false}
-                          onChange={(e) => updateBox(i, { enabled: e.target.checked })}
-                          className="h-4 w-4 shrink-0"
-                        />
-                        <span className="truncate" title={boxLabel(tb)}>{boxLabel(tb)}</span>
-                      </label>
-                      {tb.fieldType === 'custom' && (
-                        <button
-                          type="button"
-                          onClick={() => removeTextbox(i)}
-                          aria-label="텍스트박스 삭제"
-                          className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  {/* 데이터 필드 (버튼 위) */}
+                  {(layout?.textboxes ?? []).map((tb, i) =>
+                    tb.fieldType === 'custom' ? null : renderBoxRow(tb, i),
+                  )}
                   <button
                     type="button"
                     onClick={addTextbox}
@@ -647,6 +653,10 @@ function NoticesContent() {
                   >
                     + 텍스트박스 추가
                   </button>
+                  {/* 추가된 텍스트박스 (버튼 아래) */}
+                  {(layout?.textboxes ?? []).map((tb, i) =>
+                    tb.fieldType === 'custom' ? renderBoxRow(tb, i) : null,
+                  )}
                 </div>
               </div>
 
