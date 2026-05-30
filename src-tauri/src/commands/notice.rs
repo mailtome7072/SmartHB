@@ -33,16 +33,17 @@ pub struct NoticeAsset {
     pub modified_ms: i64,
 }
 
-/// 텍스트박스 1종 설정 (위치/크기/폰트). 배경 이미지 픽셀 기준.
+/// 텍스트박스 1종 설정 — **배경 원본 해상도 대비 비율(0..1)** 로 관리한다.
+/// 이렇게 하면 미리보기 표시 배율·생성 원본 해상도와 무관하게 동일 레이아웃이 유지된다.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TextboxConfig {
     pub field_type: String, // "bill_month" | "student_name" | "bill_amount"
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub font_size: f64,
+    pub x_ratio: f64,       // 배경 폭 대비 좌측 위치 (0..1)
+    pub y_ratio: f64,       // 배경 높이 대비 상단 위치 (0..1)
+    pub w_ratio: f64,       // 배경 폭 대비 너비 (0..1)
+    pub h_ratio: f64,       // 배경 높이 대비 높이 (0..1)
+    pub font_ratio: f64,    // 박스 높이 대비 글자 크기 (0..1) — 박스 리사이즈 시 폰트 자동 연동
     pub font_weight: String, // "normal" | "bold"
     pub font_color: String,  // hex
     pub text_align: String,  // "left" | "center" | "right"
@@ -57,15 +58,15 @@ pub struct NoticeLayout {
 }
 
 impl NoticeLayout {
-    /// 저장된 레이아웃이 없을 때의 기본값 — 3종 텍스트박스 기본 배치.
+    /// 저장된 레이아웃이 없을 때의 기본값 — 3종 텍스트박스 비율 기본 배치(배경 대비).
     fn default_layout() -> Self {
-        let mk = |field: &str, y: f64| TextboxConfig {
+        let mk = |field: &str, y_ratio: f64| TextboxConfig {
             field_type: field.to_string(),
-            x: 100.0,
-            y,
-            width: 300.0,
-            height: 60.0,
-            font_size: 24.0,
+            x_ratio: 0.1,
+            y_ratio,
+            w_ratio: 0.8,
+            h_ratio: 0.12,
+            font_ratio: 0.5,
             font_weight: "bold".to_string(),
             font_color: "#1A1A1A".to_string(),
             text_align: "center".to_string(),
@@ -73,9 +74,9 @@ impl NoticeLayout {
         NoticeLayout {
             background_asset: None,
             textboxes: vec![
-                mk("bill_month", 80.0),
-                mk("student_name", 180.0),
-                mk("bill_amount", 280.0),
+                mk("bill_month", 0.1),
+                mk("student_name", 0.4),
+                mk("bill_amount", 0.7),
             ],
         }
     }
@@ -229,7 +230,8 @@ pub async fn get_notice_layout() -> Result<NoticeLayout, String> {
     match row {
         Some(r) => {
             let json: String = r.try_get("value").map_err(|e| e.to_string())?;
-            serde_json::from_str(&json).map_err(|e| format!("레이아웃 파싱 실패: {}", e))
+            // 형식 불일치(구버전 레이아웃 등)는 에러 대신 기본값으로 안전 복귀.
+            Ok(serde_json::from_str(&json).unwrap_or_else(|_| NoticeLayout::default_layout()))
         }
         None => Ok(NoticeLayout::default_layout()),
     }

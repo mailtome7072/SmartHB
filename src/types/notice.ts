@@ -15,14 +15,17 @@ export interface NoticeAsset {
 
 export type NoticeFieldType = 'bill_month' | 'student_name' | 'bill_amount'
 
-/** 텍스트박스 1종 설정 — 배경 이미지 픽셀 기준. */
+/**
+ * 텍스트박스 1종 설정 — 배경 원본 해상도 대비 비율(0..1)로 관리.
+ * 미리보기 표시 배율/생성 원본 해상도와 무관하게 동일 레이아웃 유지.
+ */
 export interface TextboxConfig {
   fieldType: NoticeFieldType
-  x: number
-  y: number
-  width: number
-  height: number
-  fontSize: number
+  xRatio: number // 배경 폭 대비 좌측 (0..1)
+  yRatio: number // 배경 높이 대비 상단 (0..1)
+  wRatio: number // 배경 폭 대비 너비 (0..1)
+  hRatio: number // 배경 높이 대비 높이 (0..1)
+  fontRatio: number // 박스 높이 대비 글자 크기 (0..1) — 박스 리사이즈 시 폰트 자동 연동
   fontWeight: 'normal' | 'bold'
   fontColor: string
   textAlign: 'left' | 'center' | 'right'

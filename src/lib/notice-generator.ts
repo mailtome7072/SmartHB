@@ -75,13 +75,15 @@ export function dataUrlToBytes(dataUrl: string): number[] {
   return bytes
 }
 
-function applyTextboxStyle(el: HTMLDivElement, tb: TextboxConfig): void {
+/** 비율 텍스트박스를 배경 해상도(bgW×bgH) 기준 절대 px 스타일로 변환. 폰트 = 박스높이 × fontRatio. */
+function applyTextboxStyle(el: HTMLDivElement, tb: TextboxConfig, bgW: number, bgH: number): void {
+  const boxH = tb.hRatio * bgH
   el.style.position = 'absolute'
-  el.style.left = `${tb.x}px`
-  el.style.top = `${tb.y}px`
-  el.style.width = `${tb.width}px`
-  el.style.height = `${tb.height}px`
-  el.style.fontSize = `${tb.fontSize}px`
+  el.style.left = `${tb.xRatio * bgW}px`
+  el.style.top = `${tb.yRatio * bgH}px`
+  el.style.width = `${tb.wRatio * bgW}px`
+  el.style.height = `${boxH}px`
+  el.style.fontSize = `${tb.fontRatio * boxH}px`
   el.style.fontWeight = tb.fontWeight
   el.style.color = tb.fontColor
   el.style.textAlign = tb.textAlign
@@ -118,7 +120,7 @@ async function renderNoticePng(opts: GenerateOptions, data: NoticeStudentData): 
 
   for (const tb of opts.layout.textboxes) {
     const box = document.createElement('div')
-    applyTextboxStyle(box, tb)
+    applyTextboxStyle(box, tb, opts.width, opts.height)
     box.textContent = noticeFieldText(tb.fieldType, data)
     container.appendChild(box)
   }
