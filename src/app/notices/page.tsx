@@ -513,8 +513,10 @@ function NoticesContent() {
 
           {/* 우측: 편집 캔버스 */}
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[var(--border)] p-3">
-            {/* 배경서식 관리 — 한 줄: 콤보박스 + 업로드, 안내 텍스트 우측 */}
-            <div className="mb-2 flex items-center gap-2">
+            {/* 상단: 배경서식 관리(좌) + 저장 패널(우) */}
+            <div className="mb-2 flex items-start gap-2">
+            {/* 배경서식 관리 — 한 줄: 콤보박스 + 업로드 */}
+            <div className="flex flex-1 items-center gap-2">
               <span className="text-base font-medium">배경서식</span>
 
               {assets.length === 0 ? (
@@ -611,6 +613,68 @@ function NoticesContent() {
                 업로드
               </button>
 
+            </div>
+
+              {/* 저장 패널 (배경서식 우측, 고정 너비) */}
+              <div
+                className="flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-2"
+                style={{ width: RIGHT_PANEL_WIDTH }}
+              >
+                <label className="text-xs text-gray-500">공지문 이름</label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="공지문 이름"
+                  className="h-9 rounded-md border border-[var(--border)] px-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveNotice}
+                  disabled={!layout || templateName.trim() === ''}
+                  className="h-9 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  공지문 저장
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAs}
+                  disabled={!layout}
+                  className="h-9 rounded-md border border-[var(--accent)] text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+                >
+                  다른 이름으로 저장
+                </button>
+
+                <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs text-gray-500">
+                  저장된 템플릿
+                </div>
+                {templates.length === 0 ? (
+                  <p className="text-xs text-gray-400">저장된 템플릿이 없습니다.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {templates.map((name) => (
+                      <li key={name} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadTemplate(name)}
+                          className="flex-1 truncate rounded px-2 py-1 text-left text-sm text-gray-800 hover:bg-gray-50"
+                          title={`${name} 불러오기`}
+                        >
+                          {name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(name)}
+                          aria-label={`${name} 삭제`}
+                          className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
 
             {/* 마우스 포인터 우측 하단 추종 미리보기 (1.5배) */}
@@ -829,67 +893,6 @@ function NoticesContent() {
                   배경서식을 업로드하거나 선택하면 편집 미리보기가 표시됩니다.
                 </p>
               )}
-              </div>
-
-              {/* 우측: 저장 패널 (고정 너비) */}
-              <div
-                className="flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-2"
-                style={{ width: RIGHT_PANEL_WIDTH }}
-              >
-                <label className="text-xs text-gray-500">공지문 이름</label>
-                <input
-                  type="text"
-                  value={templateName}
-                  onChange={(e) => setTemplateName(e.target.value)}
-                  placeholder="공지문 이름"
-                  className="h-9 rounded-md border border-[var(--border)] px-2 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveNotice}
-                  disabled={!layout || templateName.trim() === ''}
-                  className="h-9 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  공지문 저장
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveAs}
-                  disabled={!layout}
-                  className="h-9 rounded-md border border-[var(--accent)] text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
-                >
-                  다른 이름으로 저장
-                </button>
-
-                <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs text-gray-500">
-                  저장된 템플릿
-                </div>
-                {templates.length === 0 ? (
-                  <p className="text-xs text-gray-400">저장된 템플릿이 없습니다.</p>
-                ) : (
-                  <ul className="flex flex-col gap-1">
-                    {templates.map((name) => (
-                      <li key={name} className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleLoadTemplate(name)}
-                          className="flex-1 truncate rounded px-2 py-1 text-left text-sm text-gray-800 hover:bg-gray-50"
-                          title={`${name} 불러오기`}
-                        >
-                          {name}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTemplate(name)}
-                          aria-label={`${name} 삭제`}
-                          className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
             </div>
 
