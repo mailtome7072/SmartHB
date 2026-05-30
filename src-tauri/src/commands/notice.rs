@@ -393,10 +393,104 @@ fn weekday_ko(d: NaiveDate) -> &'static str {
     }
 }
 
-/// 'YYYY-MM-DD' → 'M월D일(요일)'.
-fn fmt_month_day(date_str: &str) -> Option<String> {
-    let d = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()?;
-    Some(format!("{}월{}일({})", d.month(), d.day(), weekday_ko(d)))
+/// NaiveDate → 'M월D일(요일)'.
+fn fmt_md_nd(d: NaiveDate) -> String {
+    format!("{}월{}일({})", d.month(), d.day(), weekday_ko(d))
+}
+
+/// 교습기간 [start, end] 중 정규수업이 막힌(allows_regular_class=0) 일자 집합.
+async fn class_off_dates(
+    pool: &SqlitePool,
+    start: &str,
+    end: &str,
+) -> Result<std::collections::HashSet<String>, String> {
+    let rows = sqlx::query(
+        "SELECT e.event_date, COALESCE(e.period_end_date, e.event_date) AS end_d \
+         FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE c.allows_regular_class = 0 \
+           AND e.event_date <= ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+    )
+    .bind(end)
+    .bind(start)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("학사일정 조회 실패: {}", e))?;
+    let mut off = std::collections::HashSet::new();
+    for r in rows {
+        let s: String = r.try_get("event_date").map_err(|e| e.to_string())?;
+        let e: String = r.try_get("end_d").map_err(|e| e.to_string())?;
+        if let (Ok(mut d), Ok(ed)) = (
+            NaiveDate::parse_from_str(&s, "%Y-%m-%d"),
+            NaiveDate::parse_from_str(&e, "%Y-%m-%d"),
+        ) {
+            while d <= ed {
+                off.insert(d.format("%Y-%m-%d").to_string());
+                match d.succ_opt() {
+                    Some(n) => d = n,
+                    None => break,
+                }
+            }
+        }
+    }
+    Ok(off)
+}
+
+/// 교습기간 표기 텍스트 — 수업 가능한 첫/마지막 일자 기준.
+/// 수업 가능일 = 운영 요일(운영시간 설정됨) AND 정규수업 차단 이벤트 없음.
+async fn teaching_period_label(
+    pool: &SqlitePool,
+    start: &str,
+    end: &str,
+) -> Result<Option<String>, String> {
+    let (sd, ed) = match (
+        NaiveDate::parse_from_str(start, "%Y-%m-%d"),
+        NaiveDate::parse_from_str(end, "%Y-%m-%d"),
+    ) {
+        (Ok(s), Ok(e)) => (s, e),
+        _ => return Ok(None),
+    };
+    let off = class_off_dates(pool, start, end).await?;
+    let hours = crate::commands::settings::get_operating_hours().await?;
+    let operating: std::collections::HashSet<u8> = hours
+        .iter()
+        .filter(|h| h.open_time.is_some())
+        .map(|h| h.day_of_week)
+        .collect();
+    let is_class = |d: NaiveDate| {
+        operating.contains(&(d.weekday().number_from_monday() as u8))
+            && !off.contains(&d.format("%Y-%m-%d").to_string())
+    };
+    // 첫 수업 가능일
+    let mut first = None;
+    let mut c = sd;
+    while c <= ed {
+        if is_class(c) {
+            first = Some(c);
+            break;
+        }
+        match c.succ_opt() {
+            Some(n) => c = n,
+            None => break,
+        }
+    }
+    // 마지막 수업 가능일
+    let mut last = None;
+    let mut c = ed;
+    while c >= sd {
+        if is_class(c) {
+            last = Some(c);
+            break;
+        }
+        match c.pred_opt() {
+            Some(p) => c = p,
+            None => break,
+        }
+    }
+    Ok(match (first, last) {
+        (Some(f), Some(l)) => Some(format!("{}~ {}", fmt_md_nd(f), fmt_md_nd(l))),
+        // 수업 가능일이 하나도 없으면 교습기간 원본 시작~종료로 대체.
+        _ => Some(format!("{}~ {}", fmt_md_nd(sd), fmt_md_nd(ed))),
+    })
 }
 
 /// 'YYYY-MM' 형식 가벼운 검증.
@@ -423,11 +517,14 @@ pub async fn get_notice_month_info(year_month: String) -> Result<NoticeMonthInfo
         .fetch_optional(pool)
         .await
         .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
-    let teaching_period_text = sp.and_then(|r| {
-        let start: String = r.try_get("start_date").ok()?;
-        let end: String = r.try_get("end_date").ok()?;
-        Some(format!("{}~ {}", fmt_month_day(&start)?, fmt_month_day(&end)?))
-    });
+    let teaching_period_text = match sp {
+        Some(r) => {
+            let start: String = r.try_get("start_date").map_err(|e| e.to_string())?;
+            let end: String = r.try_get("end_date").map_err(|e| e.to_string())?;
+            teaching_period_label(pool, &start, &end).await?
+        }
+        None => None,
+    };
 
     // 보강데이 (해당 월의 '보강데이' schedule_events)
     let rows = sqlx::query(
