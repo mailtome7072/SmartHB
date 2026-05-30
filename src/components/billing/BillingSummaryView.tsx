@@ -39,7 +39,11 @@ export function BillingSummaryView({ defaultYearMonth }: Props) {
     queryKey: ['billed-months'],
     queryFn: listBilledMonths,
   })
-  const monthOptions = useMemo(() => monthsQuery.data ?? [], [monthsQuery.data])
+  // 청구가 생성된 년월만 제시. 생성된 데이터가 전혀 없으면 현재 년월(defaultYearMonth)을 디폴트로.
+  const monthOptions = useMemo(() => {
+    const billed = monthsQuery.data ?? []
+    return billed.length > 0 ? billed : [defaultYearMonth]
+  }, [monthsQuery.data, defaultYearMonth])
   const yearOptions = useMemo(
     () => [...new Set(monthOptions.map((m) => m.slice(0, 4)))],
     [monthOptions],
@@ -58,23 +62,14 @@ export function BillingSummaryView({ defaultYearMonth }: Props) {
   }, [yearOptions, selectedYear])
 
   const period = mode === 'year' ? selectedYear : selectedMonth
-  const hasPeriods = monthOptions.length > 0
 
   const statsQuery = useQuery({
     queryKey: ['billing-period-stats', period],
     queryFn: () => getBillingPeriodStats(period),
-    enabled: hasPeriods && monthOptions.includes(selectedMonth),
   })
   const stats = statsQuery.data
 
   if (monthsQuery.isLoading) return <p>불러오는 중...</p>
-  if (!hasPeriods) {
-    return (
-      <div className="rounded-md border border-[var(--border)] bg-gray-50 p-6 text-center text-gray-600">
-        청구 데이터가 생성된 월이 없습니다. 청구 목록 탭에서 먼저 청구를 생성해 주세요.
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-5">
