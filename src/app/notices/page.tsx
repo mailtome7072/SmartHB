@@ -445,14 +445,16 @@ function NoticesContent() {
   // 목록 표시는 이름 내림차순.
   const sortedTemplates = useMemo(() => [...templates].sort((a, b) => b.localeCompare(a)), [templates])
 
-  // 작성/저장할 템플릿 이름. 비어있을 때만 디폴트('공지문{저장개수+1}') 채움 →
-  // 저장/불러오기 후 입력값이 유지된다 (목록 변동으로 덮어쓰지 않음).
+  // 작성/저장할 템플릿 이름. 최초 1회만 디폴트('공지문{저장개수+1}') 채움 →
+  // 이후 저장/불러오기/삭제로 비우면 그대로 유지(자동 재채움 안 함).
   const [templateName, setTemplateName] = useState('')
+  const nameInitialized = useRef(false)
   useEffect(() => {
-    if (templatesQuery.data && templateName.trim() === '') {
+    if (!nameInitialized.current && templatesQuery.data) {
       setTemplateName(`공지문${templates.length + 1}`)
+      nameInitialized.current = true
     }
-  }, [templatesQuery.data, templates.length, templateName])
+  }, [templatesQuery.data, templates.length])
 
   // 실제 저장 — 이름 확정 후 호출.
   const doSaveTemplate = async (name: string) => {
@@ -505,12 +507,13 @@ function NoticesContent() {
     try {
       await deleteNoticeLayoutNamed(name)
       await templatesQuery.refetch()
-      // 현재 편집 중(불러온) 템플릿이 삭제되면 이름·편집 박스 초기화.
+      // 현재 편집 중(불러온) 템플릿이 삭제되면 초기화: 체크박스 모두 해제 + 편집 박스 + 이름 비움.
       if (templateName.trim() === name) {
-        updateLayout(makeDefaultLayout())
+        const base = makeDefaultLayout()
+        updateLayout({ ...base, textboxes: base.textboxes.map((tb) => ({ ...tb, enabled: false })) })
         setSelectedBoxIdx(0)
         setEditingId(null)
-        setTemplateName('') // 비우면 디폴트('공지문{개수+1}') 자동 채움
+        setTemplateName('') // 비운 채 유지
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '템플릿 삭제 실패')
