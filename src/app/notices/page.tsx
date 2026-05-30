@@ -131,6 +131,8 @@ function NoticesContent() {
   const [bgDataUrl, setBgDataUrl] = useState<string | null>(null)
   const [bgDims, setBgDims] = useState<{ w: number; h: number }>({ w: 800, h: 800 })
   const [selectedBoxIdx, setSelectedBoxIdx] = useState(0)
+  // custom 텍스트박스 인라인 편집 대상 id (더블클릭 시 진입)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const loadBackground = useCallback(async (name: string | null) => {
     if (!name) {
@@ -698,26 +700,58 @@ function NoticesContent() {
                             })
                           }
                           onMouseDown={() => setSelectedBoxIdx(i)}
+                          disableDragging={editingId === (tb.id || tb.fieldType)}
                           style={{ outline: i === selectedBoxIdx ? '2px solid var(--accent)' : '1px dashed #999' }}
                         >
-                          <div
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: tb.textAlign === 'center' ? 'center' : tb.textAlign === 'right' ? 'flex-end' : 'flex-start',
-                              fontSize: tb.fontRatio * boxH,
-                              fontWeight: tb.fontWeight,
-                              color: tb.fontColor,
-                              textAlign: tb.textAlign,
-                              lineHeight: 1.2,
-                              overflow: 'hidden',
-                              cursor: 'move',
-                            }}
-                          >
-                            {noticeFieldText(tb, previewData)}
-                          </div>
+                          {tb.fieldType === 'custom' && editingId === (tb.id || tb.fieldType) ? (
+                            // 인라인 편집 — custom 박스 더블클릭 시 textarea
+                            <textarea
+                              autoFocus
+                              value={tb.text ?? ''}
+                              onChange={(e) => updateBox(i, { text: e.target.value })}
+                              onBlur={() => setEditingId(null)}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                resize: 'none',
+                                border: 'none',
+                                outline: 'none',
+                                background: 'rgba(255,255,255,0.7)',
+                                fontSize: tb.fontRatio * boxH,
+                                fontWeight: tb.fontWeight,
+                                color: tb.fontColor,
+                                textAlign: tb.textAlign,
+                                lineHeight: 1.2,
+                                padding: 0,
+                              }}
+                            />
+                          ) : (
+                            <div
+                              onDoubleClick={() => {
+                                if (tb.fieldType === 'custom') {
+                                  setSelectedBoxIdx(i)
+                                  setEditingId(tb.id || tb.fieldType)
+                                }
+                              }}
+                              title={tb.fieldType === 'custom' ? '더블클릭하여 텍스트 편집' : undefined}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: tb.textAlign === 'center' ? 'center' : tb.textAlign === 'right' ? 'flex-end' : 'flex-start',
+                                fontSize: tb.fontRatio * boxH,
+                                fontWeight: tb.fontWeight,
+                                color: tb.fontColor,
+                                textAlign: tb.textAlign,
+                                lineHeight: 1.2,
+                                overflow: 'hidden',
+                                cursor: 'move',
+                              }}
+                            >
+                              {noticeFieldText(tb, previewData)}
+                            </div>
+                          )}
                         </Rnd>
                       )
                     })}
