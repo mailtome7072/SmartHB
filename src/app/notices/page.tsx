@@ -186,6 +186,10 @@ function NoticesContent() {
     })
   }
 
+  // 선택된 텍스트박스가 체크 해제(비활성)면 폰트 컨트롤 비활성.
+  const selDisabled =
+    !layout?.textboxes[selectedBoxIdx] || layout.textboxes[selectedBoxIdx].enabled === false
+
   // 미리보기 원생 데이터
   const previewBill: Bill | undefined = bills.find((b) => selectedIds.has(b.id)) ?? bills[0]
   const previewData: NoticeStudentData = previewBill
@@ -471,17 +475,21 @@ function NoticesContent() {
 
                 {/* 선택된 텍스트박스 폰트 컨트롤 (캔버스에서 박스 클릭 시 대상 변경) */}
                 {layout && layout.textboxes[selectedBoxIdx] && (
-                  <div className="mt-1 flex flex-col gap-2 border-t border-[var(--border)] pt-2 text-sm">
-                    <span className="text-xs text-gray-500">편집: {FIELD_LABEL[layout.textboxes[selectedBoxIdx].fieldType]}</span>
+                  <div className={`mt-1 flex flex-col gap-2 border-t border-[var(--border)] pt-2 text-sm ${selDisabled ? 'opacity-50' : ''}`}>
+                    <span className="text-xs text-gray-500">
+                      편집: {FIELD_LABEL[layout.textboxes[selectedBoxIdx].fieldType]}
+                      {selDisabled && ' (체크 해제됨)'}
+                    </span>
                     <label className="flex items-center gap-1">
                       Size
                       <input
                         type="range"
                         min={10}
                         max={100}
+                        disabled={selDisabled}
                         value={Math.round(layout.textboxes[selectedBoxIdx].fontRatio * 100)}
                         onChange={(e) => updateBox(selectedBoxIdx, { fontRatio: Number(e.target.value) / 100 })}
-                        className="w-[60%]"
+                        className="w-[60%] disabled:cursor-not-allowed"
                       />
                       <span className="w-8 text-right text-xs">
                         {Math.round(layout.textboxes[selectedBoxIdx].fontRatio * 100)}%
@@ -492,20 +500,22 @@ function NoticesContent() {
                         type="button"
                         title="굵게"
                         aria-label="굵게"
+                        disabled={selDisabled}
                         onClick={() =>
                           updateBox(selectedBoxIdx, {
                             fontWeight: layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'normal' : 'bold',
                           })
                         }
-                        className={`flex h-9 w-9 items-center justify-center rounded border text-xs ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
+                        className={`flex h-9 w-9 items-center justify-center rounded border text-xs disabled:cursor-not-allowed ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
                       >
                         🅱️
                       </button>
                       <input
                         type="color"
+                        disabled={selDisabled}
                         value={layout.textboxes[selectedBoxIdx].fontColor}
                         onChange={(e) => updateBox(selectedBoxIdx, { fontColor: e.target.value })}
-                        className="h-9 w-9 cursor-pointer rounded border border-[var(--border)]"
+                        className="h-9 w-9 cursor-pointer rounded border border-[var(--border)] disabled:cursor-not-allowed"
                         title="글자 색"
                         aria-label="글자 색"
                       />
@@ -519,8 +529,9 @@ function NoticesContent() {
                           type="button"
                           title={label}
                           aria-label={label}
+                          disabled={selDisabled}
                           onClick={() => updateBox(selectedBoxIdx, { textAlign: al })}
-                          className={`flex h-9 w-9 items-center justify-center rounded border ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50 text-[var(--accent)]' : 'border-[var(--border)] text-gray-700'}`}
+                          className={`flex h-9 w-9 items-center justify-center rounded border disabled:cursor-not-allowed ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50 text-[var(--accent)]' : 'border-[var(--border)] text-gray-700'}`}
                         >
                           <AlignIcon align={al} />
                         </button>
