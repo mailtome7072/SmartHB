@@ -394,24 +394,42 @@ function NoticesContent() {
 
   // ── 저장 템플릿 ──
   const templatesQuery = useQuery({ queryKey: ['notice-layouts'], queryFn: listNoticeLayouts })
-  const templates = templatesQuery.data ?? []
+  const templates = useMemo(() => templatesQuery.data ?? [], [templatesQuery.data])
+
+  // 작성/저장할 템플릿 이름. 디폴트: '공지문{저장개수+1}'.
+  const [templateName, setTemplateName] = useState('')
+  const nameInitialized = useRef(false)
+  useEffect(() => {
+    if (!nameInitialized.current && templatesQuery.data) {
+      setTemplateName(`공지문${templates.length + 1}`)
+      nameInitialized.current = true
+    }
+  }, [templatesQuery.data, templates.length])
 
   const handleSaveNotice = async () => {
     if (!layout) return
+    const name = templateName.trim()
+    if (name === '') {
+      setError('템플릿 이름을 입력해 주세요.')
+      return
+    }
     try {
-      await saveNoticeLayout(layout)
-      setError('✅ 공지문 레이아웃이 저장되었습니다.')
+      await saveNoticeLayoutNamed(name, layout)
+      await templatesQuery.refetch()
+      setError(`✅ '${name}' 템플릿으로 저장되었습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
     }
   }
   const handleSaveAs = async () => {
     if (!layout || typeof window === 'undefined') return
-    const name = window.prompt('다른 이름으로 저장 — 템플릿 이름을 입력하세요.')
+    const suggested = `공지문${templates.length + 1}`
+    const name = window.prompt('다른 이름으로 저장 — 템플릿 이름을 입력하세요.', suggested)
     if (!name || name.trim() === '') return
     try {
       await saveNoticeLayoutNamed(name.trim(), layout)
       await templatesQuery.refetch()
+      setTemplateName(name.trim())
       setError(`✅ '${name.trim()}' 템플릿으로 저장되었습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '다른 이름으로 저장 실패')
@@ -422,6 +440,7 @@ function NoticesContent() {
       const loaded = await getNoticeLayoutNamed(name)
       updateLayout(normalizeLayout(loaded))
       setSelectedBoxIdx(0)
+      setTemplateName(name)
       setError(`'${name}' 템플릿을 불러왔습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '템플릿 불러오기 실패')
@@ -817,10 +836,18 @@ function NoticesContent() {
                 className="flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-2"
                 style={{ width: RIGHT_PANEL_WIDTH }}
               >
+                <label className="text-xs text-gray-500">공지문 이름</label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="공지문 이름"
+                  className="h-9 rounded-md border border-[var(--border)] px-2 text-sm"
+                />
                 <button
                   type="button"
                   onClick={handleSaveNotice}
-                  disabled={!layout}
+                  disabled={!layout || templateName.trim() === ''}
                   className="h-9 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
                 >
                   공지문 저장
