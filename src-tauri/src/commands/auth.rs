@@ -662,6 +662,8 @@ pub async fn set_password(password: String) -> Result<(), String> {
 ///
 /// `unlock_db` IPC 와 `app_startup_sequence` 양쪽이 공유.
 pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), AppError> {
+    // ADR-007: 여기서는 PIN 형식(validate_pin)을 검사하지 않는다 — 형식 강제는 set/reset 진입점 책임.
+    // 잠금 해제는 형식과 무관하게 저장된 키와의 일치 여부만 본다(불일치 시 어차피 인증 실패).
     if password.is_empty() {
         eprintln!("[auth] verify_password: 빈 비밀번호");
         return Err(AppError::Auth("비밀번호를 입력해주세요.".to_string()));

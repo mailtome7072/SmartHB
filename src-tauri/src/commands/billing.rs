@@ -1175,19 +1175,18 @@ mod tests {
         enroll: &str,
         withdraw: Option<&str>,
     ) -> i64 {
-        let withdraw_clause = withdraw.map(|w| format!("'{}'", w)).unwrap_or_else(|| "NULL".to_string());
-        let sql = format!(
+        // A73: withdraw 를 문자열 보간 대신 bind 파라미터로 (SQL 인젝션 방지 패턴 일관성).
+        sqlx::query_scalar(
             "INSERT INTO students (serial_no, name, gender, school_level, grade, enroll_date, withdraw_date) \
-             VALUES (?, ?, 'male', 'elementary', 3, ?, {}) RETURNING id",
-            withdraw_clause
-        );
-        sqlx::query_scalar(&sql)
-            .bind(serial)
-            .bind(name)
-            .bind(enroll)
-            .fetch_one(pool)
-            .await
-            .expect("seed student")
+             VALUES (?, ?, 'male', 'elementary', 3, ?, ?) RETURNING id",
+        )
+        .bind(serial)
+        .bind(name)
+        .bind(enroll)
+        .bind(withdraw)
+        .fetch_one(pool)
+        .await
+        .expect("seed student")
     }
 
     async fn seed_schedule(pool: &SqlitePool, student_id: i64, dow: i64, hours: i64) {

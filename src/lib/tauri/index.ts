@@ -1317,3 +1317,67 @@ export async function getDefaultBillingYearMonth(): Promise<string | null> {
   if (!inv) return null
   return inv('get_default_billing_year_month') as Promise<string | null>
 }
+
+// ─────────────────────── Sprint 12 공지문(이미지) 도메인 ───────────────────────
+
+import type { NoticeAsset, NoticeImageItem, NoticeLayout } from '@/types/notice'
+
+export async function listNoticeAssets(): Promise<NoticeAsset[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_notice_assets') as Promise<NoticeAsset[]>
+}
+
+/** 배경서식 저장. data 는 이미지 바이트 배열(number[]). 저장된 파일명 반환. */
+export async function saveNoticeAsset(filename: string, data: number[]): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticeAsset 호출 불가')
+  return inv('save_notice_asset', { filename, data }) as Promise<string>
+}
+
+export async function deleteNoticeAsset(filename: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('delete_notice_asset', { filename }) as Promise<void>
+}
+
+export async function saveNoticeLayout(layout: NoticeLayout): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('save_notice_layout', { layout }) as Promise<void>
+}
+
+export async function getNoticeLayout(): Promise<NoticeLayout> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { backgroundAsset: null, textboxes: [] }
+  }
+  return inv('get_notice_layout') as Promise<NoticeLayout>
+}
+
+/** 단건 공지문 PNG 저장. image 는 PNG 바이트 배열. 저장 경로 반환. */
+export async function saveNoticeImage(
+  yearMonth: string,
+  studentName: string,
+  image: number[],
+): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticeImage 호출 불가')
+  return inv('save_notice_image', { yearMonth, studentName, image }) as Promise<string>
+}
+
+/** 다건 공지문 PNG 일괄 저장. 저장 완료 건수 반환. */
+export async function saveNoticeImagesBatch(
+  yearMonth: string,
+  items: NoticeImageItem[],
+): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('save_notice_images_batch', { yearMonth, items }) as Promise<number>
+}
+
+export async function checkNoticeOutputExists(yearMonth: string): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('check_notice_output_exists', { yearMonth }) as Promise<boolean>
+}

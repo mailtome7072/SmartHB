@@ -22,6 +22,8 @@ const FALLBACK_DEV_ROOT: &str = "./SmartHB-data";
 const SMARTHB_SUBDIR: &str = "smarthb";
 const DB_FILENAME: &str = "app.db";
 const SALT_FILENAME: &str = "salt.bin";
+const ASSETS_SUBDIR: &str = "assets";
+const OUTPUT_SUBDIR: &str = "output";
 
 // 프로덕션: 프로세스 전역 OnceLock<Mutex<PathBuf>>. setup::save_cloud_folder 와
 // lib.rs::setup 두 곳에서만 update_data_root 를 호출하며, 모두 unlock 이전 단일 thread.
@@ -87,6 +89,19 @@ pub(crate) fn db_path() -> PathBuf {
 /// 첫 설치 시 `auth::set_password` 가 생성, 기존 Keychain salt 는 1회 마이그레이션.
 pub(crate) fn salt_path() -> PathBuf {
     data_root().join(SALT_FILENAME)
+}
+
+/// 공지문 배경서식 디렉토리 — `{data_root}/assets/` (Sprint 12, PRD §4.10).
+/// 양 PC 공유를 위해 클라우드 동기화 폴더 하위에 둔다. 실제 생성은 호출부(notice IPC)에서 `create_dir_all`.
+pub(crate) fn assets_dir() -> PathBuf {
+    data_root().join(ASSETS_SUBDIR)
+}
+
+/// 공지문 PNG 출력 디렉토리 — `{data_root}/output/{YYYYMM}/` (Sprint 12, PRD §4.10.2).
+/// `year_month` 는 'YYYY-MM' 형식; 디렉토리명은 하이픈 제거한 'YYYYMM'.
+pub(crate) fn notice_output_dir(year_month: &str) -> PathBuf {
+    let compact: String = year_month.chars().filter(|c| *c != '-').collect();
+    data_root().join(OUTPUT_SUBDIR).join(compact)
 }
 
 /// 데이터 루트를 런타임 중 갱신한다. 마법사가 폴더를 새로 지정할 때 호출.
@@ -172,6 +187,21 @@ mod tests {
         let missing = std::env::temp_dir().join("does-not-exist-smarthb-config.json");
         init_data_root_from_config(&missing);
         assert_eq!(data_root(), PathBuf::from(FALLBACK_DEV_ROOT));
+    }
+
+    #[test]
+    fn assets_dir_composes_under_data_root() {
+        update_data_root(PathBuf::from("/tmp/notice-root"));
+        assert_eq!(assets_dir(), PathBuf::from("/tmp/notice-root/assets"));
+    }
+
+    #[test]
+    fn notice_output_dir_strips_hyphen() {
+        update_data_root(PathBuf::from("/tmp/notice-root"));
+        assert_eq!(
+            notice_output_dir("2026-05"),
+            PathBuf::from("/tmp/notice-root/output/202605"),
+        );
     }
 
     #[cfg(feature = "cipher")]
