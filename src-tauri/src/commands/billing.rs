@@ -284,21 +284,19 @@ pub(crate) async fn update_bill_impl(
         return Err("조정 금액은 0 이상이어야 합니다.".to_string());
     }
 
-    let current_status: Option<String> = sqlx::query_scalar("SELECT status FROM bills WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("청구 상태 조회 실패: {}", e))?;
-
-    current_status.ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
+    // 청구 존재 확인 + 수납완료 여부를 1쿼리로 조회 (F1: 2회 왕복 통합).
+    // 외부 Option = bills 행 존재, 내부 Option = is_paid (payments 없으면 NULL).
+    let row: Option<Option<i64>> = sqlx::query_scalar(
+        "SELECT p.is_paid FROM bills b LEFT JOIN payments p ON p.bill_id = b.id WHERE b.id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("청구 조회 실패: {}", e))?;
+    let is_paid = row.ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
 
     // 수납완료된 청구는 금액 수정 불가 (status 무관 — 이미 수금 완료).
-    let paid: Option<i64> = sqlx::query_scalar("SELECT is_paid FROM payments WHERE bill_id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("수납 상태 조회 실패: {}", e))?;
-    if paid == Some(1) {
+    if is_paid == Some(1) {
         return Err("수납완료된 청구는 수정할 수 없습니다.".to_string());
     }
 
