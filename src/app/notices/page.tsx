@@ -57,9 +57,7 @@ function boxLabel(tb: TextboxConfig): string {
 }
 
 const LEFT_PANEL_WIDTH = 240 // 좌측 원생 패널 고정 너비(최소)
-const RIGHT_WIDTH_KEY = 'smarthb.notice.rightWidth'
-const RIGHT_MIN = 160
-const RIGHT_MAX = 440
+const RIGHT_PANEL_WIDTH = 220 // 우측 저장 패널 고정 너비
 
 function currentYearMonth(): string {
   const d = new Date()
@@ -364,41 +362,6 @@ function NoticesContent() {
     }
   }
 
-  // ── 우측 패널 스플리터 (너비 localStorage 저장) ──
-  const canvasRowRef = useRef<HTMLDivElement>(null)
-  const [rightWidth, setRightWidth] = useState<number>(220)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const saved = Number(window.localStorage.getItem(RIGHT_WIDTH_KEY))
-    if (saved >= RIGHT_MIN && saved <= RIGHT_MAX) setRightWidth(saved)
-  }, [])
-  const draggingRight = useRef(false)
-  const onRightSplitDown = () => {
-    draggingRight.current = true
-    if (typeof document !== 'undefined') document.body.style.userSelect = 'none'
-  }
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const onMove = (e: MouseEvent) => {
-      if (!draggingRight.current || !canvasRowRef.current) return
-      const rect = canvasRowRef.current.getBoundingClientRect()
-      const w = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, rect.right - e.clientX))
-      setRightWidth(w)
-    }
-    const onUp = () => {
-      if (!draggingRight.current) return
-      draggingRight.current = false
-      document.body.style.userSelect = ''
-      window.localStorage.setItem(RIGHT_WIDTH_KEY, String(Math.round(rightWidth)))
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [rightWidth])
-
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="flex h-full flex-col">
@@ -579,7 +542,7 @@ function NoticesContent() {
             )}
 
             {/* 표시 필드 체크박스(좌) + 미리보기 캔버스 + 저장 패널(우) */}
-            <div ref={canvasRowRef} className="flex min-h-0 flex-1 gap-2">
+            <div className="flex min-h-0 flex-1 gap-2">
               {/* 좌측: 표시 필드 토글 + 선택 박스 폰트 컨트롤 */}
               <div className="flex w-44 shrink-0 flex-col gap-2 pt-1">
                 {/* 선택된 텍스트박스 폰트 컨트롤 (위) — 캔버스에서 박스 클릭 시 대상 변경 */}
@@ -767,19 +730,10 @@ function NoticesContent() {
               )}
               </div>
 
-              {/* 우측 스플리터 */}
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                onMouseDown={onRightSplitDown}
-                className="w-1.5 shrink-0 cursor-col-resize rounded bg-gray-200 hover:bg-[var(--accent)]"
-                title="드래그하여 저장 패널 너비 조절"
-              />
-
-              {/* 우측: 저장 패널 */}
+              {/* 우측: 저장 패널 (고정 너비) */}
               <div
                 className="flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-2"
-                style={{ width: rightWidth }}
+                style={{ width: RIGHT_PANEL_WIDTH }}
               >
                 <button
                   type="button"
