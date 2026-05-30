@@ -1320,7 +1320,7 @@ export async function getDefaultBillingYearMonth(): Promise<string | null> {
 
 // ─────────────────────── Sprint 12 공지문(이미지) 도메인 ───────────────────────
 
-import type { NoticeAsset, NoticeImageItem, NoticeLayout } from '@/types/notice'
+import type { NoticeAsset, NoticeImageItem, NoticeLayout, NoticeMonthInfo } from '@/types/notice'
 
 export async function listNoticeAssets(): Promise<NoticeAsset[]> {
   const inv = await getInvoke()
@@ -1388,6 +1388,13 @@ export async function deleteNoticeLayoutNamed(name: string): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   return inv('delete_notice_layout_named', { name }) as Promise<void>
+}
+
+/** 청구년월의 교습기간·보강데이 표기 텍스트. */
+export async function getNoticeMonthInfo(yearMonth: string): Promise<NoticeMonthInfo> {
+  const inv = await getInvoke()
+  if (!inv) return { teachingPeriodText: null, makeupDayText: null }
+  return inv('get_notice_month_info', { yearMonth }) as Promise<NoticeMonthInfo>
 }
 
 /** 단건 공지문 PNG 저장. image 는 PNG 바이트 배열. 저장 경로 반환. */

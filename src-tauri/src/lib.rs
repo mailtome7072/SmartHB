@@ -97,6 +97,7 @@ pub fn run() {
             commands::notice::save_notice_layout_named,
             commands::notice::get_notice_layout_named,
             commands::notice::delete_notice_layout_named,
+            commands::notice::get_notice_month_info,
             commands::notice::save_notice_image,
             commands::notice::save_notice_images_batch,
             commands::notice::check_notice_output_exists,

@@ -17,6 +17,10 @@ export interface NoticeStudentData {
   billYearMonth: string
   /** 청구액(원). */
   billAmount: number
+  /** 교습기간 표기 텍스트 (월 공통). */
+  teachingPeriodText?: string | null
+  /** 보강데이 표기 텍스트 (월 공통). */
+  makeupDayText?: string | null
 }
 
 export interface GenerateOptions {
@@ -53,6 +57,10 @@ export function noticeFieldText(
       return data.studentName
     case 'bill_amount':
       return `${wonFormatter.format(data.billAmount)}원` // AC-4.10-1 천단위 콤마
+    case 'teaching_period':
+      return data.teachingPeriodText ?? ''
+    case 'makeup_day':
+      return data.makeupDayText ?? ''
     case 'custom':
       return tb.text ?? ''
     default:

@@ -14,6 +14,7 @@
 
 use crate::commands::db;
 use crate::commands::paths;
+use chrono::{Datelike, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::path::{Path, PathBuf};
@@ -38,6 +39,32 @@ pub struct NoticeAsset {
 /// 이렇게 하면 미리보기 표시 배율·생성 원본 해상도와 무관하게 동일 레이아웃이 유지된다.
 fn default_enabled() -> bool {
     true
+}
+
+/// 데이터 필드 기본 텍스트박스 5종 (청구월/교습기간/보강데이/원생명/청구액).
+/// 교습기간·보강데이는 기본 비활성.
+fn default_textboxes() -> Vec<TextboxConfig> {
+    let mk = |field: &str, y_ratio: f64, enabled: bool| TextboxConfig {
+        id: field.to_string(),
+        field_type: field.to_string(),
+        text: None,
+        enabled,
+        x_ratio: 0.1,
+        y_ratio,
+        w_ratio: 0.8,
+        h_ratio: 0.12,
+        font_ratio: 0.5,
+        font_weight: "bold".to_string(),
+        font_color: "#1A1A1A".to_string(),
+        text_align: "center".to_string(),
+    };
+    vec![
+        mk("bill_month", 0.05, true),
+        mk("teaching_period", 0.2, false),
+        mk("makeup_day", 0.35, false),
+        mk("student_name", 0.55, true),
+        mk("bill_amount", 0.75, true),
+    ]
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -72,29 +99,12 @@ pub struct NoticeLayout {
 }
 
 impl NoticeLayout {
-    /// 저장된 레이아웃이 없을 때의 기본값 — 3종 텍스트박스 비율 기본 배치(배경 대비).
+    /// 저장된 레이아웃이 없을 때의 기본값 — 데이터 필드 비율 기본 배치(배경 대비).
+    /// 교습기간/보강데이는 기본 비활성(체크 시 표시).
     fn default_layout() -> Self {
-        let mk = |field: &str, y_ratio: f64| TextboxConfig {
-            id: field.to_string(),
-            field_type: field.to_string(),
-            text: None,
-            enabled: true,
-            x_ratio: 0.1,
-            y_ratio,
-            w_ratio: 0.8,
-            h_ratio: 0.12,
-            font_ratio: 0.5,
-            font_weight: "bold".to_string(),
-            font_color: "#1A1A1A".to_string(),
-            text_align: "center".to_string(),
-        };
         NoticeLayout {
             background_asset: None,
-            textboxes: vec![
-                mk("bill_month", 0.1),
-                mk("student_name", 0.4),
-                mk("bill_amount", 0.7),
-            ],
+            textboxes: default_textboxes(),
         }
     }
 }
@@ -357,6 +367,97 @@ pub async fn delete_notice_layout_named(name: String) -> Result<(), String> {
     let names_json = serde_json::to_string(&names).map_err(|e| format!("목록 직렬화 실패: {}", e))?;
     upsert_setting(pool, KEY_NOTICE_LAYOUT_NAMES, &names_json).await?;
     Ok(())
+}
+
+// ─── 월 정보(교습기간·보강데이) 텍스트 ───
+
+/// 청구년월의 교습기간·보강데이 표기 텍스트 (공지문 데이터 필드용).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoticeMonthInfo {
+    /// 'M월D일(요일)~ M월D일(요일)'. 교습기간 없으면 None.
+    pub teaching_period_text: Option<String>,
+    /// 'D(요일) 10시~13시'(다건은 ', ' 연결). 보강데이 없으면 None.
+    pub makeup_day_text: Option<String>,
+}
+
+fn weekday_ko(d: NaiveDate) -> &'static str {
+    match d.weekday() {
+        Weekday::Mon => "월",
+        Weekday::Tue => "화",
+        Weekday::Wed => "수",
+        Weekday::Thu => "목",
+        Weekday::Fri => "금",
+        Weekday::Sat => "토",
+        Weekday::Sun => "일",
+    }
+}
+
+/// 'YYYY-MM-DD' → 'M월D일(요일)'.
+fn fmt_month_day(date_str: &str) -> Option<String> {
+    let d = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()?;
+    Some(format!("{}월{}일({})", d.month(), d.day(), weekday_ko(d)))
+}
+
+/// 'YYYY-MM' 형식 가벼운 검증.
+fn validate_year_month_loose(ym: &str) -> Result<(), String> {
+    let ok = ym.len() == 7
+        && &ym[4..5] == "-"
+        && ym[0..4].bytes().all(|b| b.is_ascii_digit())
+        && ym[5..7].bytes().all(|b| b.is_ascii_digit());
+    if ok {
+        Ok(())
+    } else {
+        Err("청구년월 형식이 올바르지 않습니다 (YYYY-MM).".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn get_notice_month_info(year_month: String) -> Result<NoticeMonthInfo, String> {
+    validate_year_month_loose(&year_month)?;
+    let pool = db::pool().map_err(String::from)?;
+
+    // 교습기간
+    let sp = sqlx::query("SELECT start_date, end_date FROM study_periods WHERE year_month = ?")
+        .bind(&year_month)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
+    let teaching_period_text = sp.and_then(|r| {
+        let start: String = r.try_get("start_date").ok()?;
+        let end: String = r.try_get("end_date").ok()?;
+        Some(format!("{}~ {}", fmt_month_day(&start)?, fmt_month_day(&end)?))
+    });
+
+    // 보강데이 (해당 월의 '보강데이' schedule_events)
+    let rows = sqlx::query(
+        "SELECT e.event_date FROM schedule_events e \
+         JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE c.code_name = '보강데이' AND e.event_date LIKE ? \
+         ORDER BY e.event_date",
+    )
+    .bind(format!("{}-%", year_month))
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("보강데이 조회 실패: {}", e))?;
+    let parts: Vec<String> = rows
+        .iter()
+        .filter_map(|r| {
+            let date: String = r.try_get("event_date").ok()?;
+            let d = NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok()?;
+            Some(format!("{}({}) 10시~13시", d.day(), weekday_ko(d)))
+        })
+        .collect();
+    let makeup_day_text = if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(", "))
+    };
+
+    Ok(NoticeMonthInfo {
+        teaching_period_text,
+        makeup_day_text,
+    })
 }
 
 // ─────────────────────── T4: 공지문 이미지 저장 ───────────────────────

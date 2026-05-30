@@ -25,6 +25,7 @@ import {
   deleteNoticeLayoutNamed,
   getNoticeLayout,
   getNoticeLayoutNamed,
+  getNoticeMonthInfo,
   listBilledMonths,
   listBills,
   listNoticeAssets,
@@ -45,15 +46,48 @@ import type { Bill } from '@/types/billing'
 
 const FIELD_LABEL: Record<NoticeFieldType, string> = {
   bill_month: '청구월',
+  teaching_period: '교습기간',
+  makeup_day: '보강데이',
   student_name: '원생명',
   bill_amount: '청구액',
   custom: '텍스트',
 }
 
+/** 데이터 필드 체크박스 표시 순서 (청구월 아래 교습기간/보강데이). */
+const DATA_FIELD_ORDER: NoticeFieldType[] = [
+  'bill_month',
+  'teaching_period',
+  'makeup_day',
+  'student_name',
+  'bill_amount',
+]
+
 /** 체크박스/편집 라벨 — custom 은 입력 텍스트(없으면 '텍스트'). */
 function boxLabel(tb: TextboxConfig): string {
   if (tb.fieldType === 'custom') return tb.text?.trim() || '텍스트'
   return FIELD_LABEL[tb.fieldType]
+}
+
+/** 구버전 레이아웃에 누락된 데이터 필드(교습기간/보강데이 등)를 비활성으로 보강. */
+function normalizeLayout(l: NoticeLayout): NoticeLayout {
+  const existing = new Set(l.textboxes.map((t) => t.fieldType))
+  const missing = DATA_FIELD_ORDER.filter((f) => !existing.has(f))
+  if (missing.length === 0) return l
+  const added: TextboxConfig[] = missing.map((f, idx) => ({
+    id: f,
+    fieldType: f,
+    text: null,
+    enabled: false,
+    xRatio: 0.1,
+    yRatio: 0.2 + idx * 0.15,
+    wRatio: 0.8,
+    hRatio: 0.12,
+    fontRatio: 0.5,
+    fontWeight: 'bold',
+    fontColor: '#1A1A1A',
+    textAlign: 'center',
+  }))
+  return { ...l, textboxes: [...l.textboxes, ...added] }
 }
 
 const LEFT_PANEL_WIDTH = 240 // 좌측 원생 패널 고정 너비(최소)
@@ -125,8 +159,15 @@ function NoticesContent() {
   const layoutQuery = useQuery({ queryKey: ['notice-layout'], queryFn: getNoticeLayout })
   const [layout, setLayout] = useState<NoticeLayout | null>(null)
   useEffect(() => {
-    if (layoutQuery.data && layout === null) setLayout(layoutQuery.data)
+    if (layoutQuery.data && layout === null) setLayout(normalizeLayout(layoutQuery.data))
   }, [layoutQuery.data, layout])
+
+  // 청구년월의 교습기간·보강데이 텍스트
+  const monthInfoQuery = useQuery({
+    queryKey: ['notice-month-info', yearMonth],
+    queryFn: () => getNoticeMonthInfo(yearMonth),
+  })
+  const monthInfo = monthInfoQuery.data ?? { teachingPeriodText: null, makeupDayText: null }
 
   const [bgDataUrl, setBgDataUrl] = useState<string | null>(null)
   const [bgDims, setBgDims] = useState<{ w: number; h: number }>({ w: 800, h: 800 })
@@ -259,9 +300,13 @@ function NoticesContent() {
 
   // 미리보기 원생 데이터
   const previewBill: Bill | undefined = bills.find((b) => selectedIds.has(b.id)) ?? bills[0]
-  const previewData: NoticeStudentData = previewBill
-    ? { studentName: previewBill.studentName, billYearMonth: yearMonth, billAmount: previewBill.adjustedAmount }
-    : { studentName: '원생 이름', billYearMonth: yearMonth, billAmount: 0 }
+  const previewData: NoticeStudentData = {
+    studentName: previewBill?.studentName ?? '원생 이름',
+    billYearMonth: yearMonth,
+    billAmount: previewBill?.adjustedAmount ?? 0,
+    teachingPeriodText: monthInfo.teachingPeriodText,
+    makeupDayText: monthInfo.makeupDayText,
+  }
 
   // 업로드/삭제
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -318,6 +363,8 @@ function NoticesContent() {
           studentName: b.studentName,
           billYearMonth: yearMonth,
           billAmount: b.adjustedAmount,
+          teachingPeriodText: monthInfo.teachingPeriodText,
+          makeupDayText: monthInfo.makeupDayText,
         })),
         onProgress: (done, total) => setProgress({ done, total }),
       })
@@ -373,7 +420,7 @@ function NoticesContent() {
   const handleLoadTemplate = async (name: string) => {
     try {
       const loaded = await getNoticeLayoutNamed(name)
-      updateLayout(loaded)
+      updateLayout(normalizeLayout(loaded))
       setSelectedBoxIdx(0)
       setError(`'${name}' 템플릿을 불러왔습니다.`)
     } catch (e) {
@@ -641,10 +688,11 @@ function NoticesContent() {
 
                 {/* 표시 필드 체크박스 (아래) */}
                 <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-2">
-                  {/* 데이터 필드 (버튼 위) */}
-                  {(layout?.textboxes ?? []).map((tb, i) =>
-                    tb.fieldType === 'custom' ? null : renderBoxRow(tb, i),
-                  )}
+                  {/* 데이터 필드 (버튼 위) — 고정 순서: 청구월/교습기간/보강데이/원생명/청구액 */}
+                  {DATA_FIELD_ORDER.map((ft) => {
+                    const i = (layout?.textboxes ?? []).findIndex((t) => t.fieldType === ft)
+                    return i >= 0 ? renderBoxRow(layout!.textboxes[i], i) : null
+                  })}
                   <button
                     type="button"
                     onClick={addTextbox}

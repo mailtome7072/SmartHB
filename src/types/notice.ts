@@ -13,7 +13,19 @@ export interface NoticeAsset {
   modifiedMs: number
 }
 
-export type NoticeFieldType = 'bill_month' | 'student_name' | 'bill_amount' | 'custom'
+export type NoticeFieldType =
+  | 'bill_month'
+  | 'teaching_period'
+  | 'makeup_day'
+  | 'student_name'
+  | 'bill_amount'
+  | 'custom'
+
+/** 청구년월의 교습기간·보강데이 표기 텍스트. */
+export interface NoticeMonthInfo {
+  teachingPeriodText: string | null
+  makeupDayText: string | null
+}
 
 /**
  * 텍스트박스 1종 설정 — 배경 원본 해상도 대비 비율(0..1)로 관리.
