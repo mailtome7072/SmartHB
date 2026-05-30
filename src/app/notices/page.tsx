@@ -495,7 +495,7 @@ function NoticesContent() {
                   ))}
                 </select>
                 <label className="flex items-center gap-1">
-                  글자비율
+                  폰트크기
                   <input
                     type="range"
                     min={10}
@@ -509,30 +509,39 @@ function NoticesContent() {
                 </label>
                 <button
                   type="button"
+                  title="굵게"
+                  aria-label="굵게"
                   onClick={() =>
                     updateBox(selectedBoxIdx, {
                       fontWeight: layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'normal' : 'bold',
                     })
                   }
-                  className={`h-9 rounded border px-2 ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50 font-bold text-[var(--accent)]' : 'border-[var(--border)]'}`}
+                  className={`h-9 rounded border px-2 text-base ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
                 >
-                  굵게
+                  🅱️
                 </button>
                 <input
                   type="color"
                   value={layout.textboxes[selectedBoxIdx].fontColor}
                   onChange={(e) => updateBox(selectedBoxIdx, { fontColor: e.target.value })}
                   className="h-9 w-10 cursor-pointer rounded border border-[var(--border)]"
+                  title="글자 색"
                   aria-label="글자 색"
                 />
-                {(['left', 'center', 'right'] as const).map((al) => (
+                {([
+                  ['left', '⬅️', '왼쪽 정렬'],
+                  ['center', '↔️', '가운데 정렬'],
+                  ['right', '➡️', '오른쪽 정렬'],
+                ] as const).map(([al, icon, label]) => (
                   <button
                     key={al}
                     type="button"
+                    title={label}
+                    aria-label={label}
                     onClick={() => updateBox(selectedBoxIdx, { textAlign: al })}
-                    className={`h-9 rounded border px-2 ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50 text-[var(--accent)]' : 'border-[var(--border)]'}`}
+                    className={`h-9 rounded border px-2 text-base ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
                   >
-                    {al === 'left' ? '좌' : al === 'center' ? '중' : '우'}
+                    {icon}
                   </button>
                 ))}
               </div>
