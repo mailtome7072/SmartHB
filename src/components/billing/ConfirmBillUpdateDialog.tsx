@@ -4,7 +4,7 @@
  * 확정(`confirmed`) 상태 청구 수정 확인 다이얼로그 — Sprint 11 T5 (AC-4.9-3).
  *
  * 확정된 청구는 사유 없이 수정 가능하지만 실수 방지를 위해 확인 다이얼로그를 요구한다.
- * 마감(`closed`) 상태는 본 다이얼로그가 아닌 [[CloseReasonDialog]] 가 담당 (사유 필수).
+ * 단, 수납완료(isPaid)된 청구는 BillingGrid 에서 편집 자체가 비활성 (백엔드도 거부).
  */
 
 import { useState } from 'react'

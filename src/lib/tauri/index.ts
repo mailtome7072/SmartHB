@@ -1216,14 +1216,10 @@ export async function getBill(id: number): Promise<Bill> {
   return inv('get_bill', { id }) as Promise<Bill>
 }
 
-export async function updateBill(
-  id: number,
-  adjustedAmount: number,
-  closeReason: string | null,
-): Promise<Bill> {
+export async function updateBill(id: number, adjustedAmount: number): Promise<Bill> {
   const inv = await getInvoke()
   if (!inv) throw new Error('[개발 모드] updateBill 호출 불가')
-  return inv('update_bill', { id, adjustedAmount, closeReason }) as Promise<Bill>
+  return inv('update_bill', { id, adjustedAmount }) as Promise<Bill>
 }
 
 export async function confirmBill(id: number): Promise<Bill> {
@@ -1236,12 +1232,6 @@ export async function confirmAllBills(yearMonth: string): Promise<number> {
   const inv = await getInvoke()
   if (!inv) return 0
   return inv('confirm_all_bills', { yearMonth }) as Promise<number>
-}
-
-export async function closeBillingMonth(yearMonth: string): Promise<number> {
-  const inv = await getInvoke()
-  if (!inv) return 0
-  return inv('close_billing_month', { yearMonth }) as Promise<number>
 }
 
 export async function createPayment(input: PaymentInput): Promise<Payment> {

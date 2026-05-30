@@ -8,7 +8,7 @@
  * 행 동작:
  * - draft: 조정액 인라인 편집 + "확정" 버튼
  * - confirmed: 조정액 수정 시 [[ConfirmBillUpdateDialog]] 통한 확인
- * - closed: 조정액 수정 시 [[CloseReasonDialog]] 통한 사유 입력 (AC-4.9-8)
+ * - 수납완료(isPaid) 청구: 금액 편집 불가 (이미 수금 완료)
  *
  * 월중입퇴교 시각 구분 (AC-4.9-2): 행 배경 + 라벨.
  */
@@ -16,7 +16,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { confirmBill, updateBill } from '@/lib/tauri'
-import { CloseReasonDialog } from './CloseReasonDialog'
 import { ConfirmBillUpdateDialog } from './ConfirmBillUpdateDialog'
 import type { Bill } from '@/types/billing'
 
@@ -29,7 +28,6 @@ interface Props {
 const STATUS_LABEL: Record<Bill['status'], string> = {
   draft: '미확정',
   confirmed: '확정',
-  closed: '마감',
 }
 
 const MID_MONTH_LABEL: Record<NonNullable<Bill['midMonthType']>, string> = {
@@ -62,15 +60,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({
-      id,
-      amount,
-      reason,
-    }: {
-      id: number
-      amount: number
-      reason: string | null
-    }) => updateBill(id, amount, reason),
+    mutationFn: ({ id, amount }: { id: number; amount: number }) => updateBill(id, amount),
     onMutate: () => onError(''),
     onSuccess: () => {
       invalidate()
@@ -104,9 +94,9 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
       return
     }
     if (bill.status === 'draft') {
-      updateMutation.mutate({ id: bill.id, amount: parsed, reason: null })
+      updateMutation.mutate({ id: bill.id, amount: parsed })
     } else {
-      // confirmed / closed — 다이얼로그 경유
+      // confirmed — 확인 다이얼로그 경유
       setPendingUpdate({ bill, newAmount: parsed })
     }
   }
@@ -131,11 +121,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
           <tbody>
             {bills.map((b) => {
               const isEditing = editingId === b.id
-              const rowBg = b.isMidMonth
-                ? 'bg-amber-50'
-                : b.status === 'closed'
-                  ? 'bg-gray-50'
-                  : ''
+              const rowBg = b.isMidMonth ? 'bg-amber-50' : ''
               return (
                 <tr key={b.id} className={`border-t border-[var(--border)] ${rowBg}`}>
                   <td className="px-3 py-2">{b.studentSerialNo}</td>
@@ -170,11 +156,11 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                         autoFocus
                         className="h-9 w-28 rounded-md border-2 border-[var(--accent)] px-2 text-right"
                       />
-                    ) : b.status === 'closed' && b.isPaid ? (
-                      // 수납완료된 마감 청구는 수정 불가 (금액 편집 비활성).
+                    ) : b.isPaid ? (
+                      // 수납완료된 청구는 수정 불가 (금액 편집 비활성).
                       <span
                         className="font-semibold text-gray-500"
-                        title="수납완료된 마감 청구는 수정할 수 없습니다."
+                        title="수납완료된 청구는 수정할 수 없습니다."
                       >
                         {b.adjustedAmount.toLocaleString()}
                       </span>
@@ -193,9 +179,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                       className={`rounded-full px-2 py-0.5 text-sm ${
                         b.status === 'draft'
                           ? 'bg-amber-100 text-amber-900'
-                          : b.status === 'confirmed'
-                            ? 'bg-blue-100 text-blue-900'
-                            : 'bg-gray-200 text-gray-700'
+                          : 'bg-blue-100 text-blue-900'
                       }`}
                     >
                       {STATUS_LABEL[b.status]}
@@ -255,24 +239,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
             await updateMutation.mutateAsync({
               id: pendingUpdate.bill.id,
               amount: pendingUpdate.newAmount,
-              reason: null,
-            })
-          }}
-          onCancel={() => setPendingUpdate(null)}
-        />
-      )}
-
-      {pendingUpdate && pendingUpdate.bill.status === 'closed' && (
-        <CloseReasonDialog
-          open
-          studentName={pendingUpdate.bill.studentName}
-          currentAmount={pendingUpdate.bill.adjustedAmount}
-          newAmount={pendingUpdate.newAmount}
-          onConfirm={async (reason) => {
-            await updateMutation.mutateAsync({
-              id: pendingUpdate.bill.id,
-              amount: pendingUpdate.newAmount,
-              reason,
             })
           }}
           onCancel={() => setPendingUpdate(null)}

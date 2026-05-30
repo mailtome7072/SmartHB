@@ -6,9 +6,9 @@
  * 흐름:
  *  1. 월 선택 (디폴트: `getDefaultBillingYearMonth` — 가장 최근 교습기간 월)
  *  2. 청구 데이터 없으면 "청구 데이터 생성" 버튼 표시 → `generateBills`
- *  3. 청구 목록(`BillingGrid`) — draft → confirmed → closed 정렬, mid_month 우선
- *  4. 개별 행 인라인 금액 편집 + 상태별 다이얼로그 (T5 연동)
- *  5. 일괄 확정 / 당월 청구 마감 (모든 confirmed 시에만 활성)
+ *  3. 청구 목록(`BillingGrid`) — draft → confirmed 정렬, mid_month 우선
+ *  4. 개별 행 인라인 금액 편집 + 확정 다이얼로그
+ *  5. 미확정 일괄 확정
  *
  * 캐싱: TanStack Query `['bills', yearMonth]` + `['billing-summary', yearMonth]`.
  */
@@ -20,11 +20,9 @@ import { GlobalSearch } from '@/components/layout/global-search'
 import { SplashScreen } from '@/components/splash-screen'
 import { BillingGrid } from '@/components/billing/BillingGrid'
 import { BillingSummaryView } from '@/components/billing/BillingSummaryView'
-import { CloseMonthDialog } from '@/components/billing/CloseMonthDialog'
 import { PaymentsView } from '@/components/billing/PaymentsView'
 import { ErrorDialog } from '@/components/ui/error-dialog'
 import {
-  closeBillingMonth,
   confirmAllBills,
   generateBills,
   getBillingSummary,
@@ -59,14 +57,13 @@ export default function BillingPage() {
 }
 
 type Tab = 'bills' | 'payments' | 'summary'
-type BillFilter = 'all' | 'confirmed' | 'draft' | 'closed'
+type BillFilter = 'all' | 'confirmed' | 'draft'
 type PaymentFilter = 'all' | 'paid' | 'unpaid'
 
 function BillingContent() {
   const qc = useQueryClient()
   const [yearMonth, setYearMonth] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [closeMonthOpen, setCloseMonthOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('bills')
 
   // 상태 필터 — 탭별 별도
@@ -133,25 +130,10 @@ function BillingContent() {
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
 
-  const closeMonthMutation = useMutation({
-    mutationFn: () => closeBillingMonth(effectiveYearMonth),
-    onMutate: () => setError(null),
-    onSuccess: () => {
-      setError(null)
-      setCloseMonthOpen(false)
-      qc.invalidateQueries({ queryKey: ['bills', effectiveYearMonth] })
-      qc.invalidateQueries({ queryKey: ['billing-summary', effectiveYearMonth] })
-    },
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
-  })
-
   const bills = billsQuery.data ?? []
   const summary = summaryQuery.data
   const draftCount = bills.filter((b) => b.status === 'draft').length
   const confirmedCount = bills.filter((b) => b.status === 'confirmed').length
-  const closedCount = bills.filter((b) => b.status === 'closed').length
-  const allClosed = bills.length > 0 && bills.every((b) => b.status === 'closed')
-  const showCloseButton = bills.length > 0 && draftCount === 0 && confirmedCount > 0
   // 청구 생성 버튼 표시/라벨 조건 (hotfix post-Sprint 11):
   // - bills 0건 → "청구 데이터 생성"
   // - bills>0 & totalBillableStudents>billCount → "추가 청구 데이터 생성"
@@ -251,13 +233,6 @@ function BillingContent() {
             </>
           )}
 
-          {/* 마감 완료 배지 — 상태 필터 앞에 위치 (모든 청구 마감 시) */}
-          {tab === 'bills' && allClosed && (
-            <span className="rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-600">
-              ✓ 마감 완료
-            </span>
-          )}
-
           {/* 탭별 상태 필터 — 검색 input 우측 (옵션별 건수 표기) */}
           {tab === 'bills' && (
             <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="청구 상태 필터">
@@ -266,7 +241,6 @@ function BillingContent() {
                   ['all', '전체', bills.length],
                   ['confirmed', '확정', confirmedCount],
                   ['draft', '미확정', draftCount],
-                  ['closed', '마감', closedCount],
                 ] as const
               ).map(([key, label, count]) => (
                 <label
@@ -334,16 +308,6 @@ function BillingContent() {
               {confirmAllMutation.isPending ? '확정 중...' : `미확정 ${draftCount}건 일괄 확정`}
             </button>
           )}
-
-          {tab === 'bills' && showCloseButton && (
-            <button
-              type="button"
-              onClick={() => setCloseMonthOpen(true)}
-              className="h-11 rounded-md border-2 border-[var(--danger)] px-4 text-base font-semibold text-[var(--danger)] hover:bg-red-50"
-            >
-              당월 청구 마감
-            </button>
-          )}
         </div>
 
         {/* 미확정 청구 배너 (AC-4.9-5) — 청구 탭에서만 */}
@@ -396,7 +360,6 @@ function BillingContent() {
                 return false
               if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
               if (billFilter === 'draft' && b.status !== 'draft') return false
-              if (billFilter === 'closed' && b.status !== 'closed') return false
               return true
             })}
             yearMonth={effectiveYearMonth}
@@ -416,19 +379,6 @@ function BillingContent() {
 
         {tab === 'summary' && <BillingSummaryView defaultYearMonth={effectiveYearMonth} />}
       </div>
-
-      {summary && (
-        <CloseMonthDialog
-          open={closeMonthOpen}
-          yearMonth={effectiveYearMonth}
-          confirmedCount={confirmedCount}
-          totalBilled={summary.totalBilled}
-          onConfirm={async () => {
-            await closeMonthMutation.mutateAsync()
-          }}
-          onCancel={() => setCloseMonthOpen(false)}
-        />
-      )}
 
       <ErrorDialog
         open={error !== null && error !== ''}

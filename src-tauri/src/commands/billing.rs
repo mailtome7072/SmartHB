@@ -6,12 +6,12 @@
 //!   덕분에 동일 월 중복 호출은 INSERT OR IGNORE 로 안전.
 //! - [`list_bills`] — 월별 청구 목록. 정렬: 미확정 + 월중입퇴교 상단 (AC-4.9-4).
 //! - [`get_bill`] — 단건 조회.
-//! - [`update_bill`] — 금액 조정. 상태별 제약: `draft` 자유 / `confirmed` 자유(프론트 확인 다이얼로그 책임) /
-//!   `closed` 는 `close_reason` 필수 (AC-4.9-8).
+//! - [`update_bill`] — 금액 조정. 상태별 제약: `draft`/`confirmed` 자유(프론트 확인 다이얼로그 책임).
+//!   단, 수납완료(`is_paid=1`)된 청구는 금액 수정 거부.
 //! - [`get_default_billing_year_month`] — UI 디폴트(마지막 교습기간 월) 헬퍼.
 //!
-//! ## T3 (상태 머신) 예정
-//! - confirm_bill / confirm_all_bills / close_billing_month / update_closed_bill
+//! ## 상태 머신
+//! - confirm_bill / confirm_all_bills — `draft` → `confirmed`. (마감 개념은 V111 에서 폐기)
 //!
 //! ## 트랜잭션
 //! `generate_bills` 는 `pool.begin()` + `SELECT 1 LIMIT 0` 패턴으로 BEGIN IMMEDIATE 효과를 흉내한다.
@@ -52,8 +52,6 @@ pub struct Bill {
     pub status: String,
     pub is_mid_month: bool,
     pub mid_month_type: Option<String>,
-    pub close_reason: Option<String>,
-    pub closed_at: Option<String>,
     pub confirmed_at: Option<String>,
     /// payments.is_paid=1 행이 존재하면 true (수납완료 라벨용).
     pub is_paid: bool,
@@ -190,7 +188,7 @@ pub(crate) async fn generate_bills_impl(
 /// 월별 청구 목록 조회 (PRD §4.9.2~§4.9.4, AC-4.9-4 정렬).
 ///
 /// 정렬 우선순위:
-///   1. 미확정(`draft`) 먼저, 확정(`confirmed`) 다음, 마감(`closed`) 마지막
+///   1. 미확정(`draft`) 먼저, 확정(`confirmed`) 다음
 ///   2. 월중입퇴교(`is_mid_month=1`) 가 같은 상태 내 우선
 ///   3. 학생 이름 ASC
 #[tauri::command]
@@ -207,14 +205,14 @@ pub(crate) async fn list_bills_impl(
     let rows = sqlx::query(
         "SELECT b.id, b.student_id, s.name AS student_name, s.serial_no, s.grade, s.school_level, \
                 b.bill_year_month, b.weekly_hours, b.bill_amount, b.adjusted_amount, b.status, \
-                b.is_mid_month, b.mid_month_type, b.close_reason, b.closed_at, b.confirmed_at, \
+                b.is_mid_month, b.mid_month_type, b.confirmed_at, \
                 COALESCE(p.is_paid, 0) AS is_paid \
          FROM bills b \
          JOIN students s ON s.id = b.student_id \
          LEFT JOIN payments p ON p.bill_id = b.id \
          WHERE b.bill_year_month = ? \
          ORDER BY \
-            CASE b.status WHEN 'draft' THEN 0 WHEN 'confirmed' THEN 1 ELSE 2 END ASC, \
+            CASE b.status WHEN 'draft' THEN 0 ELSE 1 END ASC, \
             b.is_mid_month DESC, \
             s.name ASC",
     )
@@ -237,7 +235,7 @@ pub(crate) async fn get_bill_impl(pool: &SqlitePool, id: i64) -> Result<Bill, St
     let row = sqlx::query(
         "SELECT b.id, b.student_id, s.name AS student_name, s.serial_no, s.grade, s.school_level, \
                 b.bill_year_month, b.weekly_hours, b.bill_amount, b.adjusted_amount, b.status, \
-                b.is_mid_month, b.mid_month_type, b.close_reason, b.closed_at, b.confirmed_at, \
+                b.is_mid_month, b.mid_month_type, b.confirmed_at, \
                 COALESCE(p.is_paid, 0) AS is_paid \
          FROM bills b \
          JOIN students s ON s.id = b.student_id \
@@ -252,94 +250,53 @@ pub(crate) async fn get_bill_impl(pool: &SqlitePool, id: i64) -> Result<Bill, St
     row_to_bill(row)
 }
 
-/// 청구 금액 조정 (PRD §4.9.3, AC-4.9-8).
+/// 청구 금액 조정 (PRD §4.9.3).
 ///
-/// 상태별 제약:
-/// - `draft` / `confirmed` — 자유롭게 수정 (프론트 확인 다이얼로그는 별도 책임)
-/// - `closed` — `close_reason` 필수. NULL/공백 시 거부.
-///
-/// `close_reason` 은 closed 상태에서만 의미. draft/confirmed 호출 시 close_reason 인자는 무시됨.
+/// `draft` / `confirmed` 모두 자유롭게 수정 (프론트 확인 다이얼로그는 별도 책임).
+/// 단, 수납완료(`payments.is_paid=1`)된 청구는 이미 수금이 끝났으므로 금액 수정을 거부한다.
 #[tauri::command]
-pub async fn update_bill(
-    id: i64,
-    adjusted_amount: i64,
-    close_reason: Option<String>,
-) -> Result<Bill, String> {
+pub async fn update_bill(id: i64, adjusted_amount: i64) -> Result<Bill, String> {
     let pool = db::pool().map_err(String::from)?;
-    update_bill_impl(pool, id, adjusted_amount, close_reason.as_deref()).await
+    update_bill_impl(pool, id, adjusted_amount).await
 }
 
 pub(crate) async fn update_bill_impl(
     pool: &SqlitePool,
     id: i64,
     adjusted_amount: i64,
-    close_reason: Option<&str>,
 ) -> Result<Bill, String> {
     if adjusted_amount < 0 {
         return Err("조정 금액은 0 이상이어야 합니다.".to_string());
     }
 
-    let current_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM bills WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("청구 상태 조회 실패: {}", e))?;
-
-    let status = current_status.ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
-
-    if status == "closed" {
-        // 수납완료된 마감 청구는 수정 불가 — 이미 수금이 끝난 청구의 금액 변경 방지.
-        let paid: Option<i64> =
-            sqlx::query_scalar("SELECT is_paid FROM payments WHERE bill_id = ?")
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| format!("수납 상태 조회 실패: {}", e))?;
-        if paid == Some(1) {
-            return Err("수납완료된 마감 청구는 수정할 수 없습니다.".to_string());
-        }
-        let reason = close_reason
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                "마감된 청구를 수정하려면 사유(close_reason)를 입력해야 합니다.".to_string()
-            })?;
-        sqlx::query(
-            "UPDATE bills SET adjusted_amount = ?, close_reason = ?, \
-                  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-             WHERE id = ?",
-        )
-        .bind(adjusted_amount)
-        .bind(reason)
+    let current_status: Option<String> = sqlx::query_scalar("SELECT status FROM bills WHERE id = ?")
         .bind(id)
-        .execute(pool)
+        .fetch_optional(pool)
         .await
-        .map_err(|e| format!("청구 수정 실패: {}", e))?;
-        // Sprint 11 T3: 마감 후 수정은 audit 로그로 추적 (AC-4.9-8 운영 추적).
-        audit::try_record(
-            AuditEventType::BillClosedModified,
-            Some(&id.to_string()),
-            Some(&format!(
-                r#"{{"adjustedAmount":{},"closeReason":{}}}"#,
-                adjusted_amount,
-                serde_json::to_string(reason).unwrap_or_else(|_| "\"\"".to_string()),
-            )),
-        )
-        .await;
-    } else {
-        sqlx::query(
-            "UPDATE bills SET adjusted_amount = ?, \
-                  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-             WHERE id = ?",
-        )
-        .bind(adjusted_amount)
+        .map_err(|e| format!("청구 상태 조회 실패: {}", e))?;
+
+    current_status.ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
+
+    // 수납완료된 청구는 금액 수정 불가 (status 무관 — 이미 수금 완료).
+    let paid: Option<i64> = sqlx::query_scalar("SELECT is_paid FROM payments WHERE bill_id = ?")
         .bind(id)
-        .execute(pool)
+        .fetch_optional(pool)
         .await
-        .map_err(|e| format!("청구 수정 실패: {}", e))?;
+        .map_err(|e| format!("수납 상태 조회 실패: {}", e))?;
+    if paid == Some(1) {
+        return Err("수납완료된 청구는 수정할 수 없습니다.".to_string());
     }
+
+    sqlx::query(
+        "UPDATE bills SET adjusted_amount = ?, \
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE id = ?",
+    )
+    .bind(adjusted_amount)
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("청구 수정 실패: {}", e))?;
 
     get_bill_impl(pool, id).await
 }
@@ -348,7 +305,7 @@ pub(crate) async fn update_bill_impl(
 
 /// 청구 단건 확정 — `draft` → `confirmed` (PRD §4.9.3).
 ///
-/// `confirmed` / `closed` 상태에서 호출 시 거부 (재확정·재진입 불가).
+/// `confirmed` 상태에서 호출 시 거부 (재확정 불가).
 #[tauri::command]
 pub async fn confirm_bill(id: i64) -> Result<Bill, String> {
     let pool = db::pool().map_err(String::from)?;
@@ -417,73 +374,6 @@ pub(crate) async fn confirm_all_bills_impl(
     )
     .await;
     Ok(affected)
-}
-
-/// 월 전체 마감 (PRD §4.9.7, AC-4.9-7).
-///
-/// 전제: 해당 월 모든 청구가 `confirmed`. `draft` 가 1건이라도 있으면 에러 + 미확정 건수 메시지.
-/// PI-11 확정: 마감 해제(reopen) 불가 — 본 IPC 의 역연산은 제공하지 않음.
-#[tauri::command]
-pub async fn close_billing_month(year_month: String) -> Result<i64, String> {
-    let pool = db::pool().map_err(String::from)?;
-    close_billing_month_impl(pool, &year_month).await
-}
-
-pub(crate) async fn close_billing_month_impl(
-    pool: &SqlitePool,
-    year_month: &str,
-) -> Result<i64, String> {
-    validate_year_month(year_month)?;
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(AppError::Db)
-        .map_err(String::from)?;
-    sqlx::query("SELECT 1 FROM bills LIMIT 0")
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::Db)
-        .map_err(String::from)?;
-
-    let pending: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM bills WHERE bill_year_month = ? AND status = 'draft'",
-    )
-    .bind(year_month)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| format!("미확정 청구 카운트 실패: {}", e))?;
-
-    if pending > 0 {
-        return Err(format!(
-            "미확정 청구가 {}건 남아 있어 마감할 수 없습니다. 먼저 확정해 주세요.",
-            pending
-        ));
-    }
-
-    let res = sqlx::query(
-        "UPDATE bills SET status='closed', \
-             closed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
-             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
-         WHERE bill_year_month = ? AND status = 'confirmed'",
-    )
-    .bind(year_month)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| format!("청구 마감 실패: {}", e))?;
-
-    tx.commit()
-        .await
-        .map_err(AppError::Db)
-        .map_err(String::from)?;
-
-    let closed = res.rows_affected() as i64;
-    audit::try_record(
-        AuditEventType::BillMonthClosed,
-        Some(year_month),
-        Some(&format!(r#"{{"closedCount":{}}}"#, closed)),
-    )
-    .await;
-    Ok(closed)
 }
 
 /// 수납 관리 뷰 한 행 — 청구 + payments 정보 통합 (post-Sprint 11 hotfix).
@@ -748,8 +638,6 @@ fn row_to_bill(r: sqlx::sqlite::SqliteRow) -> Result<Bill, String> {
             v != 0
         },
         mid_month_type: r.try_get("mid_month_type").map_err(|e| e.to_string())?,
-        close_reason: r.try_get("close_reason").map_err(|e| e.to_string())?,
-        closed_at: r.try_get("closed_at").map_err(|e| e.to_string())?,
         confirmed_at: r.try_get("confirmed_at").map_err(|e| e.to_string())?,
         is_paid: {
             let v: i64 = r.try_get("is_paid").map_err(|e| e.to_string())?;
@@ -1496,13 +1384,14 @@ mod tests {
         let bills = list_bills_impl(&pool, "2026-05").await.expect("list");
         let bill_id = bills[0].id;
 
-        let updated = update_bill_impl(&pool, bill_id, 90_000, None).await.expect("ok");
+        let updated = update_bill_impl(&pool, bill_id, 90_000).await.expect("ok");
         assert_eq!(updated.adjusted_amount, 90_000);
         assert_eq!(updated.bill_amount, 100_000, "표준 금액은 불변");
     }
 
     #[tokio::test]
-    async fn update_bill_closed_requires_close_reason() {
+    async fn update_bill_paid_rejected() {
+        // 수납완료된 청구는 금액 수정 불가 (status 무관 — V111 마감 폐기 후 is_paid 기준).
         let pool = db::test_pool_in_memory().await.expect("pool");
         let sid = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
         seed_schedule(&pool, sid, 1, 1).await;
@@ -1512,42 +1401,8 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        // closed 로 강제 전이 (T3 IPC 전 시점이라 직접 UPDATE)
-        sqlx::query(
-            "UPDATE bills SET status='closed', closed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
-        )
-        .bind(bill_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // AC-4.9-8: close_reason 없이 수정 시도 → 거부
-        let err = update_bill_impl(&pool, bill_id, 80_000, None).await;
-        assert!(err.is_err());
-        let err_blank = update_bill_impl(&pool, bill_id, 80_000, Some("   ")).await;
-        assert!(err_blank.is_err(), "공백 사유도 거부");
-
-        // 사유 있으면 통과
-        let ok = update_bill_impl(&pool, bill_id, 80_000, Some("월말 환불 처리"))
-            .await
-            .expect("close_reason 있으면 통과");
-        assert_eq!(ok.adjusted_amount, 80_000);
-        assert_eq!(ok.close_reason.as_deref(), Some("월말 환불 처리"));
-    }
-
-    #[tokio::test]
-    async fn update_bill_closed_paid_rejected() {
-        // 수납완료된 마감 청구는 사유가 있어도 수정 불가.
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let sid = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
-        seed_schedule(&pool, sid, 1, 1).await;
-        seed_standard_fee(&pool, 1, 100_000).await;
-        generate_bills_impl(&pool, "2026-05").await.expect("gen");
-        let bill_id: i64 = sqlx::query_scalar("SELECT id FROM bills LIMIT 1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        // 수납완료 처리
+        // 확정 + 수납완료
+        confirm_bill_impl(&pool, bill_id).await.expect("confirm");
         batch_update_payments_impl(
             &pool,
             &[PaymentInput {
@@ -1561,17 +1416,9 @@ mod tests {
         )
         .await
         .expect("pay");
-        // 마감으로 전이
-        sqlx::query(
-            "UPDATE bills SET status='closed', closed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
-        )
-        .bind(bill_id)
-        .execute(&pool)
-        .await
-        .unwrap();
 
-        let err = update_bill_impl(&pool, bill_id, 80_000, Some("월말 환불 처리")).await;
-        assert!(err.is_err(), "수납완료된 마감 청구는 사유가 있어도 거부");
+        let err = update_bill_impl(&pool, bill_id, 80_000).await;
+        assert!(err.is_err(), "수납완료된 청구는 수정 거부");
     }
 
     #[tokio::test]
@@ -1586,7 +1433,7 @@ mod tests {
             .await
             .unwrap();
 
-        let err = update_bill_impl(&pool, bill_id, -1, None).await;
+        let err = update_bill_impl(&pool, bill_id, -1).await;
         assert!(err.is_err(), "음수 금액 거부");
     }
 
@@ -1646,16 +1493,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn confirm_bill_rejects_closed() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let bid = seed_bill(&pool, "2026-05").await;
-        sqlx::query("UPDATE bills SET status='closed', closed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
-            .bind(bid).execute(&pool).await.unwrap();
-        let err = confirm_bill_impl(&pool, bid).await;
-        assert!(err.is_err(), "마감된 청구는 확정 불가");
-    }
-
-    #[tokio::test]
     async fn confirm_bill_rejects_nonexistent() {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let err = confirm_bill_impl(&pool, 999).await;
@@ -1690,53 +1527,6 @@ mod tests {
         let pool = db::test_pool_in_memory().await.expect("pool");
         let affected = confirm_all_bills_impl(&pool, "2026-05").await.expect("ok");
         assert_eq!(affected, 0);
-    }
-
-    #[tokio::test]
-    async fn close_billing_month_rejects_when_pending_drafts() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
-        let b = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
-        for s in [a, b] { seed_schedule(&pool, s, 1, 1).await; }
-        seed_standard_fee(&pool, 1, 100_000).await;
-        generate_bills_impl(&pool, "2026-05").await.expect("gen");
-        // 1건만 confirmed, 1건은 draft 유지
-        sqlx::query("UPDATE bills SET status='confirmed', confirmed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE student_id=?")
-            .bind(a).execute(&pool).await.unwrap();
-
-        let err = close_billing_month_impl(&pool, "2026-05").await;
-        assert!(err.is_err(), "draft 1건 남으면 마감 불가");
-        let msg = err.unwrap_err();
-        assert!(msg.contains("1건"), "메시지에 미확정 건수 포함: {}", msg);
-
-        // draft 가 그대로 남아있는지 확인 (롤백)
-        let draft_cnt: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM bills WHERE bill_year_month='2026-05' AND status='draft'",
-        )
-        .fetch_one(&pool).await.unwrap();
-        assert_eq!(draft_cnt, 1, "롤백되어 draft 보존");
-    }
-
-    #[tokio::test]
-    async fn close_billing_month_transitions_confirmed_to_closed() {
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let bid = seed_bill(&pool, "2026-05").await;
-        confirm_bill_impl(&pool, bid).await.expect("confirm");
-
-        let closed = close_billing_month_impl(&pool, "2026-05").await.expect("ok");
-        assert_eq!(closed, 1);
-
-        let bill = get_bill_impl(&pool, bid).await.expect("get");
-        assert_eq!(bill.status, "closed");
-        assert!(bill.closed_at.is_some());
-    }
-
-    #[tokio::test]
-    async fn close_billing_month_with_no_bills_succeeds() {
-        // AC-4.9-7 의 전제 — 미확정 0건이면 마감 OK. 청구가 아예 없는 월도 동일하게 0건 마감.
-        let pool = db::test_pool_in_memory().await.expect("pool");
-        let closed = close_billing_month_impl(&pool, "2026-05").await.expect("ok");
-        assert_eq!(closed, 0);
     }
 
     // ─────────────────────── T4 수납 ───────────────────────

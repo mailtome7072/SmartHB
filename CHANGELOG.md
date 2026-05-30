@@ -51,7 +51,13 @@
 - post-Sprint 11 (develop 보완): 확정 버튼 비활성 버그 수정 — 마감 후 수정 사유 게이트 10자 조건으로 인한 오작동 해소
 - post-Sprint 11 (develop 보완): 수납완료 행 수납 취소 기능 추가 (`batch_update_payments` 재사용, 신규 IPC 없음) — 잘못 입력된 수납 정정 가능
 - post-Sprint 11 (develop 보완): 입금 완료 시 결제수단 필수 검증 — 백엔드 `validate_payment_input` 2곳 + 프론트 가드/빨간 테두리. 신규 단위 테스트: `create_payment_rejects_paid_without_method`, `batch_cancel_payment_resets_is_paid`
-- post-Sprint 11 (develop 보완): 수납완료된 마감 청구는 수정 불가 — `update_bill_impl` 거부 + 프론트 금액 편집 비활성. 신규 단위 테스트: `update_bill_closed_paid_rejected`
+- post-Sprint 11 (develop 보완): 수납완료된 청구는 수정 불가 — `update_bill_impl` 가 `is_paid` 기준으로 거부 + 프론트 금액 편집 비활성. 신규 단위 테스트: `update_bill_paid_rejected`
+
+### Added
+- post-Sprint 11 (develop 보완): 청구 관리 '월별 집계' 탭 — 년/월 토글(연도 `YYYY-%` 집계 / 월 집계), 요약 박스 + 결제수단별 수납총액(열 배치). 백엔드 `get_billing_period_stats(period)` IPC + `BillingPeriodStats`/`PaymentMethodSummary` 타입
+
+### Removed
+- post-Sprint 11 (develop 보완): **청구 '마감(closed)' 개념 전면 폐기** (원장 결정, 2026-05-30). 청구 상태는 미확정→확정 2단계로 축소. 제거 항목: `close_billing_month` IPC, `CloseMonthDialog`/`CloseReasonDialog` 컴포넌트, "당월 청구 마감" 버튼·"마감 완료" 배지·'마감' 상태 필터, audit `BillMonthClosed`/`BillClosedModified`, `update_bill` 의 `close_reason` 파라미터. DB 마이그레이션 **V111** — `bills` 재구성으로 `status` CHECK(draft/confirmed) + `close_reason`/`closed_at` 컬럼 제거(기존 closed → confirmed 흡수). PRD §4.9.7 갱신, AC-4.9-7/8 폐기, AC-4.9-9 신설(수납완료 청구 수정 불가)
 
 ### Added
 - Sprint 11: DB 마이그레이션 V109 — `bills` + `payments` 테이블 신규 (청구 3단계 상태 머신 draft/confirmed/closed, 수납 1:1 별도 테이블 PI-12 확정, UNIQUE: `(student_id, bill_year_month)` + `bill_id`, FK: `students(id)` / `bills(id)` / `payment_methods(id)` / `card_companies(id)`)

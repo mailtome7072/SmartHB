@@ -77,7 +77,6 @@ pub fn run() {
             commands::billing::update_bill,
             commands::billing::confirm_bill,
             commands::billing::confirm_all_bills,
-            commands::billing::close_billing_month,
             commands::billing::create_payment,
             commands::billing::update_payment,
             commands::billing::list_unpaid_bills,

@@ -4,7 +4,7 @@
  * 백엔드 `src-tauri/src/commands/billing.rs` 의 serde camelCase 직렬화와 1:1 정합.
  */
 
-export type BillStatus = 'draft' | 'confirmed' | 'closed'
+export type BillStatus = 'draft' | 'confirmed'
 
 export type MidMonthType = 'enrolled' | 'withdrawn'
 
@@ -22,8 +22,6 @@ export interface Bill {
   status: BillStatus
   isMidMonth: boolean
   midMonthType: MidMonthType | null
-  closeReason: string | null
-  closedAt: string | null
   confirmedAt: string | null
   /** payments.is_paid=1 행 존재 시 true — BillingGrid 수납완료 라벨용. */
   isPaid: boolean
