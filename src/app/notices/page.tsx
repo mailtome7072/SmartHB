@@ -68,6 +68,34 @@ function boxLabel(tb: TextboxConfig): string {
   return FIELD_LABEL[tb.fieldType]
 }
 
+/** 빈/기본 레이아웃 — 초기화용. (백엔드 default_textboxes 와 동일 배치) */
+function makeDefaultLayout(): NoticeLayout {
+  const mk = (f: NoticeFieldType, y: number, enabled: boolean): TextboxConfig => ({
+    id: f,
+    fieldType: f,
+    text: null,
+    enabled,
+    xRatio: 0.1,
+    yRatio: y,
+    wRatio: 0.8,
+    hRatio: 0.12,
+    fontRatio: 0.5,
+    fontWeight: 'bold',
+    fontColor: '#1A1A1A',
+    textAlign: 'center',
+  })
+  return {
+    backgroundAsset: null,
+    textboxes: [
+      mk('bill_month', 0.05, true),
+      mk('teaching_period', 0.2, false),
+      mk('makeup_day', 0.35, false),
+      mk('student_name', 0.55, true),
+      mk('bill_amount', 0.75, true),
+    ],
+  }
+}
+
 /** 구버전 레이아웃에 누락된 데이터 필드(교습기간/보강데이 등)를 비활성으로 보강. */
 function normalizeLayout(l: NoticeLayout): NoticeLayout {
   const existing = new Set(l.textboxes.map((t) => t.fieldType))
@@ -477,6 +505,13 @@ function NoticesContent() {
     try {
       await deleteNoticeLayoutNamed(name)
       await templatesQuery.refetch()
+      // 현재 편집 중(불러온) 템플릿이 삭제되면 이름·편집 박스 초기화.
+      if (templateName.trim() === name) {
+        updateLayout(makeDefaultLayout())
+        setSelectedBoxIdx(0)
+        setEditingId(null)
+        setTemplateName('') // 비우면 디폴트('공지문{개수+1}') 자동 채움
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '템플릿 삭제 실패')
     }
