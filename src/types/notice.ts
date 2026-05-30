@@ -21,6 +21,8 @@ export type NoticeFieldType = 'bill_month' | 'student_name' | 'bill_amount'
  */
 export interface TextboxConfig {
   fieldType: NoticeFieldType
+  /** 체크 시에만 배경 위에 표시·생성. */
+  enabled: boolean
   xRatio: number // 배경 폭 대비 좌측 (0..1)
   yRatio: number // 배경 높이 대비 상단 (0..1)
   wRatio: number // 배경 폭 대비 너비 (0..1)

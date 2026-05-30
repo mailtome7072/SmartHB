@@ -518,8 +518,25 @@ function NoticesContent() {
               </div>
             )}
 
-            {/* 미리보기 캔버스 (가용 영역 채움) */}
-            <div ref={previewWrapRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gray-100">
+            {/* 표시 필드 체크박스(좌) + 미리보기 캔버스 */}
+            <div className="flex min-h-0 flex-1 gap-2">
+              {/* 좌측: 표시할 필드 토글 — 체크 시 배경 위에 텍스트박스 표시·생성 */}
+              <div className="flex w-20 shrink-0 flex-col gap-2 pt-1">
+                {(layout?.textboxes ?? []).map((tb, i) => (
+                  <label key={tb.fieldType} className="flex cursor-pointer items-center gap-1 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={tb.enabled !== false}
+                      onChange={(e) => updateBox(i, { enabled: e.target.checked })}
+                      className="h-4 w-4"
+                    />
+                    {FIELD_LABEL[tb.fieldType]}
+                  </label>
+                ))}
+              </div>
+
+              {/* 미리보기 캔버스 (가용 영역 채움) */}
+              <div ref={previewWrapRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gray-100">
               {bgDataUrl && layout ? (
                 <div
                   className="relative border border-dashed border-gray-300"
@@ -537,6 +554,7 @@ function NoticesContent() {
                       }}
                     />
                     {layout.textboxes.map((tb, i) => {
+                      if (tb.enabled === false) return null // 체크 해제 항목은 미표시
                       const boxH = tb.hRatio * bgDims.h
                       return (
                         <Rnd
@@ -587,6 +605,7 @@ function NoticesContent() {
                   배경서식을 업로드하거나 선택하면 편집 미리보기가 표시됩니다.
                 </p>
               )}
+              </div>
             </div>
 
             {/* 생성 */}

@@ -119,6 +119,7 @@ async function renderNoticePng(opts: GenerateOptions, data: NoticeStudentData): 
   container.appendChild(bg)
 
   for (const tb of opts.layout.textboxes) {
+    if (tb.enabled === false) continue // 체크 해제된 항목은 생성에서 제외
     const box = document.createElement('div')
     applyTextboxStyle(box, tb, opts.width, opts.height)
     box.textContent = noticeFieldText(tb.fieldType, data)

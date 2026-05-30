@@ -35,10 +35,17 @@ pub struct NoticeAsset {
 
 /// 텍스트박스 1종 설정 — **배경 원본 해상도 대비 비율(0..1)** 로 관리한다.
 /// 이렇게 하면 미리보기 표시 배율·생성 원본 해상도와 무관하게 동일 레이아웃이 유지된다.
+fn default_enabled() -> bool {
+    true
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TextboxConfig {
     pub field_type: String, // "bill_month" | "student_name" | "bill_amount"
+    /// 체크 시에만 배경 위에 표시·생성된다. (구버전 레이아웃 호환: 누락 시 true)
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     pub x_ratio: f64,       // 배경 폭 대비 좌측 위치 (0..1)
     pub y_ratio: f64,       // 배경 높이 대비 상단 위치 (0..1)
     pub w_ratio: f64,       // 배경 폭 대비 너비 (0..1)
@@ -62,6 +69,7 @@ impl NoticeLayout {
     fn default_layout() -> Self {
         let mk = |field: &str, y_ratio: f64| TextboxConfig {
             field_type: field.to_string(),
+            enabled: true,
             x_ratio: 0.1,
             y_ratio,
             w_ratio: 0.8,
