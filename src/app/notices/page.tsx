@@ -461,21 +461,9 @@ function NoticesContent() {
             <div className="flex min-h-0 flex-1 gap-2">
               {/* 좌측: 표시 필드 토글 + 선택 박스 폰트 컨트롤 */}
               <div className="flex w-44 shrink-0 flex-col gap-2 pt-1">
-                {(layout?.textboxes ?? []).map((tb, i) => (
-                  <label key={tb.fieldType} className="flex cursor-pointer items-center gap-1 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={tb.enabled !== false}
-                      onChange={(e) => updateBox(i, { enabled: e.target.checked })}
-                      className="h-4 w-4"
-                    />
-                    {FIELD_LABEL[tb.fieldType]}
-                  </label>
-                ))}
-
-                {/* 선택된 텍스트박스 폰트 컨트롤 (캔버스에서 박스 클릭 시 대상 변경) */}
+                {/* 선택된 텍스트박스 폰트 컨트롤 (위) — 캔버스에서 박스 클릭 시 대상 변경 */}
                 {layout && layout.textboxes[selectedBoxIdx] && (
-                  <div className={`mt-1 flex flex-col gap-2 border-t border-[var(--border)] pt-2 text-sm ${selDisabled ? 'opacity-50' : ''}`}>
+                  <div className={`flex flex-col gap-2 text-sm ${selDisabled ? 'opacity-50' : ''}`}>
                     <span className="text-xs text-gray-500">
                       편집: {FIELD_LABEL[layout.textboxes[selectedBoxIdx].fieldType]}
                       {selDisabled && ' (체크 해제됨)'}
@@ -539,6 +527,21 @@ function NoticesContent() {
                     </div>
                   </div>
                 )}
+
+                {/* 표시 필드 체크박스 (아래) */}
+                <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-2">
+                  {(layout?.textboxes ?? []).map((tb, i) => (
+                    <label key={tb.fieldType} className="flex cursor-pointer items-center gap-1 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={tb.enabled !== false}
+                        onChange={(e) => updateBox(i, { enabled: e.target.checked })}
+                        className="h-4 w-4"
+                      />
+                      {FIELD_LABEL[tb.fieldType]}
+                    </label>
+                  ))}
+                </div>
               </div>
 
               {/* 미리보기 캔버스 (가용 영역 채움) */}
