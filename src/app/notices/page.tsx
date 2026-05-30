@@ -375,65 +375,60 @@ function NoticesContent() {
                 >
                   업로드
                 </button>
-                <span className="text-xs text-gray-500">파일명에 마우스를 올리면 미리보기</span>
+                <span className="text-xs text-gray-500">콤보박스에 마우스를 올리면 선택 배경 미리보기</span>
               </div>
               {assets.length === 0 ? (
                 <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
                   업로드된 배경서식이 없습니다.
                 </p>
               ) : (
-                <div className="relative">
-                  <ul className="max-h-28 divide-y divide-[var(--border)] overflow-y-auto rounded-md border border-[var(--border)]">
-                    {assets.map((a) => {
-                      const selected = layout?.backgroundAsset === a.name
-                      return (
-                        <li
-                          key={a.name}
-                          className={`flex items-center gap-2 px-3 py-1.5 ${selected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                          onMouseEnter={(e) => {
-                            setMousePos({ x: e.clientX, y: e.clientY })
-                            void showAssetPreview(a.name)
-                          }}
-                          onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
-                          onMouseLeave={() => setHoverPreview(null)}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => layout && updateLayout({ ...layout, backgroundAsset: a.name })}
-                            className={`flex-1 truncate text-left text-sm ${selected ? 'font-semibold text-[var(--accent)]' : 'text-gray-800'}`}
-                            title={a.name}
-                          >
-                            {selected ? '✓ ' : ''}{a.name}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteAsset(a.name)}
-                            aria-label={`${a.name} 삭제`}
-                            className="rounded px-1.5 text-sm text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
-                          >
-                            ✕
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={layout?.backgroundAsset ?? ''}
+                    onChange={(e) =>
+                      layout && updateLayout({ ...layout, backgroundAsset: e.target.value || null })
+                    }
+                    onMouseEnter={(e) => {
+                      if (layout?.backgroundAsset) {
+                        setMousePos({ x: e.clientX, y: e.clientY })
+                        void showAssetPreview(layout.backgroundAsset)
+                      }
+                    }}
+                    onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
+                    onMouseLeave={() => setHoverPreview(null)}
+                    className="h-9 min-w-[220px] max-w-full rounded-md border border-[var(--border)] px-2 text-sm"
+                  >
+                    <option value="">선택 안 함</option>
+                    {assets.map((a) => (
+                      <option key={a.name} value={a.name}>{a.name}</option>
+                    ))}
+                  </select>
+                  {layout?.backgroundAsset && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAsset(layout.backgroundAsset!)}
+                      className="h-9 rounded-md border border-[var(--border)] px-3 text-sm text-gray-700 hover:bg-red-50 hover:text-[var(--danger)]"
+                    >
+                      삭제
+                    </button>
+                  )}
                   {hoverPreview && (
                     <div
                       className="pointer-events-none fixed z-50 rounded-md border border-[var(--border)] bg-white p-1 shadow-lg"
                       style={{
                         left:
                           typeof window !== 'undefined'
-                            ? Math.min(mousePos.x + 14, window.innerWidth - 244)
+                            ? Math.min(mousePos.x + 14, window.innerWidth - 350)
                             : mousePos.x + 14,
                         top:
                           typeof window !== 'undefined'
-                            ? Math.min(mousePos.y + 14, window.innerHeight - 224)
+                            ? Math.min(mousePos.y + 14, window.innerHeight - 340)
                             : mousePos.y + 14,
                       }}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={hoverPreview.url} alt={`${hoverPreview.name} 미리보기`} className="max-h-48 max-w-[220px] object-contain" />
-                      <p className="mt-1 max-w-[220px] truncate text-center text-xs text-gray-600">{hoverPreview.name}</p>
+                      <img src={hoverPreview.url} alt={`${hoverPreview.name} 미리보기`} className="max-h-72 max-w-[330px] object-contain" />
+                      <p className="mt-1 max-w-[330px] truncate text-center text-xs text-gray-600">{hoverPreview.name}</p>
                     </div>
                   )}
                 </div>
