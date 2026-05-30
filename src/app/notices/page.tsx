@@ -129,6 +129,8 @@ function NoticesContent() {
   // 파일명 hover 미리보기
   const previewCache = useRef<Map<string, string>>(new Map())
   const [hoverPreview, setHoverPreview] = useState<{ name: string; url: string } | null>(null)
+  // 미리보기는 마우스 포인터 우측 하단을 따라다닌다.
+  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const showAssetPreview = useCallback(async (name: string) => {
     const cached = previewCache.current.get(name)
     if (cached) {
@@ -388,7 +390,11 @@ function NoticesContent() {
                         <li
                           key={a.name}
                           className={`flex items-center gap-2 px-3 py-1.5 ${selected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                          onMouseEnter={() => void showAssetPreview(a.name)}
+                          onMouseEnter={(e) => {
+                            setMousePos({ x: e.clientX, y: e.clientY })
+                            void showAssetPreview(a.name)
+                          }}
+                          onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
                           onMouseLeave={() => setHoverPreview(null)}
                         >
                           <button
@@ -412,7 +418,19 @@ function NoticesContent() {
                     })}
                   </ul>
                   {hoverPreview && (
-                    <div className="pointer-events-none absolute left-full top-0 z-20 ml-2 rounded-md border border-[var(--border)] bg-white p-1 shadow-lg">
+                    <div
+                      className="pointer-events-none fixed z-50 rounded-md border border-[var(--border)] bg-white p-1 shadow-lg"
+                      style={{
+                        left:
+                          typeof window !== 'undefined'
+                            ? Math.min(mousePos.x + 14, window.innerWidth - 244)
+                            : mousePos.x + 14,
+                        top:
+                          typeof window !== 'undefined'
+                            ? Math.min(mousePos.y + 14, window.innerHeight - 224)
+                            : mousePos.y + 14,
+                      }}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={hoverPreview.url} alt={`${hoverPreview.name} 미리보기`} className="max-h-48 max-w-[220px] object-contain" />
                       <p className="mt-1 max-w-[220px] truncate text-center text-xs text-gray-600">{hoverPreview.name}</p>
