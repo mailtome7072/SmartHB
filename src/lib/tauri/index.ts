@@ -1281,6 +1281,12 @@ export async function listPaymentView(yearMonth: string): Promise<PaymentViewRow
   return inv('list_payment_view', { yearMonth }) as Promise<PaymentViewRow[]>
 }
 
+export async function listBilledMonths(): Promise<string[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_billed_months') as Promise<string[]>
+}
+
 export async function getBillingPeriodStats(period: string): Promise<BillingPeriodStats> {
   const inv = await getInvoke()
   if (!inv) {

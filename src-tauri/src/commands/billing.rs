@@ -224,6 +224,21 @@ pub(crate) async fn list_bills_impl(
     rows.into_iter().map(row_to_bill).collect()
 }
 
+/// 청구가 생성된 distinct 청구년월 목록 (내림차순). 월별 집계 탭 기간 선택용 —
+/// 실제 청구가 존재하는 년월만 제시한다.
+#[tauri::command]
+pub async fn list_billed_months() -> Result<Vec<String>, String> {
+    let pool = db::pool().map_err(String::from)?;
+    list_billed_months_impl(pool).await
+}
+
+pub(crate) async fn list_billed_months_impl(pool: &SqlitePool) -> Result<Vec<String>, String> {
+    sqlx::query_scalar("SELECT DISTINCT bill_year_month FROM bills ORDER BY bill_year_month DESC")
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("청구년월 목록 조회 실패: {}", e))
+}
+
 /// 단건 조회.
 #[tauri::command]
 pub async fn get_bill(id: i64) -> Result<Bill, String> {
@@ -1878,6 +1893,19 @@ mod tests {
         assert_eq!(s.total_unpaid, 200_000);
         assert_eq!(s.paid_count, 1);
         assert_eq!(s.unpaid_count, 2);
+    }
+
+    #[tokio::test]
+    async fn list_billed_months_returns_distinct_desc() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let s = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        seed_schedule(&pool, s, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-03").await.expect("gen3");
+        generate_bills_impl(&pool, "2026-05").await.expect("gen5");
+
+        let months = list_billed_months_impl(&pool).await.expect("list");
+        assert_eq!(months, vec!["2026-05".to_string(), "2026-03".to_string()], "내림차순 distinct");
     }
 
     #[tokio::test]

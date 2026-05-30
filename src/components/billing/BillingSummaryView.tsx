@@ -14,9 +14,9 @@
  * 캐싱: TanStack Query `['billing-period-stats', period]`.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getBillingPeriodStats } from '@/lib/tauri'
+import { getBillingPeriodStats, listBilledMonths } from '@/lib/tauri'
 
 interface Props {
   /** 상단 청구년월(YYYY-MM) — 기본 선택값 시드용. */
@@ -29,44 +29,52 @@ function won(n: number): string {
   return `${n.toLocaleString()}원`
 }
 
-/** 최근 N개월 'YYYY-MM' 목록 (현재월 기준 내림차순). */
-function recentMonths(count: number): string[] {
-  const d = new Date()
-  const out: string[] = []
-  for (let i = 0; i < count; i++) {
-    const dt = new Date(d.getFullYear(), d.getMonth() - i, 1)
-    out.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`)
-  }
-  return out
-}
-
-/** 최근 N년 'YYYY' 목록 (현재년 기준 내림차순). */
-function recentYears(count: number): string[] {
-  const y = new Date().getFullYear()
-  return Array.from({ length: count }, (_, i) => String(y - i))
-}
-
 export function BillingSummaryView({ defaultYearMonth }: Props) {
   const [mode, setMode] = useState<Mode>('month')
   const [selectedMonth, setSelectedMonth] = useState(defaultYearMonth)
   const [selectedYear, setSelectedYear] = useState(defaultYearMonth.slice(0, 4))
 
-  const monthOptions = useMemo(() => {
-    const base = recentMonths(24)
-    return base.includes(selectedMonth) ? base : [selectedMonth, ...base]
-  }, [selectedMonth])
-  const yearOptions = useMemo(() => {
-    const base = recentYears(6)
-    return base.includes(selectedYear) ? base : [selectedYear, ...base]
-  }, [selectedYear])
+  // 기간 선택 옵션 — 실제 청구가 생성된 년월만 제시.
+  const monthsQuery = useQuery({
+    queryKey: ['billed-months'],
+    queryFn: listBilledMonths,
+  })
+  const monthOptions = useMemo(() => monthsQuery.data ?? [], [monthsQuery.data])
+  const yearOptions = useMemo(
+    () => [...new Set(monthOptions.map((m) => m.slice(0, 4)))],
+    [monthOptions],
+  )
+
+  // 목록 로드 후 현재 선택이 목록에 없으면 첫(최신) 항목으로 보정.
+  useEffect(() => {
+    if (monthOptions.length > 0 && !monthOptions.includes(selectedMonth)) {
+      setSelectedMonth(monthOptions[0])
+    }
+  }, [monthOptions, selectedMonth])
+  useEffect(() => {
+    if (yearOptions.length > 0 && !yearOptions.includes(selectedYear)) {
+      setSelectedYear(yearOptions[0])
+    }
+  }, [yearOptions, selectedYear])
 
   const period = mode === 'year' ? selectedYear : selectedMonth
+  const hasPeriods = monthOptions.length > 0
 
   const statsQuery = useQuery({
     queryKey: ['billing-period-stats', period],
     queryFn: () => getBillingPeriodStats(period),
+    enabled: hasPeriods && monthOptions.includes(selectedMonth),
   })
   const stats = statsQuery.data
+
+  if (monthsQuery.isLoading) return <p>불러오는 중...</p>
+  if (!hasPeriods) {
+    return (
+      <div className="rounded-md border border-[var(--border)] bg-gray-50 p-6 text-center text-gray-600">
+        청구 데이터가 생성된 월이 없습니다. 청구 목록 탭에서 먼저 청구를 생성해 주세요.
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
