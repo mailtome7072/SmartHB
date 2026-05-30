@@ -54,6 +54,24 @@ function currentYearMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+/** 텍스트 정렬 아이콘 — 정렬 방향에 맞춰 길이가 다른 가로선 3줄. */
+function AlignIcon({ align }: { align: 'left' | 'center' | 'right' }) {
+  // 각 줄을 정렬 방향 기준으로 배치 (full / short / mid).
+  const lines =
+    align === 'left'
+      ? [[1, 13], [1, 8], [1, 11]]
+      : align === 'right'
+        ? [[1, 13], [6, 13], [3, 13]]
+        : [[1, 13], [3.5, 10.5], [2.5, 11.5]]
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      {lines.map(([x1, x2], i) => (
+        <line key={i} x1={x1} x2={x2} y1={3 + i * 4} y2={3 + i * 4} />
+      ))}
+    </svg>
+  )
+}
+
 export default function NoticesPage() {
   return (
     <Suspense fallback={<SplashScreen message="공지문 화면을 여는 중입니다..." />}>
@@ -516,7 +534,7 @@ function NoticesContent() {
                       fontWeight: layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'normal' : 'bold',
                     })
                   }
-                  className={`h-9 rounded border px-2 text-base ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
+                  className={`flex h-9 w-9 items-center justify-center rounded border text-xs ${layout.textboxes[selectedBoxIdx].fontWeight === 'bold' ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
                 >
                   🅱️
                 </button>
@@ -529,19 +547,19 @@ function NoticesContent() {
                   aria-label="글자 색"
                 />
                 {([
-                  ['left', '⬅️', '왼쪽 정렬'],
-                  ['center', '↔️', '가운데 정렬'],
-                  ['right', '➡️', '오른쪽 정렬'],
-                ] as const).map(([al, icon, label]) => (
+                  ['left', '왼쪽 정렬'],
+                  ['center', '가운데 정렬'],
+                  ['right', '오른쪽 정렬'],
+                ] as const).map(([al, label]) => (
                   <button
                     key={al}
                     type="button"
                     title={label}
                     aria-label={label}
                     onClick={() => updateBox(selectedBoxIdx, { textAlign: al })}
-                    className={`h-9 rounded border px-2 text-base ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50' : 'border-[var(--border)]'}`}
+                    className={`flex h-9 w-9 items-center justify-center rounded border ${layout.textboxes[selectedBoxIdx].textAlign === al ? 'border-[var(--accent)] bg-blue-50 text-[var(--accent)]' : 'border-[var(--border)] text-gray-700'}`}
                   >
-                    {icon}
+                    <AlignIcon align={al} />
                   </button>
                 ))}
               </div>
