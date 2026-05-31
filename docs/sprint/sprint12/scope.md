@@ -11,15 +11,15 @@ Sprint: 12  |  Date: 2026-05-30  |  Session: #1
 | src/components/billing/PaymentsView.tsx | [1회] | T0 — A70 dirtyEntries payerName 필터 |
 | src/components/billing/BillingSummaryView.tsx | [0회] | T0 — A86 년/월 토글 radio + radiogroup 전환 |
 | src-tauri/src/commands/paths.rs | [3회 ⚠️] | T1 — assets_dir / notice_output_dir 헬퍼 |
-| src-tauri/src/commands/notice.rs | [4회 ⚠️] | T2~T4 신규 — 배경서식/레이아웃/이미지 저장 IPC |
+| src-tauri/src/commands/notice.rs | [21회 ⚠️] | T2~T4 신규 — 배경서식/레이아웃/이미지 저장 IPC |
 | src-tauri/src/commands/mod.rs | [1회] | T2 — pub mod notice 등록 |
-| src-tauri/src/lib.rs | [1회] | T2~T4 — invoke_handler 등록 |
-| src/lib/tauri/index.ts | [1회] | T5 — IPC 래퍼 8종 |
-| src/types/notice.ts | [1회] | T5 신규 — 도메인 타입 |
-| src/app/notice/page.tsx | [0회] | T6 신규 — /notice 라우트 |
+| src-tauri/src/lib.rs | [4회 ⚠️] | T2~T4 — invoke_handler 등록 |
+| src/lib/tauri/index.ts | [5회 ⚠️] | T5 — IPC 래퍼 8종 |
+| src/types/notice.ts | [6회 ⚠️] | T5 신규 — 도메인 타입 |
+| src/app/notice/page.tsx | [88회 ⚠️] | T6 신규 — /notice 라우트 |
 | src/components/notice/ | [0회] | T6 신규 — 편집 컴포넌트 |
-| src/lib/menu-config.ts | [0회] | T6 — '공지문' 메뉴 활성화 |
-| src/lib/notice-generator.ts | [0회] | T7 신규 — 일괄 이미지 생성 |
+| src/lib/menu-config.ts | [1회] | T6 — '공지문' 메뉴 활성화 |
+| src/lib/notice-generator.ts | [9회 ⚠️] | T7 신규 — 일괄 이미지 생성 |
 | package.json | [0회] | T7 — html-to-image + react-rnd (계획 명시 — 사전 승인됨) |
 | src-tauri/capabilities/default.json | [0회] | T8 — 필요 시 최소 권한 (std::fs 직접이면 변경 없음) |
 
