@@ -1,56 +1,43 @@
 ---
 name: sprint-next-session
-description: "post-Sprint 11 develop 보완 다수 완료 + sprint-close/review 완료. 다음 세션: 수동검증 잔여 항목 후 deploy-prod 또는 Sprint 12 계획"
+description: "Sprint 12(공지문) 구현 중 — sprint12 브랜치 원격 push 완료. 회사 PC에서 수동 검수 이어가는 중"
 metadata:
   node_type: memory
   type: project
-  originSessionId: post-sprint11-develop-batch-2026-05-30
+  originSessionId: sprint12-notice-relay-2026-05-31
 ---
 
-Sprint 11 머지(`dfc5925`) 이후 develop 에 직접 보완을 계속 누적 중. **PR 단계 생략** ([[workflow-no-pr]]).
-2026-05-30 세션에서 청구/수납·인증 대규모 보완 완료 + sprint-close/sprint-review 2회 완료.
+**현재 위치(2026-05-31)**: **Sprint 12 = 카카오톡 교습비 공지문 이미지 생성**(PRD §4.10) 구현 중.
+브랜치 **`sprint12`** (develop 기반), **origin 에 push 완료** — 다른 PC에서 이어받기 가능. 현재 **수동 검수(시각 검증) 진행 중**, 아직 sprint-close 전.
 
-## 2026-05-30 세션 커밋 (develop, 검증 완료)
+## 릴레이 시작 (회사 PC 등 새 환경)
+1. `git fetch origin && git checkout sprint12` (또는 `git checkout -b sprint12 origin/sprint12`)
+2. **`pnpm install`** — 신규 의존성 `html-to-image`, `react-rnd` 받기 (package.json 반영됨)
+3. `pnpm tauri:dev` — 앱 시작 시 마이그레이션 자동 적용(V111 포함). DB·배경서식·저장 템플릿은 클라우드 동기화 폴더(`smarthb/`)에 있어 자동 공유됨.
+4. **PIN**: 키체인 키는 PC별이라 회사 PC 첫 실행 시 PIN 입력 필요(salt.bin 은 클라우드 동기화됨 → 같은 PIN 으로 잠금 해제). dev 자격증명은 2026-05-31 재설정됨.
+5. `.claude/memory/` 미러는 sprint12 에 커밋돼 있어 컨텍스트 동기화됨.
 
-| 커밋 | 내용 |
-|------|------|
-| `945e4a7` | 청구/수납 검수 후속 8건 (마감필터·건수표기·확정버튼버그·달력포커스·수납취소·결제수단필수·수납완료마감잠금) |
-| `c93399e` | 앱 잠금 인증 **6자리 숫자 PIN** 전환 (ADR-007, validate_pin) |
-| `70c59a1` | 청구 관리 **'월별 집계' 탭** (년/월 토글, 결제수단별 수납총액 열 배치, get_billing_period_stats IPC) |
-| `c1ae063` | **청구 '마감(closed)' 개념 전면 폐기** (원장 결정). V111 마이그레이션 — bills 재구성(status 2단계, close_reason/closed_at 제거). PRD §4.9.7/AC 갱신 |
-| `2a964b0` | 월별 집계 기간 선택을 청구 생성된 년월로 한정 (list_billed_months IPC) |
-| `29fbe93` | 월별 집계 — 청구 0건 시 디폴트 년월=현재 년월 |
-| `fb2a491` | review F1 — update_bill 존재확인+수납여부 1쿼리 통합 |
-| (docs) | sprint-close/review 산출물 2회: CHANGELOG/ROADMAP/DEPLOY, test-report, risk-register(R83~R87), 회고 2건, code-review |
+## Sprint 12 구현 현황 (공지문 `/notices`, `notice.rs`)
+- 백엔드 `commands/notice.rs`: 배경서식(assets) CRUD, 레이아웃 저장(working + 이름 템플릿), 이미지 저장(output PNG), 월 정보(교습기간·보강데이) IPC. paths: assets_dir/notice_output_dir.
+- 프론트 `/notices`: 좌(원생 리스트 240px) · 중(편집 캔버스) · 우(저장 템플릿 패널 220px).
+  - 텍스트박스 = **배경 원본 해상도 비율** 저장, 폰트=박스높이×fontRatio 자동, react-rnd 드래그/리사이즈(scale 보정).
+  - 데이터 필드: 청구월/교습기간/보강데이/원생명/청구액 체크박스(체크 시 표시) + custom 텍스트박스('+텍스트박스 추가', 더블클릭 인라인 편집).
+  - 교습기간 = 수업 가능 첫/마지막 일자(운영요일+공휴/휴원 제외). 보강데이 = 'D(요일) 10시~13시'.
+  - 저장 패널: 공지문 이름 입력(디폴트 없음) → '공지문 저장'(동명 시 덮어쓰기 확인 모달), 템플릿 목록(이름 내림차순, 클릭 로드, ✕ 삭제). 편집 중 템플릿 삭제 시 체크해제+이름비움 초기화.
+  - window.confirm/prompt → 커스텀 모달(Tauri 호환). 성공 메시지는 토스트(오류만 ErrorDialog).
+- 생성: html-to-image 로 원생별 PNG → `output/{YYYYMM}/{YYYYMM}_{원생명}.png`, 천단위 콤마(AC-4.10-1), 덮어쓰기 확인(AC-4.10-2).
 
-## 핵심 도메인 변경 (다음 세션 주의)
+## 전역 변경(이번 세션, 회귀 주의)
+- **QueryClient**: staleTime 0 + refetchOnMount 'always' + refetchOnWindowFocus true — 메뉴 이동 시 즉시 최신 반영(이전 30초 캐시 staleness 해소).
 
-- **청구 상태 2단계**: 미확정(draft) → 확정(confirmed). **마감(closed) 폐기**. `close_billing_month`/CloseMonthDialog/CloseReasonDialog 제거됨. 다시 마감 언급 금지.
-- **수납완료 잠금**: `payments.is_paid=1` 청구는 status 무관 금액 수정 거부(`update_bill_impl`) + 프론트 편집 비활성. (구 "마감+수납완료" 규칙 대체)
-- **인증 = 6자리 숫자 PIN** (ADR-007). 보안 트레이드오프(10^6 키스페이스, 클라우드 DB 오프라인 브루트포스) 명시 수용. 복구코드 12자리 유지. 마이그레이션: dev 자격증명 재설정 필요(평문 DB라 데이터 무손실), prod 미출시.
-- **마이그레이션 현황**: V111 추가 (bills 재구성). 다음 번호는 V112~ 또는 도메인 블록.
+## 다음 단계
+1. 공지문 수동 검수 완료 → DEPLOY.md 항목 정리.
+2. **sprint-close → sprint-review** (코드리뷰+검증+회고). Sprint 12 DoD/AC(4.10-1/2/3) 전수 마킹.
+3. develop 머지(직접, PR 생략 [[workflow-no-pr]]).
 
-## ⏳ 다음 세션 시작 시 — 남은 일
+## 이후 예정/결정
+- [[sprint13-pin-optional]] — 실행 시 PIN 인증 옵션화(C안) Sprint 13.
+- [[exam-feature-cancelled]] — 단원평가+학습보고서(Phase 5 전체) 취소 → 다음 계획 시 제외.
 
-1. **DEPLOY.md 수동 검증 잔여 항목** (sprint-review 가 ⬜ 로 추가):
-   - 월별 집계 탭(년/월 토글·결제수단별 열), 드롭다운 생성년월 한정, 0건 현재년월 디폴트, 마감 제거 회귀, V111 적용 확인
-   - (사용자는 세션 중 시각검증 완료 의사 밝힘 — DEPLOY.md 항목 ✅ 정리만 남았을 수 있음)
-2. **Notion 업데이트 필요** (sprint-review 권고, 사용자 확인 후): 데이터 모델(V111 bills 재구성/status 2단계/close 컬럼 제거), 기능 명세(마감 폐기 §4.9.7). [[notion]] 규칙 — 페이지 ID 미입력 상태일 수 있음.
-3. **deploy-prod** 또는 **Sprint 12 계획** 진입.
-
-## carry-over (이전 리뷰)
-
-- review F2 (Low): 월별 집계 년/월 토글이 radio 아닌 checkbox — **사용자가 '체크박스' 명시 요청**이라 의도된 설계(수정 안 함).
-- A69/A70/A71/A80(마감 정책은 폐기로 무효화)/A74~A79 (Sprint 10~11 이연)
-- A81(Medium, update_bill 트랜잭션 분리 — fb2a491 에서 1쿼리 통합으로 일부 해소), A82, A84
-
-## 다음 단계 (배포)
-
-1. **deploy-prod** — develop → main 직접 머지 + 다음 버전 태그. 누적 변경 규모상 `v0.6.0` 권장 (월별집계 신규 + 마감 제거 + PIN). `deploy-prod` 가 `[Unreleased]` → 버전 전환.
-2. **Sprint 12 계획** — 공지문 이미지 생성(§4.10), 대시보드 위젯(§4.11.3).
-
-## 정책 (재확인)
-
-- **PR 단계 생략** — develop/main 머지 모두 직접 ([[workflow-no-pr]])
-- **메모리 미러 동기화** — 사용자 메모리 + `.claude/memory/` 두 곳 갱신 후 commit
-- 사용자 메모리 미러: `/Users/skyang/.claude/projects/-Users-skyang-Projects-SmartHB/memory/`
+## 정책
+- PR 생략, 직접 머지 ([[workflow-no-pr]]). 메모리 추가/수정 시 사용자 메모리 + `.claude/memory/` 양쪽 갱신 후 commit.
