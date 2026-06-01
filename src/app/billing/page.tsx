@@ -13,7 +13,7 @@
  * 캐싱: TanStack Query `['bills', yearMonth]` + `['billing-summary', yearMonth]`.
  */
 
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -27,6 +27,7 @@ import {
   generateBills,
   getBillingSummary,
   listBills,
+  listStudyPeriods,
   searchStudentsForBilling,
 } from '@/lib/tauri'
 import type { BillingSearchResult } from '@/types/billing'
@@ -36,17 +37,9 @@ function currentYearMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-function previousYearMonths(count: number, from: string): string[] {
-  const [y, m] = from.split('-').map(Number)
-  const out: string[] = []
-  for (let i = 0; i < count; i++) {
-    const month = m - i
-    const year = y + Math.floor((month - 1) / 12)
-    const monthNorm = ((month - 1) % 12 + 12) % 12 + 1
-    out.push(`${year}-${String(monthNorm).padStart(2, '0')}`)
-  }
-  return out
-}
+/** 학사 스케줄(교습기간) 조회 범위 — study_periods 테이블은 작아 비용 무시 가능. */
+const STUDY_PERIOD_FROM = '2000-01'
+const STUDY_PERIOD_TO = '2099-12'
 
 export default function BillingPage() {
   return (
@@ -103,10 +96,37 @@ function BillingContent() {
     queryFn: () => getBillingSummary(effectiveYearMonth),
   })
 
-  const monthOptions = useMemo(
-    () => previousYearMonths(12, currentYearMonth()),
-    [],
-  )
+  // 청구년월 드롭다운 옵션 — 학사 스케줄(교습기간) 등록된 년월만. 미등록 시 현재 년월 fallback.
+  // 출결관리와 동일 정책: 프로그램 실행뿐 아니라 메뉴 진입(=페이지 mount) 시마다 매번 갱신.
+  const studyPeriodsQuery = useQuery({
+    queryKey: ['study-periods', STUDY_PERIOD_FROM, STUDY_PERIOD_TO],
+    queryFn: () => listStudyPeriods(STUDY_PERIOD_FROM, STUDY_PERIOD_TO),
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
+  // 메뉴가 호출되어 본 페이지가 mount 될 때마다 study-periods 캐시 무효화 → 즉시 재조회.
+  useEffect(() => {
+    void qc.invalidateQueries({ queryKey: ['study-periods'] })
+  }, [qc])
+
+  const monthOptions = useMemo(() => {
+    const periods = studyPeriodsQuery.data
+    if (periods === undefined || periods.length === 0) {
+      return [currentYearMonth()]
+    }
+    return [...new Set(periods.map((p) => p.year_month))].sort((a, b) =>
+      b.localeCompare(a),
+    )
+  }, [studyPeriodsQuery.data])
+
+  // 학사 스케줄이 로드되었는데 현재 effectiveYearMonth 가 옵션에 없으면 첫 옵션(최신)으로 이동.
+  useEffect(() => {
+    if (studyPeriodsQuery.data === undefined) return
+    if (!monthOptions.includes(effectiveYearMonth)) {
+      setYearMonth(monthOptions[0])
+    }
+  }, [studyPeriodsQuery.data, monthOptions, effectiveYearMonth])
 
   const generateMutation = useMutation({
     mutationFn: () => generateBills(effectiveYearMonth),
