@@ -15,9 +15,9 @@ export interface MenuItem {
 export const MENU_ITEMS: MenuItem[] = [
   { label: '대시보드', href: '/', disabledHint: 'Phase 6 에서 제공' },
   { label: '원생 관리', href: '/students' },
-  { label: '학사 스케줄', href: '/academic' },
-  { label: '수업 관리', href: '/schedules' },
   { label: '출결 관리', href: '/attendance' },
+  { label: '수업 관리', href: '/schedules' },
+  { label: '학사 관리', href: '/academic' },
   // 보강 관리는 Sprint 10 T11 에서 `/schedules` 페이지 내 탭으로 통합 — 별도 메뉴 항목 제거 (Sprint 11 F7).
   { label: '단원 평가', href: '/exams', disabledHint: 'Phase 5 에서 제공' },
   { label: '청구/수납 관리', href: '/billing' },
