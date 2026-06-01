@@ -22,6 +22,21 @@ Sprint: 12  |  Date: 2026-05-30  |  Session: #1
 | src/lib/notice-generator.ts | [9회 ⚠️] | T7 신규 — 일괄 이미지 생성 |
 | package.json | [0회] | T7 — html-to-image + react-rnd (계획 명시 — 사전 승인됨) |
 | src-tauri/capabilities/default.json | [0회] | T8 — 필요 시 최소 권한 (std::fs 직접이면 변경 없음) |
+| src/components/LockScreen.tsx | [1회] | scope 외 추가 — Sprint 1 T4 carry-over TODO 해결: "비밀번호를 잊으셨나요?" dead button → RecoveryCodeInput 연결 (회사 PC PIN 재설정 차단 해소, 사용자 요청) |
+| src-tauri/src/commands/auth.rs | [2회] | scope 외 추가 — change_pin IPC (현 PIN 검증 후 새 PIN 으로 재설정, set_password 패턴 재사용) |
+| src-tauri/src/lib.rs | [5회 ⚠️] | scope 외 추가 — change_pin invoke_handler 등록 |
+| src/lib/tauri/index.ts | [6회 ⚠️] | scope 외 추가 — changePin 래퍼 |
+| src/app/settings/page.tsx | [1회] | scope 외 추가 — 'PIN 번호 변경' 카드 추가 |
+| src/app/settings/pin/page.tsx | [1회] | scope 외 추가 — PIN 변경 UI (신규 라우트, 회사 PC PIN 변경 차단 해소 사용자 요청) |
+| src-tauri/src/commands/recovery.rs | [삭제] | scope 외 — 복구 코드 시스템 제거 (cipher OFF 환경에서 불필요, 사용자 요청) |
+| src/components/RecoveryCodeInput.tsx | [삭제] | scope 외 — 복구 코드 입력 UI 제거 |
+| src/components/RecoveryCodeDisplay.tsx | [삭제] | scope 외 — 복구 코드 표시 UI 제거 (orphan 컴포넌트) |
+| src/lib/recovery-code.ts | [삭제] | scope 외 — 복구 코드 정규화 helper 제거 |
+| src-tauri/src/commands/mod.rs | [2회] | scope 외 — `pub mod recovery` 제거 |
+| src-tauri/src/commands/audit.rs | [1회] | scope 외 — RecoveryCodeIssued variant + 테스트 + 문서 주석 제거 |
+| src-tauri/src/commands/setup.rs | [1회] | scope 외 — recovery 모듈 언급 주석 정리 |
+| src/types/index.ts | [1회] | scope 외 — AuditEventType 의 'recovery-code-issued' 제거 |
+| src-tauri/Cargo.toml | [1회] | scope 외 — argon2 의존성 제거 (복구코드 전용이었음) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)
