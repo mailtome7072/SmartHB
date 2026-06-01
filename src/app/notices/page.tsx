@@ -118,8 +118,8 @@ function normalizeLayout(l: NoticeLayout): NoticeLayout {
   return { ...l, textboxes: [...l.textboxes, ...added] }
 }
 
-const LEFT_PANEL_WIDTH = 240 // 좌측 원생 패널 고정 너비(최소)
-const RIGHT_PANEL_WIDTH = 220 // 우측 저장 패널 고정 너비
+const STUDENT_PANEL_WIDTH = 240 // 원생 패널(청구년월 + 원생 리스트) 고정 너비
+const TEMPLATE_PANEL_WIDTH = 220 // 저장 패널(공지문 이름 + 템플릿 목록) 고정 너비
 
 function currentYearMonth(): string {
   const d = new Date()
@@ -446,6 +446,30 @@ function NoticesContent() {
   // 작성/저장할 템플릿 이름. 디폴트 없음 — 빈 상태로 시작, 사용자가 직접 입력.
   const [templateName, setTemplateName] = useState('')
 
+  // 배경서식이 로드되지 않은(선택되지 않은) 시점에 공지문 이름을 한 번 비운다.
+  // - 의존성에 backgroundAsset 만 두어, 사용자가 타이핑 중인 값이 매 키 입력마다 지워지는
+  //   상황을 피한다. (입력은 자유롭게 가능하되 저장 버튼이 별도로 비활성화됨)
+  useEffect(() => {
+    if (!layout?.backgroundAsset) {
+      setTemplateName('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout?.backgroundAsset])
+
+  // 배경서식이 로드되지 않은 시점에 데이터 필드 체크박스(청구월/원생명/청구액 등)를 모두 unchecked 로
+  // 강제한다. 사용자가 체크 상태를 토글하는 동안 매번 되돌려지지 않도록 backgroundAsset 변경에만
+  // 반응 — 배경을 다시 선택하면 그 시점부터는 자유롭게 체크 가능.
+  useEffect(() => {
+    if (layout?.backgroundAsset) return
+    if (!layout) return
+    if (layout.textboxes.every((tb) => tb.enabled === false)) return
+    updateLayout({
+      ...layout,
+      textboxes: layout.textboxes.map((tb) => ({ ...tb, enabled: false })),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout?.backgroundAsset])
+
   // 실제 저장 — 이름 확정 후 호출.
   const doSaveTemplate = async (name: string) => {
     if (!layout) return
@@ -512,10 +536,10 @@ function NoticesContent() {
         <h1 className="mb-3 text-2xl font-bold">공지문 생성</h1>
 
         <div className="flex min-h-0 flex-1 gap-3">
-          {/* 좌측: 원생 리스트 (고정 너비) */}
+          {/* 우측: 원생 리스트 (고정 너비) — 청구년월 + 원생 체크리스트 */}
           <section
-            className="flex flex-col overflow-hidden rounded-md border border-[var(--border)] p-3"
-            style={{ width: LEFT_PANEL_WIDTH, flex: '0 0 auto' }}
+            className="order-3 flex flex-col overflow-hidden rounded-md border border-[var(--border)] p-3"
+            style={{ width: STUDENT_PANEL_WIDTH, flex: '0 0 auto' }}
           >
             <label className="mb-2 block text-base font-medium">
               청구년월
@@ -562,8 +586,8 @@ function NoticesContent() {
             )}
           </section>
 
-          {/* 우측: 편집 캔버스 */}
-          <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[var(--border)] p-3">
+          {/* 중앙: 편집 캔버스 */}
+          <section className="order-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-[var(--border)] p-3">
             {/* 배경서식 관리 — 한 줄: 콤보박스 + 업로드 */}
             <div className="mb-2 flex items-center gap-2">
               <span className="text-base font-medium">배경서식</span>
@@ -897,10 +921,10 @@ function NoticesContent() {
             </div>
           </section>
 
-          {/* 우측: 저장 패널 (편집 박스 우측, 고정 너비) */}
+          {/* 좌측: 저장 패널 (고정 너비) — 공지문 이름 + 저장 + 템플릿 목록 */}
           <section
-            className="flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-3"
-            style={{ width: RIGHT_PANEL_WIDTH }}
+            className="order-1 flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-3"
+            style={{ width: TEMPLATE_PANEL_WIDTH }}
           >
             <label className="text-xs text-gray-500">공지문 이름</label>
             <input
@@ -913,7 +937,7 @@ function NoticesContent() {
             <button
               type="button"
               onClick={handleSaveNotice}
-              disabled={!layout || templateName.trim() === ''}
+              disabled={!layout?.backgroundAsset || templateName.trim() === ''}
               className="h-9 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               공지문 저장
