@@ -100,7 +100,6 @@ export type SyncStatus =
  */
 export type AuditEventType =
   | 'password-change'
-  | 'recovery-code-issued'
   | 'backup-created'
   | 'backup-restored'
   | 'lock-forced'

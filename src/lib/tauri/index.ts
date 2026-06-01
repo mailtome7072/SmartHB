@@ -169,40 +169,14 @@ export async function unlockDb(password: string): Promise<void> {
 }
 
 /**
- * 12자리 복구 코드를 발급한다 (PI-07 PRD v1.5.1).
+ * 현재 PIN 을 확인한 뒤 새 PIN 으로 변경한다 (잠금 해제 상태에서 설정 메뉴를 통해 호출).
  *
- * 평문 코드는 호출 직후 화면에 1회 표시하고 즉시 폐기해야 한다 — React state 보유는 표시
- * 중에만, 사용자가 "확인" 클릭 시 빈 문자열로 덮어쓰기 권장.
- *
- * 이미 발급된 코드가 있으면 무효화하고 새 코드를 반환 (재발급 정책).
+ * 현 PIN 불일치 / 새 PIN 형식 오류 시 throw — 호출자가 catch 하여 사용자 메시지 표시.
  */
-export async function generateRecoveryCode(): Promise<string> {
-  const inv = await getInvoke()
-  if (!inv) return 'DEVM-ODEX-TEST'
-  return inv('generate_recovery_code') as Promise<string>
-}
-
-/**
- * 사용자가 입력한 복구 코드를 검증한다 (constant-time).
- *
- * 공백·하이픈은 백엔드에서 자동 제거되며 대문자로 통일된다.
- */
-export async function verifyRecoveryCode(code: string): Promise<boolean> {
-  const inv = await getInvoke()
-  if (!inv) return code.replace(/[-\s]/g, '').toUpperCase() === 'DEVMODEXTEST'
-  return inv('verify_recovery_code', { code }) as Promise<boolean>
-}
-
-/**
- * 복구 코드로 비밀번호를 재설정한다.
- *
- * 코드 검증 실패 시 throw. 성공 시 keyring 의 salt + key 가 새 비밀번호로 갱신된다.
- * SQLCipher DB rekey 는 T9 통합 시점에 추가된다.
- */
-export async function resetPasswordWithCode(code: string, newPassword: string): Promise<void> {
+export async function changePin(currentPin: string, newPin: string): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
-  await inv('reset_password_with_code', { code, newPassword })
+  await inv('change_pin', { currentPin, newPin })
 }
 
 /**

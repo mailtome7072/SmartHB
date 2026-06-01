@@ -13,7 +13,7 @@
 //!
 //! 본 모듈은 마법사의 **IPC 인터페이스 + config.json 영속화** 까지만 담당한다.
 //! Keychain salt → `{cloud}/smarthb/salt.bin` 이전과 `paths::data_root()` 동적화는 별도
-//! sweep(후속 sprint 또는 본 sprint 의 별도 Task)으로 분리한다 — 이 두 작업은 auth/recovery/
+//! sweep(후속 sprint 또는 본 sprint 의 별도 Task)으로 분리한다 — 이 두 작업은 auth/
 //! backup/integrity 모듈에 광범위한 영향을 미치므로 마법사 UI 구현과 동시 진행 시 변경량
 //! 폭증 위험이 높다.
 

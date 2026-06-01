@@ -14,7 +14,6 @@
  * - 비밀번호 표시 토글 (Unicode 아이콘 임시 사용, T6 lucide-react 도입 시 교체)
  *
  * 후속 작업:
- * - "비밀번호를 잊으셨나요?" 링크 → T5 복구 코드 입력 화면
  * - 인증 성공 시 메인 화면 라우팅 → T9 통합 단계
  */
 
@@ -162,14 +161,6 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
           {submitting ? '처리 중...' : isInitialSetup ? '설정하기' : '잠금 해제'}
         </button>
 
-        {!isInitialSetup && (
-          <button
-            type="button"
-            className="block w-full text-center text-base text-[var(--accent)] underline-offset-2 hover:underline"
-          >
-            비밀번호를 잊으셨나요?
-          </button>
-        )}
       </form>
     </main>
   )
