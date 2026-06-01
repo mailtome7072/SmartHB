@@ -12,7 +12,7 @@
  * static export(R67): 페이지에서 `dynamic(..., { ssr: false })` 로 로드.
  */
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -102,6 +102,7 @@ export default function ClassCalendar({
 }: Props) {
   const calendarRef = useRef<FullCalendar>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const [viewType, setViewType] = useState('dayGridMonth')
   const [title, setTitle] = useState('')
 
@@ -194,6 +195,36 @@ export default function ClassCalendar({
     return calendarRef.current?.getApi()
   }
 
+  // 월 보기 인원수 배지(absolute) 를 day-frame 에 주입한다.
+  // dayCellDidMount 의 1회성 한계를 우회 — dayInfo / viewType 이 바뀔 때마다 모든 day-frame
+  // 을 다시 훑어 배지를 새로 그린다. 비월 보기 진입 시 잔존 배지는 자동 청소된다.
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root) return
+    const cells = root.querySelectorAll<HTMLElement>('.fc-daygrid-day')
+    cells.forEach((cell: HTMLElement) => {
+      const frame = cell.querySelector('.fc-daygrid-day-frame') as HTMLElement | null
+      if (!frame) return
+      const existing = frame.querySelector('.shb-count-badge')
+      if (existing) existing.remove()
+      if (viewType !== 'dayGridMonth') return
+      const ds = cell.getAttribute('data-date')
+      if (ds === null) return
+      const info = dayInfo.get(ds)
+      if (info === undefined) return
+      frame.style.position = 'relative'
+      const badge = document.createElement('div')
+      badge.className = 'shb-count-badge'
+      badge.title = info.tooltip
+      badge.textContent = `${info.count}명`
+      badge.style.cssText =
+        'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+        'font-size:28px;font-weight:400;color:#111;cursor:pointer;' +
+        'z-index:5;pointer-events:auto;white-space:nowrap;'
+      frame.appendChild(badge)
+    })
+  }, [dayInfo, viewType])
+
   // 뷰 전환 — 주/일은 오늘 날짜가 포함되도록 이동, 월은 현재 위치 유지.
   // Sprint 11 F5: setViewType 을 클릭 시점에 명시적으로 호출하여 한 프레임 동안의
   // 버튼 highlight / events memo 불일치를 제거. datesSet 콜백의 setViewType 은 동일 값이라 no-op.
@@ -206,7 +237,7 @@ export default function ClassCalendar({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={containerRef} className="flex h-full flex-col">
       {/* 커스텀 툴바 — [중앙] ◀ 년월 ▶ / [우] 월·주·일 (오늘 버튼 없음) */}
       <div className="mb-2 grid grid-cols-3 items-center gap-2">
         <div />
@@ -365,28 +396,11 @@ export default function ClassCalendar({
               </div>
             )
           }}
-          // 월 보기 인원수 — day-frame 에 직접 DOM 주입(absolute → 셀 정중앙). dayCellContent 의
-          // Fragment 안에 absolute 가 의도대로 day-frame 기준으로 잡히지 않는 환경에서도 동작.
-          dayCellDidMount={(arg) => {
-            if (arg.view.type !== 'dayGridMonth') return
-            const ds = dateStr(arg.date)
-            const info = dayInfo.get(ds)
-            const frame = arg.el.querySelector('.fc-daygrid-day-frame') as HTMLElement | null
-            if (!frame) return
-            frame.style.position = 'relative'
-            const existing = frame.querySelector('.shb-count-badge')
-            if (existing) existing.remove()
-            if (info === undefined) return
-            const badge = document.createElement('div')
-            badge.className = 'shb-count-badge'
-            badge.title = info.tooltip
-            badge.textContent = `${info.count}명`
-            badge.style.cssText =
-              'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
-              'font-size:28px;font-weight:400;color:#111;cursor:pointer;' +
-              'z-index:5;pointer-events:auto;white-space:nowrap;'
-            frame.appendChild(badge)
-          }}
+          // 월 보기 인원수 배지는 dayCellDidMount 가 아니라 아래 useEffect 에서 주입.
+          // 이유: dayCellDidMount 는 셀 DOM 마운트 시점 1회만 호출되어 클로저로 캡쳐한 dayInfo 가
+          // 그 시점에 빈 상태(데이터 로딩 중)이면 배지가 빠진다. 데이터가 늦게 도착해 dayInfo 가
+          // 갱신돼도 셀은 unmount 되지 않으므로 훅이 재발화 안 됨 — 주/일 보기 갔다 돌아올 때만
+          // 셀이 재마운트되며 badge 가 늦게 나타나는 증상의 원인이었다.
           // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
           // 일 보기는 폰트 2단계 확대 + 파랑 볼드 (text-xs → text-base text-blue-700 font-bold).
           eventContent={(arg) => {
