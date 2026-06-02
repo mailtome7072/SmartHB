@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **버전**: 0.2.1 (`package.json`, `src-tauri/Cargo.toml`)
 - **다음 작업**: `.claude/memory/sprint-next-session.md` 참조 (다음 스프린트 진입점)
-- **마이그레이션 현황** (`src-tauri/migrations/`): V001~V008(코드 테이블·감사 로그·앱 설정), V101~V105(원생/스케줄/교습기간/주간시간/학교 코드), V200~V201(시드)
+- **마이그레이션 현황** (`src-tauri/migrations/`): V001~V008(코드 테이블·감사 로그·앱 설정), V101~V111(원생/스케줄/출결/청구 도메인), V200~V201(시드), V301~V302(schedule_codes 보정·공휴일·schedule_events 확장) — 최신 V302
 - **진행/회고 SSOT**: `ROADMAP.md` (전체 로드맵), `docs/sprint/`, `docs/sprint-retrospectives/`, `CHANGELOG.md`
 
 ## 아키텍처 개요
