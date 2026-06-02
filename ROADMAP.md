@@ -21,8 +21,8 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 80% (12/15 스프린트 완료, Phase 5 취소로 17→15 스프린트) |
-| 현재 Phase | Sprint 13 진행 중 (2026-06-02~): PIN 인증 옵션화 + Phase 5 취소 반영 + carry-over 해소 |
+| 전체 진행률 | 87% (13/15 스프린트 완료, Phase 5 취소로 17→15 스프린트) |
+| 현재 Phase | Sprint 14 예정: 대시보드 + 자가 진단 + 내보내기 |
 | 다음 마일스톤 | 대시보드 + 자가 진단 + 내보내기 (Sprint 14) |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
@@ -701,29 +701,32 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
 
 ---
 
-## Sprint 13: PIN 인증 옵션화 + Phase 5 취소 반영 + carry-over (2주) 🔄 진행 중
+## Sprint 13: PIN 인증 옵션화 + Phase 5 취소 반영 + carry-over (2주) ✅ 완료 (2026-06-02)
 
 > 계획 문서: `docs/sprint/sprint13.md`
 > Phase 5 취소로 기존 Sprint 13(단원평가)/14(학습보고서) 대체. PIN 인증 옵션화(C안: 키체인 자동 스킵) + 기술 부채 해소.
+> develop 머지: `sprint13 → develop` 직접 머지 예정 (단일 개발자 정책)
 
 #### 작업 목록
 
-- ⬜ **T0**: Sprint 12 carry-over 4건 정리 (A87 저장 실패 이동 강행 / A85 billing 2쿼리 통합 / R88 경로 검증 / A70 dirtyEntries)
-- ⬜ **T1**: Phase 5 전면 취소 반영 — 메뉴 항목 제거 + ROADMAP 재정렬 + PRD/문서 폐기 표기
-- ⬜ **T2**: ADR-008 작성 — 기기별 선택적 PIN 게이트 설계 결정
-- ⬜ **T3**: 백엔드 config.json `skip_pin_on_launch` 플래그 get/set IPC
-- ⬜ **T4**: 백엔드 키체인 자동 잠금해제 IPC + startup 공통 로직 추출
-- ⬜ **T5**: 프론트엔드 설정 화면 PIN 스킵 토글
-- ⬜ **T6**: 프론트엔드 앱 진입 LockScreen 렌더 분기
-- ⬜ **T7**: 통합 검증
+- ✅ **T0-c**: R88 — `save_notice_preview` 경로 경계 검증 (절대경로+.png+traversal 차단, data_root 밖 폴더 자동생성 금지)
+- ✅ **T1**: Phase 5 전면 취소 반영 — 메뉴 항목 제거 + PRD §4.7/§4.8/§6.1 [CANCELLED] 표기
+- ✅ **T2**: ADR-008 작성 — 기기별 선택적 PIN 게이트 설계 결정
+- ✅ **T3**: 백엔드 config.json `skip_pin_on_launch` 플래그 get/set IPC
+- ✅ **T4**: 백엔드 키체인 자동 잠금해제 IPC + startup 공통 로직 추출 (`run_startup`)
+- ✅ **T5/T6**: 프론트엔드 IPC 래퍼 3종 + 설정 화면 PIN 스킵 토글 + /lock 진입 자동 잠금해제 분기/폴백
+- ✅ **검수 중 추가**: 글로벌 검색 원생 클릭 404 수정 (`/students/{id}` → `/students/edit?id=`)
+- ✅ **검수 중 추가**: 글로벌 검색 드롭다운 방향키 탐색 + 한글 IME 처리
+
+> **T0-a/b/d (A87/A85/A70) carry-over**: 계획 수립 시점에 기재됐으나 이전 스프린트에서 이미 해소됨. 실제 신규 작업은 T0-c(R88)만 수행.
 
 #### 완료 기준 (Definition of Done)
-- ⬜ PIN 스킵 토글 OFF: 앱 재시작 시 PIN 입력 없이 메인 진입
-- ⬜ PIN 스킵 토글 ON: 기존 PIN 입력 흐름 정상 (회귀 없음)
-- ⬜ 키체인 키 부재 시: 토글 OFF여도 PIN 입력 요구 (안전 폴백)
-- ⬜ Phase 5 메뉴 항목 완전 제거 + ROADMAP 재정렬 완료
-- ⬜ carry-over A85/A87/A88/A70 전수 해소
-- ⬜ cargo test + clippy + lint + tsc + build 전수 통과
+- ✅ PIN 스킵 토글 OFF: 앱 재시작 시 PIN 입력 없이 메인 진입
+- ✅ PIN 스킵 토글 ON: 기존 PIN 입력 흐름 정상 (회귀 없음)
+- ✅ 키체인 키 부재 시: 토글 OFF여도 PIN 입력 요구 (안전 폴백)
+- ✅ Phase 5 메뉴 항목 완전 제거 확인
+- ✅ cargo test 315 passed / clippy clean / cargo check --features cipher 통과 / pnpm lint + tsc + build 전수 통과
+- ✅ 사용자 수동 검수 완료 (PIN 토글 OFF→자동 로그인 / ON 회귀 / Phase 5 메뉴 제거 / 검색 등)
 
 ---
 
@@ -898,7 +901,7 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
 | M4: 보강 완성 | Phase 3 | Sprint 10 | +18주 | 보강 매칭 + 소멸 + 캘린더 뷰 |
 | M5: 청구 완성 | Phase 4 | Sprint 12 | +22주 | 청구/수납/공지문 |
 | ~~M6: 평가+보고서~~ | ~~Phase 5~~ | — | — | ❌ 전면 취소 (2026-05-31) |
-| M6: PIN 옵션화 | — | Sprint 13 | +24주 | PIN 스킵 토글 + Phase 5 취소 반영 |
+| M6: PIN 옵션화 | — | Sprint 13 | +24주 ✅ | PIN 스킵 토글 + Phase 5 취소 반영 |
 | M7: 대시보드 | Phase 5 | Sprint 14 | +26주 | 대시보드 + 자가 진단 + 내보내기 |
 | M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +30주 | 양 OS 빌드 + UAT + v1.0.0 |
 

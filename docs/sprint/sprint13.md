@@ -76,20 +76,22 @@
 ## 완료 기준 (Definition of Done)
 
 **필수**
-- ⬜ cargo test --lib 전수 통과 (cipher off/on 양쪽)
-- ⬜ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings clean
-- ⬜ pnpm lint + pnpm tsc --noEmit + pnpm build (static export) 통과
-- ⬜ ADR-008 문서 완성 (`docs/arch/adr-008-optional-pin-gate.md`)
-- ⬜ PIN 스킵 토글 OFF: 앱 재시작 시 PIN 입력 없이 메인 진입 동작
-- ⬜ PIN 스킵 토글 ON: 기존 PIN 입력 흐름 정상 동작 (회귀 없음)
-- ⬜ 키체인 키 부재 시: 토글 OFF여도 PIN 입력 요구 (안전 폴백)
-- ⬜ Phase 5 메뉴 항목(단원 평가, 학습 보고서) 완전 제거 확인
-- ⬜ ROADMAP.md Phase 5 취소 + Phase 6/7 재정렬 완료
-- ⬜ Sprint 12 carry-over A85/A87/A88/A70 전수 해소
+- ✅ cargo test --lib 315 passed (cipher off) / cargo check --features cipher 통과
+- ✅ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings clean
+- ✅ pnpm lint + pnpm tsc --noEmit + pnpm build (static export) 통과
+- ✅ ADR-008 문서 완성 (`docs/arch/adr-008-optional-pin-gate.md`)
+- ✅ PIN 스킵 토글 OFF: 앱 재시작 시 PIN 입력 없이 메인 진입 동작 (사용자 검수 완료)
+- ✅ PIN 스킵 토글 ON: 기존 PIN 입력 흐름 정상 동작 (회귀 없음, 사용자 검수 완료)
+- ✅ 키체인 키 부재 시: 토글 OFF여도 PIN 입력 요구 (안전 폴백)
+- ✅ Phase 5 메뉴 항목(단원 평가, 학습 보고서) 완전 제거 확인 (사용자 검수 완료)
+- ✅ carry-over R88 해소 (T0-a/b/d는 이전 스프린트에서 이미 해소됨 확인)
+- ✅ 글로벌 검색 버그 2건 수정 (검수 중 추가 발견: 404 + 방향키/IME)
 
 **프로세스 (sprint-close 에이전트가 처리)**
-- ⬜ CHANGELOG.md 업데이트
-- ⬜ develop 머지 (직접 --no-ff)
+- ✅ ROADMAP.md Sprint 13 완료 표기
+- ✅ CHANGELOG.md 업데이트
+- ✅ DEPLOY.md 업데이트 (Sprint 12 아카이빙 + Sprint 13 항목 추가)
+- ⬜ develop 머지 (직접 --no-ff, 사용자 수행)
 
 ## Capacity 확인
 
