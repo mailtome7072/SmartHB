@@ -673,11 +673,31 @@ pub async fn notice_preview_default_path(notice_name: String) -> Result<String, 
 }
 
 /// 미리보기 PNG를 사용자가 지정한 경로에 저장한다 (저장 다이얼로그에서 선택한 절대 경로).
+///
+/// R88: 네이티브 저장 다이얼로그가 신뢰 경계이지만, IPC 직접 우회 호출을 방어한다.
+/// - 절대경로 + `.png` 확장자 + 경로 traversal(`..`) 차단
+/// - 부모 폴더 자동 생성은 `data_root` 하위(기본 output/공지문)에서만 — 그 외 위치는 기존 폴더에만 기록
+///   (임의 경로에 새 디렉토리를 silently 만들지 않음). 사용자가 다이얼로그로 고른 기존 폴더 저장은 허용.
 #[tauri::command]
 pub async fn save_notice_preview(path: String, image: Vec<u8>) -> Result<String, String> {
     let target = std::path::PathBuf::from(&path);
+    if !target.is_absolute() || path.contains("..") {
+        return Err("저장 경로가 올바르지 않습니다.".to_string());
+    }
+    let is_png = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("png"))
+        == Some(true);
+    if !is_png {
+        return Err("PNG 파일로만 저장할 수 있습니다.".to_string());
+    }
     if let Some(parent) = target.parent() {
-        ensure_dir(parent)?;
+        if parent.starts_with(paths::data_root()) {
+            ensure_dir(parent)?;
+        } else if !parent.exists() {
+            return Err("저장 폴더가 존재하지 않습니다.".to_string());
+        }
     }
     std::fs::write(&target, &image).map_err(|e| format!("미리보기 저장 실패: {}", e))?;
     Ok(target.to_string_lossy().to_string())
@@ -742,6 +762,23 @@ mod tests {
         assert_eq!(sanitize_component("홍 길동"), "홍_길동");
         assert_eq!(sanitize_component("a/b\\c"), "a_b_c");
         assert_eq!(sanitize_component("   "), "unnamed");
+    }
+
+    #[tokio::test]
+    async fn save_preview_validates_path() {
+        let root = use_temp_root("preview");
+        // 비절대경로 거부
+        assert!(save_notice_preview("notice.png".to_string(), vec![1]).await.is_err());
+        // 비-png 거부
+        let non_png = root.join("output/공지문/x.txt").to_string_lossy().to_string();
+        assert!(save_notice_preview(non_png, vec![1]).await.is_err());
+        // traversal 거부
+        let traversal = root.join("output/../../etc/x.png").to_string_lossy().to_string();
+        assert!(save_notice_preview(traversal, vec![1]).await.is_err());
+        // data_root 하위 정상 저장 (부모 폴더 자동 생성)
+        let ok_path = root.join("output/공지문/안내.png").to_string_lossy().to_string();
+        let saved = save_notice_preview(ok_path.clone(), vec![9, 9]).await.expect("save");
+        assert!(std::path::Path::new(&saved).exists());
     }
 
     #[tokio::test]
