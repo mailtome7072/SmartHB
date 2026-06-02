@@ -719,16 +719,19 @@ function NoticesContent() {
   }, [layout?.backgroundAsset])
 
   // 실제 저장 — 이름 확정 후 호출.
-  const doSaveTemplate = async (name: string) => {
-    if (!layout) return
+  // 성공 시 true, 실패 시 false 반환 — "저장 후 이동/닫기" 가 실패를 인지하고 중단할 수 있게 한다.
+  const doSaveTemplate = async (name: string): Promise<boolean> => {
+    if (!layout) return false
     try {
       await saveNoticeLayoutNamed(name, layout)
       await templatesQuery.refetch()
       setTemplateName(name)
       savedSnapshotRef.current = JSON.stringify(layout) // 저장 직후 = 미저장 변경 없음
       setToast(`✅ '${name}' 템플릿으로 저장되었습니다.`)
+      return true
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
+      return false
     }
   }
   // 공지문 저장 — 동명 덮어쓰기 확인 없이 바로 저장.
@@ -1480,10 +1483,12 @@ function NoticesContent() {
                 type="button"
                 onClick={() => {
                   const action = pendingAction
+                  if (action === null) return
                   const saveName = templateName.trim()
-                  setPendingAction(null)
                   void (async () => {
-                    await doSaveTemplate(saveName)
+                    const ok = await doSaveTemplate(saveName)
+                    if (!ok) return // 저장 실패 — 다이얼로그 유지, 이동/닫기 중단
+                    setPendingAction(null)
                     runPendingAction(action)
                   })()
                 }}
