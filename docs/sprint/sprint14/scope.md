@@ -38,12 +38,19 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 - V303 diagnosis_history (300번대 도메인 확장 블록 연속). 추가 후 .sqlx 캐시 갱신 + CLAUDE.md 현황 갱신(A92).
 
 ## 완료 기준 (sprint14.md DoD 요약)
-- [ ] T0 carry-over (A91/A93/R93·R94)
+- [x] T0 carry-over (A91/A93) — startup cipher-off 주석 + ADR-008 정정 + /lock 단일 로딩. (R93=CLAUDE.md V302 sprint-review 기반영, R94=T8, F3=T4)
 - [ ] T1/T2 자가 진단 (백엔드 7종 + 프론트 + 자동 트리거)
 - [ ] T3/T4 대시보드 (집계 IPC 6종 + 위젯 6 + 알림 5)
 - [ ] T5/T6 내보내기 CSV 3종
 - [ ] T7 복원 리허설
 - [ ] T8 통합 검증 (test/clippy/cipher/lint/tsc/build + .sqlx + CLAUDE.md V303)
+
+## 세션 체크포인트 / 다음 진입점
+- **세션 #1 (2026-06-02)**: 계획 + T0 완료, 커밋됨. 자동검증(clippy/lint/tsc) 통과.
+- **다음 진입점 = T1 (자가 진단 백엔드)**: `/sprint-dev 14` 재진입 → 본 scope.md + `docs/sprint/sprint14.md`(SSOT) 확인 후 T1부터.
+  - T1 착수 전: 검사 7종 쿼리용 실제 스키마 컬럼명 확인(regular_attendances/students/bills/student_schedules/makeup_attendances/payments) — `src-tauri/migrations/` V101~V111 참조.
+  - V303 추가 후 `sqlx prepare` 로 `.sqlx` 캐시 갱신 필수.
+  - recharts는 T4 착수 시 설치(shadcn 내장 차트 가능 여부 먼저 확인).
 
 ## 발견된 이슈
 (없음)
