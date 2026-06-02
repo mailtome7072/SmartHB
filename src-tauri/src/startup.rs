@@ -155,6 +155,13 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
         AuthStep::Pin(password) => auth::verify_password(&password).await.map_err(String::from)?,
         AuthStep::Keychain => {
             // 키체인의 기존 유도키 로드 — 비교 단계 생략. 키 부재(새 PC) 시 에러 → LockScreen 폴백.
+            //
+            // cipher on/off 공통 동작 (A91, ADR-008 정합):
+            // - cipher on: 로드한 키가 이후 db::initialize 의 PRAGMA key 에 사용됨.
+            // - cipher off: db 는 평문이라 키를 PRAGMA 에 쓰지 않지만, get_cached_or_load_key 는
+            //   salt(파일)+key(keyring) 로드를 동일하게 수행한다. 즉 "stub/즉시성공"이 아니라
+            //   양 빌드 모두 키체인 접근이 일어나며, 키 존재 여부가 곧 "이 PC 인증 키 보유" 판정이 된다.
+            //   (개발 모드(Tauri 미동작)에서는 프론트 래퍼가 먼저 reject 하여 이 경로에 도달하지 않음)
             auth::get_cached_or_load_key()
                 .map_err(|_| "KeyNotFound: 이 PC에 저장된 인증 키가 없습니다.".to_string())?;
         }
