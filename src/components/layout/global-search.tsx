@@ -35,8 +35,17 @@ const MAX_STUDENT_HITS = 10
 export function GlobalSearch() {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const listRef = useRef<HTMLUListElement | null>(null)
   const [query, setQuery] = useState('')
   const debouncedQuery = useDeferredValue(query)
+  // 방향키로 선택 이동하는 활성 결과 인덱스.
+  const [activeIndex, setActiveIndex] = useState(0)
+  // 한글 IME 조합 상태 + 조합 중 눌린 Enter 보류 플래그 (조합 확정 후 선택 처리).
+  const composingRef = useRef(false)
+  const pendingEnterRef = useRef(false)
+  // 비동기 compositionend 핸들러에서 최신 hits/activeIndex 를 읽기 위한 ref 미러.
+  const hitsRef = useRef<SearchHit[]>([])
+  const activeIndexRef = useRef(0)
 
   // V19 (Sprint 7 post-review): 단축키 핸들러 제거. ESC 만 활성 상태일 때 검색어 클리어 유지.
   useEffect(() => {
@@ -84,6 +93,67 @@ export function GlobalSearch() {
 
   const open = debouncedQuery.length > 0
 
+  // 결과가 바뀌면 활성 인덱스를 첫 항목으로 초기화.
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [debouncedQuery, hits.length])
+
+  // 활성 항목이 보이도록 스크롤.
+  useEffect(() => {
+    if (!open) return
+    listRef.current?.querySelector<HTMLElement>(`[data-idx="${activeIndex}"]`)?.scrollIntoView({
+      block: 'nearest',
+    })
+  }, [activeIndex, open])
+
+  // 비동기 compositionend 에서 최신 값 참조용 미러 (렌더마다 동기화).
+  hitsRef.current = hits
+  activeIndexRef.current = activeIndex
+
+  const selectHit = (hit: SearchHit) => {
+    // 미저장 가드(공지문 편집 등)를 거쳐 이동.
+    guardedNavigate(hit.href, () => router.push(hit.href))
+    setQuery('')
+  }
+
+  // 입력창에서 ↑/↓ 로 결과 이동, Enter 로 활성 항목 선택.
+  // 한글 IME 조합 중에는 키가 IME 로 전달되므로(WebKit), 조합 상태를 인지해 처리한다.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open || hits.length === 0) return
+    const composing = e.nativeEvent.isComposing || composingRef.current
+    if (e.key === 'ArrowDown') {
+      if (composing) return // 조합 중엔 IME 양보 — 확정 후 다시 누르면 이동
+      e.preventDefault()
+      setActiveIndex((i) => (i + 1) % hits.length)
+    } else if (e.key === 'ArrowUp') {
+      if (composing) return
+      e.preventDefault()
+      setActiveIndex((i) => (i - 1 + hits.length) % hits.length)
+    } else if (e.key === 'Enter') {
+      if (composing) {
+        // 조합 확정용 Enter — IME 가 commit 하도록 두고, compositionend 에서 선택 처리.
+        pendingEnterRef.current = true
+        return
+      }
+      e.preventDefault()
+      const hit = hits[activeIndex]
+      if (hit) selectHit(hit)
+    }
+  }
+
+  const handleCompositionStart = () => {
+    composingRef.current = true
+  }
+  const handleCompositionEnd = () => {
+    composingRef.current = false
+    // 조합 중 Enter 를 눌렀다면, 확정 직후 현재 활성 결과를 선택 (한 번의 Enter 로 선택 완료).
+    if (pendingEnterRef.current) {
+      pendingEnterRef.current = false
+      const hit = hitsRef.current[activeIndexRef.current]
+      if (hit) selectHit(hit)
+    }
+  }
+
   return (
     <div className="relative mx-auto w-full max-w-md">
       <input
@@ -91,28 +161,41 @@ export function GlobalSearch() {
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
         placeholder="원생·메뉴 검색"
         aria-label="글로벌 검색"
+        role="combobox"
+        aria-expanded={open && hits.length > 0}
+        aria-controls="global-search-listbox"
+        aria-activedescendant={open && hits.length > 0 ? `global-search-opt-${activeIndex}` : undefined}
+        autoComplete="off"
         className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3 text-base focus:border-[var(--accent)] focus:outline-none"
       />
       {open && (
         <ul
+          ref={listRef}
+          id="global-search-listbox"
           role="listbox"
           className="absolute left-0 right-0 top-12 z-10 max-h-80 overflow-y-auto rounded-md border border-[var(--border)] bg-white shadow-lg"
         >
           {hits.length === 0 ? (
             <li className="px-3 py-3 text-sm text-gray-500">검색 결과가 없습니다.</li>
           ) : (
-            hits.map((hit) => (
+            hits.map((hit, i) => (
               <li key={`${hit.label}-${hit.href}`}>
                 <button
                   type="button"
-                  onClick={() => {
-                    // 미저장 가드(공지문 편집 등)를 거쳐 이동.
-                    guardedNavigate(hit.href, () => router.push(hit.href))
-                    setQuery('')
-                  }}
-                  className="flex min-h-[44px] w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--background)]"
+                  id={`global-search-opt-${i}`}
+                  data-idx={i}
+                  role="option"
+                  aria-selected={i === activeIndex}
+                  onClick={() => selectHit(hit)}
+                  onMouseEnter={() => setActiveIndex(i)}
+                  className={`flex min-h-[44px] w-full items-center justify-between px-3 py-2 text-left ${
+                    i === activeIndex ? 'bg-[var(--background)]' : ''
+                  }`}
                 >
                   <span>{hit.label}</span>
                   {hit.sublabel !== undefined && (
