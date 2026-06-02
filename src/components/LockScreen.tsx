@@ -20,17 +20,13 @@
 import { useEffect, useState } from 'react'
 import { appStartupSequence, checkAuthStatus, setPassword } from '@/lib/tauri'
 import { SplashScreen } from '@/components/splash-screen'
+import { PIN_LENGTH, PIN_PATTERN, PinField } from '@/components/ui/pin-field'
 import type { AuthStatus, StartupResult } from '@/types'
-
-// ADR-007: 앱 잠금은 6자리 숫자 PIN.
-const PIN_LENGTH = 6
-const PIN_PATTERN = /^\d{6}$/
 
 export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult) => void }) {
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [password, setPasswordInput] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -114,7 +110,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6">
+      <form onSubmit={handleSubmit} className="w-full space-y-6" style={{ maxWidth: 768 }}>
         <header className="space-y-2 text-center">
           <h1 className="text-3xl font-bold">{title}</h1>
           <p className="text-base text-gray-600">{subtitle}</p>
@@ -126,8 +122,6 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
             label="PIN 번호"
             value={password}
             onChange={setPasswordInput}
-            show={showPassword}
-            onToggleShow={() => setShowPassword(!showPassword)}
             autoFocus
             hasError={error !== null}
           />
@@ -137,8 +131,6 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
               label="PIN 번호 확인"
               value={confirm}
               onChange={setConfirm}
-              show={showPassword}
-              onToggleShow={() => setShowPassword(!showPassword)}
               hasError={error !== null}
             />
           )}
@@ -156,77 +148,13 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
         <button
           type="submit"
           disabled={submitting}
-          className="h-[56px] w-full rounded-lg bg-[var(--accent)] text-lg font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
+          style={{ width: 160, maxWidth: '100%' }}
+          className="mx-auto block h-[56px] rounded-lg bg-[var(--accent)] text-lg font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
         >
           {submitting ? '처리 중...' : isInitialSetup ? '설정하기' : '잠금 해제'}
         </button>
 
       </form>
     </main>
-  )
-}
-
-interface PinFieldProps {
-  id: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  show: boolean
-  onToggleShow: () => void
-  autoFocus?: boolean
-  hasError: boolean
-}
-
-/**
- * 6자리 숫자 PIN 입력 필드 (ADR-007).
- *
- * 숫자 외 입력은 onChange 단계에서 필터링하고 6자리로 제한한다. 모바일/터치 환경에서는
- * `inputMode="numeric"` 으로 숫자 키패드가 노출된다. 기본은 가림(●), 보기 토글 제공.
- */
-function PinField({
-  id,
-  label,
-  value,
-  onChange,
-  show,
-  onToggleShow,
-  autoFocus,
-  hasError,
-}: PinFieldProps) {
-  return (
-    <div className="space-y-2">
-      <label htmlFor={id} className="block text-base font-medium">
-        {label}
-      </label>
-      <div className="relative">
-        <input
-          id={id}
-          type={show ? 'text' : 'password'}
-          value={value}
-          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
-          autoComplete="off"
-          autoFocus={autoFocus}
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          inputMode="numeric"
-          maxLength={PIN_LENGTH}
-          placeholder={'●'.repeat(PIN_LENGTH)}
-          className={`h-[56px] w-full rounded-lg border-2 px-4 pr-24 text-center text-2xl tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
-            hasError ? 'border-[var(--danger)]' : 'border-[var(--border)]'
-          }`}
-        />
-        {/* 보기/숨김 버튼. */}
-        <button
-          type="button"
-          onClick={onToggleShow}
-          aria-label={show ? 'PIN 가리기' : 'PIN 표시'}
-          className="absolute right-2 top-1/2 flex h-[44px] min-w-[60px] -translate-y-1/2 items-center justify-center rounded-md border border-[var(--border)] bg-white px-2 text-sm text-gray-700 hover:bg-gray-50"
-        >
-          {show ? '숨김' : '보기'}
-        </button>
-      </div>
-      <p className="text-xs text-gray-500">숫자 {PIN_LENGTH}자리를 입력하세요.</p>
-    </div>
   )
 }

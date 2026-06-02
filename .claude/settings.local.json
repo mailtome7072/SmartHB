@@ -88,7 +88,8 @@
       "Bash(grep *)",
       "Bash(awk 'NR>103' /private/tmp/claude-501/-Users-skyang-Projects-SmartHB/ec4d61da-b37e-4b96-b4fa-46be64cd6178/tasks/bissu5yuu.output)",
       "Bash(perl -i -pe 's/학사 스케줄 관리/일정 관리/g; s/학사 스케줄/일정 관리/g' src/types/academic.ts src/app/attendance/page.tsx src/app/academic/page.tsx src/app/billing/page.tsx src/lib/tauri/index.ts src-tauri/src/commands/academic.rs)",
-      "Bash(perl -i -pe 's/학사 관리/일정 관리/g' src/lib/menu-config.ts)"
+      "Bash(perl -i -pe 's/학사 관리/일정 관리/g' src/lib/menu-config.ts)",
+      "Bash(awk 'NR>=160{print NR\": \"$0}' src/components/LockScreen.tsx)"
     ]
   },
   "enableAllProjectMcpServers": true,

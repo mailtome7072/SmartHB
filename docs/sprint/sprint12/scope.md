@@ -16,7 +16,7 @@ Sprint: 12  |  Date: 2026-05-30  |  Session: #1
 | src-tauri/src/lib.rs | [6회 ⚠️] | T2~T4 — invoke_handler 등록 |
 | src/lib/tauri/index.ts | [9회 ⚠️] | T5 — IPC 래퍼 8종 |
 | src/types/notice.ts | [7회 ⚠️] | T5 신규 — 도메인 타입 |
-| src/app/notice/page.tsx | [164회 ⚠️] | T6 신규 — /notice 라우트 |
+| src/app/notice/page.tsx | [167회 ⚠️] | T6 신규 — /notice 라우트 |
 | src/app/notices/page.tsx | [2회] | T6 — 다중선택(Shift+클릭)/방향키 미세 이동 + 글자별 폰트색(선택→색칠) (사용자 검증 요청) |
 | src/types/notice.ts | [+1] | T6 — TextboxConfig.charColors 타입 추가 (글자별 색) |
 | src/lib/notice-generator.ts | [+1] | T7 — 글자별 색 span 렌더링 |
@@ -25,7 +25,7 @@ Sprint: 12  |  Date: 2026-05-30  |  Session: #1
 | src/lib/notice-generator.ts | [19회 ⚠️] | T7 신규 — 일괄 이미지 생성 |
 | package.json | [0회] | T7 — html-to-image + react-rnd (계획 명시 — 사전 승인됨) |
 | src-tauri/capabilities/default.json | [1회] | T8 — 필요 시 최소 권한 (std::fs 직접이면 변경 없음) |
-| src/components/LockScreen.tsx | [1회] | scope 외 추가 — Sprint 1 T4 carry-over TODO 해결: "비밀번호를 잊으셨나요?" dead button → RecoveryCodeInput 연결 (회사 PC PIN 재설정 차단 해소, 사용자 요청) |
+| src/components/LockScreen.tsx | [16회 ⚠️] | scope 외 추가 — Sprint 1 T4 carry-over TODO 해결: "비밀번호를 잊으셨나요?" dead button → RecoveryCodeInput 연결 (회사 PC PIN 재설정 차단 해소, 사용자 요청) |
 | src-tauri/src/commands/auth.rs | [2회] | scope 외 추가 — change_pin IPC (현 PIN 검증 후 새 PIN 으로 재설정, set_password 패턴 재사용) |
 | src-tauri/src/lib.rs | [5회 ⚠️] | scope 외 추가 — change_pin invoke_handler 등록 |
 | src/lib/tauri/index.ts | [6회 ⚠️] | scope 외 추가 — changePin 래퍼 |

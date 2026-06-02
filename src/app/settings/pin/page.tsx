@@ -15,10 +15,8 @@ import { useState } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { SettingsHomeLink } from '@/components/settings/SettingsHomeLink'
+import { PIN_LENGTH, PIN_PATTERN, PinField } from '@/components/ui/pin-field'
 import { changePin } from '@/lib/tauri'
-
-const PIN_LENGTH = 6
-const PIN_PATTERN = /^\d{6}$/
 
 export default function ChangePinPage() {
   const router = useRouter()
@@ -71,8 +69,8 @@ export default function ChangePinPage() {
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-md">
         <SettingsHomeLink />
-        <h1 className="mb-2 text-2xl font-bold">PIN 번호 변경</h1>
-        <p className="mb-6 text-base text-gray-600">
+        <h1 className="mb-2 text-center text-2xl font-bold">PIN 번호 변경</h1>
+        <p className="mb-6 text-center text-base text-gray-600">
           현재 PIN 확인 후 새 PIN 으로 즉시 변경됩니다.
         </p>
 
@@ -82,7 +80,7 @@ export default function ChangePinPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
-            <PinInput
+            <PinField
               id="current-pin"
               label="현재 PIN"
               value={currentPin}
@@ -90,14 +88,14 @@ export default function ChangePinPage() {
               hasError={error !== null}
               autoFocus
             />
-            <PinInput
+            <PinField
               id="new-pin"
               label="새 PIN"
               value={newPin}
               onChange={setNewPin}
               hasError={error !== null}
             />
-            <PinInput
+            <PinField
               id="confirm-pin"
               label="새 PIN 확인"
               value={confirm}
@@ -134,38 +132,5 @@ export default function ChangePinPage() {
         )}
       </div>
     </AppShell>
-  )
-}
-
-interface PinInputProps {
-  id: string
-  label: string
-  value: string
-  onChange: (v: string) => void
-  hasError: boolean
-  autoFocus?: boolean
-}
-
-function PinInput({ id, label, value, onChange, hasError, autoFocus }: PinInputProps) {
-  return (
-    <div className="space-y-2">
-      <label htmlFor={id} className="block text-base font-medium">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
-        autoComplete="off"
-        inputMode="numeric"
-        maxLength={PIN_LENGTH}
-        autoFocus={autoFocus}
-        placeholder={'●'.repeat(PIN_LENGTH)}
-        className={`h-[56px] w-full rounded-lg border-2 px-4 text-center text-2xl tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
-          hasError ? 'border-[var(--danger)]' : 'border-[var(--border)]'
-        }`}
-      />
-    </div>
   )
 }
