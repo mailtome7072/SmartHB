@@ -36,6 +36,10 @@ pub struct SetupStatus {
     pub cloud_folder_path: String,
     /// 마법사 완료(complete_setup IPC 호출) 여부.
     pub setup_completed: bool,
+    /// 실행 시 PIN 인증 스킵 여부 (ADR-008). true 면 키체인의 기존 유도키로 무입력 잠금해제.
+    /// **PC별 로컬 설정** — 클라우드 동기화 대상 아님(app_config_dir 의 config.json 에만 저장).
+    /// 기본 false (PIN 인증 ON 유지). 후방 호환: 기존 config.json 에 필드 없으면 false.
+    pub skip_pin_on_launch: bool,
 }
 
 /// app_config_dir 하위 SmartHB 디렉토리의 `config.json` 경로를 반환한다.
@@ -181,6 +185,20 @@ pub async fn get_setup_status(app: AppHandle) -> Result<SetupStatus, String> {
     read_status(&app).map_err(String::from)
 }
 
+/// 실행 시 PIN 인증 스킵 설정 조회 (ADR-008). DB 접근 없이 config.json 만 읽으므로 unlock 전 호출 가능.
+#[tauri::command]
+pub async fn get_pin_skip_setting(app: AppHandle) -> Result<bool, String> {
+    Ok(read_status(&app).map_err(String::from)?.skip_pin_on_launch)
+}
+
+/// 실행 시 PIN 인증 스킵 설정 저장 (ADR-008). PC별 로컬(config.json). unlock 전 호출 가능.
+#[tauri::command]
+pub async fn set_pin_skip_setting(app: AppHandle, skip: bool) -> Result<(), String> {
+    let mut status = read_status(&app).map_err(String::from)?;
+    status.skip_pin_on_launch = skip;
+    write_status(&app, &status).map_err(String::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,11 +215,13 @@ mod tests {
         let s = SetupStatus {
             cloud_folder_path: "/Users/dev/MYBOX".to_string(),
             setup_completed: true,
+            skip_pin_on_launch: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let back: SetupStatus = serde_json::from_str(&json).unwrap();
         assert_eq!(back.cloud_folder_path, s.cloud_folder_path);
         assert_eq!(back.setup_completed, s.setup_completed);
+        assert_eq!(back.skip_pin_on_launch, s.skip_pin_on_launch);
     }
 
     #[test]
@@ -211,6 +231,32 @@ mod tests {
         let s: SetupStatus = serde_json::from_str(json).unwrap();
         assert_eq!(s.cloud_folder_path, "/x");
         assert!(!s.setup_completed, "기본값 false 적용");
+    }
+
+    #[test]
+    fn skip_pin_default_false_and_backward_compatible() {
+        // 기본값 false (PIN 인증 ON).
+        assert!(!SetupStatus::default().skip_pin_on_launch);
+        // 기존 config.json(필드 없음) → false 로 후방 호환.
+        let legacy = r#"{"cloud_folder_path":"/c","setup_completed":true}"#;
+        let s: SetupStatus = serde_json::from_str(legacy).unwrap();
+        assert!(!s.skip_pin_on_launch, "필드 누락 시 false");
+    }
+
+    #[test]
+    fn skip_pin_persists_via_read_status_from_path() {
+        // set 후 get 일치(파일 라운드트립). write_status 는 AppHandle 필요하므로 직접 직렬화 기록.
+        let dir = unique_tmp_dir("skip-pin");
+        let path = dir.join("config.json");
+        let s = SetupStatus {
+            cloud_folder_path: "/c".to_string(),
+            setup_completed: true,
+            skip_pin_on_launch: true,
+        };
+        fs::write(&path, serde_json::to_string_pretty(&s).unwrap()).unwrap();
+        let back = read_status_from_path(&path);
+        assert!(back.skip_pin_on_launch, "저장된 true 가 그대로 로드");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     // ------------------------------------------------------------------------
