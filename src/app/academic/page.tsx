@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 학사 스케줄 관리 페이지 — Sprint 6 T9 + T10 + T11 (PRD §4.4).
+ * 일정 관리 페이지 — Sprint 6 T9 + T10 + T11 (PRD §4.4).
  *
  * Sprint 7 T5: 코드 CRUD 는 `/settings/schedule-codes` 로 이동, 본 페이지는 Selector 만 사용
  * Sprint 7 T6 (Issue 5): 교습기간 토글 모드 제거 — 셀 클릭 분기를 데이터 상태로 자동 결정.
@@ -248,13 +248,13 @@ export default function AcademicPage() {
     setEventToDelete(event)
   }
 
-  if (!ready) return <SplashScreen message="학사 스케줄 화면 준비 중..." />
+  if (!ready) return <SplashScreen message="일정 관리 화면 준비 중..." />
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <main className="flex flex-col gap-4 p-4">
         <header>
-          <h1 className="text-2xl font-bold text-[var(--foreground)]">학사 스케줄</h1>
+          <h1 className="text-2xl font-bold text-[var(--foreground)]">일정 관리</h1>
           <p className="text-sm text-gray-600">
             교습기간 설정 / 학사 일정 코드 관리 / 일정 배치 — 좌·중·우 3개월을 한 화면에서.
           </p>

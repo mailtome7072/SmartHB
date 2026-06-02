@@ -13,7 +13,9 @@
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Rnd } from 'react-rnd'
+import { useAppStore } from '@/stores/app-store'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -23,22 +25,29 @@ import {
   checkNoticeOutputExists,
   deleteNoticeAsset,
   deleteNoticeLayoutNamed,
-  getNoticeLayout,
   getNoticeLayoutNamed,
   getNoticeMonthInfo,
   listBilledMonths,
   listBills,
   listNoticeAssets,
   listNoticeLayouts,
+  noticePreviewDefaultPath,
+  openNoticeOutputDir,
+  openNoticePreviewDir,
   readNoticeAsset,
   saveNoticeAsset,
   saveNoticeLayout,
   saveNoticeLayoutNamed,
+  saveNoticePreview,
+  showSaveDialog,
 } from '@/lib/tauri'
 import {
+  buildColorRuns,
   bytesToDataUrl,
+  dataUrlToBytes,
   generateAndSaveNotices,
   noticeFieldText,
+  renderNoticeDataUrl,
   type NoticeStudentData,
 } from '@/lib/notice-generator'
 import type { NoticeLayout, NoticeFieldType, TextboxConfig } from '@/types/notice'
@@ -66,6 +75,40 @@ const DATA_FIELD_ORDER: NoticeFieldType[] = [
 function boxLabel(tb: TextboxConfig): string {
   if (tb.fieldType === 'custom') return tb.text?.trim() || '텍스트'
   return FIELD_LABEL[tb.fieldType]
+}
+
+/** charColors 를 길이 len 의 배열로 정규화 (없는 인덱스는 null). */
+function normalizeCharColors(charColors: (string | null)[] | null | undefined, len: number): (string | null)[] {
+  const out = new Array<string | null>(len).fill(null)
+  if (charColors) for (let i = 0; i < len && i < charColors.length; i++) out[i] = charColors[i] ?? null
+  return out
+}
+
+/** 전부 미지정이면 null 로 압축 (저장 정리). */
+function compactCharColors(colors: (string | null)[]): (string | null)[] | null {
+  return colors.some((c) => c != null) ? colors : null
+}
+
+/**
+ * 텍스트 편집 시 글자별 색을 재정렬한다 — 공통 접두/접미는 보존, 새로 입력된 중간 글자는 기본색(null).
+ * (insert/delete 위치를 prefix/suffix 일치로 추정)
+ */
+function realignCharColors(
+  oldText: string,
+  oldColors: (string | null)[],
+  newText: string,
+): (string | null)[] {
+  if (oldText === newText) return oldColors.slice(0, newText.length)
+  let p = 0
+  const maxP = Math.min(oldText.length, newText.length)
+  while (p < maxP && oldText[p] === newText[p]) p++
+  let s = 0
+  const maxS = Math.min(oldText.length - p, newText.length - p)
+  while (s < maxS && oldText[oldText.length - 1 - s] === newText[newText.length - 1 - s]) s++
+  const result = new Array<string | null>(newText.length).fill(null)
+  for (let i = 0; i < p; i++) result[i] = oldColors[i] ?? null
+  for (let i = 0; i < s; i++) result[newText.length - 1 - i] = oldColors[oldText.length - 1 - i] ?? null
+  return result
 }
 
 /** 빈/기본 레이아웃 — 초기화용. (백엔드 default_textboxes 와 동일 배치) */
@@ -118,12 +161,34 @@ function normalizeLayout(l: NoticeLayout): NoticeLayout {
   return { ...l, textboxes: [...l.textboxes, ...added] }
 }
 
+/** 자주 쓰는 글자색 프리셋 — 클릭(값과 무관하게 항상 동작)으로 적용. 네이티브 피커의 동일색 무반응 회피. */
+const COLOR_PRESETS: { hex: string; label: string }[] = [
+  { hex: '#000000', label: '검정' },
+  { hex: '#E03131', label: '빨강' },
+  { hex: '#F08C00', label: '주황' },
+  { hex: '#FFD43B', label: '노랑' },
+  { hex: '#2F9E44', label: '초록' },
+  { hex: '#1971C2', label: '파랑' },
+  { hex: '#FFFFFF', label: '흰색' },
+]
+
 const STUDENT_PANEL_WIDTH = 240 // 원생 패널(청구년월 + 원생 리스트) 고정 너비
 const TEMPLATE_PANEL_WIDTH = 220 // 저장 패널(공지문 이름 + 템플릿 목록) 고정 너비
 
 function currentYearMonth(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** 'YYYY-MM' → 'YYMM' (저장 폴더/파일명 형식과 일치, 예: 2026-06 → 2606). */
+function yymm(yearMonth: string): string {
+  const [y, m] = yearMonth.split('-')
+  return y && m ? `${y.slice(-2)}${m}` : yearMonth
+}
+
+/** 폴더/파일명용 — 공백 제거 (백엔드 sanitize_path_part 표시 정합). */
+function noSpace(s: string): string {
+  return s.replace(/\s+/g, '')
 }
 
 /** 텍스트 정렬 아이콘 — 정렬 방향에 맞춰 길이가 다른 가로선 3줄. */
@@ -193,11 +258,14 @@ function NoticesContent() {
   // 배경서식 + 레이아웃
   const assetsQuery = useQuery({ queryKey: ['notice-assets'], queryFn: listNoticeAssets })
   const assets = assetsQuery.data ?? []
-  const layoutQuery = useQuery({ queryKey: ['notice-layout'], queryFn: getNoticeLayout })
   const [layout, setLayout] = useState<NoticeLayout | null>(null)
   useEffect(() => {
-    if (layoutQuery.data && layout === null) setLayout(normalizeLayout(layoutQuery.data))
-  }, [layoutQuery.data, layout])
+    // 프로그램 구동 후 페이지 진입 시 항상 초기화 상태(선택 공지문 없음, 빈 캔버스)로 시작.
+    if (layout === null) {
+      const base = makeDefaultLayout()
+      setLayout({ ...base, textboxes: base.textboxes.map((tb) => ({ ...tb, enabled: false })) })
+    }
+  }, [layout])
 
   // 청구년월의 교습기간·보강데이 텍스트
   const monthInfoQuery = useQuery({
@@ -209,8 +277,48 @@ function NoticesContent() {
   const [bgDataUrl, setBgDataUrl] = useState<string | null>(null)
   const [bgDims, setBgDims] = useState<{ w: number; h: number }>({ w: 800, h: 800 })
   const [selectedBoxIdx, setSelectedBoxIdx] = useState(0)
-  // custom 텍스트박스 인라인 편집 대상 id (더블클릭 시 진입)
+  // 다중 선택 인덱스 (Shift+클릭). primary = selectedBoxIdx(폰트 컨트롤 대상).
+  const [selectedBoxIdxs, setSelectedBoxIdxs] = useState<Set<number>>(() => new Set())
+  // 텍스트박스 인라인 편집 대상 id (더블클릭 시 진입). custom 은 텍스트 편집, 데이터 필드는 색칠만.
   const [editingId, setEditingId] = useState<string | null>(null)
+  // 편집 중 textarea — 글자별 색 적용 시 선택 범위 참조용.
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
+  // 마지막 선택 범위 — 색 버튼 클릭 시점엔 textarea 포커스가 빠져 selectionStart/End 가
+  // 접힐 수 있으므로(WKWebView), 선택 순간(onSelect)에 범위를 저장해 둔다.
+  const selRangeRef = useRef<{ start: number; end: number } | null>(null)
+
+  // 단일 선택으로 리셋 (추가/삭제/템플릿 로드 시).
+  const setSelectionSingle = useCallback((i: number) => {
+    setSelectedBoxIdx(i)
+    setSelectedBoxIdxs(new Set([i]))
+  }, [])
+
+  // 모든 선택 해제 + 편집 종료 (캔버스 빈 영역 클릭 시).
+  const clearSelection = useCallback(() => {
+    setSelectedBoxIdxs(new Set())
+    setEditingId(null)
+  }, [])
+
+  // 박스 선택 — additive(Shift) 면 토글 누적, 아니면 단일 선택.
+  // primary(selectedBoxIdx)는 마지막으로 클릭한 박스로 갱신.
+  const selectBox = useCallback((i: number, additive: boolean) => {
+    if (!additive) {
+      setSelectedBoxIdx(i)
+      setSelectedBoxIdxs(new Set([i]))
+      return
+    }
+    setSelectedBoxIdxs((prev) => {
+      const next = new Set(prev)
+      if (next.has(i)) {
+        next.delete(i)
+        if (next.size === 0) next.add(i) // 최소 1개 유지
+      } else {
+        next.add(i)
+      }
+      return next
+    })
+    setSelectedBoxIdx(i)
+  }, [])
 
   const loadBackground = useCallback(async (name: string | null) => {
     if (!name) {
@@ -278,6 +386,36 @@ function NoticesContent() {
     })
   }
 
+  // 색상 선택 적용 — 편집 중 + 선택 영역(저장된 범위) 있으면 선택 글자만, 아니면 박스 기본색 변경.
+  const applyColor = (color: string) => {
+    const idx = selectedBoxIdx
+    const tb = layout?.textboxes[idx]
+    if (!tb) return
+    const id = tb.id || tb.fieldType
+    // 실시간 선택 우선, 없으면(포커스 이탈로 접힘) 마지막 저장 범위 사용.
+    const ta = editTextareaRef.current
+    const live =
+      ta && ta.selectionStart !== ta.selectionEnd
+        ? { start: ta.selectionStart, end: ta.selectionEnd }
+        : null
+    const sel = live ?? selRangeRef.current
+    if (editingId === id && sel && sel.start !== sel.end) {
+      const text = noticeFieldText(tb, previewData) // custom=tb.text, 데이터 필드=미리보기값
+      const colors = normalizeCharColors(tb.charColors, text.length)
+      for (let i = sel.start; i < sel.end && i < colors.length; i++) colors[i] = color
+      updateBox(idx, { charColors: compactCharColors(colors) })
+    } else {
+      updateBox(idx, { fontColor: color })
+    }
+  }
+
+  // 더블클릭으로 편집 진입 (custom: 텍스트+색, 데이터 필드: 색칠만).
+  const enterEdit = (idx: number, tb: TextboxConfig) => {
+    selRangeRef.current = null // 새 편집 박스 — 이전 선택 범위 폐기
+    setSelectionSingle(idx)
+    setEditingId(tb.id || tb.fieldType)
+  }
+
   // 사용자 정의(custom) 텍스트박스 추가 — 중앙 부근 기본 배치.
   const addTextbox = () => {
     if (!layout) return
@@ -296,14 +434,14 @@ function NoticesContent() {
       textAlign: 'center',
     }
     updateLayout({ ...layout, textboxes: [...layout.textboxes, newBox] })
-    setSelectedBoxIdx(layout.textboxes.length) // 새 박스 선택
+    setSelectionSingle(layout.textboxes.length) // 새 박스 선택
   }
 
   // custom 텍스트박스 삭제 (데이터 필드 3종은 삭제 불가).
   const removeTextbox = (idx: number) => {
     if (!layout) return
     updateLayout({ ...layout, textboxes: layout.textboxes.filter((_, i) => i !== idx) })
-    setSelectedBoxIdx(0)
+    setSelectionSingle(0)
   }
 
   // 체크박스 행 (데이터 필드/추가 박스 공통)
@@ -373,9 +511,17 @@ function NoticesContent() {
   // 일괄 생성
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  // 공지문 미리보기 팝업 — 렌더된 PNG data URL(열림 = non-null) + 렌더 중 표시.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
   const handleGenerate = async () => {
     if (!layout?.backgroundAsset || !bgDataUrl) {
       setError('배경서식을 먼저 선택해 주세요.')
+      return
+    }
+    const noticeName = templateName.trim()
+    if (noticeName === '') {
+      setError('공지문 이름을 먼저 입력해 주세요. (저장 폴더·파일명에 사용됩니다)')
       return
     }
     const targets = bills.filter((b) => selectedIds.has(b.id))
@@ -383,22 +529,23 @@ function NoticesContent() {
       setError('공지문을 생성할 원생을 선택해 주세요.')
       return
     }
-    const exists = await checkNoticeOutputExists(yearMonth)
+    const exists = await checkNoticeOutputExists(noticeName, yearMonth)
     if (exists) {
       setConfirmDialog({
-        message: `${yearMonth} 폴더에 기존 공지문이 있습니다. 덮어쓰시겠습니까?`,
-        onConfirm: () => void runGenerate(targets),
+        message: `output/${noSpace(noticeName)}/${yymm(yearMonth)}/ 폴더에 기존 공지문이 있습니다. 덮어쓰시겠습니까?`,
+        onConfirm: () => void runGenerate(noticeName, targets),
       })
       return
     }
-    void runGenerate(targets)
+    void runGenerate(noticeName, targets)
   }
-  const runGenerate = async (targets: Bill[]) => {
+  const runGenerate = async (noticeName: string, targets: Bill[]) => {
     if (!layout || !bgDataUrl) return
     setGenerating(true)
     setProgress({ done: 0, total: targets.length })
     try {
       const result = await generateAndSaveNotices({
+        noticeName,
         yearMonth,
         backgroundDataUrl: bgDataUrl,
         width: bgDims.w,
@@ -413,12 +560,44 @@ function NoticesContent() {
         })),
         onProgress: (done, total) => setProgress({ done, total }),
       })
-      setToast(`✅ ${result.saved}건 생성 완료. 저장 위치: output/${yearMonth.replace('-', '')}/`)
+      setToast(`✅ ${result.saved}건 생성 완료. 저장 위치: output/${noSpace(noticeName)}/${yymm(yearMonth)}/`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '공지문 생성 실패')
     } finally {
       setGenerating(false)
       setProgress(null)
+    }
+  }
+
+  // 미리보기 — 현재 로드된 공지문을 렌더하여 팝업으로 표시 (저장 없음).
+  const handlePreview = async () => {
+    if (!layout || !bgDataUrl) return
+    try {
+      setPreviewBusy(true)
+      const url = await renderNoticeDataUrl(
+        { backgroundDataUrl: bgDataUrl, width: bgDims.w, height: bgDims.h, layout },
+        previewData,
+      )
+      setPreviewUrl(url)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '미리보기 생성 실패')
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+  // 미리보기 저장 — 파일 저장 다이얼로그(기본: output/공지문/{공지문이름}.png).
+  const handleSavePreview = async () => {
+    if (!previewUrl) return
+    const name = templateName.trim() || '공지문'
+    try {
+      const defaultPath = await noticePreviewDefaultPath(name)
+      const chosen = await showSaveDialog(defaultPath)
+      if (!chosen) return // 취소
+      const saved = await saveNoticePreview(chosen, dataUrlToBytes(previewUrl))
+      setPreviewUrl(null)
+      setToast(`✅ 미리보기 저장 완료: ${saved}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '미리보기 저장 실패')
     }
   }
 
@@ -437,6 +616,42 @@ function NoticesContent() {
   }, [bgDataUrl])
   const scale = Math.min(avail.w / bgDims.w, avail.h / bgDims.h) || 0.1
 
+  // ── 방향키 미세 이동 (선택된 박스 일괄) ──
+  // 수식키 없이 방향키만으로 이동 (macOS Ctrl+방향키는 OS 데스크톱 전환과 충돌).
+  // Shift+방향키는 10px 단위 이동. 한 번 누를 때마다 화면 기준 px → 원본 좌표 환산, 0..1 클램프.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onKeyDown = (e: KeyboardEvent) => {
+      const arrows = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
+      if (!arrows.includes(e.key)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return // 수식키 조합은 무시 (OS/브라우저 단축키)
+      if (editingId !== null) return // 인라인 텍스트 편집 중엔 무시
+      // 폼 입력(셀렉트/인풋/텍스트영역)에 포커스가 있으면 그쪽 동작 우선.
+      const el = document.activeElement
+      const tag = el?.tagName
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (el as HTMLElement | null)?.isContentEditable) return
+      if (!layout || !bgDataUrl || selectedBoxIdxs.size === 0) return
+      e.preventDefault()
+      const stepScreen = e.shiftKey ? 10 : 1 // 화면 px (Shift = 빠른 이동)
+      const stepOrig = stepScreen / scale // 화면 px 에 해당하는 배경 원본 px
+      const dxr = (e.key === 'ArrowLeft' ? -stepOrig : e.key === 'ArrowRight' ? stepOrig : 0) / bgDims.w
+      const dyr = (e.key === 'ArrowUp' ? -stepOrig : e.key === 'ArrowDown' ? stepOrig : 0) / bgDims.h
+      updateLayout({
+        ...layout,
+        textboxes: layout.textboxes.map((tb, i) => {
+          if (!selectedBoxIdxs.has(i) || tb.enabled === false) return tb
+          return {
+            ...tb,
+            xRatio: Math.min(Math.max(tb.xRatio + dxr, 0), 1 - tb.wRatio),
+            yRatio: Math.min(Math.max(tb.yRatio + dyr, 0), 1 - tb.hRatio),
+          }
+        }),
+      })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [layout, bgDataUrl, selectedBoxIdxs, editingId, scale, bgDims, updateLayout])
+
   // ── 저장 템플릿 ──
   const templatesQuery = useQuery({ queryKey: ['notice-layouts'], queryFn: listNoticeLayouts })
   const templates = useMemo(() => templatesQuery.data ?? [], [templatesQuery.data])
@@ -445,6 +660,39 @@ function NoticesContent() {
 
   // 작성/저장할 템플릿 이름. 디폴트 없음 — 빈 상태로 시작, 사용자가 직접 입력.
   const [templateName, setTemplateName] = useState('')
+  // 현재 불러온/저장한 명명 템플릿의 레이아웃 스냅샷(JSON). 미저장 변경 감지 기준.
+  // null = 불러온 템플릿 없음(새 작업) → 저장 확인 질의 대상 아님.
+  const savedSnapshotRef = useRef<string | null>(null)
+  // 미저장 변경 상태에서 다른 템플릿 불러오기/닫기 요청 시 대기 중인 동작.
+  // 저장 확인 모달에서 네(저장 후 실행)/아니오(저장 없이 실행)/취소.
+  const [pendingAction, setPendingAction] = useState<
+    { kind: 'load'; name: string } | { kind: 'close' } | { kind: 'navigate'; href: string } | null
+  >(null)
+  // 현재 레이아웃이 마지막 저장/불러온 명명 템플릿과 달라졌는지(미저장 변경).
+  const isTemplateDirty = useCallback(
+    () =>
+      templateName.trim() !== '' &&
+      savedSnapshotRef.current !== null &&
+      !!layout &&
+      JSON.stringify(layout) !== savedSnapshotRef.current,
+    [templateName, layout],
+  )
+
+  // 편집 중 다른 메뉴로 이동 시 미저장 확인 — 전역 네비게이션 가드 등록.
+  const router = useRouter()
+  const setUnsavedGuard = useAppStore((s) => s.setUnsavedGuard)
+  useEffect(() => {
+    const guard = (href: string) => {
+      if (href === '/notices') return true // 같은 페이지 이동은 통과
+      if (isTemplateDirty()) {
+        setPendingAction({ kind: 'navigate', href })
+        return false // 차단 — 확인 다이얼로그에서 결정
+      }
+      return true
+    }
+    setUnsavedGuard(guard)
+    return () => setUnsavedGuard(null)
+  }, [isTemplateDirty, setUnsavedGuard])
 
   // 배경서식이 로드되지 않은(선택되지 않은) 시점에 공지문 이름을 한 번 비운다.
   // - 의존성에 backgroundAsset 만 두어, 사용자가 타이핑 중인 값이 매 키 입력마다 지워지는
@@ -477,41 +725,71 @@ function NoticesContent() {
       await saveNoticeLayoutNamed(name, layout)
       await templatesQuery.refetch()
       setTemplateName(name)
+      savedSnapshotRef.current = JSON.stringify(layout) // 저장 직후 = 미저장 변경 없음
       setToast(`✅ '${name}' 템플릿으로 저장되었습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
     }
   }
-  // 이름 저장 시도 — 동명 존재하면 덮어쓰기 확인 모달, 아니면 즉시 저장.
-  const requestSave = (name: string) => {
-    const n = name.trim()
-    if (n === '') {
-      setError('템플릿 이름을 입력해 주세요.')
-      return
-    }
-    if (templates.includes(n)) {
-      setConfirmDialog({
-        message: `'${n}' 공지문이 이미 있습니다. 덮어쓰시겠습니까?`,
-        onConfirm: () => void doSaveTemplate(n),
-      })
-    } else {
-      void doSaveTemplate(n)
-    }
-  }
+  // 공지문 저장 — 동명 덮어쓰기 확인 없이 바로 저장.
   const handleSaveNotice = () => {
     if (!layout) return
-    requestSave(templateName)
+    const n = templateName.trim()
+    if (n === '') {
+      setError('공지문 이름을 입력해 주세요.')
+      return
+    }
+    void doSaveTemplate(n)
   }
-  const handleLoadTemplate = async (name: string) => {
+  const doLoadTemplate = async (name: string) => {
     try {
       const loaded = await getNoticeLayoutNamed(name)
-      updateLayout(normalizeLayout(loaded))
-      setSelectedBoxIdx(0)
+      const normalized = normalizeLayout(loaded)
+      updateLayout(normalized)
+      savedSnapshotRef.current = JSON.stringify(normalized) // 불러온 직후 = 미저장 변경 없음
+      setSelectionSingle(0)
+      setEditingId(null)
       setTemplateName(name)
       setToast(`'${name}' 템플릿을 불러왔습니다.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '템플릿 불러오기 실패')
     }
+  }
+  // 공지문 닫기 — 캔버스 비우고 아무 공지문도 선택되지 않은 상태로.
+  const doCloseNotice = () => {
+    const base = makeDefaultLayout()
+    updateLayout({ ...base, textboxes: base.textboxes.map((tb) => ({ ...tb, enabled: false })) })
+    clearSelection()
+    setTemplateName('')
+    savedSnapshotRef.current = null
+  }
+  // 대기 동작 실행 (저장 확인 모달 이후).
+  const runPendingAction = (
+    action: { kind: 'load'; name: string } | { kind: 'close' } | { kind: 'navigate'; href: string },
+  ) => {
+    if (action.kind === 'load') void doLoadTemplate(action.name)
+    else if (action.kind === 'navigate') router.push(action.href)
+    else doCloseNotice()
+  }
+  // 다른 공지문 불러오기 — 작업 중인 공지문에 미저장 변경이 있으면 저장 여부 질의.
+  const handleLoadTemplate = (name: string) => {
+    if (name === templateName.trim()) {
+      void doLoadTemplate(name) // 같은 템플릿 다시 불러오기는 질의 없이 새로고침
+      return
+    }
+    if (isTemplateDirty()) {
+      setPendingAction({ kind: 'load', name })
+      return
+    }
+    void doLoadTemplate(name)
+  }
+  // 닫기 — 미저장 변경이 있으면 저장 여부 질의 후 비우기.
+  const handleCloseNotice = () => {
+    if (isTemplateDirty()) {
+      setPendingAction({ kind: 'close' })
+      return
+    }
+    doCloseNotice()
   }
   const handleDeleteTemplate = async (name: string) => {
     try {
@@ -521,9 +799,10 @@ function NoticesContent() {
       if (templateName.trim() === name) {
         const base = makeDefaultLayout()
         updateLayout({ ...base, textboxes: base.textboxes.map((tb) => ({ ...tb, enabled: false })) })
-        setSelectedBoxIdx(0)
+        setSelectionSingle(0)
         setEditingId(null)
         setTemplateName('') // 비운 채 유지
+        savedSnapshotRef.current = null // 불러온 템플릿 없음
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '템플릿 삭제 실패')
@@ -584,6 +863,35 @@ function NoticesContent() {
                 </ul>
               </>
             )}
+
+            {/* 생성 — 청구년월·원생 목록 하단 */}
+            <div className="mt-2 flex flex-col gap-1 border-t border-[var(--border)] pt-2">
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={generating || !layout?.backgroundAsset || selectedIds.size === 0}
+                className="h-11 w-full rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] px-3 text-base font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {generating ? `생성 중... ${progress ? `(${progress.done}/${progress.total})` : ''}` : `공지문 생성 (${selectedIds.size}명)`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const name = templateName.trim()
+                  if (name === '') {
+                    setError('공지문 이름을 먼저 입력해 주세요.')
+                    return
+                  }
+                  void openNoticeOutputDir(name, yearMonth).catch((e) =>
+                    setError(e instanceof Error ? e.message : '폴더 열기 실패'),
+                  )
+                }}
+                title="저장 폴더 열기 (없으면 생성)"
+                className="break-all text-left text-xs text-gray-500 underline-offset-2 hover:text-[var(--accent)] hover:underline"
+              >
+                📂 저장 위치: output/{noSpace(templateName.trim()) || '{공지문이름}'}/{yymm(yearMonth)}/
+              </button>
+            </div>
           </section>
 
           {/* 중앙: 편집 캔버스 */}
@@ -714,7 +1022,7 @@ function NoticesContent() {
               {/* 좌측: 표시 필드 토글 + 선택 박스 폰트 컨트롤 */}
               <div className="flex w-44 shrink-0 flex-col gap-2 pt-1">
                 {/* 선택된 텍스트박스 폰트 컨트롤 (위) — 캔버스에서 박스 클릭 시 대상 변경 */}
-                {layout && layout.textboxes[selectedBoxIdx] && (
+                {layout && selectedBoxIdxs.size > 0 && layout.textboxes[selectedBoxIdx] && (
                   <div className={`flex flex-col gap-2 text-sm ${selDisabled ? 'opacity-50' : ''}`}>
                     <span className="text-xs text-gray-500">
                       편집: {boxLabel(layout.textboxes[selectedBoxIdx])}
@@ -754,10 +1062,10 @@ function NoticesContent() {
                         type="color"
                         disabled={selDisabled}
                         value={layout.textboxes[selectedBoxIdx].fontColor}
-                        onChange={(e) => updateBox(selectedBoxIdx, { fontColor: e.target.value })}
+                        onChange={(e) => applyColor(e.target.value)}
                         className="h-9 w-9 cursor-pointer rounded border border-[var(--border)] disabled:cursor-not-allowed"
-                        title="글자 색"
-                        aria-label="글자 색"
+                        title="기타 색 직접 선택 (아래 프리셋으로 자주 쓰는 색 빠르게 적용)"
+                        aria-label="기타 글자 색"
                       />
                       {([
                         ['left', '왼쪽 정렬'],
@@ -775,6 +1083,22 @@ function NoticesContent() {
                         >
                           <AlignIcon align={al} />
                         </button>
+                      ))}
+                    </div>
+                    {/* 색 프리셋 — 편집 중 글자 선택 시 선택 부분만, 아니면 박스 전체 기본색 */}
+                    {/* flex-1 로 한 줄에 균등 분배 — 프리셋 개수와 무관하게 항상 한 라인 */}
+                    <div className="flex items-center gap-1">
+                      {COLOR_PRESETS.map(({ hex, label }) => (
+                        <button
+                          key={hex}
+                          type="button"
+                          title={`${label} (${hex})`}
+                          aria-label={`글자색 ${label}`}
+                          disabled={selDisabled}
+                          onClick={() => applyColor(hex)}
+                          style={{ backgroundColor: hex }}
+                          className="aspect-square min-w-0 flex-1 rounded border border-[var(--border)] disabled:cursor-not-allowed disabled:opacity-50"
+                        />
                       ))}
                     </div>
                   </div>
@@ -800,10 +1124,43 @@ function NoticesContent() {
                     tb.fieldType === 'custom' ? renderBoxRow(tb, i) : null,
                   )}
                 </div>
+
+                {/* 공지문 미리보기 — 공지문 로드 + 캔버스 컨트롤(활성 텍스트박스) 1개 이상일 때 활성 */}
+                <div className="mt-auto flex shrink-0 flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={handlePreview}
+                    disabled={
+                      previewBusy ||
+                      !layout?.backgroundAsset ||
+                      !bgDataUrl ||
+                      !(layout?.textboxes.some((tb) => tb.enabled !== false) ?? false)
+                    }
+                    className="h-10 w-full rounded-md border-2 border-[var(--accent)] text-sm font-semibold text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {previewBusy ? '미리보기 생성 중...' : '공지문 미리보기'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openNoticePreviewDir().catch((e) =>
+                        setError(e instanceof Error ? e.message : '폴더 열기 실패'),
+                      )
+                    }
+                    title="저장 폴더 열기 (없으면 생성)"
+                    className="break-all text-left text-xs text-gray-500 underline-offset-2 hover:text-[var(--accent)] hover:underline"
+                  >
+                    📂 저장 위치: output/공지문/{noSpace(templateName.trim()) || '{공지문이름}'}.png
+                  </button>
+                </div>
               </div>
 
               {/* 미리보기 캔버스 (가용 영역 채움) */}
-              <div ref={previewWrapRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gray-100">
+              <div
+                ref={previewWrapRef}
+                onMouseDown={clearSelection} // 빈 영역 클릭 → 선택 해제 (박스는 stopPropagation 으로 제외)
+                className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gray-100"
+              >
               {bgDataUrl && layout ? (
                 <div
                   className="relative border border-dashed border-gray-300"
@@ -823,6 +1180,14 @@ function NoticesContent() {
                     {layout.textboxes.map((tb, i) => {
                       if (tb.enabled === false) return null // 체크 해제 항목은 미표시
                       const boxH = tb.hRatio * bgDims.h
+                      const id = tb.id || tb.fieldType
+                      const isEditing = editingId === id
+                      const isCustom = tb.fieldType === 'custom'
+                      // 표시 텍스트: custom 은 입력값, 데이터 필드는 미리보기 원생값.
+                      const boxText = noticeFieldText(tb, previewData)
+                      const runs = buildColorRuns(boxText, tb.charColors, tb.fontColor)
+                      const justify =
+                        tb.textAlign === 'center' ? 'center' : tb.textAlign === 'right' ? 'flex-end' : 'flex-start'
                       return (
                         <Rnd
                           key={tb.id || tb.fieldType}
@@ -841,57 +1206,128 @@ function NoticesContent() {
                               yRatio: pos.y / bgDims.h,
                             })
                           }
-                          onMouseDown={() => setSelectedBoxIdx(i)}
-                          disableDragging={editingId === (tb.id || tb.fieldType)}
-                          style={{ outline: i === selectedBoxIdx ? '2px solid var(--accent)' : '1px dashed #999' }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation() // 빈 영역 클릭 핸들러(선택 해제)로 버블링 방지
+                            if (editingId && editingId !== id) {
+                              selRangeRef.current = null
+                              setEditingId(null) // 다른 박스 클릭 시 편집 종료
+                            }
+                            selectBox(i, e.shiftKey)
+                          }}
+                          disableDragging={isEditing}
+                          style={{
+                            // 선택됨: accent. primary(폰트 컨트롤 대상)는 실선, 그 외 다중 선택은 점선.
+                            outline: selectedBoxIdxs.has(i)
+                              ? i === selectedBoxIdx
+                                ? '2px solid var(--accent)'
+                                : '2px dashed var(--accent)'
+                              : '1px dashed #999',
+                          }}
                         >
-                          {tb.fieldType === 'custom' && editingId === (tb.id || tb.fieldType) ? (
-                            // 인라인 편집 — custom 박스 더블클릭 시 textarea
-                            <textarea
-                              autoFocus
-                              value={tb.text ?? ''}
-                              onChange={(e) => updateBox(i, { text: e.target.value })}
-                              onBlur={() => setEditingId(null)}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                resize: 'none',
-                                border: 'none',
-                                outline: 'none',
-                                background: 'rgba(255,255,255,0.7)',
-                                fontSize: tb.fontRatio * boxH,
-                                fontWeight: tb.fontWeight,
-                                color: tb.fontColor,
-                                textAlign: tb.textAlign,
-                                lineHeight: 1.2,
-                                padding: 0,
-                              }}
-                            />
+                          {isEditing ? (
+                            // 인라인 편집 — 색 오버레이(뒤) + 투명 글자 textarea(앞).
+                            // textarea 가 입력/선택을 담당하고, 오버레이가 글자별 색을 보여준다.
+                            <div style={{ position: 'relative', width: '100%', height: '100%', background: 'rgba(255,255,255,0.7)' }}>
+                              <div
+                                aria-hidden
+                                style={{
+                                  // textarea 와 동일한 박스/폰트/상단 정렬 — 선택 하이라이트와 글자 위치 일치.
+                                  position: 'absolute',
+                                  inset: 0,
+                                  fontSize: tb.fontRatio * boxH,
+                                  fontWeight: tb.fontWeight,
+                                  fontFamily: 'inherit',
+                                  textAlign: tb.textAlign,
+                                  lineHeight: 1.2,
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word',
+                                  overflow: 'hidden',
+                                  boxSizing: 'border-box',
+                                  padding: 0,
+                                  pointerEvents: 'none',
+                                }}
+                              >
+                                {runs.map((r, k) => (
+                                  <span key={k} style={{ color: r.color }}>{r.text}</span>
+                                ))}
+                              </div>
+                              <textarea
+                                ref={editTextareaRef}
+                                autoFocus
+                                readOnly={!isCustom}
+                                value={boxText}
+                                onChange={
+                                  isCustom
+                                    ? (e) => {
+                                        const oldText = tb.text ?? ''
+                                        const oldColors = normalizeCharColors(tb.charColors, oldText.length)
+                                        const next = realignCharColors(oldText, oldColors, e.target.value)
+                                        updateBox(i, { text: e.target.value, charColors: compactCharColors(next) })
+                                      }
+                                    : undefined
+                                }
+                                onSelect={(e) => {
+                                  // 비어있지 않은 선택만 저장(접힘 시 직전 범위 유지) — 색 버튼 클릭 시
+                                  // 포커스 이탈로 선택이 접혀도 마지막 실제 선택에 색을 적용한다.
+                                  const t = e.currentTarget
+                                  if (t.selectionStart !== t.selectionEnd) {
+                                    selRangeRef.current = { start: t.selectionStart, end: t.selectionEnd }
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    e.preventDefault()
+                                    selRangeRef.current = null
+                                    setEditingId(null)
+                                  }
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  width: '100%',
+                                  height: '100%',
+                                  resize: 'none',
+                                  border: 'none',
+                                  outline: 'none',
+                                  background: 'transparent',
+                                  color: 'transparent',
+                                  caretColor: tb.fontColor,
+                                  fontSize: tb.fontRatio * boxH,
+                                  fontWeight: tb.fontWeight,
+                                  fontFamily: 'inherit',
+                                  textAlign: tb.textAlign,
+                                  lineHeight: 1.2,
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word',
+                                  boxSizing: 'border-box',
+                                  padding: 0,
+                                  cursor: isCustom ? 'text' : 'default',
+                                }}
+                              />
+                            </div>
                           ) : (
                             <div
-                              onDoubleClick={() => {
-                                if (tb.fieldType === 'custom') {
-                                  setSelectedBoxIdx(i)
-                                  setEditingId(tb.id || tb.fieldType)
-                                }
-                              }}
-                              title={tb.fieldType === 'custom' ? '더블클릭하여 텍스트 편집' : undefined}
+                              onDoubleClick={() => enterEdit(i, tb)}
+                              title={isCustom ? '더블클릭: 텍스트·색 편집' : '더블클릭: 글자별 색 편집'}
                               style={{
                                 width: '100%',
                                 height: '100%',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: tb.textAlign === 'center' ? 'center' : tb.textAlign === 'right' ? 'flex-end' : 'flex-start',
+                                justifyContent: justify,
                                 fontSize: tb.fontRatio * boxH,
                                 fontWeight: tb.fontWeight,
-                                color: tb.fontColor,
                                 textAlign: tb.textAlign,
                                 lineHeight: 1.2,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
                                 overflow: 'hidden',
                                 cursor: 'move',
                               }}
                             >
-                              {noticeFieldText(tb, previewData)}
+                              {runs.map((r, k) => (
+                                <span key={k} style={{ color: r.color }}>{r.text}</span>
+                              ))}
                             </div>
                           )}
                         </Rnd>
@@ -905,19 +1341,6 @@ function NoticesContent() {
                 </p>
               )}
               </div>
-            </div>
-
-            {/* 생성 */}
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={generating || !layout?.backgroundAsset || selectedIds.size === 0}
-                className="h-11 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {generating ? `생성 중... ${progress ? `(${progress.done}/${progress.total})` : ''}` : `발송용 공지문 생성 (${selectedIds.size}명)`}
-              </button>
-              <span className="text-sm text-gray-500">저장 위치: output/{yearMonth.replace('-', '')}/</span>
             </div>
           </section>
 
@@ -934,14 +1357,25 @@ function NoticesContent() {
               placeholder="공지문 이름"
               className="h-9 rounded-md border border-[var(--border)] px-2 text-sm"
             />
-            <button
-              type="button"
-              onClick={handleSaveNotice}
-              disabled={!layout?.backgroundAsset || templateName.trim() === ''}
-              className="h-9 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-            >
-              공지문 저장
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleSaveNotice}
+                disabled={!layout?.backgroundAsset || templateName.trim() === ''}
+                className="h-9 flex-1 rounded-md border-2 border-[var(--accent)] bg-[var(--accent)] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                공지문 저장
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseNotice}
+                disabled={!layout?.backgroundAsset && templateName.trim() === ''}
+                title="현재 공지문 캔버스를 비웁니다"
+                className="h-9 shrink-0 rounded-md border-2 border-[var(--border)] px-3 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                닫기
+              </button>
+            </div>
 
             <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs text-gray-500">
               저장된 템플릿
@@ -1008,6 +1442,87 @@ function NoticesContent() {
                 className="min-h-[44px] flex-1 rounded-md bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90"
               >
                 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 저장 확인 모달 — 미저장 변경 중 다른 공지문 불러오기/닫기 시 */}
+      {pendingAction !== null && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <p className="mb-4 text-base text-gray-800">
+              작업 중인 &lsquo;{templateName}&rsquo; 공지문에 저장하지 않은 변경이 있습니다.
+              <br />
+              작업 내용을 저장하시겠습니까?
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingAction(null)}
+                className="min-h-[44px] flex-1 rounded-md border-2 border-[var(--border)] px-4 text-base text-gray-700 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const action = pendingAction
+                  setPendingAction(null)
+                  runPendingAction(action)
+                }}
+                className="min-h-[44px] flex-1 rounded-md border-2 border-[var(--border)] px-4 text-base text-gray-700 hover:bg-gray-50"
+              >
+                아니오
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const action = pendingAction
+                  const saveName = templateName.trim()
+                  setPendingAction(null)
+                  void (async () => {
+                    await doSaveTemplate(saveName)
+                    runPendingAction(action)
+                  })()
+                }}
+                className="min-h-[44px] flex-1 rounded-md bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90"
+              >
+                네
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 공지문 미리보기 팝업 — 중앙 미리보기 + 하단 저장/닫기 */}
+      {previewUrl && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-6">
+          <div className="flex max-h-full max-w-full flex-col rounded-lg bg-white p-4 shadow-xl">
+            <p className="mb-2 text-base font-semibold text-gray-800">공지문 미리보기</p>
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewUrl}
+                alt="공지문 미리보기"
+                className="max-h-[72vh] max-w-[80vw] object-contain shadow"
+              />
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleSavePreview}
+                className="min-h-[44px] rounded-md bg-[var(--accent)] px-5 text-base font-semibold text-white hover:opacity-90"
+              >
+                저장
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewUrl(null)}
+                className="min-h-[44px] rounded-md border-2 border-[var(--border)] px-5 text-base text-gray-700 hover:bg-gray-50"
+              >
+                닫기
               </button>
             </div>
           </div>

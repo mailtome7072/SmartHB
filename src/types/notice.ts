@@ -45,8 +45,14 @@ export interface TextboxConfig {
   hRatio: number // 배경 높이 대비 높이 (0..1)
   fontRatio: number // 박스 높이 대비 글자 크기 (0..1) — 박스 리사이즈 시 폰트 자동 연동
   fontWeight: 'normal' | 'bold'
+  /** 박스 기본 글자색 — charColors 로 색이 지정되지 않은 글자에 적용. */
   fontColor: string
   textAlign: 'left' | 'center' | 'right'
+  /**
+   * 글자별 폰트색 — 글자 인덱스별 hex(null/누락은 fontColor 사용).
+   * 데이터 필드는 원생마다 텍스트 길이가 달라 인덱스 기준으로 적용한다(초과분은 무시).
+   */
+  charColors?: (string | null)[] | null
 }
 
 /** 공지문 레이아웃 — 배경서식 + 텍스트박스 3종 (AC-4.10-3 보존 대상). */

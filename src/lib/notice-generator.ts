@@ -1,12 +1,12 @@
 /**
  * 공지문 이미지 생성 엔진 — Sprint 12 T7 (PRD §4.10.2, AC-4.10-1).
  *
- * 배경서식(data URL) 위에 레이아웃의 텍스트박스 3종을 배치한 오프스크린 DOM 노드를 만들고,
- * `html-to-image`의 `toPng`로 PNG를 렌더링한다. 원생별로 텍스트만 교체하여 순차 생성·저장한다.
+ * 배경서식(data URL)을 Canvas 2D 에 그리고 그 위에 레이아웃 텍스트박스를 직접 렌더링한다.
+ * 원생별로 텍스트만 교체하여 순차 생성·저장한다. (macOS WKWebView 의 html-to-image
+ * foreignObject+img 빈 이미지 결함 회피 — Canvas 직접 드로잉)
  * 청구액은 천단위 콤마(`Intl.NumberFormat('ko-KR')`)로 표기한다 (AC-4.10-1).
  */
 
-import { toPng } from 'html-to-image'
 import { saveNoticeImage } from '@/lib/tauri'
 import type { NoticeLayout, NoticeFieldType, TextboxConfig } from '@/types/notice'
 
@@ -24,6 +24,8 @@ export interface NoticeStudentData {
 }
 
 export interface GenerateOptions {
+  /** 공지문(템플릿) 이름 — 저장 폴더/파일명에 사용. */
+  noticeName: string
   yearMonth: string
   /** 배경서식 이미지 data URL. */
   backgroundDataUrl: string
@@ -38,11 +40,11 @@ export interface GenerateOptions {
 
 const wonFormatter = new Intl.NumberFormat('ko-KR')
 
-/** 'YYYY-MM' → 'YYYY년 M월'. */
+/** 'YYYY-MM' → 'M월' (청구월 컨트롤은 월만 표시). */
 function formatBillMonth(yearMonth: string): string {
   const [y, m] = yearMonth.split('-')
   if (!y || !m) return yearMonth
-  return `${y}년 ${Number(m)}월`
+  return `${Number(m)}월`
 }
 
 /** 텍스트박스의 표시 텍스트. custom 은 사용자 입력 text, 데이터 필드는 원생 데이터. */
@@ -68,6 +70,26 @@ export function noticeFieldText(
   }
 }
 
+/**
+ * 글자별 색 정보를 연속 동일색 런으로 묶는다. 각 글자색은 `charColors[i] ?? defaultColor`.
+ * 인덱스는 UTF-16 코드유닛 기준(textarea selectionStart/End 와 정합) — 한글/숫자/영문은 1:1.
+ * 미리보기·생성·편집 오버레이가 공통 사용한다.
+ */
+export function buildColorRuns(
+  text: string,
+  charColors: (string | null)[] | null | undefined,
+  defaultColor: string,
+): { text: string; color: string }[] {
+  const runs: { text: string; color: string }[] = []
+  for (let i = 0; i < text.length; i++) {
+    const color = (charColors?.[i] ?? null) || defaultColor
+    const last = runs[runs.length - 1]
+    if (last && last.color === color) last.text += text[i]
+    else runs.push({ text: text[i], color })
+  }
+  return runs
+}
+
 /** 바이트 배열(number[]) → data URL. 저장된 배경서식 미리보기/생성 src 용. 대용량 대비 chunk btoa. */
 export function bytesToDataUrl(bytes: number[], mime = 'image/png'): string {
   let binary = ''
@@ -88,26 +110,51 @@ export function dataUrlToBytes(dataUrl: string): number[] {
   return bytes
 }
 
-/** 비율 텍스트박스를 배경 해상도(bgW×bgH) 기준 절대 px 스타일로 변환. 폰트 = 박스높이 × fontRatio. */
-function applyTextboxStyle(el: HTMLDivElement, tb: TextboxConfig, bgW: number, bgH: number): void {
+/**
+ * 텍스트박스 1종을 캔버스에 그린다 — 박스 영역 내 세로 중앙, 좌/중/우 정렬, 글자별 색 반영.
+ * 폰트 크기 = 박스높이 × fontRatio. 줄바꿈('\n')은 줄 단위로 그리며 자동 줄바꿈(소프트 랩)은 미지원.
+ */
+function drawTextbox(
+  ctx: CanvasRenderingContext2D,
+  tb: TextboxConfig,
+  data: NoticeStudentData,
+  bgW: number,
+  bgH: number,
+): void {
+  const text = noticeFieldText(tb, data)
+  if (text === '') return
+  const boxX = tb.xRatio * bgW
+  const boxY = tb.yRatio * bgH
+  const boxW = tb.wRatio * bgW
   const boxH = tb.hRatio * bgH
-  el.style.position = 'absolute'
-  el.style.left = `${tb.xRatio * bgW}px`
-  el.style.top = `${tb.yRatio * bgH}px`
-  el.style.width = `${tb.wRatio * bgW}px`
-  el.style.height = `${boxH}px`
-  el.style.fontSize = `${tb.fontRatio * boxH}px`
-  el.style.fontWeight = tb.fontWeight
-  el.style.color = tb.fontColor
-  el.style.textAlign = tb.textAlign
-  el.style.display = 'flex'
-  el.style.alignItems = 'center'
-  el.style.justifyContent =
-    tb.textAlign === 'center' ? 'center' : tb.textAlign === 'right' ? 'flex-end' : 'flex-start'
-  el.style.fontFamily = 'Pretendard, sans-serif'
-  el.style.lineHeight = '1.3'
-  el.style.whiteSpace = 'pre-wrap'
-  el.style.overflow = 'hidden'
+  const fontSize = tb.fontRatio * boxH
+  const weight = tb.fontWeight === 'bold' ? '700' : '400'
+  ctx.font = `${weight} ${fontSize}px Pretendard, sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left'
+  const lineHeight = fontSize * 1.3
+  const lines = text.split('\n')
+  // 여러 줄이면 블록 전체를 박스 세로 중앙에 배치
+  let cy = boxY + boxH / 2 - (lineHeight * (lines.length - 1)) / 2
+  let charOffset = 0
+  for (const line of lines) {
+    const lineColors = tb.charColors ? tb.charColors.slice(charOffset, charOffset + line.length) : null
+    const runs = buildColorRuns(line, lineColors, tb.fontColor)
+    const totalW = runs.reduce((acc, r) => acc + ctx.measureText(r.text).width, 0)
+    let x =
+      tb.textAlign === 'center'
+        ? boxX + (boxW - totalW) / 2
+        : tb.textAlign === 'right'
+          ? boxX + boxW - totalW
+          : boxX
+    for (const run of runs) {
+      ctx.fillStyle = run.color
+      ctx.fillText(run.text, x, cy)
+      x += ctx.measureText(run.text).width
+    }
+    charOffset += line.length + 1 // '\n' 1글자 포함
+    cy += lineHeight
+  }
 }
 
 function waitImageLoaded(img: HTMLImageElement): Promise<void> {
@@ -118,40 +165,64 @@ function waitImageLoaded(img: HTMLImageElement): Promise<void> {
   })
 }
 
-/** 단일 원생 공지문을 오프스크린 렌더 → PNG 바이트 배열 반환. */
-async function renderNoticePng(opts: GenerateOptions, data: NoticeStudentData): Promise<number[]> {
+/**
+ * 단일 원생 공지문을 Canvas 2D 로 렌더 → PNG 바이트 배열 반환.
+ *
+ * html-to-image(SVG foreignObject) 는 macOS WKWebView 에서 data URL `<img>` 를 빈 이미지로
+ * 출력하는 결함이 있어, 캔버스에 배경+텍스트를 직접 그린다 (Windows/macOS 공통 안정).
+ */
+/** 미리보기용 렌더 파라미터 (저장 불필요 — 단일 이미지 미리보기/내보내기). */
+export interface RenderParams {
+  backgroundDataUrl: string
+  width: number
+  height: number
+  layout: NoticeLayout
+}
+
+/**
+ * 배경 + 텍스트박스를 캔버스에 그려 PNG data URL 을 반환한다 (저장 없음).
+ * 생성(`renderNoticePng`)·미리보기 공통 코어.
+ */
+export async function renderNoticeDataUrl(params: RenderParams, data: NoticeStudentData): Promise<string> {
   if (typeof document === 'undefined') {
     throw new Error('이미지 생성은 앱 화면(클라이언트)에서만 가능합니다.')
   }
-  const container = document.createElement('div')
-  container.style.cssText = `position:fixed;left:-99999px;top:0;width:${opts.width}px;height:${opts.height}px;background:#fff;`
-
-  const bg = document.createElement('img')
-  bg.src = opts.backgroundDataUrl
-  bg.style.cssText = `position:absolute;left:0;top:0;width:${opts.width}px;height:${opts.height}px;`
-  container.appendChild(bg)
-
-  for (const tb of opts.layout.textboxes) {
-    if (tb.enabled === false) continue // 체크 해제된 항목은 생성에서 제외
-    const box = document.createElement('div')
-    applyTextboxStyle(box, tb, opts.width, opts.height)
-    box.textContent = noticeFieldText(tb, data)
-    container.appendChild(box)
+  // 폰트 로드 보장 — 미로드 시 캔버스가 fallback 폰트로 그려 글자 폭/모양이 달라짐
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready
+    } catch {
+      /* 폰트 상태 조회 실패는 무시 */
+    }
   }
 
-  document.body.appendChild(container)
-  try {
-    await waitImageLoaded(bg)
-    const dataUrl = await toPng(container, {
-      pixelRatio: 1, // 성능(50장<30초) — 배경 자연 크기 기준 1x (PRD §5.6)
-      width: opts.width,
-      height: opts.height,
-      cacheBust: true,
-    })
-    return dataUrlToBytes(dataUrl)
-  } finally {
-    document.body.removeChild(container)
+  const canvas = document.createElement('canvas')
+  canvas.width = params.width
+  canvas.height = params.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('캔버스를 초기화할 수 없습니다.')
+
+  // 배경서식
+  const bg = new Image()
+  bg.src = params.backgroundDataUrl
+  await waitImageLoaded(bg)
+  ctx.drawImage(bg, 0, 0, params.width, params.height)
+
+  // 텍스트박스 (체크 해제 항목 제외)
+  for (const tb of params.layout.textboxes) {
+    if (tb.enabled === false) continue
+    drawTextbox(ctx, tb, data, params.width, params.height)
   }
+
+  return canvas.toDataURL('image/png') // 1x
+}
+
+async function renderNoticePng(opts: GenerateOptions, data: NoticeStudentData): Promise<number[]> {
+  const dataUrl = await renderNoticeDataUrl(
+    { backgroundDataUrl: opts.backgroundDataUrl, width: opts.width, height: opts.height, layout: opts.layout },
+    data,
+  )
+  return dataUrlToBytes(dataUrl)
 }
 
 /**
@@ -165,7 +236,12 @@ export async function generateAndSaveNotices(
   const total = opts.students.length
   for (let i = 0; i < total; i++) {
     const bytes = await renderNoticePng(opts, opts.students[i])
-    const path = await saveNoticeImage(opts.yearMonth, opts.students[i].studentName, bytes)
+    const path = await saveNoticeImage(
+      opts.noticeName,
+      opts.yearMonth,
+      opts.students[i].studentName,
+      bytes,
+    )
     paths.push(path)
     opts.onProgress?.(i + 1, total)
     await new Promise((r) => setTimeout(r, 0)) // UI 양보

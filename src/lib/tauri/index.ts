@@ -739,7 +739,7 @@ export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
 }
 
 // ============================================================================
-// Sprint 6 — 학사 스케줄 도메인 (T8, PRD §4.4)
+// Sprint 6 — 일정 관리 도메인 (T8, PRD §4.4)
 // ============================================================================
 // 백엔드: src-tauri/src/commands/academic.rs (T5/T6/T7).
 // Tauri invoke args 는 자동 camelCase ↔ snake_case 변환 (예: Rust from_month ↔ TS fromMonth).
@@ -1371,29 +1371,89 @@ export async function getNoticeMonthInfo(yearMonth: string): Promise<NoticeMonth
   return inv('get_notice_month_info', { yearMonth }) as Promise<NoticeMonthInfo>
 }
 
-/** 단건 공지문 PNG 저장. image 는 PNG 바이트 배열. 저장 경로 반환. */
+/**
+ * 한글 파일명/경로를 NFC(완성형)로 정규화한다.
+ * macOS 저장 다이얼로그·일부 입력은 NFD(자모 분리형)를 돌려줄 수 있어, 파일시스템에 쓰기 전
+ * NFC 로 통일한다. (APFS 는 작성 시 전달한 형태 그대로 저장 — NFC 로 전달하면 NFC 로 저장)
+ */
+const nfc = (s: string): string => s.normalize('NFC')
+
+/** 단건 공지문 PNG 저장 — output/{공지문이름}/{청구년월}/{공지문이름}_{청구년월}_{원생명}.png. 저장 경로 반환. */
 export async function saveNoticeImage(
+  noticeName: string,
   yearMonth: string,
   studentName: string,
   image: number[],
 ): Promise<string> {
   const inv = await getInvoke()
   if (!inv) throw new Error('[개발 모드] saveNoticeImage 호출 불가')
-  return inv('save_notice_image', { yearMonth, studentName, image }) as Promise<string>
+  return inv('save_notice_image', {
+    noticeName: nfc(noticeName),
+    yearMonth,
+    studentName: nfc(studentName),
+    image,
+  }) as Promise<string>
 }
 
 /** 다건 공지문 PNG 일괄 저장. 저장 완료 건수 반환. */
 export async function saveNoticeImagesBatch(
+  noticeName: string,
   yearMonth: string,
   items: NoticeImageItem[],
 ): Promise<number> {
   const inv = await getInvoke()
   if (!inv) return 0
-  return inv('save_notice_images_batch', { yearMonth, items }) as Promise<number>
+  const normalized = items.map((it) => ({ ...it, studentName: nfc(it.studentName) }))
+  return inv('save_notice_images_batch', {
+    noticeName: nfc(noticeName),
+    yearMonth,
+    items: normalized,
+  }) as Promise<number>
 }
 
-export async function checkNoticeOutputExists(yearMonth: string): Promise<boolean> {
+/** 해당 공지문/청구년월 출력 폴더에 이미 PNG가 있는지 (덮어쓰기 확인용). */
+export async function checkNoticeOutputExists(noticeName: string, yearMonth: string): Promise<boolean> {
   const inv = await getInvoke()
   if (!inv) return false
-  return inv('check_notice_output_exists', { yearMonth }) as Promise<boolean>
+  return inv('check_notice_output_exists', { noticeName: nfc(noticeName), yearMonth }) as Promise<boolean>
+}
+
+/** 미리보기 저장 다이얼로그 기본 경로 — output/공지문/{공지문이름}.png (폴더 미리 생성). */
+export async function noticePreviewDefaultPath(noticeName: string): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) return `output/공지문/${noticeName}.png`
+  return inv('notice_preview_default_path', { noticeName: nfc(noticeName) }) as Promise<string>
+}
+
+/** 미리보기 PNG를 지정 경로에 저장. 저장된 경로 반환. (경로는 NFC 로 정규화하여 저장) */
+export async function saveNoticePreview(path: string, image: number[]): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticePreview 호출 불가')
+  return inv('save_notice_preview', { path: nfc(path), image }) as Promise<string>
+}
+
+/** 생성 출력 폴더(output/{공지문이름}/{YYMM}/)를 생성 후 OS 탐색기로 연다. 이름 비면 output 루트. */
+export async function openNoticeOutputDir(noticeName: string, yearMonth: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('open_notice_output_dir', { noticeName: nfc(noticeName), yearMonth })
+}
+
+/** 미리보기 저장 폴더(output/공지문/)를 생성 후 OS 탐색기로 연다. */
+export async function openNoticePreviewDir(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('open_notice_preview_dir')
+}
+
+/** 파일 저장 다이얼로그 — 사용자가 선택한 경로 반환(취소 시 null). */
+export async function showSaveDialog(defaultPath: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const selected = await save({ defaultPath, filters: [{ name: 'PNG 이미지', extensions: ['png'] }] })
+    return selected ?? null
+  } catch {
+    return null
+  }
 }

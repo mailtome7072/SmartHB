@@ -37,7 +37,7 @@ function currentYearMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-/** 학사 스케줄(교습기간) 조회 범위 — study_periods 테이블은 작아 비용 무시 가능. */
+/** 일정 관리(교습기간) 조회 범위 — study_periods 테이블은 작아 비용 무시 가능. */
 const STUDY_PERIOD_FROM = '2000-01'
 const STUDY_PERIOD_TO = '2099-12'
 
@@ -96,7 +96,7 @@ function BillingContent() {
     queryFn: () => getBillingSummary(effectiveYearMonth),
   })
 
-  // 청구년월 드롭다운 옵션 — 학사 스케줄(교습기간) 등록된 년월만. 미등록 시 현재 년월 fallback.
+  // 청구년월 드롭다운 옵션 — 일정 관리(교습기간) 등록된 년월만. 미등록 시 현재 년월 fallback.
   // 출결관리와 동일 정책: 프로그램 실행뿐 아니라 메뉴 진입(=페이지 mount) 시마다 매번 갱신.
   const studyPeriodsQuery = useQuery({
     queryKey: ['study-periods', STUDY_PERIOD_FROM, STUDY_PERIOD_TO],
@@ -120,7 +120,7 @@ function BillingContent() {
     )
   }, [studyPeriodsQuery.data])
 
-  // 학사 스케줄이 로드되었는데 현재 effectiveYearMonth 가 옵션에 없으면 첫 옵션(최신)으로 이동.
+  // 일정 관리이 로드되었는데 현재 effectiveYearMonth 가 옵션에 없으면 첫 옵션(최신)으로 이동.
   useEffect(() => {
     if (studyPeriodsQuery.data === undefined) return
     if (!monthOptions.includes(effectiveYearMonth)) {

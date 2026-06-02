@@ -97,11 +97,10 @@ pub(crate) fn assets_dir() -> PathBuf {
     data_root().join(ASSETS_SUBDIR)
 }
 
-/// 공지문 PNG 출력 디렉토리 — `{data_root}/output/{YYYYMM}/` (Sprint 12, PRD §4.10.2).
-/// `year_month` 는 'YYYY-MM' 형식; 디렉토리명은 하이픈 제거한 'YYYYMM'.
-pub(crate) fn notice_output_dir(year_month: &str) -> PathBuf {
-    let compact: String = year_month.chars().filter(|c| *c != '-').collect();
-    data_root().join(OUTPUT_SUBDIR).join(compact)
+/// 공지문 PNG 출력 루트 — `{data_root}/output/` (Sprint 12, PRD §4.10.2).
+/// 실제 저장 경로(`output/{공지문이름}/{청구년월}/`)는 notice.rs 에서 구성한다.
+pub(crate) fn output_root() -> PathBuf {
+    data_root().join(OUTPUT_SUBDIR)
 }
 
 /// 데이터 루트를 런타임 중 갱신한다. 마법사가 폴더를 새로 지정할 때 호출.
@@ -196,12 +195,9 @@ mod tests {
     }
 
     #[test]
-    fn notice_output_dir_strips_hyphen() {
+    fn output_root_composes_under_data_root() {
         update_data_root(PathBuf::from("/tmp/notice-root"));
-        assert_eq!(
-            notice_output_dir("2026-05"),
-            PathBuf::from("/tmp/notice-root/output/202605"),
-        );
+        assert_eq!(output_root(), PathBuf::from("/tmp/notice-root/output"));
     }
 
     #[cfg(feature = "cipher")]

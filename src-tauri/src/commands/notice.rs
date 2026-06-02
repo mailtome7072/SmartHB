@@ -57,6 +57,7 @@ fn default_textboxes() -> Vec<TextboxConfig> {
         font_weight: "bold".to_string(),
         font_color: "#1A1A1A".to_string(),
         text_align: "center".to_string(),
+        char_colors: None,
     };
     vec![
         mk("bill_month", 0.05, true),
@@ -86,8 +87,12 @@ pub struct TextboxConfig {
     pub h_ratio: f64,       // 배경 높이 대비 높이 (0..1)
     pub font_ratio: f64,    // 박스 높이 대비 글자 크기 (0..1) — 박스 리사이즈 시 폰트 자동 연동
     pub font_weight: String, // "normal" | "bold"
-    pub font_color: String,  // hex
+    pub font_color: String,  // hex — 박스 기본색(글자별 색 미지정 글자에 적용)
     pub text_align: String,  // "left" | "center" | "right"
+    /// 글자별 폰트색 — 글자 인덱스별 hex(미지정/null 은 font_color 사용). 구버전 호환: 누락 시 None.
+    /// 데이터 필드(원생명/청구액 등)는 원생마다 텍스트 길이가 달라 인덱스 기준으로 적용한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub char_colors: Option<Vec<Option<String>>>,
 }
 
 /// 공지문 레이아웃 — 배경서식 + 텍스트박스 3종.
@@ -559,22 +564,64 @@ pub async fn get_notice_month_info(year_month: String) -> Result<NoticeMonthInfo
 
 // ─────────────────────── T4: 공지문 이미지 저장 ───────────────────────
 
-fn notice_image_path(year_month: &str, student_name: &str) -> PathBuf {
-    let compact: String = year_month.chars().filter(|c| *c != '-').collect();
-    let safe_name = sanitize_component(student_name);
-    paths::notice_output_dir(year_month).join(format!("{}_{}.png", compact, safe_name))
+/// 출력 폴더/파일명용 정규화 — **공백 제거** + 경로 위험 문자 제거(언더스코어는 컴포넌트 구분자로만 사용).
+fn sanitize_path_part(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter_map(|c| match c {
+            c if c.is_whitespace() => None, // 공백 제거 (폴더·파일명에 공백 미사용)
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => Some('_'),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
+        .collect();
+    let cleaned = cleaned.replace("..", "_").trim_matches('.').to_string();
+    if cleaned.is_empty() {
+        "unnamed".to_string()
+    } else {
+        cleaned
+    }
 }
 
-/// 단건 공지문 PNG 저장 — `output/{YYYYMM}/{YYYYMM}_{원생명}.png`. 저장 경로 반환.
+/// 청구년월 'YYYY-MM' → 'YYMM' (예: 2026-06 → 2606).
+fn year_month_compact(year_month: &str) -> String {
+    let parts: Vec<&str> = year_month.split('-').collect();
+    if parts.len() == 2 && parts[0].len() >= 2 {
+        format!("{}{}", &parts[0][parts[0].len() - 2..], parts[1])
+    } else {
+        sanitize_path_part(year_month)
+    }
+}
+
+/// 출력 디렉토리 — `output/{공지문이름}/{YYMM}/`.
+fn notice_output_dir(notice_name: &str, year_month: &str) -> PathBuf {
+    paths::output_root()
+        .join(sanitize_path_part(notice_name))
+        .join(year_month_compact(year_month))
+}
+
+/// 저장 파일 경로 — `.../{공지문이름}_{YYMM}_{원생명}.png`.
+fn notice_image_path(notice_name: &str, year_month: &str, student_name: &str) -> PathBuf {
+    let file = format!(
+        "{}_{}_{}.png",
+        sanitize_path_part(notice_name),
+        year_month_compact(year_month),
+        sanitize_path_part(student_name),
+    );
+    notice_output_dir(notice_name, year_month).join(file)
+}
+
+/// 단건 공지문 PNG 저장 — `output/{공지문이름}/{YYMM}/{공지문이름}_{YYMM}_{원생명}.png`. 저장 경로 반환.
 #[tauri::command]
 pub async fn save_notice_image(
+    notice_name: String,
     year_month: String,
     student_name: String,
     image: Vec<u8>,
 ) -> Result<String, String> {
-    let dir = paths::notice_output_dir(&year_month);
+    let dir = notice_output_dir(&notice_name, &year_month);
     ensure_dir(&dir)?;
-    let target = notice_image_path(&year_month, &student_name);
+    let target = notice_image_path(&notice_name, &year_month, &student_name);
     std::fs::write(&target, &image).map_err(|e| format!("공지문 이미지 저장 실패: {}", e))?;
     Ok(target.to_string_lossy().to_string())
 }
@@ -582,14 +629,15 @@ pub async fn save_notice_image(
 /// 다건 공지문 PNG 일괄 저장 — 저장 완료 건수 반환.
 #[tauri::command]
 pub async fn save_notice_images_batch(
+    notice_name: String,
     year_month: String,
     items: Vec<NoticeImageItem>,
 ) -> Result<i64, String> {
-    let dir = paths::notice_output_dir(&year_month);
+    let dir = notice_output_dir(&notice_name, &year_month);
     ensure_dir(&dir)?;
     let mut saved = 0i64;
     for item in &items {
-        let target = notice_image_path(&year_month, &item.student_name);
+        let target = notice_image_path(&notice_name, &year_month, &item.student_name);
         std::fs::write(&target, &item.image)
             .map_err(|e| format!("공지문 이미지 저장 실패 ({}): {}", item.student_name, e))?;
         saved += 1;
@@ -597,10 +645,13 @@ pub async fn save_notice_images_batch(
     Ok(saved)
 }
 
-/// 해당 월 출력 폴더에 PNG가 이미 존재하는지 — 덮어쓰기 확인용 (AC-4.10-2).
+/// 해당 공지문/월 출력 폴더에 PNG가 이미 존재하는지 — 덮어쓰기 확인용 (AC-4.10-2).
 #[tauri::command]
-pub async fn check_notice_output_exists(year_month: String) -> Result<bool, String> {
-    let dir = paths::notice_output_dir(&year_month);
+pub async fn check_notice_output_exists(
+    notice_name: String,
+    year_month: String,
+) -> Result<bool, String> {
+    let dir = notice_output_dir(&notice_name, &year_month);
     if !dir.exists() {
         return Ok(false);
     }
@@ -610,6 +661,62 @@ pub async fn check_notice_output_exists(year_month: String) -> Result<bool, Stri
             .map(|e| e.path().extension().and_then(|x| x.to_str()) == Some("png"))
             .unwrap_or(false)
     }))
+}
+
+/// 공지문 미리보기 저장 다이얼로그의 기본 경로 — `output/공지문/{공지문이름}.png`. 폴더는 미리 생성.
+#[tauri::command]
+pub async fn notice_preview_default_path(notice_name: String) -> Result<String, String> {
+    let dir = paths::output_root().join("공지문");
+    ensure_dir(&dir)?;
+    let file = format!("{}.png", sanitize_path_part(&notice_name));
+    Ok(dir.join(file).to_string_lossy().to_string())
+}
+
+/// 미리보기 PNG를 사용자가 지정한 경로에 저장한다 (저장 다이얼로그에서 선택한 절대 경로).
+#[tauri::command]
+pub async fn save_notice_preview(path: String, image: Vec<u8>) -> Result<String, String> {
+    let target = std::path::PathBuf::from(&path);
+    if let Some(parent) = target.parent() {
+        ensure_dir(parent)?;
+    }
+    std::fs::write(&target, &image).map_err(|e| format!("미리보기 저장 실패: {}", e))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// 경로를 OS 파일 탐색기로 연다 (macOS Finder / Windows 탐색기 / Linux xdg-open).
+fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let program = "xdg-open";
+    std::process::Command::new(program)
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("폴더 열기 실패: {}", e))?;
+    Ok(())
+}
+
+/// 생성 출력 폴더(`output/{공지문이름}/{YYMM}/`)를 생성 후 연다.
+#[tauri::command]
+pub async fn open_notice_output_dir(notice_name: String, year_month: String) -> Result<String, String> {
+    if notice_name.trim().is_empty() {
+        return Err("공지문 이름이 비어 있습니다.".to_string());
+    }
+    let dir = notice_output_dir(&notice_name, &year_month);
+    ensure_dir(&dir)?;
+    open_in_file_manager(&dir)?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// 미리보기 저장 폴더(`output/공지문/`)를 생성 후 연다.
+#[tauri::command]
+pub async fn open_notice_preview_dir() -> Result<String, String> {
+    let dir = paths::output_root().join("공지문");
+    ensure_dir(&dir)?;
+    open_in_file_manager(&dir)?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 // ─────────────────────── 테스트 ───────────────────────
@@ -660,14 +767,28 @@ mod tests {
     #[tokio::test]
     async fn save_notice_image_writes_expected_path() {
         let root = use_temp_root("image");
-        let path = save_notice_image("2026-05".to_string(), "홍 길동".to_string(), vec![9, 9])
+        let path = save_notice_image(
+            "교습비 안내".to_string(),
+            "2026-05".to_string(),
+            "홍 길동".to_string(),
+            vec![9, 9],
+        )
+        .await
+        .expect("save img");
+        // output/{공지문이름}/{YYMM}/{공지문이름}_{YYMM}_{원생명}.png — 공백 제거, 년월 YYMM
+        assert!(path.ends_with("교습비안내_2605_홍길동.png"), "경로: {}", path);
+        assert!(root.join("output/교습비안내/2605/교습비안내_2605_홍길동.png").exists());
+        // 기존 파일 확인 — 같은 공지문/월
+        assert!(check_notice_output_exists("교습비 안내".to_string(), "2026-05".to_string())
             .await
-            .expect("save img");
-        assert!(path.ends_with("202605_홍_길동.png"), "경로: {}", path);
-        assert!(root.join("output/202605/202605_홍_길동.png").exists());
-        // 기존 파일 확인
-        assert!(check_notice_output_exists("2026-05".to_string()).await.expect("exists"));
-        assert!(!check_notice_output_exists("2026-06".to_string()).await.expect("none"));
+            .expect("exists"));
+        // 다른 월/다른 공지문은 없음
+        assert!(!check_notice_output_exists("6월 안내".to_string(), "2026-06".to_string())
+            .await
+            .expect("none month"));
+        assert!(!check_notice_output_exists("다른 공지".to_string(), "2026-05".to_string())
+            .await
+            .expect("none name"));
     }
 
     #[tokio::test]
@@ -677,7 +798,9 @@ mod tests {
             NoticeImageItem { student_name: "원생A".to_string(), image: vec![1] },
             NoticeImageItem { student_name: "원생B".to_string(), image: vec![2] },
         ];
-        let n = save_notice_images_batch("2026-05".to_string(), items).await.expect("batch");
+        let n = save_notice_images_batch("공지".to_string(), "2026-05".to_string(), items)
+            .await
+            .expect("batch");
         assert_eq!(n, 2);
     }
 }
