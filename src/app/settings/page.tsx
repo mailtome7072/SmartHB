@@ -8,8 +8,10 @@
  */
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { getPinSkipSetting, setPinSkipSetting } from '@/lib/tauri'
 
 interface SettingCard {
   href: string
@@ -53,6 +55,70 @@ const CARDS: SettingCard[] = [
   },
 ]
 
+/** 실행 시 PIN 인증 사용 토글 (ADR-008). 끄면 이 PC에서 앱 실행 시 PIN 입력을 건너뛴다. */
+function PinAuthToggle() {
+  // skipPin = config 의 skip_pin_on_launch (true = 스킵). 스위치는 'PIN 인증 사용' = !skipPin 으로 표시.
+  const [skipPin, setSkipPin] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    getPinSkipSetting()
+      .then(setSkipPin)
+      .catch(() => setSkipPin(false))
+  }, [])
+
+  const usePin = skipPin === false
+  const handleToggle = async () => {
+    if (skipPin === null || saving) return
+    const nextSkip = !skipPin
+    setSaving(true)
+    try {
+      await setPinSkipSetting(nextSkip)
+      setSkipPin(nextSkip)
+    } catch {
+      /* 저장 실패 — 상태 유지 */
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="mb-6 rounded-lg border border-[var(--border)] bg-white p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-[var(--foreground)]">실행 시 PIN 인증 사용</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            끄면 이 PC에서 앱을 실행할 때 PIN 입력을 건너뜁니다. (이 PC에만 적용)
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={usePin}
+          aria-label="실행 시 PIN 인증 사용"
+          onClick={handleToggle}
+          disabled={skipPin === null || saving}
+          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+            usePin ? 'bg-[var(--accent)]' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+              usePin ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
+      {skipPin === true && (
+        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          ⚠️ 이 PC에서 PIN 입력을 건너뜁니다. 데이터 보호는 OS 계정 로그인에 의존합니다. PIN을
+          잊으면 앱 데이터를 초기화해야 합니다.
+        </p>
+      )}
+    </section>
+  )
+}
+
 export default function SettingsHubPage() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
@@ -61,6 +127,8 @@ export default function SettingsHubPage() {
         <p className="mb-6 text-base text-gray-600">
           교습소 운영 환경을 설정합니다. 변경 즉시 저장되며 마법사 재실행 없이 반영됩니다.
         </p>
+
+        <PinAuthToggle />
 
         <div className="grid gap-4 sm:grid-cols-2">
           {CARDS.map((card) =>
