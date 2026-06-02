@@ -19,6 +19,7 @@ Sprint: 13  |  Date: 2026-06-02  |  Session: #1
 | src/app/settings/page.tsx | [5회 ⚠️] | T5-b/c — PIN 스킵 토글 UI |
 | src/components/LockScreen.tsx | [0회] | T6 — 자동 잠금해제 분기/로딩/폴백 |
 | src/app/lock/page.tsx | [0회] | T6 — 진입 흐름 분기(필요 시) |
+| src/components/layout/global-search.tsx | [+1] | scope 외 — 원생 검색 결과 404 수정(/students/{id} 없음 → /students/edit?id=) (사용자 검증 중 발견) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)

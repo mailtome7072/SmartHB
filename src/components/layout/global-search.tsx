@@ -76,7 +76,8 @@ export function GlobalSearch() {
       .map((s) => ({
         label: s.student.name,
         sublabel: `원생 #${s.student.serial_no}`,
-        href: `/students/${s.student.id}`,
+        // 원생 상세 라우트(/students/[id])는 없음 — 편집 라우트(쿼리 기반)로 이동 (원생 목록과 동일).
+        href: `/students/edit?id=${s.student.id}`,
       }))
     return [...menuHits, ...studentHits]
   }, [debouncedQuery, decomposedMenus, decomposedStudents])
