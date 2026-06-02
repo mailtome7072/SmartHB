@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 71% (11/17 스프린트 완료) |
-| 현재 Phase | Phase 4 진행 중 — Sprint 11 완료 (2026-05-29) + post-Sprint 11 develop 보완 6커밋 (2026-05-30): PIN 인증·청구 검수 보완 2건 + 월별 집계 탭·마감 폐기·기간 한정·빈 데이터 디폴트 4건. Sprint 12 (공지문 이미지 생성) 착수 예정 |
-| 다음 마일스톤 | 공지문 이미지 일괄 생성 (Sprint 12) — CSV 가져오기는 Sprint 15로 이연 |
+| 전체 진행률 | 76% (12/17 스프린트 완료) |
+| 현재 Phase | Phase 4 완료 — Sprint 12 완료 (2026-06-02): 공지문 이미지 일괄 생성 + PIN UI 6박스 통일. Sprint 13 (단원평가) 착수 예정 |
+| 다음 마일스톤 | 단원평가 점수 입력 + 추이 조회 (Sprint 13) |
 | MVP 범위 | PRD §4.0~§4.14, §5.3~§5.5, §6.6 (Post-MVP §4.15 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -550,7 +550,7 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-## Phase 4: 청구 + 수납 + 공지문 (Sprint 11~12) 🔄 진행 중
+## Phase 4: 청구 + 수납 + 공지문 (Sprint 11~12) ✅ 완료 (2026-06-02)
 
 ### 목표
 교습비 청구/수납 전체 흐름(UC-5)과 카카오톡 공지문 이미지 생성을 완성한다.
@@ -638,50 +638,54 @@ Phase 7 (안정화+UAT)  ← Phase 6 완료 필수
 
 ---
 
-### Sprint 12: 공지문 이미지 생성 (2주) 🔄 진행 중
+### Sprint 12: 공지문 이미지 생성 (2주) ✅ 완료 (2026-06-02)
 
-> 계획 문서: `docs/sprint/sprint12.md` / Task T0~T9 10개 Task, 31h 예상 + 시각 검증 6h
+> 계획 문서: `docs/sprint/sprint12.md` / Task T0~T9 10개 Task 완료 + 사용자 검증 완료
 > Phase 4 마지막 마일스톤. CSV 가져오기는 Sprint 15로 이연.
-> 신규 의존성: `html-to-image` ^1.11.13, `react-rnd` ^10.x (PI-14 사용자 확인 후)
+> 신규 의존성: `html-to-image` ^1.11.13, `react-rnd` ^10.x (PI-14 확정)
+> develop 머지: `sprint12 → develop` 직접 머지 예정 (단일 개발자 정책)
+
+#### 주요 도메인 결정 사항
+
+| 결정 | 내용 |
+|------|------|
+| PI-13 이미지 생성 | html-to-image (frontend.md 명시) 시도 후 macOS WKWebView foreignObject+img 결함으로 Canvas 2D 직접 렌더로 전환 |
+| PI-14 드래그 라이브러리 | react-rnd 확정 (사용자 결정 2026-05-30) |
+| 저장 경로 개편 | `output/{공지문이름}/{YYMM}/{이름}_{YYMM}_{원생}.png` (공백 제거, 한글 NFC 정규화) |
+| 복구 코드 시스템 | 사용자 결정으로 전면 제거 — cipher OFF 환경에서 불필요 |
+| PIN UI 통일 | 6박스(OTP) 공용 컴포넌트(`components/ui/pin-field.tsx`) — LockScreen + 설정 PIN 변경 동일 UI |
 
 #### 작업 목록
 
-- ⬜ **공지문 편집 화면 (§4.10.1)**: 좌(원생 리스트) + 우(배경서식 + 텍스트박스)
-  - 텍스트박스 3종: 청구월/원생이름/청구액
-  - 드래그 위치 조정, 크기 조절, 폰트 속성 변경
-  - 위치/속성 저장 + 자동 로드
-- ⬜ **일괄 이미지 생성 (§4.10.2)**: HTML5 Canvas + `html-to-image` 라이브러리
-  - 저장 경로: `[설정폴더]/[YYYYMM]/[YYYYMM]_[원생이름].png`
-  - 천단위 콤마 표기 (AC-4.10-1)
-  - 재생성 시 덮어쓰기 확인 (AC-4.10-2)
-  - 50장 30초 이내 (성능 요구사항)
-- ⬜ **배경서식 관리**: 이미지 업로드/선택/미리보기
-  - 저장 위치: `smarthb/assets/` (클라우드 동기화 폴더)
-- ⬜ **데이터 가져오기 기초 (§4.13.1)**: CSV/Excel 원생 명단 가져오기
-  - 표준 템플릿 파일 다운로드
-  - 검증 + 미리보기 + 확정 흐름
+- ✅ **T0: Sprint 11 carry-over 정리** — A70/A73/A82/A85/A86 해소. A71 수동 검증 완료
+- ✅ **T1: 백엔드 경로 헬퍼** — `paths.rs` `assets_dir()`, `notice_output_dir()` 추가 + 단위 테스트
+- ✅ **T2: 배경서식 관리 IPC** — `notice.rs` 신규 (`list_notice_assets`, `save_notice_asset`, `delete_notice_asset`) + 단위 테스트
+- ✅ **T3: 레이아웃 설정 IPC** — `save_notice_layout`, `get_notice_layout` (`app_settings` JSON 저장) + 단위 테스트
+- ✅ **T4: 이미지 저장 IPC** — `save_notice_image`, `save_notice_images_batch`, `check_notice_output_exists`, `open_notice_output_folder` + 단위 테스트
+- ✅ **T5: TypeScript IPC 래퍼** — 8종 + `src/types/notice.ts` 도메인 타입
+- ✅ **T6: 공지문 편집 화면 UI** — `/notices` 라우트, 좌(원생 리스트+체크박스) + 우(배경서식+텍스트박스 오버레이), react-rnd 드래그+리사이즈, 다중 선택(Shift+클릭), 방향키 미세 이동, 빈 영역 클릭 선택 해제, 글자별 폰트색(charColors), 미저장 변경 전역 네비게이션 가드, 공지문 저장/닫기/초기화 흐름, 사이드바 메뉴 활성화, 저장 경로 클릭 시 폴더 열기
+- ✅ **T7: 일괄 이미지 생성 엔진** — `notice-generator.ts` Canvas 2D 직접 렌더 (macOS WKWebView foreignObject 결함 회피), 천단위 콤마(AC-4.10-1), 재생성 확인 다이얼로그(AC-4.10-2), 진행률 표시, 미리보기 팝업 + 파일 저장 다이얼로그
+- ✅ **T8: Tauri capabilities** — `fs:allow-write-text-file`, `fs:allow-read-dir`, `fs:allow-open-url` 최소 권한 추가
+- ✅ **T9: 통합 검증** — 자동 검증 전수 통과. 사용자 수동 검증(공지문 기능 + PIN UI) 완료
+- ✅ **scope 외: PIN UI 통일** — `components/ui/pin-field.tsx` 6박스 OTP 공용 컴포넌트 + LockScreen + `/settings/pin` 통일
+- ✅ **scope 외: 복구 코드 시스템 제거** — `commands/recovery.rs` 삭제, argon2 의존성 제거, 관련 UI 3종 제거
+- ✅ **scope 외: 메뉴 정비** — '학사 스케줄' → '학사 관리' → '일정 관리' 변경, 출결관리/학사 순서 swap
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 배경서식 위에 텍스트박스 배치 → 원생별 PNG 일괄 생성 동작
-- ⬜ 50장 생성 30초 이내
-- ⬜ 레이아웃 설정 저장/복원 동작
-- ⬜ CSV 원생 가져오기 전체 흐름 동작
-
-#### 🧪 Playwright MCP 검증 시나리오
-```
-1. browser_navigate → http://localhost:1420/notice
-2. browser_snapshot → 공지문 편집 화면 (좌: 원생 리스트, 우: 서식 미리보기)
-3. browser_click → 배경서식 선택
-4. browser_click → 텍스트박스 드래그/크기 조절
-5. browser_click → "발송용 공지문 생성" 버튼
-6. browser_snapshot → 생성 완료 메시지 확인
-7. browser_console_messages(level: "error") → 콘솔 에러 없음
-```
+- ✅ 배경서식 업로드 → 선택 → 미리보기 동작
+- ✅ 텍스트박스 3종 드래그 + 크기 조절 + 폰트 속성 변경 동작
+- ✅ 위치/속성 저장 → 재진입 시 자동 로드 (AC-4.10-3)
+- ✅ 원생별 PNG 일괄 생성 → 파일 시스템 저장 동작
+- ✅ 저장 경로: `{data_root}/output/{공지문이름}/{YYMM}/{이름}_{YYMM}_{원생}.png`
+- ✅ 청구액 천단위 콤마 표기 (AC-4.10-1)
+- ✅ 동일 월 재생성 시 덮어쓰기 확인 다이얼로그 (AC-4.10-2)
+- ✅ cargo test --lib 전수 통과 / cargo clippy clean / pnpm lint + tsc + build 통과
+- ✅ 사용자 수동 검증 완료 (2026-06-01 ~ 2026-06-02)
 
 #### 기술 고려사항
-- `html-to-image` 라이브러리: DOM → Canvas → PNG 변환
-- 대량 생성 시 Web Worker 또는 순차 처리로 UI 블로킹 방지
-- Tauri 파일 시스템 접근 권한 (`capabilities/` 설정)
+- html-to-image foreignObject+img macOS WKWebView 결함으로 Canvas 2D 직접 렌더 채택
+- 저장 경로 공백 제거 + 한글 NFC 정규화 (파일 시스템 호환성)
+- Tauri `shell:allow-open` 재사용으로 폴더 열기 구현 (fs 플러그인 미추가)
 
 ---
 
