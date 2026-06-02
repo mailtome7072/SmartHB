@@ -87,12 +87,33 @@ static BACKGROUND: OnceLock<BackgroundHandles> = OnceLock::new();
 /// 사용자 비밀번호는 IPC 호출 직후 `Zeroizing<String>` 으로 감싸 메모리 폐기를 보장한다.
 /// force_lock=true 는 사용자가 이전 화면에서 stale 락 강제 점유를 결정한 후에만 호출된다 —
 /// IPC 자체는 사전 확인을 강제하지 않으므로 UI 가 사용자 동의를 받았다고 가정한다.
+/// 인증 방식 — PIN 검증 또는 키체인 자동 로드(스킵, ADR-008).
+enum AuthStep {
+    Pin(Zeroizing<String>),
+    Keychain,
+}
+
+/// PIN 입력 잠금 해제 (기존 동작 유지).
 #[tauri::command]
 pub async fn app_startup_sequence(
     password: String,
     force_lock: bool,
 ) -> Result<StartupResult, String> {
-    let password = Zeroizing::new(password);
+    run_startup(force_lock, AuthStep::Pin(Zeroizing::new(password))).await
+}
+
+/// 키체인 자동 잠금 해제 (ADR-008, skip_pin_on_launch=true).
+///
+/// PIN 비교 없이 OS Keychain 의 기존 유도키를 로드하여 진입한다. 키체인에 키가 없으면
+/// (이 PC 에서 한 번도 PIN 인증 안 함 = 새 PC) Err 를 반환 → 프론트가 LockScreen 으로 폴백.
+#[tauri::command]
+pub async fn auto_unlock_with_keychain(force_lock: bool) -> Result<StartupResult, String> {
+    run_startup(force_lock, AuthStep::Keychain).await
+}
+
+/// startup 공통 시퀀스 — 인증 단계(AuthStep)만 분기하고, 이후 락/무결성/DB/audit/소멸/백그라운드는
+/// 양 경로가 공유한다 (R91: PIN 경로 로직 불변 유지).
+async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, String> {
     let started = Instant::now();
 
     // 1. 락 + 무결성 quick_check 병렬 — PRD §5.6 시작 < 3초 예산을 위해 join!
@@ -127,9 +148,17 @@ pub async fn app_startup_sequence(
         .await;
     }
 
-    // 2. 비밀번호 검증 — keyring salt + key 비교. PBKDF2 600K iter 가 보통 가장 큰 비중.
+    // 2. 인증 — PIN: keyring salt+key 비교 / Keychain: 비교 없이 키 로드(스킵, ADR-008).
+    //    PBKDF2 600K iter(PIN 경로) 가 보통 가장 큰 비중.
     let verify_start = Instant::now();
-    auth::verify_password(&password).await.map_err(String::from)?;
+    match auth {
+        AuthStep::Pin(password) => auth::verify_password(&password).await.map_err(String::from)?,
+        AuthStep::Keychain => {
+            // 키체인의 기존 유도키 로드 — 비교 단계 생략. 키 부재(새 PC) 시 에러 → LockScreen 폴백.
+            auth::get_cached_or_load_key()
+                .map_err(|_| "KeyNotFound: 이 PC에 저장된 인증 키가 없습니다.".to_string())?;
+        }
+    }
     let password_verify_ms = verify_start.elapsed().as_millis();
 
     // 3. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.

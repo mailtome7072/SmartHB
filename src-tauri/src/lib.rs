@@ -150,6 +150,7 @@ pub fn run() {
             commands::calendar::get_calendar_data,
             commands::calendar::get_makeup_management_data,
             startup::app_startup_sequence,
+            startup::auto_unlock_with_keychain,
         ])
         .on_window_event(|_window, event| {
             // V24 (Sprint 7 post-review): macOS 빨간 X / Windows 윈도우 닫기 시점에도 exit_hook
