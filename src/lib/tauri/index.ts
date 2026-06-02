@@ -169,40 +169,14 @@ export async function unlockDb(password: string): Promise<void> {
 }
 
 /**
- * 12자리 복구 코드를 발급한다 (PI-07 PRD v1.5.1).
+ * 현재 PIN 을 확인한 뒤 새 PIN 으로 변경한다 (잠금 해제 상태에서 설정 메뉴를 통해 호출).
  *
- * 평문 코드는 호출 직후 화면에 1회 표시하고 즉시 폐기해야 한다 — React state 보유는 표시
- * 중에만, 사용자가 "확인" 클릭 시 빈 문자열로 덮어쓰기 권장.
- *
- * 이미 발급된 코드가 있으면 무효화하고 새 코드를 반환 (재발급 정책).
+ * 현 PIN 불일치 / 새 PIN 형식 오류 시 throw — 호출자가 catch 하여 사용자 메시지 표시.
  */
-export async function generateRecoveryCode(): Promise<string> {
-  const inv = await getInvoke()
-  if (!inv) return 'DEVM-ODEX-TEST'
-  return inv('generate_recovery_code') as Promise<string>
-}
-
-/**
- * 사용자가 입력한 복구 코드를 검증한다 (constant-time).
- *
- * 공백·하이픈은 백엔드에서 자동 제거되며 대문자로 통일된다.
- */
-export async function verifyRecoveryCode(code: string): Promise<boolean> {
-  const inv = await getInvoke()
-  if (!inv) return code.replace(/[-\s]/g, '').toUpperCase() === 'DEVMODEXTEST'
-  return inv('verify_recovery_code', { code }) as Promise<boolean>
-}
-
-/**
- * 복구 코드로 비밀번호를 재설정한다.
- *
- * 코드 검증 실패 시 throw. 성공 시 keyring 의 salt + key 가 새 비밀번호로 갱신된다.
- * SQLCipher DB rekey 는 T9 통합 시점에 추가된다.
- */
-export async function resetPasswordWithCode(code: string, newPassword: string): Promise<void> {
+export async function changePin(currentPin: string, newPin: string): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
-  await inv('reset_password_with_code', { code, newPassword })
+  await inv('change_pin', { currentPin, newPin })
 }
 
 /**
@@ -765,7 +739,7 @@ export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
 }
 
 // ============================================================================
-// Sprint 6 — 학사 스케줄 도메인 (T8, PRD §4.4)
+// Sprint 6 — 일정 관리 도메인 (T8, PRD §4.4)
 // ============================================================================
 // 백엔드: src-tauri/src/commands/academic.rs (T5/T6/T7).
 // Tauri invoke args 는 자동 camelCase ↔ snake_case 변환 (예: Rust from_month ↔ TS fromMonth).
@@ -1316,4 +1290,170 @@ export async function getDefaultBillingYearMonth(): Promise<string | null> {
   const inv = await getInvoke()
   if (!inv) return null
   return inv('get_default_billing_year_month') as Promise<string | null>
+}
+
+// ─────────────────────── Sprint 12 공지문(이미지) 도메인 ───────────────────────
+
+import type { NoticeAsset, NoticeImageItem, NoticeLayout, NoticeMonthInfo } from '@/types/notice'
+
+export async function listNoticeAssets(): Promise<NoticeAsset[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_notice_assets') as Promise<NoticeAsset[]>
+}
+
+/** 배경서식 바이트 읽기 (미리보기/생성용). number[] 반환. */
+export async function readNoticeAsset(filename: string): Promise<number[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('read_notice_asset', { filename }) as Promise<number[]>
+}
+
+/** 배경서식 저장. data 는 이미지 바이트 배열(number[]). 저장된 파일명 반환. */
+export async function saveNoticeAsset(filename: string, data: number[]): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticeAsset 호출 불가')
+  return inv('save_notice_asset', { filename, data }) as Promise<string>
+}
+
+export async function deleteNoticeAsset(filename: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('delete_notice_asset', { filename }) as Promise<void>
+}
+
+export async function saveNoticeLayout(layout: NoticeLayout): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('save_notice_layout', { layout }) as Promise<void>
+}
+
+export async function getNoticeLayout(): Promise<NoticeLayout> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { backgroundAsset: null, textboxes: [] }
+  }
+  return inv('get_notice_layout') as Promise<NoticeLayout>
+}
+
+/** 저장된 공지문 템플릿 이름 목록. */
+export async function listNoticeLayouts(): Promise<string[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_notice_layouts') as Promise<string[]>
+}
+
+/** 현재 레이아웃을 이름 붙여 템플릿으로 저장. */
+export async function saveNoticeLayoutNamed(name: string, layout: NoticeLayout): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('save_notice_layout_named', { name, layout }) as Promise<void>
+}
+
+/** 이름으로 저장된 템플릿 조회. */
+export async function getNoticeLayoutNamed(name: string): Promise<NoticeLayout> {
+  const inv = await getInvoke()
+  if (!inv) return { backgroundAsset: null, textboxes: [] }
+  return inv('get_notice_layout_named', { name }) as Promise<NoticeLayout>
+}
+
+/** 이름 템플릿 삭제. */
+export async function deleteNoticeLayoutNamed(name: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('delete_notice_layout_named', { name }) as Promise<void>
+}
+
+/** 청구년월의 교습기간·보강데이 표기 텍스트. */
+export async function getNoticeMonthInfo(yearMonth: string): Promise<NoticeMonthInfo> {
+  const inv = await getInvoke()
+  if (!inv) return { teachingPeriodText: null, makeupDayText: null }
+  return inv('get_notice_month_info', { yearMonth }) as Promise<NoticeMonthInfo>
+}
+
+/**
+ * 한글 파일명/경로를 NFC(완성형)로 정규화한다.
+ * macOS 저장 다이얼로그·일부 입력은 NFD(자모 분리형)를 돌려줄 수 있어, 파일시스템에 쓰기 전
+ * NFC 로 통일한다. (APFS 는 작성 시 전달한 형태 그대로 저장 — NFC 로 전달하면 NFC 로 저장)
+ */
+const nfc = (s: string): string => s.normalize('NFC')
+
+/** 단건 공지문 PNG 저장 — output/{공지문이름}/{청구년월}/{공지문이름}_{청구년월}_{원생명}.png. 저장 경로 반환. */
+export async function saveNoticeImage(
+  noticeName: string,
+  yearMonth: string,
+  studentName: string,
+  image: number[],
+): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticeImage 호출 불가')
+  return inv('save_notice_image', {
+    noticeName: nfc(noticeName),
+    yearMonth,
+    studentName: nfc(studentName),
+    image,
+  }) as Promise<string>
+}
+
+/** 다건 공지문 PNG 일괄 저장. 저장 완료 건수 반환. */
+export async function saveNoticeImagesBatch(
+  noticeName: string,
+  yearMonth: string,
+  items: NoticeImageItem[],
+): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  const normalized = items.map((it) => ({ ...it, studentName: nfc(it.studentName) }))
+  return inv('save_notice_images_batch', {
+    noticeName: nfc(noticeName),
+    yearMonth,
+    items: normalized,
+  }) as Promise<number>
+}
+
+/** 해당 공지문/청구년월 출력 폴더에 이미 PNG가 있는지 (덮어쓰기 확인용). */
+export async function checkNoticeOutputExists(noticeName: string, yearMonth: string): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('check_notice_output_exists', { noticeName: nfc(noticeName), yearMonth }) as Promise<boolean>
+}
+
+/** 미리보기 저장 다이얼로그 기본 경로 — output/공지문/{공지문이름}.png (폴더 미리 생성). */
+export async function noticePreviewDefaultPath(noticeName: string): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) return `output/공지문/${noticeName}.png`
+  return inv('notice_preview_default_path', { noticeName: nfc(noticeName) }) as Promise<string>
+}
+
+/** 미리보기 PNG를 지정 경로에 저장. 저장된 경로 반환. (경로는 NFC 로 정규화하여 저장) */
+export async function saveNoticePreview(path: string, image: number[]): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticePreview 호출 불가')
+  return inv('save_notice_preview', { path: nfc(path), image }) as Promise<string>
+}
+
+/** 생성 출력 폴더(output/{공지문이름}/{YYMM}/)를 생성 후 OS 탐색기로 연다. 이름 비면 output 루트. */
+export async function openNoticeOutputDir(noticeName: string, yearMonth: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('open_notice_output_dir', { noticeName: nfc(noticeName), yearMonth })
+}
+
+/** 미리보기 저장 폴더(output/공지문/)를 생성 후 OS 탐색기로 연다. */
+export async function openNoticePreviewDir(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('open_notice_preview_dir')
+}
+
+/** 파일 저장 다이얼로그 — 사용자가 선택한 경로 반환(취소 시 null). */
+export async function showSaveDialog(defaultPath: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const selected = await save({ defaultPath, filters: [{ name: 'PNG 이미지', extensions: ['png'] }] })
+    return selected ?? null
+  } catch {
+    return null
+  }
 }

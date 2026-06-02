@@ -29,11 +29,19 @@ interface AppState {
    */
   attendanceSearchPreset: string | null
 
+  /**
+   * 미저장 변경 네비게이션 가드 (Sprint 12 — 공지문 편집 중 메뉴 이동 시 저장 확인).
+   * 화면이 등록하며, 이동 직전 호출되어 `true` 면 즉시 이동 허용, `false` 면 차단(화면이 확인
+   * 다이얼로그 표시 후 직접 이동 처리). 등록 화면 unmount 시 null 로 해제한다.
+   */
+  unsavedGuard: ((href: string) => boolean) | null
+
   setLockStatus: (status: LockStatus | null) => void
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
   setSelectedPeriodMonth: (month: string | null) => void
   setAttendanceSearchPreset: (name: string | null) => void
+  setUnsavedGuard: (guard: ((href: string) => boolean) | null) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -41,10 +49,22 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarOpen: true,
   selectedPeriodMonth: null,
   attendanceSearchPreset: null,
+  unsavedGuard: null,
 
   setLockStatus: (lockStatus) => set({ lockStatus }),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSelectedPeriodMonth: (selectedPeriodMonth) => set({ selectedPeriodMonth }),
   setAttendanceSearchPreset: (attendanceSearchPreset) => set({ attendanceSearchPreset }),
+  setUnsavedGuard: (unsavedGuard) => set({ unsavedGuard }),
 }))
+
+/**
+ * 미저장 가드를 거쳐 네비게이션한다. 가드가 차단하면 `navigate` 를 호출하지 않는다.
+ * (가드 등록 화면이 확인 다이얼로그를 띄우고, 확인 시 자체적으로 이동을 수행)
+ */
+export function guardedNavigate(href: string, navigate: () => void): void {
+  const guard = useAppStore.getState().unsavedGuard
+  if (guard && !guard(href)) return
+  navigate()
+}

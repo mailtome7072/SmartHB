@@ -50,6 +50,11 @@ export function Sidebar() {
             ) : (
               <Link
                 href={item.href}
+                onClick={(e) => {
+                  // 미저장 가드(공지문 편집 등)가 차단하면 기본 이동을 막고 가드에 위임.
+                  const guard = useAppStore.getState().unsavedGuard
+                  if (guard && !guard(item.href)) e.preventDefault()
+                }}
                 className="flex min-h-[44px] items-center px-4 py-3 text-[var(--foreground)] hover:bg-[var(--background)]"
               >
                 {item.label}

@@ -35,6 +35,11 @@ const CARDS: SettingCard[] = [
     description: '공휴일·보강데이 등 시스템 코드 + 사용자 추가 코드의 활성 토글 및 CRUD',
   },
   {
+    href: '/settings/pin',
+    title: 'PIN 번호 변경',
+    description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',
+  },
+  {
     href: '/settings/info',
     title: '교습소 정보',
     description: '교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 (예정)',

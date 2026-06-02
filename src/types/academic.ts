@@ -1,5 +1,5 @@
 /**
- * 학사 스케줄 도메인 타입 — Sprint 6 T8.
+ * 일정 관리 도메인 타입 — Sprint 6 T8.
  *
  * `src-tauri/src/commands/academic.rs` 와 1:1 정합. PRD §4.4 / §6.2.
  * - Rust `Option<T>` → TS `T | null` (Tauri serde 기본 직렬화)

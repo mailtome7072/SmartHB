@@ -161,10 +161,12 @@ export function PaymentsView({
   }
 
   // 변경 대상: 입금 체크 / 결제수단 선택 / 수납취소 예정 중 하나라도 있으면 dirty.
+  // A70: 입금자명만 입력한 행도 변경 대상에 포함 (payerName-only 소실 방지).
   const dirtyEntries = useMemo(
     () =>
       Object.entries(drafts).filter(
-        ([, d]) => d.isPaid || d.paymentMethodId !== null || d.cancel,
+        ([, d]) =>
+          d.isPaid || d.paymentMethodId !== null || d.cancel || d.payerName.trim() !== '',
       ),
     [drafts],
   )

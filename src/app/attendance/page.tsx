@@ -21,6 +21,7 @@ import {
   generateAttendances,
   getAttendanceGrid,
   countUngeneratedAttendanceStudents,
+  listStudyPeriods,
 } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -35,17 +36,9 @@ function currentYearMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-function previousYearMonths(count: number, from: string): string[] {
-  const [y, m] = from.split('-').map(Number)
-  const result: string[] = []
-  for (let i = 0; i < count; i++) {
-    const date = new Date(y, m - 1 - i, 1)
-    result.push(
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-    )
-  }
-  return result
-}
+/** 일정 관리(교습기간) 조회 범위 — 과거/미래 어디까지 검색해도 study_periods 테이블은 작아 비용 무시 가능. */
+const STUDY_PERIOD_FROM = '2000-01'
+const STUDY_PERIOD_TO = '2099-12'
 
 interface MakeupDialogTarget {
   studentId: number
@@ -126,6 +119,23 @@ export default function AttendancePage() {
     queryFn: () => countUngeneratedAttendanceStudents(yearMonth),
   })
 
+  // 일정 관리(교습기간) 등록된 년월 — 대상월 드롭다운 옵션 산출 기준.
+  // 사용자 요구: 프로그램 실행뿐 아니라 메뉴 진입(=페이지 mount) 시마다 매번 갱신.
+  // 전역 default 의 refetchOnMount:'always' 위에 명시적 staleTime/refetch 설정을 두고,
+  // 추가로 mount 시점에 invalidate 를 호출하여 stale 캐시 노출 가능성을 제거한다.
+  const studyPeriodsQuery = useQuery({
+    queryKey: ['study-periods', STUDY_PERIOD_FROM, STUDY_PERIOD_TO],
+    queryFn: () => listStudyPeriods(STUDY_PERIOD_FROM, STUDY_PERIOD_TO),
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
+  // 메뉴가 호출되어 본 페이지가 mount 될 때마다 study-periods 캐시를 무효화 → 즉시 재조회.
+  // 다른 화면(일정 관리)에서 교습기간을 추가/수정/삭제했을 가능성을 항상 반영한다.
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ['study-periods'] })
+  }, [queryClient])
+
   // 출결 일괄 생성
   const generateMutation = useMutation({
     mutationFn: () => generateAttendances(yearMonth),
@@ -145,8 +155,26 @@ export default function AttendancePage() {
     },
   })
 
-  // 월 선택 옵션 — 현재 월 + 과거 11개월
-  const monthOptions = previousYearMonths(12, currentYearMonth())
+  // 월 선택 옵션 — 일정 관리(교습기간) 등록된 년월만. 미등록 시 현재 년월 fallback.
+  // 최신 월이 위에 오도록 내림차순 정렬.
+  const monthOptions = useMemo(() => {
+    const periods = studyPeriodsQuery.data
+    if (periods === undefined || periods.length === 0) {
+      return [currentYearMonth()]
+    }
+    return [...new Set(periods.map((p) => p.year_month))].sort((a, b) =>
+      b.localeCompare(a),
+    )
+  }, [studyPeriodsQuery.data])
+
+  // 일정 관리이 로드되었는데 현재 선택된 yearMonth 가 옵션에 없으면 첫 옵션(최신)으로 이동.
+  // currentYearMonth 가 등록된 교습기간에 포함되면 그대로 유지 — 디폴트로 자연스럽게 현재월 노출.
+  useEffect(() => {
+    if (studyPeriodsQuery.data === undefined) return
+    if (!monthOptions.includes(yearMonth)) {
+      setYearMonth(monthOptions[0])
+    }
+  }, [studyPeriodsQuery.data, monthOptions, yearMonth])
 
   // hotfix post-Sprint 11: 청구 패턴과 동일 — 출결 0건 → "생성", 추가 등록 원생 있으면 "추가 생성".
   const ungeneratedCount = ungeneratedQuery.data ?? 0
@@ -321,7 +349,7 @@ export default function AttendancePage() {
               우측 상단의 &ldquo;출결 데이터 생성&rdquo; 버튼을 눌러 해당 월 재원 원생의 출결을 일괄 생성하세요.
             </p>
             <p className="mt-2 text-sm text-gray-500">
-              ※ 교습기간이 먼저 확정되어 있어야 합니다 (학사 스케줄 메뉴).
+              ※ 교습기간이 먼저 확정되어 있어야 합니다 (일정 관리 메뉴).
             </p>
           </div>
         )}

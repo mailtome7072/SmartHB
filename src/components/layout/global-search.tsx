@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { listStudents } from '@/lib/tauri'
 import { decompose } from '@/lib/hangul-search'
 import { ACTIVE_MENU_ITEMS } from '@/lib/menu-config'
+import { guardedNavigate } from '@/stores/app-store'
 import type { Student } from '@/types/student'
 
 interface SearchHit {
@@ -106,7 +107,8 @@ export function GlobalSearch() {
                 <button
                   type="button"
                   onClick={() => {
-                    router.push(hit.href)
+                    // 미저장 가드(공지문 편집 등)를 거쳐 이동.
+                    guardedNavigate(hit.href, () => router.push(hit.href))
                     setQuery('')
                   }}
                   className="flex min-h-[44px] w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--background)]"

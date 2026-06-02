@@ -9,11 +9,6 @@
 //! - 키 바이트 로그 출력 방지 — `Debug` trait 수동 구현 (`"DerivedKey([REDACTED])"`)
 //! - 키체인 항목명 하드코딩 — 사용자 입력 비공개 (LDAP injection 류 회피)
 //! - PBKDF2 600,000 iterations (OWASP 2024 권장) — 무차별 대입 비용 보장
-//!
-//! ## 후속 작업
-//!
-//! 본 모듈은 T4 (인증 IPC) 와 T5 (복구 코드 검증) 에서 사용된다.
-//! Tauri IPC 커맨드는 T4 에서 본 모듈을 호출하는 형태로 추가된다.
 
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::paths;
@@ -40,7 +35,7 @@ pub const KEY_LEN: usize = 32;
 /// 앱 잠금 PIN 길이 (ADR-007 — 6자리 숫자).
 pub(crate) const PIN_LEN: usize = 6;
 
-/// OS Keychain service 식별자. recovery 모듈 등 같은 crate 의 다른 인증 관련 모듈에서 재사용.
+/// OS Keychain service 식별자.
 pub(crate) const KEYRING_SERVICE: &str = "SmartHB";
 
 /// SQLCipher DB 암호화 키의 Keychain user 식별자.
@@ -309,7 +304,7 @@ pub(crate) fn keyring_entry_for(user: &str) -> Result<keyring::Entry, AppError> 
 /// 항목 부재(`keyring::Error::NoEntry`) 와 실제 에러를 구분하여 조회한다.
 ///
 /// `check_auth_status` 가 "Keychain 에 항목 없음" 을 `NotInitialized` 로 정확히 매핑하기 위해
-/// 사용된다. 다른 에러는 그대로 전파. recovery 모듈 등 같은 crate 의 다른 사용처도 활용.
+/// 사용된다. 다른 에러는 그대로 전파.
 pub(crate) fn keyring_get_or_none(user: &str) -> Result<Option<Zeroizing<String>>, AppError> {
     match keyring_entry_for(user)?.get_password() {
         Ok(value) => Ok(Some(Zeroizing::new(value))),
@@ -354,7 +349,7 @@ pub fn retrieve_key_from_keyring() -> Result<DerivedKey, AppError> {
         }
         None => Err(AppError::Auth(
             "이 PC 에는 인증 정보(키)가 없습니다. 다른 PC 에서 설정한 비밀번호로는 \
-            잠금을 해제할 수 없습니다 — 복구 코드로 비밀번호를 재설정해 주세요."
+            잠금을 해제할 수 없습니다 — 최초 설정을 다시 진행하거나 관리자에게 문의해 주세요."
                 .to_string(),
         )),
     }
@@ -362,7 +357,7 @@ pub fn retrieve_key_from_keyring() -> Result<DerivedKey, AppError> {
 
 /// OS Keychain 에서 SQLCipher DB 키를 삭제한다.
 ///
-/// T5 (PI-07 복구 코드 재발급) + set_password rollback 에서 사용.
+/// set_password rollback 에서 사용.
 /// Sprint 7 T1: 캐시도 함께 무효화.
 /// Sprint 7 T2 보안 패치 #13: `NoEntry` 는 idempotent 성공 — `delete_legacy_keyring_salt` 와 일관.
 pub fn delete_key_from_keyring() -> Result<(), AppError> {
@@ -662,6 +657,8 @@ pub async fn set_password(password: String) -> Result<(), String> {
 ///
 /// `unlock_db` IPC 와 `app_startup_sequence` 양쪽이 공유.
 pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), AppError> {
+    // ADR-007: 여기서는 PIN 형식(validate_pin)을 검사하지 않는다 — 형식 강제는 set/reset 진입점 책임.
+    // 잠금 해제는 형식과 무관하게 저장된 키와의 일치 여부만 본다(불일치 시 어차피 인증 실패).
     if password.is_empty() {
         eprintln!("[auth] verify_password: 빈 비밀번호");
         return Err(AppError::Auth("비밀번호를 입력해주세요.".to_string()));
@@ -705,6 +702,42 @@ pub(crate) async fn verify_password(password: &Zeroizing<String>) -> Result<(), 
 pub async fn unlock_db(password: String) -> Result<(), String> {
     let password = Zeroizing::new(password);
     verify_password(&password).await.map_err(String::from)
+}
+
+/// 현재 PIN 을 확인한 뒤 새 PIN 으로 변경한다 (잠금 해제 상태에서 호출).
+///
+/// 흐름: 현 PIN 검증 → 새 salt 생성 → 새 key 유도 → keyring 갱신 → salt 파일 갱신 → 캐시 갱신.
+/// `set_password` / `reset_password_with_code` 와 동일한 atomic order + rollback 패턴.
+/// SetPasswordGuard 재사용 — 동시 호출 차단.
+#[tauri::command]
+pub async fn change_pin(current_pin: String, new_pin: String) -> Result<(), String> {
+    let _guard = SetPasswordGuard::try_acquire().ok_or_else(|| {
+        String::from(AppError::Auth(
+            "비밀번호 설정이 이미 진행 중입니다. 잠시 후 다시 시도하세요.".to_string(),
+        ))
+    })?;
+    let current = Zeroizing::new(current_pin);
+    let new_pin = Zeroizing::new(new_pin);
+    validate_pin(&new_pin).map_err(String::from)?;
+    verify_password(&current).await.map_err(String::from)?;
+
+    let salt = generate_salt();
+    let new_key = derive_key_async(new_pin, salt)
+        .await
+        .map_err(String::from)?;
+    store_key_in_keyring(&new_key).map_err(String::from)?;
+    if let Err(e) = store_salt(&salt) {
+        if let Err(rollback) = delete_key_from_keyring() {
+            eprintln!(
+                "[auth] change_pin rollback 실패 (keyring key 잔존): {} — 다음 set 시 덮어씀",
+                rollback
+            );
+        }
+        return Err(String::from(e));
+    }
+    cache_credentials(salt, new_key);
+    audit::try_record(AuditEventType::PasswordChange, Some("user-change"), None).await;
+    Ok(())
 }
 
 #[cfg(test)]

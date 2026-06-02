@@ -38,12 +38,24 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 12: 공지문 편집 화면 (`/notices` 라우트) — 좌측 원생 리스트(체크박스 다중 선택/전체선택), 우측 배경서식 + 텍스트박스 3종(청구월/원생이름/청구액) 오버레이, react-rnd 드래그+리사이즈, 다중 선택(Shift+클릭), 방향키 미세 이동(1/10px), 빈 영역 클릭 선택 해제, 사이드바 "공지문" 메뉴 활성화
+- Sprint 12: 공지문 이미지 일괄 생성 엔진 (`src/lib/notice-generator.ts`) — Canvas 2D 직접 렌더 (macOS WKWebView foreignObject+img 결함 회피), 원생별 PNG 일괄 생성, 청구액 천단위 콤마(AC-4.10-1), 재생성 덮어쓰기 확인(AC-4.10-2), 진행률 표시, 미리보기 팝업 + 파일 저장 다이얼로그
+- Sprint 12: 공지문 백엔드 IPC (`src-tauri/src/commands/notice.rs` 신규) — `list_notice_assets`, `save_notice_asset`, `delete_notice_asset`, `save_notice_layout`, `get_notice_layout`, `save_notice_image`, `save_notice_images_batch`, `check_notice_output_exists`, `open_notice_output_folder` 9종 + 단위 테스트
+- Sprint 12: 공지문 저장 경로 규칙 — `{data_root}/output/{공지문이름}/{YYMM}/{이름}_{YYMM}_{원생}.png` (공백 제거, 한글 NFC 정규화, 클라우드 동기화 폴더 공유)
+- Sprint 12: 공지문 레이아웃 저장/로드 (AC-4.10-3) — 텍스트박스 위치/크기/폰트/글자별 색상(`TextboxConfig.charColors`)을 `app_settings` JSON으로 유지, 진입 시 자동 로드
+- Sprint 12: 저장 위치 클릭 시 폴더 열기 — 출력 폴더가 없으면 자동 생성 후 OS 파일 탐색기로 오픈
+- Sprint 12: 청구월 컨트롤 년도 없이 월만 표시 (UI 간결화)
+- Sprint 12: `components/ui/pin-field.tsx` 6박스(OTP) PIN 공용 컴포넌트 신규 — LockScreen + 설정 PIN 변경 화면(`/settings/pin`) 동일 UI로 통일
+- Sprint 12: `/settings/pin` 라우트 신설 — 현 PIN 검증 후 새 PIN 설정 흐름 + `change_pin` IPC 백엔드
+- Sprint 12: 공지문 TypeScript IPC 래퍼 8종 + `src/types/notice.ts` 도메인 타입 (`NoticeAsset`, `NoticeLayout`, `TextboxConfig`, `SaveNoticeResult`)
 - post-Sprint 11 (develop 보완): 앱 잠금 인증을 6자리 숫자 PIN 으로 전환 — `LockScreen` / `RecoveryCodeInput` 입력 전환, 백엔드 `validate_pin` (길이 6 + ascii digit) 진입점 재검증, dev autologin + `.env.example` 6자리 PIN 대응 (ADR-007: `docs/arch/adr-007-pin-authentication.md`)
 - post-Sprint 11 (develop 보완): ADR-007 신규 작성 — 6자리 숫자 PIN 보안 트레이드오프 명시 수용, 복구코드 12자리 유지 결정
 - post-Sprint 11 (develop 보완): 청구 관리 '월별 집계' 탭 — 년/월 토글(연도 `YYYY-%` 집계 / 월 집계), 요약 박스 + 결제수단별 수납총액(열 배치). 백엔드 `get_billing_period_stats(period)` IPC + `BillingPeriodStats`/`PaymentMethodSummary` 타입. 단위 테스트: `billing_period_stats_groups_by_method`
 - post-Sprint 11 (develop 보완): 월별 집계 기간 선택을 실제 청구 생성된 년월로 한정 — `list_billed_months` IPC (`bills` distinct `bill_year_month` DESC), 집계 탭 드롭다운이 생성된 청구 없는 년월은 표시하지 않음. 단위 테스트: `list_billed_months_returns_distinct_desc`
 
 ### Changed
+- Sprint 12: 사이드바 메뉴 순서 변경 — 출결관리/학사 순서 swap + '학사 스케줄' → '학사 관리' → '일정 관리' 표기 일괄 변경 (`src/lib/menu-config.ts`, sidebar, global-search)
+- Sprint 12: 배경서식 미선택 시 텍스트박스 입력/체크박스 동작 정비 — 배경 없이도 텍스트 미리보기 가능
 - post-Sprint 11 (develop 보완): 청구 탭 상태 필터에 '마감' 추가 + 옵션별 건수 표기(전체/확정/미확정/마감), '마감 완료' 배지를 상태 필터 앞쪽으로 이동
 - post-Sprint 11 (develop 보완): 수납 탭 필터 건수 표기(전체/수납완료/미수납) 추가
 - post-Sprint 11 (develop 보완): 마감 후 수정 사유 게이트 완화(10자 이상 → 비어있지 않음)
@@ -51,12 +63,16 @@
 - post-Sprint 11 (develop 보완): 월별 집계 탭 — 청구 데이터 0건 시 현재 년월을 디폴트로 표시하여 빈 화면 대신 "0건" 상태 노출
 
 ### Fixed
+- Sprint 12: 빈 이미지 생성 버그 수정 — html-to-image toPng() 가 macOS WKWebView에서 foreignObject+img 렌더링 실패로 빈 PNG 반환하는 결함을 Canvas 2D 직접 렌더 방식으로 전환하여 해소
+- Sprint 12: 공지문 화면 좌우 패널 위치 swap — 원생 리스트(우→좌), 미리보기(좌→우) 배치 변경 (사용자 UX 요청)
+- Sprint 12 (`fix(schedules)`): 월보기 캘린더 일자별 인원수 초기 렌더링 누락 수정
 - post-Sprint 11 (develop 보완): 확정 버튼 비활성 버그 수정 — 마감 후 수정 사유 게이트 10자 조건으로 인한 오작동 해소
 - post-Sprint 11 (develop 보완): 수납완료 행 수납 취소 기능 추가 (`batch_update_payments` 재사용, 신규 IPC 없음) — 잘못 입력된 수납 정정 가능
 - post-Sprint 11 (develop 보완): 입금 완료 시 결제수단 필수 검증 — 백엔드 `validate_payment_input` 2곳 + 프론트 가드/빨간 테두리. 신규 단위 테스트: `create_payment_rejects_paid_without_method`, `batch_cancel_payment_resets_is_paid`
 - post-Sprint 11 (develop 보완): 수납완료된 청구는 수정 불가 — `update_bill_impl` 가 `is_paid` 기준으로 거부 + 프론트 금액 편집 비활성. 신규 단위 테스트: `update_bill_paid_rejected`
 
 ### Removed
+- Sprint 12: **복구 코드 시스템 전면 제거** (사용자 결정 — cipher OFF 환경에서 불필요). 제거 항목: `src-tauri/src/commands/recovery.rs`, `RecoveryCodeInput.tsx`, `RecoveryCodeDisplay.tsx`, `src/lib/recovery-code.ts`, `argon2` Cargo 의존성, audit `RecoveryCodeIssued` variant, TypeScript `AuditEventType` 의 `'recovery-code-issued'`
 - post-Sprint 11 (develop 보완): **청구 '마감(closed)' 개념 전면 폐기** (원장 결정, 2026-05-30). 청구 상태는 미확정→확정 2단계로 축소. 제거 항목: `close_billing_month` IPC, `CloseMonthDialog`/`CloseReasonDialog` 컴포넌트, "당월 청구 마감" 버튼·"마감 완료" 배지·'마감' 상태 필터, audit `BillMonthClosed`/`BillClosedModified`, `update_bill` 의 `close_reason` 파라미터. DB 마이그레이션 **V111** — `bills` 재구성으로 `status` CHECK(draft/confirmed) + `close_reason`/`closed_at` 컬럼 제거(기존 closed → confirmed 흡수). PRD §4.9.7 갱신, AC-4.9-7/8 폐기, AC-4.9-9 신설(수납완료 청구 수정 불가)
 
 ### Added
