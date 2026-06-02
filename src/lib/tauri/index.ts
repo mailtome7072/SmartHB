@@ -362,6 +362,30 @@ export async function appStartupSequence(
   }) as Promise<StartupResult>
 }
 
+/** 실행 시 PIN 인증 스킵 설정 조회 (ADR-008). 기본 false(인증 ON). 개발 모드는 false. */
+export async function getPinSkipSetting(): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('get_pin_skip_setting') as Promise<boolean>
+}
+
+/** 실행 시 PIN 인증 스킵 설정 저장 (ADR-008). PC별 로컬(config.json). */
+export async function setPinSkipSetting(skip: boolean): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('set_pin_skip_setting', { skip })
+}
+
+/**
+ * 키체인 자동 잠금해제 (ADR-008). PIN 입력 없이 키체인 키로 진입.
+ * 키체인에 키가 없으면 reject → 호출자가 LockScreen 폴백. 개발 모드는 미지원(reject).
+ */
+export async function autoUnlockWithKeychain(forceLock = false): Promise<StartupResult> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] 자동 잠금해제 미지원')
+  return inv('auto_unlock_with_keychain', { forceLock }) as Promise<StartupResult>
+}
+
 // ----------------------------------------------------------------------------
 // Sprint 2 — 원생 도메인
 // ----------------------------------------------------------------------------

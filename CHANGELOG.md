@@ -38,6 +38,24 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 13: 실행 시 PIN 인증 옵션화 (ADR-008: 기기별 선택적 PIN 게이트) — `/settings` 화면에 '실행 시 PIN 인증 사용' 토글(Switch) 추가. OFF 설정 시 앱 재시작 시 키체인 자동 잠금해제 → PIN 입력 없이 메인 진입. 키체인 키 부재 시 안전 폴백(PIN 입력 요구)
+- Sprint 13: `auto_unlock_with_keychain` IPC 신규 (`startup.rs`) — 키체인 유도키 직접 로드, `run_startup` 공통 시퀀스 추출 (락+무결성+DB초기화+heartbeat/backup+소멸전이 공통화)
+- Sprint 13: `skip_pin_on_launch` config.json 플래그 get/set IPC — `get_pin_skip_setting` / `set_pin_skip_setting` (DB 밖, app_config_dir, PC별 독립, unlock 전 호출 가능)
+- Sprint 13: TypeScript IPC 래퍼 3종 추가 — `getPinSkipSetting`, `setPinSkipSetting`, `autoUnlockWithKeychain`
+- Sprint 13: ADR-008 신규 작성 (`docs/arch/adr-008-optional-pin-gate.md`) — PRD §5.5 인증 의무 완화 결정, 데이터 보호를 OS 계정+키체인 ACL로 위임하는 트레이드오프 명시
+
+### Changed
+- Sprint 13: `/lock` 진입 흐름 분기 — `skip_pin_on_launch=true` 시 `autoUnlockWithKeychain` → 성공 시 메인 진입, 실패 시 기존 LockScreen 폴백. 자동 잠금해제 중 로딩 스피너 표시
+
+### Fixed
+- Sprint 13: 글로벌 검색 원생 클릭 404 수정 — `/students/{id}` 라우트 미존재로 404 발생하던 버그를 `/students/edit?id=` 경로로 교정
+- Sprint 13: 글로벌 검색 드롭다운 방향키 탐색 + 한글 IME 처리 — `ArrowUp`/`ArrowDown`/`Enter`/`Escape` 키 바인딩 추가, 한글 조합 중(`isComposing`) 방향키 오작동 방지
+- Sprint 13: `save_notice_preview` 경로 경계 검증 (R88) — 절대경로 + `.png` 확장자 검사 + path traversal 차단, `data_root()` 밖 폴더 자동생성 금지
+
+### Removed
+- Sprint 13: Phase 5 (단원평가/학습보고서) 메뉴 항목 완전 제거 — `menu-config.ts`에서 '단원 평가'(`/exams`) + '학습 보고서'(`/reports`) 항목 삭제. PRD §4.7/§4.8/§6.1 [CANCELLED] 표기
+
+### Added
 - Sprint 12: 공지문 편집 화면 (`/notices` 라우트) — 좌측 원생 리스트(체크박스 다중 선택/전체선택), 우측 배경서식 + 텍스트박스 3종(청구월/원생이름/청구액) 오버레이, react-rnd 드래그+리사이즈, 다중 선택(Shift+클릭), 방향키 미세 이동(1/10px), 빈 영역 클릭 선택 해제, 사이드바 "공지문" 메뉴 활성화
 - Sprint 12: 공지문 이미지 일괄 생성 엔진 (`src/lib/notice-generator.ts`) — Canvas 2D 직접 렌더 (macOS WKWebView foreignObject+img 결함 회피), 원생별 PNG 일괄 생성, 청구액 천단위 콤마(AC-4.10-1), 재생성 덮어쓰기 확인(AC-4.10-2), 진행률 표시, 미리보기 팝업 + 파일 저장 다이얼로그
 - Sprint 12: 공지문 백엔드 IPC (`src-tauri/src/commands/notice.rs` 신규) — `list_notice_assets`, `save_notice_asset`, `delete_notice_asset`, `save_notice_layout`, `get_notice_layout`, `save_notice_image`, `save_notice_images_batch`, `check_notice_output_exists`, `open_notice_output_folder` 9종 + 단위 테스트

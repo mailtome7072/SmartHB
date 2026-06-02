@@ -111,6 +111,8 @@ pub fn run() {
             commands::setup::save_cloud_folder,
             commands::setup::complete_setup,
             commands::setup::get_setup_status,
+            commands::setup::get_pin_skip_setting,
+            commands::setup::set_pin_skip_setting,
             commands::settings::get_operating_hours,
             commands::settings::save_operating_hours,
             commands::academic::create_study_period,
@@ -148,6 +150,7 @@ pub fn run() {
             commands::calendar::get_calendar_data,
             commands::calendar::get_makeup_management_data,
             startup::app_startup_sequence,
+            startup::auto_unlock_with_keychain,
         ])
         .on_window_event(|_window, event| {
             // V24 (Sprint 7 post-review): macOS 빨간 X / Windows 윈도우 닫기 시점에도 exit_hook
