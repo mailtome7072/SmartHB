@@ -9,13 +9,13 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 | src-tauri/src/startup.rs | [1회] | T0 — A91 cipher-off 동작 명시 주석 |
 | docs/arch/adr-008-optional-pin-gate.md | [1회] | T0 — A91 구현 메모 실제 동작으로 수정 |
 | src/app/lock/page.tsx | [1회] | T0 — A93 SplashScreen 이중 표시 통합 |
-| src-tauri/migrations/V303__create_diagnosis_history.sql | [신규] | T1 — 자가 진단 이력 테이블 |
-| src-tauri/src/commands/diagnosis.rs | [신규] | T1 — 자가 진단 IPC 4종 + 검사 7종 |
+| src-tauri/migrations/303__create_diagnosis_history.sql | [신규] ✅ | T1 — 자가 진단 이력 테이블. **실제 파일명은 `303__`** (V 접두사 없음 — 기존 301/302 컨벤션). 임시 DB로 001~303 전체 적용 검증 |
+| src-tauri/src/commands/diagnosis.rs | [신규] ✅ | T1 — 자가 진단 IPC 4종 + 검사 7종 + 단위테스트 20건. 검사 5는 `makeup_deadline`(계획의 expiry_date 오류 정정), 검사 7은 `bills.adjusted_amount`+카드사 누락 기준(계획의 payments.amount 없음 정정) |
 | src-tauri/src/commands/dashboard.rs | [신규] | T3 — 대시보드 집계 IPC 6종 + 알림 |
 | src-tauri/src/commands/export.rs | [신규] | T5 — CSV 내보내기 IPC 3종 |
 | src-tauri/src/commands/backup.rs | [0회] | T7 — 복원 리허설 IPC 확장 |
-| src-tauri/src/commands/mod.rs | [0회] | T1/T3/T5 — pub mod 등록 |
-| src-tauri/src/lib.rs | [0회] | T1/T3/T5/T7 — invoke_handler 등록 |
+| src-tauri/src/commands/mod.rs | [1회] | T1 — pub mod diagnosis 등록 (T3/T5 추가 예정) |
+| src-tauri/src/lib.rs | [1회] | T1 — invoke_handler 4종 등록 (T3/T5/T7 추가 예정) |
 | src/lib/tauri/index.ts | [0회] | T2/T4/T6/T7 — IPC 래퍼 15종+ |
 | src/types/diagnosis.ts | [신규] | T2 |
 | src/types/dashboard.ts | [신규] | T4 |
@@ -48,10 +48,11 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 
 ## 세션 체크포인트 / 다음 진입점
 - **세션 #1 (2026-06-02)**: 계획 + T0 완료, 커밋됨. 자동검증(clippy/lint/tsc) 통과.
-- **다음 진입점 = T1 (자가 진단 백엔드)**: `/sprint-dev 14` 재진입 → 본 scope.md + `docs/sprint/sprint14.md`(SSOT) 확인 후 T1부터.
-  - T1 착수 전: 검사 7종 쿼리용 실제 스키마 컬럼명 확인(regular_attendances/students/bills/student_schedules/makeup_attendances/payments) — `src-tauri/migrations/` V101~V111 참조.
-  - V303 추가 후 `sqlx prepare` 로 `.sqlx` 캐시 갱신 필수.
+- **세션 #2 (2026-06-04)**: T1(자가 진단 백엔드) 완료. 마이그레이션 303 + diagnosis.rs(IPC 4 + 검사 7 + 테스트 20). `cargo test --lib` 334 passed / clippy clean.
+- **다음 진입점 = T2 (자가 진단 프론트엔드)**: TS 래퍼 4종 + `src/types/diagnosis.ts` + 설정 메뉴 "데이터 자가 진단" 섹션 + 앱 시작 시 자동 트리거(check_auto_diagnosis_needed → run_diagnosis('auto')).
   - recharts는 T4 착수 시 설치(shadcn 내장 차트 가능 여부 먼저 확인).
+  - `.sqlx` 캐시: 본 프로젝트는 런타임 `query()`/`query_as()` 패턴(컴파일타임 `query!` 매크로 미사용)이라 신규 쿼리에 `.sqlx` 캐시 갱신 불필요. T8에서 cipher 빌드 점검 시 일괄 확인.
 
 ## 발견된 이슈
-(없음)
+- **계획(sprint14.md) 컬럼명 2건 정정** (T1 착수 시 실제 스키마 대조): (1) 검사 5 소멸기한 컬럼 `expiry_date`→`makeup_deadline`(V106), (2) 검사 7 `payments.amount` 미존재 → 결제수단/카드사 누락 기준으로 재정의. sprint14.md 본문은 sprint-close 시 정정 반영 권장.
+- **마이그레이션 파일명**: 문서의 "V303"은 약칭, 실제 파일은 `303__`(기존 301/302 무접두 컨벤션 일치).

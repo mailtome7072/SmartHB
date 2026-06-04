@@ -7,6 +7,7 @@ pub mod backup;
 pub mod calendar;
 pub mod codes;
 pub mod db;
+pub mod diagnosis;
 pub mod expiration;
 pub mod fees;
 pub mod integrity;
