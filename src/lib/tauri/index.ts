@@ -39,6 +39,7 @@ import type {
 import type {
   AcademyOverview,
   AttendanceProgress,
+  BillingTrendPoint,
   DashboardAlert,
   MonthlySummary,
   TodaySchedule,
@@ -1581,6 +1582,13 @@ export async function getDashboardAlerts(): Promise<DashboardAlert[]> {
   const inv = await getInvoke()
   if (!inv) return []
   return inv('get_dashboard_alerts') as Promise<DashboardAlert[]>
+}
+
+/** 교습소 월별 청구총액 추이 (마지막 청구월 기준 최근 12개월, 빈 달 0). */
+export async function getBillingTrend(): Promise<BillingTrendPoint[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_billing_trend') as Promise<BillingTrendPoint[]>
 }
 
 /** 4.11.6 메모 조회 (없으면 null). */

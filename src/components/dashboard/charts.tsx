@@ -23,13 +23,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { AcademyOverview } from '@/types/dashboard'
+import type { AcademyOverview, BillingTrendPoint } from '@/types/dashboard'
 
 // 저자극 무채도 기반 팔레트 (PRD §5.7).
 const GENDER_COLORS = ['#6b8cae', '#c08497']
 const BAR_COLOR = '#7a8aa0'
 const ENROLL_COLOR = '#5b8c6e'
 const WITHDRAW_COLOR = '#c08497'
+const TREND_COLOR = '#5b7aa0'
 
 export function OverviewCharts({ overview }: { overview: AcademyOverview }) {
   return (
@@ -103,5 +104,34 @@ function ChartBlock({ title, children }: { title: string; children: React.ReactN
       <h3 className="mb-2 text-sm font-bold text-gray-700">{title}</h3>
       {children}
     </div>
+  )
+}
+
+/** 월별 청구총액 증감 추이 (최근 12개월). Y축 만원 단위 표기, 툴팁은 원 단위. */
+export function BillingTrendChart({ data }: { data: BillingTrendPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <LineChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="year_month" tickFormatter={(v: string) => v.slice(5)} fontSize={11} />
+        <YAxis
+          tickFormatter={(v: number) => `${Math.round(v / 10000)}만`}
+          fontSize={11}
+          width={48}
+        />
+        <Tooltip
+          formatter={(v) => [`${Number(v).toLocaleString('ko-KR')}원`, '청구총액']}
+          labelFormatter={(l) => `${l}`}
+        />
+        <Line
+          type="monotone"
+          dataKey="total"
+          name="청구총액"
+          stroke={TREND_COLOR}
+          strokeWidth={2}
+          dot={{ r: 2 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
   )
 }

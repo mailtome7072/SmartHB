@@ -98,6 +98,13 @@ pub struct AttendanceProgress {
     pub missing_dates: Vec<String>,
 }
 
+/// 월별 청구총액 추이 1점 (교습소 청구총액 증감 그래프용).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct BillingTrendPoint {
+    pub year_month: String,
+    pub total: i64,
+}
+
 fn today_naive() -> NaiveDate {
     chrono::Local::now().date_naive()
 }
@@ -346,6 +353,62 @@ async fn monthly_summary(pool: &SqlitePool, ym: &str) -> Result<MonthlySummary, 
         withdrawn_this_month,
         attendance_recorded_days,
     })
+}
+
+// ----------------------------------------------------------------------------
+// 교습소 월별 청구총액 추이 (마지막 청구월 기준 최근 12개월)
+// ----------------------------------------------------------------------------
+
+/// 마지막 청구월을 끝으로 하는 **최근 12개월** 청구총액(adjusted_amount) 추이.
+///
+/// 청구가 없는 달은 0 으로 채워 연속 추이를 만든다(증감 시각화). 청구가 전혀 없으면 빈 벡터.
+async fn billing_trend(pool: &SqlitePool) -> Result<Vec<BillingTrendPoint>, AppError> {
+    let last: Option<String> = sqlx::query_scalar("SELECT MAX(bill_year_month) FROM bills")
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::Db)?;
+    let Some(last) = last else {
+        return Ok(Vec::new());
+    };
+
+    let last_first = NaiveDate::parse_from_str(&format!("{}-01", last), "%Y-%m-%d")
+        .map_err(|e| AppError::Config(format!("청구월 파싱 실패: {}", e)))?;
+    // 마지막 청구월 포함 12개월 → 시작월 = 마지막 - 11개월.
+    let start_first = last_first
+        .checked_sub_months(Months::new(11))
+        .ok_or_else(|| AppError::Config("추이 시작월 계산 실패".into()))?;
+    let start_ym = start_first.format("%Y-%m").to_string();
+
+    // 범위 내 월별 합계 일괄 조회 후 12개월 시퀀스에 매핑(빈 달 0).
+    let rows = sqlx::query(
+        "SELECT bill_year_month AS ym, COALESCE(SUM(adjusted_amount), 0) AS total \
+         FROM bills WHERE bill_year_month BETWEEN ? AND ? GROUP BY bill_year_month",
+    )
+    .bind(&start_ym)
+    .bind(&last)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Db)?;
+    let mut totals: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for r in rows {
+        totals.insert(r.get::<String, _>("ym"), r.get::<i64, _>("total"));
+    }
+
+    let mut out = Vec::with_capacity(12);
+    let mut m = start_first;
+    for _ in 0..12 {
+        let ym = m.format("%Y-%m").to_string();
+        let total = totals.get(&ym).copied().unwrap_or(0);
+        out.push(BillingTrendPoint {
+            year_month: ym,
+            total,
+        });
+        m = match m.checked_add_months(Months::new(1)) {
+            Some(d) => d,
+            None => break,
+        };
+    }
+    Ok(out)
 }
 
 // ----------------------------------------------------------------------------
@@ -633,6 +696,12 @@ pub async fn get_attendance_progress(year_month: String) -> Result<AttendancePro
 }
 
 #[tauri::command]
+pub async fn get_billing_trend() -> Result<Vec<BillingTrendPoint>, String> {
+    let pool = pool().map_err(String::from)?;
+    billing_trend(pool).await.map_err(String::from)
+}
+
+#[tauri::command]
 pub async fn get_dashboard_alerts() -> Result<Vec<DashboardAlert>, String> {
     let pool = pool().map_err(String::from)?;
     dashboard_alerts(pool, today_naive()).await.map_err(String::from)
@@ -830,6 +899,38 @@ mod tests {
             .execute(&pool).await.unwrap();
         let alerts2 = dashboard_alerts(&pool, today).await.unwrap();
         assert!(!alerts2.iter().any(|a| a.kind == "academic_not_set"));
+    }
+
+    // ── 청구총액 추이 ──
+    #[tokio::test]
+    async fn billing_trend_returns_12_months_ending_at_last_billed() {
+        let pool = test_pool_in_memory().await.unwrap();
+        let sid = insert_student(&pool, "S1", "가", "male", "elementary", 3, "2025-01-01", None).await;
+        // 2026-04 (200000), 2026-06 (350000=150000+200000) → 마지막 청구월 2026-06
+        sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount) VALUES (?, '2026-04', 4, 200000, 200000)")
+            .bind(sid).execute(&pool).await.unwrap();
+        let sid2 = insert_student(&pool, "S2", "나", "female", "middle", 1, "2025-01-01", None).await;
+        sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount) VALUES (?, '2026-06', 4, 150000, 150000)")
+            .bind(sid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount) VALUES (?, '2026-06', 4, 200000, 200000)")
+            .bind(sid2).execute(&pool).await.unwrap();
+
+        let trend = billing_trend(&pool).await.unwrap();
+        assert_eq!(trend.len(), 12);
+        assert_eq!(trend.last().unwrap().year_month, "2026-06");
+        assert_eq!(trend[0].year_month, "2025-07", "마지막(2026-06) - 11개월");
+        let june = trend.iter().find(|p| p.year_month == "2026-06").unwrap();
+        assert_eq!(june.total, 350000);
+        let april = trend.iter().find(|p| p.year_month == "2026-04").unwrap();
+        assert_eq!(april.total, 200000);
+        let may = trend.iter().find(|p| p.year_month == "2026-05").unwrap();
+        assert_eq!(may.total, 0, "청구 없는 달은 0");
+    }
+
+    #[tokio::test]
+    async fn billing_trend_empty_when_no_bills() {
+        let pool = test_pool_in_memory().await.unwrap();
+        assert!(billing_trend(&pool).await.unwrap().is_empty());
     }
 
     // ── 메모 ──

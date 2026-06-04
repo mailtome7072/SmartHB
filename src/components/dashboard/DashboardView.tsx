@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getAcademyOverview,
   getAttendanceProgress,
+  getBillingTrend,
   getDashboardAlerts,
   getDashboardMemo,
   getMonthlySummary,
@@ -24,6 +25,10 @@ import type { DashboardAlert } from '@/types/dashboard'
 
 const OverviewCharts = dynamic(
   () => import('./charts').then((m) => m.OverviewCharts),
+  { ssr: false, loading: () => <ChartSkeleton /> },
+)
+const BillingTrendChart = dynamic(
+  () => import('./charts').then((m) => m.BillingTrendChart),
   { ssr: false, loading: () => <ChartSkeleton /> },
 )
 
@@ -68,6 +73,11 @@ export function DashboardView() {
     queryFn: getDashboardAlerts,
     staleTime: STALE,
   })
+  const trend = useQuery({
+    queryKey: ['dashboard', 'billing-trend'],
+    queryFn: getBillingTrend,
+    staleTime: STALE,
+  })
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -91,22 +101,35 @@ export function DashboardView() {
           )}
         </Widget>
 
-        <Widget title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}>
-          {today.isLoading || today.data === undefined ? (
-            <Loading />
-          ) : today.data.slots.length === 0 ? (
-            <Empty>오늘은 예정된 수업이 없습니다.</Empty>
-          ) : (
-            <ul className="space-y-3">
-              {today.data.slots.map((slot) => (
-                <li key={slot.start_time} className="flex gap-3">
-                  <span className="w-16 shrink-0 font-bold text-[var(--accent)]">{slot.start_time}</span>
-                  <span className="text-gray-700">{slot.students.join(', ')} ({slot.students.length}명)</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Widget>
+        {/* 오른쪽 열: 당일 수업(축소) + 월별 청구총액 추이 스택 — 교습소 현황 높이와 균형 */}
+        <div className="flex flex-col gap-6">
+          <Widget title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}>
+            {today.isLoading || today.data === undefined ? (
+              <Loading />
+            ) : today.data.slots.length === 0 ? (
+              <Empty>오늘은 예정된 수업이 없습니다.</Empty>
+            ) : (
+              <ul className="max-h-40 space-y-3 overflow-y-auto">
+                {today.data.slots.map((slot) => (
+                  <li key={slot.start_time} className="flex gap-3">
+                    <span className="w-16 shrink-0 font-bold text-[var(--accent)]">{slot.start_time}</span>
+                    <span className="text-gray-700">{slot.students.join(', ')} ({slot.students.length}명)</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Widget>
+
+          <Widget title="월별 청구총액 추이 (최근 12개월)">
+            {trend.isLoading || trend.data === undefined ? (
+              <Loading />
+            ) : trend.data.length === 0 ? (
+              <Empty>청구 데이터가 없습니다.</Empty>
+            ) : (
+              <BillingTrendChart data={trend.data} />
+            )}
+          </Widget>
+        </div>
 
         <Widget title={`${ym} 월 요약`}>
           {monthly.isLoading || monthly.data === undefined ? (

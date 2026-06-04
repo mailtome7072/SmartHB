@@ -65,3 +65,9 @@ export interface AttendanceProgress {
   recorded_days: number
   missing_dates: string[]
 }
+
+/** 월별 청구총액 추이 1점 (마지막 청구월 기준 최근 12개월). */
+export interface BillingTrendPoint {
+  year_month: string
+  total: number
+}

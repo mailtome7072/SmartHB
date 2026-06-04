@@ -123,6 +123,7 @@ pub fn run() {
             commands::dashboard::get_today_schedule,
             commands::dashboard::get_monthly_summary,
             commands::dashboard::get_attendance_progress,
+            commands::dashboard::get_billing_trend,
             commands::dashboard::get_dashboard_alerts,
             commands::dashboard::get_dashboard_memo,
             commands::dashboard::save_dashboard_memo,
