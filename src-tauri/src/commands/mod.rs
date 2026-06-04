@@ -6,6 +6,7 @@ pub mod billing;
 pub mod backup;
 pub mod calendar;
 pub mod codes;
+pub mod dashboard;
 pub mod db;
 pub mod diagnosis;
 pub mod expiration;
