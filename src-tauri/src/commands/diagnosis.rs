@@ -79,16 +79,20 @@ fn current_year_month() -> String {
 // 검사 7종 (내부 함수 — pool 주입으로 테스트 가능)
 // ----------------------------------------------------------------------------
 
-/// 1. 보강필요시간 음수 — 결석 누적(class_minutes)보다 보강 출석 누적이 많은 원생.
+/// 1. 보강필요시간 음수(이상) — 보강 출석분이 "보강 대상 결석분"보다 많은 원생.
 ///
-/// 보강필요시간 = Σ(결석 class_minutes) − Σ(보강 출석 class_minutes). 음수면 과보강 이상.
+/// 앱 정의(attendance.rs)와 정합: 결석 중 **보강 대상**은 `absent` + `makeup_done`(소멸은 면제로
+/// 제외)이며, 여기서 보강완료(`makeup_attended`)를 차감한다. 정상 매칭이면 0 이상(= 잔여 미보강
+/// 결석분), 음수면 과보강/고아 보강 등 데이터 이상이다.
+///   net = SUM(class_minutes WHERE status IN ('absent','makeup_done'))
+///       − SUM(makeup_attendances.class_minutes WHERE status='makeup_attended')
 async fn check_negative_makeup_minutes(
     pool: &SqlitePool,
 ) -> Result<Vec<DiagnosisIssue>, AppError> {
     let rows = sqlx::query(
         "SELECT s.id AS student_id, s.name AS name, \
             COALESCE((SELECT SUM(class_minutes) FROM regular_attendances \
-                      WHERE student_id = s.id AND status = 'absent'), 0) \
+                      WHERE student_id = s.id AND status IN ('absent', 'makeup_done')), 0) \
           - COALESCE((SELECT SUM(class_minutes) FROM makeup_attendances \
                       WHERE student_id = s.id AND status = 'makeup_attended'), 0) AS net \
          FROM students s",
@@ -527,6 +531,34 @@ mod tests {
             .bind(sid).execute(&pool).await.unwrap();
         let issues = check_negative_makeup_minutes(&pool).await.unwrap();
         assert!(issues.is_empty());
+    }
+
+    #[tokio::test]
+    async fn negative_makeup_clean_for_matched_pair() {
+        // 성춘향 회귀: 결석이 보강완료(makeup_done)로 매칭된 정상 쌍은 오탐 아님.
+        let pool = test_pool_in_memory().await.unwrap();
+        let sid = insert_student(&pool, "S1", "성춘향").await;
+        let mid: (i64,) = sqlx::query_as("INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-05-26', '2026-05', 'makeup_attended', 60) RETURNING id")
+            .bind(sid).fetch_one(&pool).await.unwrap();
+        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes, makeup_deadline, makeup_attendance_id) VALUES (?, '2026-05-22', '2026-05', 'makeup_done', 60, '2026-06', ?)")
+            .bind(sid).bind(mid.0).execute(&pool).await.unwrap();
+        let issues = check_negative_makeup_minutes(&pool).await.unwrap();
+        assert!(issues.is_empty(), "makeup_done 60 − makeup_attended 60 = 0, 미플래그여야 함");
+    }
+
+    #[tokio::test]
+    async fn negative_makeup_excludes_expired() {
+        // 결석 120(보강완료 60 + 소멸 60) + 보강 60 → 소멸 면제 → net = 60−60 = 0, 미플래그.
+        let pool = test_pool_in_memory().await.unwrap();
+        let sid = insert_student(&pool, "S1", "김학생").await;
+        let mid: (i64,) = sqlx::query_as("INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-06-05', '2026-06', 'makeup_attended', 60) RETURNING id")
+            .bind(sid).fetch_one(&pool).await.unwrap();
+        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes, makeup_attendance_id) VALUES (?, '2026-06-02', '2026-06', 'makeup_done', 60, ?)")
+            .bind(sid).bind(mid.0).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes, makeup_deadline) VALUES (?, '2026-06-03', '2026-06', 'makeup_expired', 60, '2026-07')")
+            .bind(sid).execute(&pool).await.unwrap();
+        let issues = check_negative_makeup_minutes(&pool).await.unwrap();
+        assert!(issues.is_empty(), "소멸 60 은 보강 대상에서 제외 → 음수 아님");
     }
 
     // ── 검사 2: 당월 출결 미생성 ──
