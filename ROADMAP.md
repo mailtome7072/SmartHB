@@ -826,9 +826,9 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
 - ⬜ **양 PC 동기화 시나리오 테스트**: Windows → 종료 → Mac 시작 → 데이터 확인
 - ⬜ **기술 부채 정리**: 코드 리뷰 + 리팩토링 + 미사용 코드 제거
 
-##### 추가 기능 보강 — 설정 화면 2건 (2026-06-04 계획, sprint14에서 이연)
+##### 추가 기능 보강 — 설정 화면 3건 (2026-06-04 계획, sprint14에서 이연)
 > 출처: 2026-06-04 대화. sprint14가 capacity 풀(38/40h)이라 sprint15로 이연 결정.
-> 본 2건은 안정화 sprint에 얹는 기능 작업이므로, sprint15 진입 시 `sprint-planner`가 Capacity를 재산정하고 필요 시 Sprint 16/별도 sprint로 재배치한다.
+> 본 항목들은 안정화 sprint에 얹는 기능 작업이므로, sprint15 진입 시 `sprint-planner`가 Capacity를 재산정하고 필요 시 Sprint 16/별도 sprint로 재배치한다.
 
 - ⬜ **설정 — '교습소 정보' 화면 신설 (§4.12 보강)** _(저위험, 예상 3~4h)_
   - 교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 CRUD — `app_settings` key/value JSON 저장 (`operating_hours` 패턴 재사용, **DB 마이그레이션 없음**)
@@ -842,6 +842,11 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
   - 시나리오 분기: **A 이전**(빈 폴더로 데이터 복사) / **B 연결**(기존 데이터 있는 폴더에 이 PC 연결)
   - **R12 salt.bin 이전(backlog)과 상호 의존** — 함께 설계/처리. 진입 시 ADR로 PRD §4.0.2(마법사 재실행 요구) 라벨/기능 변경 결정 기록
   - **검증**: cipher ON 빌드 + 실파일 + 양 PC 시나리오 필수 (인메모리/cipher off는 salt·WAL·lock 미검출). 중간 강제 종료 시 옛 경로로 정상 복귀 확인
+- ⬜ **자가 진단 이력 수동 삭제 기능 (B안)** _(저위험, 소규모)_ — 출처: 2026-06-04 Sprint 14 검증 대화
+  - `/settings/diagnosis` 이력 목록에 **"이 기록 삭제"(행 단위)** 및/또는 **"이력 비우기"** 추가 — 위험 동작 확인 다이얼로그 필수(PRD §5.7)
+  - 백엔드 IPC: `delete_diagnosis_history(id)` / `clear_diagnosis_history()` (DELETE FROM diagnosis_history)
+  - **자동 삭제는 도입하지 않음** — diagnosis_history는 감사 로그 성격이라 "해결 시 자동 삭제"는 추적성 훼손 + "해결됨" 판정 모호. **사용자 수동 삭제만** 제공 (Sprint 14 검증 시 결정)
+  - 참고: 현재 상태(알림/최신)는 마지막 실행만 반영하므로 재실행 시 자동 정상화됨 — 본 기능은 과거 로그 정리 용도
 
 #### 완료 기준 (Definition of Done)
 - ⬜ 양 OS 인스톨러 설치/실행/삭제 정상
