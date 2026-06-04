@@ -9,7 +9,9 @@
 //!
 //! ## 정의(모호 항목 — 사용자 검증 후 조정 가능)
 //! - **출결 진행률**: 당월 1일~오늘 중 현행 스케줄 요일에 해당하는 "수업일" 가운데 정규출결
-//!   레코드가 없는 일자를 "미입력"으로 본다. (휴원일/방학 제외는 후속 — 현재 미반영)
+//!   레코드가 없는 일자를 "미입력"으로 본다. **비수업일(공휴일/방학/휴원일 등
+//!   allows_regular_class=0 학사일정)은 수업일에서 제외** — 출결 생성(`attendance::load_off_dates`)이
+//!   건너뛰는 일자와 동일 기준으로 미러링하여 공휴일 오탐을 방지한다.
 //! - **분기**: 학사력(3·6·9·12월 시작) 기준 최근 4분기 입/퇴교 수.
 //! - **보강 소멸 임박**: makeup_deadline(YYYY-MM)이 당월인 결석 건수. (월 단위 컬럼이라 'D-7'을
 //!   월 단위로 근사 — 일 단위 정밀화는 후속)
@@ -361,6 +363,50 @@ fn last_day_of_month(ym: &str) -> Result<NaiveDate, AppError> {
         .ok_or_else(|| AppError::Config("말일 계산 실패".into()))
 }
 
+/// 비수업일 집합 — `allows_regular_class=0` 학사일정(공휴일/방학/휴원일 등)을 기간 확장.
+///
+/// `attendance::load_off_dates` 와 동일 기준(출결 생성이 건너뛰는 일자)을 미러링한다.
+/// 반환 일자는 [start, end] 로 클램프된다.
+async fn off_dates(
+    pool: &SqlitePool,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Result<std::collections::HashSet<String>, AppError> {
+    let rows = sqlx::query(
+        "SELECT e.event_date AS s, COALESCE(e.period_end_date, e.event_date) AS e \
+         FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE c.allows_regular_class = 0 \
+           AND e.event_date <= ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+    )
+    .bind(end.to_string())
+    .bind(start.to_string())
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Db)?;
+
+    let mut set = std::collections::HashSet::new();
+    for r in rows {
+        let s: String = r.get("s");
+        let e: String = r.get("e");
+        let (Ok(sd), Ok(ed)) = (
+            NaiveDate::parse_from_str(&s, "%Y-%m-%d"),
+            NaiveDate::parse_from_str(&e, "%Y-%m-%d"),
+        ) else {
+            continue;
+        };
+        let mut d = sd.max(start);
+        let clamp_end = ed.min(end);
+        while d <= clamp_end {
+            set.insert(d.to_string());
+            match d.succ_opt() {
+                Some(n) => d = n,
+                None => break,
+            }
+        }
+    }
+    Ok(set)
+}
+
 async fn attendance_progress(
     pool: &SqlitePool,
     ym: &str,
@@ -396,14 +442,17 @@ async fn attendance_progress(
     let month_end = last_day_of_month(ym)?;
     let upper = today.min(month_end);
 
+    // 비수업일(공휴일/방학/휴원일) 제외 — 출결 생성이 건너뛰는 일자와 동일 기준.
+    let off = off_dates(pool, first, upper).await?;
+
     let mut expected = 0i64;
     let mut missing_dates = Vec::new();
     let mut cursor = first;
     while cursor <= upper {
+        let ds = cursor.to_string();
         let iso = cursor.weekday().number_from_monday(); // 1=월~7=일
-        if class_weekdays.contains(&iso) {
+        if class_weekdays.contains(&iso) && !off.contains(&ds) {
             expected += 1;
-            let ds = cursor.to_string();
             if !recorded.contains(&ds) {
                 missing_dates.push(ds);
             }
@@ -729,6 +778,29 @@ mod tests {
         assert_eq!(prog.expected_days, 3);
         assert_eq!(prog.recorded_days, 1);
         assert_eq!(prog.missing_dates, vec!["2026-06-08", "2026-06-15"]);
+    }
+
+    #[tokio::test]
+    async fn attendance_progress_excludes_holidays() {
+        // 6/3 선거 공휴일 사례 회귀 — 수업 요일이라도 공휴일(allows_regular_class=0)은 미입력에서 제외.
+        let pool = test_pool_in_memory().await.unwrap();
+        let sid = insert_student(&pool, "S1", "가", "male", "elementary", 3, "2026-01-01", None).await;
+        // 수요일 수업. 2026-06 수요일: 3,10,17,24
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 3, '15:00', 2, '2026-01-01')")
+            .bind(sid).execute(&pool).await.unwrap();
+        // 6/3 을 '공휴일'(V301 시드 코드, allows_regular_class=0) 학사일정으로 등록 → 비수업일.
+        let hid: (i64,) = sqlx::query_as("SELECT id FROM schedule_codes WHERE code_name = '공휴일'")
+            .fetch_one(&pool).await.unwrap();
+        sqlx::query("INSERT INTO schedule_events (code_id, event_date) VALUES (?, '2026-06-03')")
+            .bind(hid.0).execute(&pool).await.unwrap();
+        // 6/10 만 출결 기록. 오늘 = 6/11 → 후보 수요일 3,10 인데 3은 공휴일 제외 → expected={10}.
+        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes) VALUES (?, '2026-06-10', '2026-06', 120)")
+            .bind(sid).execute(&pool).await.unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 6, 11).unwrap();
+        let prog = attendance_progress(&pool, "2026-06", today).await.unwrap();
+        assert_eq!(prog.expected_days, 1, "6/3 공휴일 제외, 6/10 만 수업일");
+        assert!(!prog.missing_dates.contains(&"2026-06-03".to_string()), "공휴일은 미입력에서 제외");
+        assert!(prog.missing_dates.is_empty(), "6/10 은 기록됨 → 미입력 없음");
     }
 
     // ── 알림 ──

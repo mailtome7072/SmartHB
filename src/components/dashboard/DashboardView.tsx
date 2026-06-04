@@ -73,6 +73,8 @@ export function DashboardView() {
     <div className="mx-auto max-w-6xl space-y-6">
       <h1 className="text-2xl font-bold">대시보드</h1>
 
+      <MemoWidget />
+
       <AlertsPanel alerts={alerts.data ?? []} loading={alerts.isLoading} />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -133,8 +135,6 @@ export function DashboardView() {
           )}
         </Widget>
       </div>
-
-      <MemoWidget />
     </div>
   )
 }
