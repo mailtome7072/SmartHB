@@ -37,6 +37,13 @@ import type {
   DiagnosisResult,
 } from '@/types/diagnosis'
 import type {
+  AcademyOverview,
+  AttendanceProgress,
+  DashboardAlert,
+  MonthlySummary,
+  TodaySchedule,
+} from '@/types/dashboard'
+import type {
   AbsenceHistoryItem,
   CreateMakeupPayload,
   EligibleDate,
@@ -1520,4 +1527,72 @@ export async function checkAutoDiagnosisNeeded(): Promise<boolean> {
   const inv = await getInvoke()
   if (!inv) return false
   return inv('check_auto_diagnosis_needed') as Promise<boolean>
+}
+
+// ============================================================================
+// Sprint 14 — 대시보드 (T3/T4, PRD §4.11)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/dashboard.rs.
+
+/** 4.11.1 교습소 현황 (재원/성별/학년/학교 분포 + 분기별 입퇴교). */
+export async function getAcademyOverview(): Promise<AcademyOverview> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { total_active: 0, by_gender: [], by_grade: [], by_school: [], quarterly: [] }
+  }
+  return inv('get_academy_overview') as Promise<AcademyOverview>
+}
+
+/** 4.11.2 당일 수업 — 시간대별 명단. */
+export async function getTodaySchedule(): Promise<TodaySchedule> {
+  const inv = await getInvoke()
+  if (!inv) return { weekday: 1, slots: [] }
+  return inv('get_today_schedule') as Promise<TodaySchedule>
+}
+
+/** 4.11.3 월 핵심 요약 (청구/입금/미납 + 당월 입퇴교 + 출결 기록일수). */
+export async function getMonthlySummary(yearMonth: string): Promise<MonthlySummary> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      year_month: yearMonth,
+      bill_total: 0,
+      paid_total: 0,
+      unpaid_total: 0,
+      bill_count: 0,
+      paid_count: 0,
+      enrolled_this_month: 0,
+      withdrawn_this_month: 0,
+      attendance_recorded_days: 0,
+    }
+  }
+  return inv('get_monthly_summary', { yearMonth }) as Promise<MonthlySummary>
+}
+
+/** 4.11.5 출결 입력 진행률 — 미입력 일자 목록. */
+export async function getAttendanceProgress(yearMonth: string): Promise<AttendanceProgress> {
+  const inv = await getInvoke()
+  if (!inv) return { year_month: yearMonth, expected_days: 0, recorded_days: 0, missing_dates: [] }
+  return inv('get_attendance_progress', { yearMonth }) as Promise<AttendanceProgress>
+}
+
+/** 4.11.4 알림 5종 (조건 충족분만 반환). */
+export async function getDashboardAlerts(): Promise<DashboardAlert[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_dashboard_alerts') as Promise<DashboardAlert[]>
+}
+
+/** 4.11.6 메모 조회 (없으면 null). */
+export async function getDashboardMemo(): Promise<string | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_dashboard_memo') as Promise<string | null>
+}
+
+/** 4.11.6 메모 저장 (디바운스 자동 저장). */
+export async function saveDashboardMemo(content: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_dashboard_memo', { content })
 }

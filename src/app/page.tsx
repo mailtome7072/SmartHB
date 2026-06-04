@@ -20,6 +20,7 @@ import { useSessionStore } from '@/stores/session-store'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { SplashScreen } from '@/components/splash-screen'
+import { DashboardView } from '@/components/dashboard/DashboardView'
 
 export default function Home() {
   const router = useRouter()
@@ -104,11 +105,7 @@ export default function Home() {
           </button>
         </div>
       )}
-      <div className="flex flex-col items-center justify-center pt-12">
-        <h1 className="mb-4 text-4xl font-bold">스마트해법수학</h1>
-        <p className="mb-8 text-lg text-gray-600">정쌤의 교습소 관리 시스템</p>
-        <p className="mt-8 text-sm text-gray-500">대시보드는 Phase 6 에서 구축됩니다. 사이드바의 ‘원생 관리’ 또는 ‘설정’으로 이동. 시작 시간/점유/백업/동기화 상태는 상단바를 참조.</p>
-      </div>
+      <DashboardView />
     </AppShell>
   )
 }
