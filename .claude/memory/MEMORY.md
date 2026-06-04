@@ -1,5 +1,5 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
-- [Sprint 다음 세션](sprint-next-session.md) — Sprint 14 진행 중. T0 완료·커밋, 다음 진입점 T1(자가 진단 백엔드). 새 환경 릴레이 절차 포함. 다음 세션 진입 시 가장 먼저 확인
+- [Sprint 다음 세션](sprint-next-session.md) — Sprint 14: T0~T4 + 검증보강 완료·origin push. 다음 진입점 T5(내보내기 백엔드). 집(Mac)에서 이어감. 새 환경 릴레이 절차 포함 — 진입 시 가장 먼저 확인
 - [NTFS power-loss 패턴](ntfs-power-loss-pattern.md) — fs::write+rename 후 데이터가 NULL로 손상, atomic write 헬퍼에 손상 감지+fallback 필수
 - [keyring v3 features 트랩](keyring-v3-features-trap.md) — `keyring = "3"`만 적으면 backend 미연결로 silent set fail. `features = ["apple-native", "windows-native"]` 필수
 - [cipher 테스트 게이트 트랩](cipher-test-gate-trap.md) — `cargo test --features cipher`는 Strawberry Perl + 테스트 모듈 `#[cfg(all(test, not(feature="cipher")))]` 게이트 둘 다 필요. CI는 cipher로 빌드만 해서 미발견
