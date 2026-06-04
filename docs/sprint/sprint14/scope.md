@@ -16,14 +16,16 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 | src-tauri/src/commands/backup.rs | [0회] | T7 — 복원 리허설 IPC 확장 |
 | src-tauri/src/commands/mod.rs | [1회] | T1 — pub mod diagnosis 등록 (T3/T5 추가 예정) |
 | src-tauri/src/lib.rs | [1회] | T1 — invoke_handler 4종 등록 (T3/T5/T7 추가 예정) |
-| src/lib/tauri/index.ts | [0회] | T2/T4/T6/T7 — IPC 래퍼 15종+ |
-| src/types/diagnosis.ts | [신규] | T2 |
+| src/lib/tauri/index.ts | [1회] | T2 — 자가 진단 IPC 래퍼 4종 (T4/T6/T7 추가 예정) |
+| src/types/diagnosis.ts | [신규] ✅ | T2 — DiagnosisIssue/Result/HistoryRow |
+| src/app/settings/diagnosis/page.tsx | [신규] ✅ | T2 — 자가 진단 화면(신규 라우트). **계획의 'page.tsx 인라인 섹션' 대신 전용 라우트로 구현** — hours/codes/pin 등 기존 설정 라우트 패턴과 일관. 실행 버튼 + 12개월 이력 + 결과 상세 + 이동 링크 |
+| src/app/settings/page.tsx | [1회] ✅ | T2 — '데이터 자가 진단' 카드 추가 (T6/T7 데이터관리/백업 카드 추가 예정) |
+| src/components/layout/app-shell.tsx | [1회] ✅ | T2 — 자동 진단 트리거(세션 1회, unlock 후 백그라운드, AC-6.6-1/R97) |
 | src/types/dashboard.ts | [신규] | T4 |
 | src/types/export.ts | [신규] | T6 |
 | src/app/page.tsx | [0회] | T4 — 대시보드로 교체(현재 리다이렉트) |
 | src/components/dashboard/ | [신규] | T4 — 위젯 컴포넌트 6종 + 알림 |
 | src/lib/menu-config.ts | [0회] | T4 — 대시보드 disabledHint 제거(F3) |
-| src/app/settings/page.tsx | [0회] | T2/T6/T7 — 자가진단/데이터관리/백업 섹션 |
 | package.json | [신규] | T4 — recharts (사전 승인 완료) |
 | src/components/layout/sidebar.tsx | [1회] | scope 외 추가 (2026-06-04, 사용자 요청) — "종료" 클릭 시 프로그램 종료 확인 다이얼로그 추가 (PRD §5.7, 기존 AlertDialog 재사용, 의존성·DB 변경 없음) |
 
@@ -49,9 +51,11 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 ## 세션 체크포인트 / 다음 진입점
 - **세션 #1 (2026-06-02)**: 계획 + T0 완료, 커밋됨. 자동검증(clippy/lint/tsc) 통과.
 - **세션 #2 (2026-06-04)**: T1(자가 진단 백엔드) 완료. 마이그레이션 303 + diagnosis.rs(IPC 4 + 검사 7 + 테스트 20). `cargo test --lib` 334 passed / clippy clean.
-- **다음 진입점 = T2 (자가 진단 프론트엔드)**: TS 래퍼 4종 + `src/types/diagnosis.ts` + 설정 메뉴 "데이터 자가 진단" 섹션 + 앱 시작 시 자동 트리거(check_auto_diagnosis_needed → run_diagnosis('auto')).
+- **세션 #2 (2026-06-04) 이어서**: T2(자가 진단 프론트엔드) 완료. 타입 + IPC 래퍼 4종 + `/settings/diagnosis` 라우트 + 설정 카드 + AppShell 자동 트리거. `pnpm lint`/`tsc`/`build`(export 3/3, diagnosis.html 생성) 통과.
+- **다음 진입점 = T3 (대시보드 집계 IPC)**: `dashboard.rs` 신규 — 위젯 6 IPC + 알림 5종 + 단위 테스트 12+. 검사 컬럼은 T1에서 확인한 실제 스키마(bills.status 2단계, payments 컬럼) 재사용.
   - recharts는 T4 착수 시 설치(shadcn 내장 차트 가능 여부 먼저 확인).
   - `.sqlx` 캐시: 본 프로젝트는 런타임 `query()`/`query_as()` 패턴(컴파일타임 `query!` 매크로 미사용)이라 신규 쿼리에 `.sqlx` 캐시 갱신 불필요. T8에서 cipher 빌드 점검 시 일괄 확인.
+  - **사용자 검증 대기**: T2 자가 진단 화면 — 검증 항목은 직전 대화 정리분(A 기본동작 / B 7종 발화 / C 이력·자동·정리 / D 휴리스틱 오탐) 참조.
 
 ## 발견된 이슈
 - **계획(sprint14.md) 컬럼명 2건 정정** (T1 착수 시 실제 스키마 대조): (1) 검사 5 소멸기한 컬럼 `expiry_date`→`makeup_deadline`(V106), (2) 검사 7 `payments.amount` 미존재 → 결제수단/카드사 누락 기준으로 재정의. sprint14.md 본문은 sprint-close 시 정정 반영 권장.

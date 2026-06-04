@@ -33,6 +33,10 @@ import type {
   ToggleResult,
 } from '@/types/attendance'
 import type {
+  DiagnosisHistoryRow,
+  DiagnosisResult,
+} from '@/types/diagnosis'
+import type {
   AbsenceHistoryItem,
   CreateMakeupPayload,
   EligibleDate,
@@ -1480,4 +1484,40 @@ export async function showSaveDialog(defaultPath: string): Promise<string | null
   } catch {
     return null
   }
+}
+
+// ============================================================================
+// Sprint 14 — 데이터 자가 진단 (T1/T2, PRD §6.6)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/diagnosis.rs (검사 7종 + 이력).
+
+/** 자가 진단 실행 (수동/자동). 7종 검사 + 이력 저장 + 12개월 초과 정리. */
+export async function runDiagnosis(runType: 'auto' | 'manual'): Promise<DiagnosisResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    // dev fallback — 이상 0건
+    return { run_date: '', run_type: runType, total_checks: 7, issues_found: 0, issues: [] }
+  }
+  return inv('run_diagnosis', { runType }) as Promise<DiagnosisResult>
+}
+
+/** 진단 이력 조회 (최신순 limit 건). */
+export async function getDiagnosisHistory(limit: number): Promise<DiagnosisHistoryRow[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_diagnosis_history', { limit }) as Promise<DiagnosisHistoryRow[]>
+}
+
+/** 대시보드 알림용 최신 진단 결과 1건 (없으면 null). */
+export async function getLatestDiagnosis(): Promise<DiagnosisHistoryRow | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_latest_diagnosis') as Promise<DiagnosisHistoryRow | null>
+}
+
+/** 당월 자동 진단 필요 여부 (매월 1일 첫 실행 판단, AC-6.6-1). */
+export async function checkAutoDiagnosisNeeded(): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('check_auto_diagnosis_needed') as Promise<boolean>
 }

@@ -37,6 +37,11 @@ const CARDS: SettingCard[] = [
     description: '공휴일·보강데이 등 시스템 코드 + 사용자 추가 코드의 활성 토글 및 CRUD',
   },
   {
+    href: '/settings/diagnosis',
+    title: '데이터 자가 진단',
+    description: '원생·출결·청구 데이터 정합성 7종 점검. 매월 1일 자동 + 수동 실행, 최근 12개월 이력.',
+  },
+  {
     href: '/settings/pin',
     title: 'PIN 번호 변경',
     description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',
