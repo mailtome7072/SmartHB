@@ -25,6 +25,7 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 | src/lib/menu-config.ts | [0회] | T4 — 대시보드 disabledHint 제거(F3) |
 | src/app/settings/page.tsx | [0회] | T2/T6/T7 — 자가진단/데이터관리/백업 섹션 |
 | package.json | [신규] | T4 — recharts (사전 승인 완료) |
+| src/components/layout/sidebar.tsx | [1회] | scope 외 추가 (2026-06-04, 사용자 요청) — "종료" 클릭 시 프로그램 종료 확인 다이얼로그 추가 (PRD §5.7, 기존 AlertDialog 재사용, 의존성·DB 변경 없음) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD (hook 차단)

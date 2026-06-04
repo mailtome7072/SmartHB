@@ -15,12 +15,26 @@
  * `startup::exit_hook` 의 release_lock + exit 백업 (R15 보장).
  * 기존 `getCurrentWindow().close()` 는 capabilities `core:window:allow-close` 권한 부재로
  * 거부됐었음. 백엔드 IPC 경유로 권한 + macOS 닥 잔존 이슈 동시 회피.
+ *
+ * scope-외 추가 (2026-06-04): "종료" 클릭 시 즉시 종료하지 않고 확인 다이얼로그를 거치도록
+ * 변경 (PRD §5.7 실수 복구 — 위험 동작 명시적 확인). 기존 AlertDialog 컴포넌트 재사용.
  */
 
 import Link from 'next/link'
 import { useAppStore } from '@/stores/app-store'
 import { MENU_ITEMS } from '@/lib/menu-config'
 import { quitApp } from '@/lib/tauri'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 export function Sidebar() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
@@ -63,13 +77,26 @@ export function Sidebar() {
           </li>
         ))}
         <li>
-          <button
-            type="button"
-            onClick={() => void quitApp()}
-            className="flex min-h-[44px] w-full items-center justify-between px-4 py-3 text-left text-[var(--foreground)] hover:bg-[var(--background)]"
-          >
-            <span>종료</span>
-          </button>
+          <AlertDialog>
+            <AlertDialogTrigger
+              type="button"
+              className="flex min-h-[44px] w-full items-center justify-between px-4 py-3 text-left text-[var(--foreground)] hover:bg-[var(--background)]"
+            >
+              <span>종료</span>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>프로그램 종료</AlertDialogTitle>
+                <AlertDialogDescription>
+                  스마트해법수학 관리 앱을 종료하시겠습니까?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>취소</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void quitApp()}>종료</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </li>
       </ul>
     </nav>
