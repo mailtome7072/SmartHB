@@ -110,7 +110,8 @@ function ChartBlock({ title, children }: { title: string; children: React.ReactN
 /** 월별 청구총액 증감 추이 (최근 12개월). Y축 만원 단위 표기, 툴팁은 원 단위. */
 export function BillingTrendChart({ data }: { data: BillingTrendPoint[] }) {
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    // height 100% 로 위젯 flex 영역을 채우고, 작은 화면(부모 높이 미정)에선 minHeight 로 fallback.
+    <ResponsiveContainer width="100%" height="100%" minHeight={180}>
       <LineChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="year_month" tickFormatter={(v: string) => v.slice(5)} fontSize={11} />

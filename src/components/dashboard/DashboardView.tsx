@@ -101,15 +101,20 @@ export function DashboardView() {
           )}
         </Widget>
 
-        {/* 오른쪽 열: 당일 수업(축소) + 월별 청구총액 추이 스택 — 교습소 현황 높이와 균형 */}
-        <div className="flex flex-col gap-6">
-          <Widget title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}>
+        {/* 오른쪽 열: 당일 수업 + 월별 청구총액 추이 스택.
+            grid stretch 로 컬럼 높이 = 교습소 현황 높이, 두 위젯이 lg:flex-1 로 균등 분할 →
+            당일 수업이 비어도 (당일수업 + 추이) 합이 교습소 현황 높이와 같게 고정된다. */}
+        <div className="flex flex-col gap-6 lg:h-full">
+          <Widget
+            title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}
+            className="lg:flex-1 lg:min-h-0"
+          >
             {today.isLoading || today.data === undefined ? (
               <Loading />
             ) : today.data.slots.length === 0 ? (
               <Empty>오늘은 예정된 수업이 없습니다.</Empty>
             ) : (
-              <ul className="max-h-40 space-y-3 overflow-y-auto">
+              <ul className="h-full space-y-3 overflow-y-auto">
                 {today.data.slots.map((slot) => (
                   <li key={slot.start_time} className="flex gap-3">
                     <span className="w-16 shrink-0 font-bold text-[var(--accent)]">{slot.start_time}</span>
@@ -120,7 +125,7 @@ export function DashboardView() {
             )}
           </Widget>
 
-          <Widget title="월별 청구총액 추이 (최근 12개월)">
+          <Widget title="월별 청구총액 추이 (최근 12개월)" className="lg:flex-1 lg:min-h-0">
             {trend.isLoading || trend.data === undefined ? (
               <Loading />
             ) : trend.data.length === 0 ? (
@@ -301,11 +306,21 @@ function MemoWidget() {
 
 // ── 공통 ──
 
-function Widget({ title, children }: { title: string; children: React.ReactNode }) {
+function Widget({
+  title,
+  children,
+  className,
+}: {
+  title: string
+  children: React.ReactNode
+  className?: string
+}) {
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+    <section
+      className={`flex flex-col rounded-lg border border-[var(--border)] bg-white p-5 ${className ?? ''}`}
+    >
       <h2 className="mb-4 text-lg font-bold text-[var(--foreground)]">{title}</h2>
-      {children}
+      <div className="min-h-0 flex-1">{children}</div>
     </section>
   )
 }
