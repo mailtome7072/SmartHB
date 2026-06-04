@@ -826,12 +826,31 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
 - ⬜ **양 PC 동기화 시나리오 테스트**: Windows → 종료 → Mac 시작 → 데이터 확인
 - ⬜ **기술 부채 정리**: 코드 리뷰 + 리팩토링 + 미사용 코드 제거
 
+##### 추가 기능 보강 — 설정 화면 2건 (2026-06-04 계획, sprint14에서 이연)
+> 출처: 2026-06-04 대화. sprint14가 capacity 풀(38/40h)이라 sprint15로 이연 결정.
+> 본 2건은 안정화 sprint에 얹는 기능 작업이므로, sprint15 진입 시 `sprint-planner`가 Capacity를 재산정하고 필요 시 Sprint 16/별도 sprint로 재배치한다.
+
+- ⬜ **설정 — '교습소 정보' 화면 신설 (§4.12 보강)** _(저위험, 예상 3~4h)_
+  - 교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 CRUD — `app_settings` key/value JSON 저장 (`operating_hours` 패턴 재사용, **DB 마이그레이션 없음**)
+  - 설정 허브의 '교습소 정보' 카드 활성화 (현재 `/settings/info` disabled stub)
+  - **착수 전 확정 필요**: (1) 필드 목록(사업자번호/교습소 등록번호 포함 여부), (2) 노출 위치 — 공지문(§4.10) 헤더 등 실제 소비처 연결 여부. PRD §4.x에 정식 Feature/AC 없음 → 필드·노출처 미확정 시 scope 번짐 주의
+- ⬜ **설정 — '초기 설정 마법사 재실행' → 'DB 폴더 변경(경로 재지정)' 전환** _(고위험, 독립 Task 규모)_
+  - 현재 disabled '마법사 재실행' 카드(`/setup`)를 **'DB 폴더 변경' 단일 기능**으로 교체. (PIN 변경은 `change_pin`이 이미 대체, 마법사 재실행의 잔여 실용 기능은 폴더 재지정뿐)
+  - **안전 원칙 = copy-then-switch (이동 금지)**: 복사 → 새 위치 `PRAGMA integrity_check` + 동일 PIN으로 열림 검증 → `config.json` 경로 전환 → **앱 재시작**으로 반영(`POOL: OnceCell`은 런타임 재지정 불가)
+  - **세트로 동반 이전**: `app.db`(+`-wal`/`-shm`) + **`salt.bin`** + `backup/` 전체. salt 누락 시 cipher ON에서 **DB 영구 잠김**(키 = PBKDF2(PIN, salt)), WAL 누락 시 최근 거래 손실
+  - 옛 폴더 `app.lock` 해제 + 새 폴더 락 획득, 클라우드 동기화 완료 대기 안내, 옛 데이터는 즉시 삭제 금지(사후 수동 정리)
+  - 시나리오 분기: **A 이전**(빈 폴더로 데이터 복사) / **B 연결**(기존 데이터 있는 폴더에 이 PC 연결)
+  - **R12 salt.bin 이전(backlog)과 상호 의존** — 함께 설계/처리. 진입 시 ADR로 PRD §4.0.2(마법사 재실행 요구) 라벨/기능 변경 결정 기록
+  - **검증**: cipher ON 빌드 + 실파일 + 양 PC 시나리오 필수 (인메모리/cipher off는 salt·WAL·lock 미검출). 중간 강제 종료 시 옛 경로로 정상 복귀 확인
+
 #### 완료 기준 (Definition of Done)
 - ⬜ 양 OS 인스톨러 설치/실행/삭제 정상
 - ⬜ 모든 성능 요구사항 충족
 - ⬜ 접근성 기준 전체 통과
 - ⬜ E2E UC-1~UC-5 모두 통과 (UC-6 Phase 5 취소)
 - ⬜ 양 PC 동기화 시나리오 통과
+- ⬜ (추가 기능) 교습소 정보 저장/조회 + 노출처 반영
+- ⬜ (추가 기능) DB 폴더 변경 — copy-then-switch + salt/WAL/backup 동반 이전 + 재시작 반영, 양 PC cipher ON 검증 통과
 
 #### 🧪 Playwright MCP 검증 시나리오
 ```
@@ -935,7 +954,7 @@ PRD §4.15에 명시된 Post-MVP 항목:
 
 ### Sprint 3 이연 항목
 - ✅ **R12: paths 동적화** — `paths::data_root()` 동적화 완료 (`82eb1b2`, 2026-05-21)
-- ⬜ **R12 나머지: salt.bin 이전** — Keychain -> `{cloud}/smarthb/salt.bin` 이전. paths 동적화 완료 후 별도 sprint에서 처리.
+- ⬜ **R12 나머지: salt.bin 이전** — Keychain -> `{cloud}/smarthb/salt.bin` 이전. paths 동적화 완료 후 별도 sprint에서 처리. → **Sprint 15 'DB 폴더 변경(경로 재지정)' 작업과 상호 의존** (경로 재지정 시 salt.bin 동반 이전 필수) — 함께 설계.
 - ⬜ **query!() 매크로 전환** — 동적 `query() + bind()` 패턴 유지 중. V101~V105 스키마 안정화 후 일괄 전환 예정. 별도 backlog 추적.
 
 ---
