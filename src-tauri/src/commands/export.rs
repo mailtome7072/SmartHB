@@ -112,13 +112,61 @@ fn xlsx_err(e: rust_xlsxwriter::XlsxError) -> AppError {
     AppError::Io(std::io::Error::other(e.to_string()))
 }
 
+/// 한글/한자/가나/전각 등 폭이 2인 문자 여부 (컬럼 너비 계산용).
+fn is_wide_char(c: char) -> bool {
+    matches!(c as u32,
+        0x1100..=0x115F | 0x2E80..=0x303E | 0x3041..=0x33FF | 0x3400..=0x4DBF |
+        0x4E00..=0x9FFF | 0xA000..=0xA4CF | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF |
+        0xFE30..=0xFE4F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6)
+}
+
+/// 표시 폭 — CJK(한글 포함)는 2, 그 외 1.
+fn display_width(s: &str) -> usize {
+    s.chars().map(|c| if is_wide_char(c) { 2 } else { 1 }).sum()
+}
+
+/// 금전 천단위 콤마 문자열 (너비 계산용 — 셀 값은 num_format 이 표시).
+fn money_str(n: i64) -> String {
+    let neg = n < 0;
+    let digits = n.unsigned_abs().to_string();
+    let len = digits.len();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (len - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    if neg {
+        format!("-{}", out)
+    } else {
+        out
+    }
+}
+
+/// 너비 계산용 셀 표시 문자열.
+fn cell_display(cell: &Cell) -> String {
+    match cell {
+        Cell::Text(s) => s.clone(),
+        Cell::Int(n) => n.to_string(),
+        Cell::Money(n) => money_str(*n),
+        Cell::Hours(h) => {
+            if h.fract() == 0.0 {
+                (*h as i64).to_string()
+            } else {
+                h.to_string()
+            }
+        }
+    }
+}
+
 /// SheetData 를 .xlsx 로 기록 → 기록 파일 바이트 수 반환.
-/// 헤더 굵게·좌측 / 금전 우측+천단위 / 그 외 좌측. autofit 으로 컬럼 너비 자동.
+/// 헤더 굵게·중앙 / 금전 우측+천단위 / 그 외 좌측. 컬럼 너비는 CJK 폭 반영 수동 계산.
 fn write_xlsx(sheet: &SheetData, file_path: &str) -> Result<i64, AppError> {
     let mut workbook = Workbook::new();
     let ws = workbook.add_worksheet();
 
-    let header_fmt = Format::new().set_bold().set_align(FormatAlign::Left);
+    let header_fmt = Format::new().set_bold().set_align(FormatAlign::Center);
     let left_fmt = Format::new().set_align(FormatAlign::Left);
     let money_fmt = Format::new()
         .set_num_format("#,##0")
@@ -142,10 +190,20 @@ fn write_xlsx(sheet: &SheetData, file_path: &str) -> Result<i64, AppError> {
         }
     }
 
-    // 컬럼 너비 자동 맞춤 — 가장 긴 데이터가 다 보이도록.
-    ws.autofit();
-    workbook.save(file_path).map_err(xlsx_err)?;
+    // 컬럼 너비 — autofit 은 CJK(한글) 폭을 1로 계산해 좁게 잘리므로, 헤더+데이터 중
+    // 최대 표시폭(CJK=2)에 패딩을 더해 직접 설정 (가장 긴 데이터가 다 보이도록).
+    for (c, header) in sheet.headers.iter().enumerate() {
+        let mut max_w = display_width(header);
+        for row in &sheet.rows {
+            if let Some(cell) = row.get(c) {
+                max_w = max_w.max(display_width(&cell_display(cell)));
+            }
+        }
+        let width = (max_w as f64 + 2.0).clamp(6.0, 60.0);
+        ws.set_column_width(c as u16, width).map_err(xlsx_err)?;
+    }
 
+    workbook.save(file_path).map_err(xlsx_err)?;
     let size = std::fs::metadata(file_path)?.len() as i64;
     Ok(size)
 }
@@ -497,6 +555,22 @@ mod tests {
         assert_eq!(row[5], Cell::Money(230_000)); // 최종액
         assert_eq!(row[6], Cell::Text("수납완료".into()));
         assert_eq!(row[8], Cell::Text("카드(신한카드)".into())); // 결제수단
+    }
+
+    // ── 너비 계산 헬퍼 ──
+    #[test]
+    fn money_str_groups_thousands() {
+        assert_eq!(money_str(0), "0");
+        assert_eq!(money_str(250_000), "250,000");
+        assert_eq!(money_str(1_234_567), "1,234,567");
+        assert_eq!(money_str(-20_000), "-20,000");
+    }
+
+    #[test]
+    fn display_width_counts_cjk_as_two() {
+        assert_eq!(display_width("abc"), 3);
+        assert_eq!(display_width("홍길동"), 6); // 한글 3자 × 2
+        assert_eq!(display_width("주수업시간(시간)"), 16); // 한글 7 ×2 + 괄호 2
     }
 
     // ── .xlsx 기록 ──

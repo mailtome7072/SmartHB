@@ -1537,11 +1537,19 @@ export async function checkAutoDiagnosisNeeded(): Promise<boolean> {
 // ============================================================================
 // 백엔드: src-tauri/src/commands/export.rs (엑셀 .xlsx — 정렬/천단위/너비 서식).
 
-/** 엑셀(.xlsx) 저장 다이얼로그 — 사용자가 선택한 경로 반환(취소 시 null). */
-export async function showXlsxSaveDialog(defaultPath: string): Promise<string | null> {
+/** 엑셀(.xlsx) 저장 다이얼로그 — 시스템 다운로드 폴더를 기본 위치로 제시. 취소 시 null. */
+export async function showXlsxSaveDialog(defaultName: string): Promise<string | null> {
   if (typeof window === 'undefined') return null
   try {
     const { save } = await import('@tauri-apps/plugin-dialog')
+    // 기본 폴더 = 시스템 다운로드 폴더(권한/플랫폼 미지원 시 파일명만 → 다이얼로그 기본 폴더).
+    let defaultPath = defaultName
+    try {
+      const { downloadDir, join } = await import('@tauri-apps/api/path')
+      defaultPath = await join(await downloadDir(), defaultName)
+    } catch {
+      /* path API 불가 — 파일명만 사용 */
+    }
     const selected = await save({
       defaultPath,
       filters: [{ name: '엑셀 파일', extensions: ['xlsx'] }],
