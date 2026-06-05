@@ -1,14 +1,14 @@
 ---
 name: sprint-next-session
-description: "Sprint 14 진행 중 — T0~T4 + 검증보강 완료·커밋·push, 다음 진입점 T5(내보내기 백엔드). 다음은 집(Mac)에서 이어감. 새 환경 릴레이 시 가장 먼저 확인"
+description: "Sprint 14 진행 중 — T0~T5 완료·커밋·push, 다음 진입점 T6(내보내기 프론트). 새 환경 릴레이 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
   originSessionId: sprint14-relay-prep-2026-06-04b
 ---
 
-**현재 위치(2026-06-04)**: **Sprint 14** 진행 중. 브랜치 **`sprint14`**(develop 기반, **origin push 완료**). **T0~T4 + 사용자 검증 보강 완료**. 다음 진입점 = **T5(데이터 내보내기 백엔드)**.
-> 이 세션은 회사(Win). 다음은 **집(Mac)** 에서 이어감. Sprint 12·13 완료·머지. Phase 5 취소 ([[exam-feature-cancelled]]).
+**현재 위치(2026-06-05)**: **Sprint 14** 진행 중. 브랜치 **`sprint14`**(develop 기반, **origin push 완료**). **T0~T5 완료**. 다음 진입점 = **T6(데이터 내보내기 프론트엔드)**.
+> Sprint 12·13 완료·머지. Phase 5 취소 ([[exam-feature-cancelled]]).
 
 ## 집(Mac) 릴레이 시작 절차
 1. `git fetch origin && git checkout sprint14 && git pull`
@@ -25,11 +25,12 @@ metadata:
 - ✅ **T4 대시보드 UI** — `app/page.tsx` 대시보드 교체 + `components/dashboard/`(DashboardView + charts.tsx) + 위젯6 + 메모 최상단 + **recharts ssr:false 동적 import**(R96)
 - **검증 중 수정/추가**: 종료 확인 다이얼로그(sidebar) / 출결진행률 **공휴일·휴원일 제외**(attendance::load_off_dates 미러) / **월별 청구총액 추이 위젯**(get_billing_trend, 마지막 청구월 기준 12개월·빈달0) / 우측열 고정높이(당일수업+추이 = 교습소현황, grid stretch+flex-1) / **check1 보강필요시간 음수 오탐 수정**(보강대상=absent+makeup_done, 소멸 makeup_expired 면제 제외, − makeup_attended)
 - DB: 오탐 이력(diagnosis_history id=1, 수정 전 auto) 일회성 삭제 완료.
-- 상태: **cargo test --lib 348 passed / clippy clean / build export 3/3**.
+
+## 완료 (세션 #3, 2026-06-05 회사 Win)
+- ✅ **T5 내보내기 백엔드** — `commands/export.rs` 신규. IPC 3종(export_students/attendances/billing) + CSV유틸(csv_field/csv_row/with_bom/write_csv) + 라벨변환4 + 테스트9. **UTF-8 BOM**(Excel 한글). **출결=정규+보강 UNION(구분 컬럼)**, **청구=청구상태 컬럼 추가**, `year_month: Option`(None=전체). 교습비 standard_fees LEFT JOIN(V201 보정값 주4h=200000). simplify 4-agent 검토→변경없음(제네릭래퍼·enum Display는 스코프밖/이득미미 skip). **cargo test --lib 356 passed / clippy clean**. 커밋 `a60ca26` push 완료.
 
 ## 남은 작업 (SSOT: `docs/sprint/sprint14.md` + `docs/sprint/sprint14/scope.md`)
-- ⬜ **T5 내보내기 백엔드** (3h) ← **다음 진입점** — `commands/export.rs` CSV IPC 3종(원생/출결/청구-수납), **UTF-8 BOM**(Excel 한글), 기간 단월/전체, 저장경로는 프론트 Tauri Dialog 취득, 테스트6. (Excel/.xlsx·비번보호는 Sprint 15 이연)
-- ⬜ **T6 내보내기 프론트** (3h) — `types/export.ts` + 래퍼3 + 설정>데이터관리 섹션 + Tauri save Dialog(기존 plugin-dialog 재사용)
+- ⬜ **T6 내보내기 프론트** (3h) ← **다음 진입점** — `types/export.ts` + 래퍼3 + 설정>데이터관리 섹션 + Tauri save Dialog(기존 plugin-dialog 재사용). 기본 파일명 `{대상}_{기간}.csv`. IPC: export_students(file_path) / export_attendances(year_month?, file_path) / export_billing(year_month?, file_path) → ExportResult{file_path,row_count,byte_size}
 - ⬜ **T7 복원 리허설** (4h) — `backup.rs` 확장(run_backup_rehearsal: 임시복사→PRAGMA integrity_check→행수→삭제) + 설정 백업관리 UI. cipher off 개발빌드는 평문백업만 리허설(R98)
 - ⬜ **T8 통합 검증** (3h) — test / clippy / **cargo check --features cipher** / lint / tsc / build / `.sqlx`(런타임 query패턴이라 갱신 불필요하나 cipher 빌드 점검) / CLAUDE.md V303 현황 갱신(A92)
 
