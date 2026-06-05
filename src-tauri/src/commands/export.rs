@@ -46,6 +46,8 @@ pub struct ExportResult {
 enum Cell {
     /// 좌측정렬 텍스트.
     Text(String),
+    /// 좌측정렬 정수 숫자 (일련번호/학년 — 숫자 형식 저장, 천단위 없음).
+    Int(i64),
     /// 금전 — 우측정렬 + 천단위 콤마(`#,##0`).
     Money(i64),
     /// 수업시간 — 좌측정렬 숫자, 단위 '시간'(헤더에 명시).
@@ -132,6 +134,7 @@ fn write_xlsx(sheet: &SheetData, file_path: &str) -> Result<i64, AppError> {
             let col = c as u16;
             match cell {
                 Cell::Text(s) => ws.write_with_format(row_idx, col, s.as_str(), &left_fmt),
+                Cell::Int(n) => ws.write_with_format(row_idx, col, *n as f64, &left_fmt),
                 Cell::Money(n) => ws.write_with_format(row_idx, col, *n as f64, &money_fmt),
                 Cell::Hours(h) => ws.write_with_format(row_idx, col, *h, &left_fmt),
             }
@@ -198,12 +201,17 @@ async fn build_students_sheet(pool: &SqlitePool) -> Result<SheetData, AppError> 
         let weekly_hours: i64 = r.try_get("weekly_hours")?;
         let fee_amount: Option<i64> = r.try_get("fee_amount")?;
 
+        // 일련번호: 숫자 형식 저장(숫자 파싱 실패 시 텍스트 폴백). 학년: 숫자 형식.
+        let serial_cell = match serial_no.parse::<i64>() {
+            Ok(n) => Cell::Int(n),
+            Err(_) => Cell::Text(serial_no),
+        };
         rows.push(vec![
-            Cell::Text(serial_no),
+            serial_cell,
             Cell::Text(name),
             Cell::Text(gender_label(&gender).to_string()),
             Cell::Text(school_level_label(&school_level).to_string()),
-            Cell::Text(grade.to_string()),
+            Cell::Int(grade),
             Cell::Text(school_name.unwrap_or_default()),
             Cell::Text(enroll_date),
             Cell::Text(withdraw_date.unwrap_or_default()),
@@ -413,10 +421,12 @@ mod tests {
 
         let sheet = build_students_sheet(&pool).await.unwrap();
         assert_eq!(sheet.rows.len(), 3);
-        // 정렬: 1 → 2 → 10
-        assert_eq!(sheet.rows[0][0], Cell::Text("1".into()));
-        assert_eq!(sheet.rows[1][0], Cell::Text("2".into()));
-        assert_eq!(sheet.rows[2][0], Cell::Text("10".into()));
+        // 정렬: 1 → 2 → 10 (일련번호는 숫자 형식).
+        assert_eq!(sheet.rows[0][0], Cell::Int(1));
+        assert_eq!(sheet.rows[1][0], Cell::Int(2));
+        assert_eq!(sheet.rows[2][0], Cell::Int(10));
+        // 학년도 숫자 형식.
+        assert_eq!(sheet.rows[0][4], Cell::Int(1));
         // 박일(serial 1): 주수업시간 Hours(4), 교습비 Money(200000).
         assert_eq!(sheet.rows[0][8], Cell::Hours(4.0));
         assert_eq!(sheet.rows[0][9], Cell::Money(200_000));
