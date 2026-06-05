@@ -42,6 +42,7 @@ import type {
   AttendanceProgress,
   BillingTrendPoint,
   DashboardAlert,
+  MemoNote,
   MonthlySummary,
   TodaySchedule,
 } from '@/types/dashboard'
@@ -1639,16 +1640,20 @@ export async function getBillingTrend(): Promise<BillingTrendPoint[]> {
   return inv('get_billing_trend') as Promise<BillingTrendPoint[]>
 }
 
-/** 4.11.6 메모 조회 (없으면 null). */
-export async function getDashboardMemo(): Promise<string | null> {
+/** 4.11.6 메모 포스트잇 3장 조회 (내용 + 높이). */
+export async function getDashboardMemos(): Promise<MemoNote[]> {
   const inv = await getInvoke()
-  if (!inv) return null
-  return inv('get_dashboard_memo') as Promise<string | null>
+  if (!inv) return [] // dev fallback — 컴포넌트가 기본 3장으로 보정
+  return inv('get_dashboard_memos') as Promise<MemoNote[]>
 }
 
-/** 4.11.6 메모 저장 (디바운스 자동 저장). */
-export async function saveDashboardMemo(content: string): Promise<void> {
+/** 4.11.6 메모 1장 저장 (내용 + 높이, 디바운스 자동 저장). */
+export async function saveDashboardMemo(
+  index: number,
+  content: string,
+  height: number,
+): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
-  await inv('save_dashboard_memo', { content })
+  await inv('save_dashboard_memo', { index, content, height })
 }

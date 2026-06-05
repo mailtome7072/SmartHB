@@ -443,12 +443,32 @@ const StudentRow = memo(function StudentRow({
       <td className="sticky left-[202px] z-10 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {student.summary.absentCount}
       </td>
-      <td className="sticky left-[264px] z-10 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
-        {minutesToHoursText(student.summary.makeupNeededMinutes)}
-      </td>
-      <td className="sticky left-[348px] z-10 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
-        {minutesToHoursText(student.summary.makeupCompletedMinutes)}
-      </td>
+      {(() => {
+        const pending = pendingTooltip(student)
+        return (
+          <td
+            title={pending}
+            className={`sticky left-[264px] z-10 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center ${
+              pending !== undefined ? 'cursor-help' : ''
+            }`}
+          >
+            {minutesToHoursText(student.summary.makeupNeededMinutes)}
+          </td>
+        )
+      })()}
+      {(() => {
+        const completed = completedTooltip(student)
+        return (
+          <td
+            title={completed}
+            className={`sticky left-[348px] z-10 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center ${
+              completed !== undefined ? 'cursor-help' : ''
+            }`}
+          >
+            {minutesToHoursText(student.summary.makeupCompletedMinutes)}
+          </td>
+        )
+      })()}
       {days.map((day) => {
         const dayKey = String(day).padStart(2, '0')
         const cell = byDay.get(dayKey)
@@ -643,6 +663,28 @@ function statusCellClass(status: AttendanceStatus): {
     case 'makeup_expired':
       return { cell: 'bg-gray-200 text-gray-600', label: '소멸' }
   }
+}
+
+/** 보강필요 셀 hover 내역 — 이월 누적 결석 목록 (결석/보강 셀 힌트와 동일한 title 방식). */
+function pendingTooltip(student: AttendanceGridStudent): string | undefined {
+  if (student.pendingAbsences.length === 0) return undefined
+  const lines = [`보강필요 ${minutesToHoursText(student.summary.makeupNeededMinutes)}시간`]
+  for (const p of student.pendingAbsences) {
+    const dl = p.makeupDeadline !== null ? `, 소멸 ${p.makeupDeadline}` : ''
+    lines.push(`${p.eventDate} (${minutesToHoursText(p.classMinutes)}시간${dl})`)
+  }
+  return lines.join('\n')
+}
+
+/** 보강완료 셀 hover 내역 — 이번 달 보강 출결 목록. */
+function completedTooltip(student: AttendanceGridStudent): string | undefined {
+  const done = student.makeups.filter((m) => m.status === 'makeup_attended')
+  if (done.length === 0) return undefined
+  const lines = [`보강완료 ${minutesToHoursText(student.summary.makeupCompletedMinutes)}시간`]
+  for (const m of done) {
+    lines.push(`${m.eventDate} (${minutesToHoursText(m.classMinutes)}시간)`)
+  }
+  return lines.join('\n')
 }
 
 function cellTooltip(cell: AttendanceCell, makeupHintDate?: string): string {

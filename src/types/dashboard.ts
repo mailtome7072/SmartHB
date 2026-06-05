@@ -36,6 +36,12 @@ export interface TodaySchedule {
   slots: TodaySlot[]
 }
 
+/** 4.11.6 메모 포스트잇 1장 — 내용 + 사용자가 조정한 높이(px). */
+export interface MemoNote {
+  content: string
+  height: number
+}
+
 /** 4.11.3 월 핵심 요약. */
 export interface MonthlySummary {
   year_month: string

@@ -44,6 +44,13 @@ export interface GridMakeupCell {
   classMinutes: number
 }
 
+/** 보강필요 내역 1건 — "보강필요" 셀 hover 힌트용 (Sprint 14). */
+export interface PendingMakeupDetail {
+  eventDate: string // YYYY-MM-DD
+  classMinutes: number
+  makeupDeadline: string | null // YYYY-MM
+}
+
 /** 그리드 한 원생 행. */
 export interface AttendanceGridStudent {
   studentId: number
@@ -58,6 +65,8 @@ export interface AttendanceGridStudent {
   /** Sprint 9 Session #12 K1' — 만기 미도래 미보강 결석 중 가장 이른 일자.
    *  비수업일 "+" 표시 사전 판단에 사용. 이전 월 결석 포함. null 이면 보강 필요 없음. */
   earliestPendingAbsenceDate: string | null
+  /** Sprint 14 — "보강필요" 셀 hover 내역 (이월 누적, 소멸기한 ≥ 조회월, 퇴교생 제외). */
+  pendingAbsences: PendingMakeupDetail[]
 }
 
 /** 일자별 학사일정 매핑 — Sprint 9 Session #10 I7/I8. */

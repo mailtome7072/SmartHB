@@ -125,7 +125,7 @@ pub fn run() {
             commands::dashboard::get_attendance_progress,
             commands::dashboard::get_billing_trend,
             commands::dashboard::get_dashboard_alerts,
-            commands::dashboard::get_dashboard_memo,
+            commands::dashboard::get_dashboard_memos,
             commands::dashboard::save_dashboard_memo,
             commands::export::export_students,
             commands::export::export_attendances,

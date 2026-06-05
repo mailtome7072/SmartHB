@@ -369,6 +369,16 @@ pub struct GridMakeupCell {
     pub class_minutes: i64,
 }
 
+/// 보강필요 내역 1건 — 그리드 "보강필요" 셀 hover 힌트용 (Sprint 14 버그픽스).
+/// 이월 누적: 조회월 이전 달의 미보강 결석도 포함 (소멸기한 ≥ 조회월).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingMakeupDetail {
+    pub event_date: String,
+    pub class_minutes: i64,
+    pub makeup_deadline: Option<String>,
+}
+
 /// 그리드 한 원생 행.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -389,6 +399,9 @@ pub struct AttendanceGridStudent {
     /// 클라이언트의 비수업일 "+" 표시 사전 판단에 사용. 이전 월 결석도 포함.
     /// `None` 이면 보강 필요한 결석 없음 → "+" 비표시.
     pub earliest_pending_absence_date: Option<String>,
+    /// Sprint 14 — "보강필요" 셀 hover 내역. summary.makeup_needed_minutes 의 구성 결석 목록
+    /// (이월 누적, 소멸기한 ≥ 조회월, 퇴교생 제외). 일자 오름차순.
+    pub pending_absences: Vec<PendingMakeupDetail>,
 }
 
 /// 학사일정 매핑 — 해당 월 일자별 코드 속성.
@@ -640,6 +653,9 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
         .await
         .map_err(|e| format!("만기 미도래 결석 최소 일자 조회 실패: {}", e))?;
 
+        // Sprint 14 — 보강필요 셀 hover 내역 (summary.makeup_needed_minutes 구성 결석).
+        let pending_absences = fetch_pending_absences(pool, student_id, year_month).await?;
+
         students.push(AttendanceGridStudent {
             student_id,
             name,
@@ -651,6 +667,7 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
             makeups,
             summary,
             earliest_pending_absence_date,
+            pending_absences,
         });
     }
 
@@ -888,12 +905,11 @@ async fn compute_summary(
     student_id: i64,
     year_month: &str,
 ) -> Result<AttendanceSummary, String> {
+    // 출석/결석 건수는 조회월 기준 (월 그리드 의미).
     let row = sqlx::query(
         "SELECT \
             SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) AS present_count, \
-            SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END) AS absent_count, \
-            COALESCE(SUM(CASE WHEN status='absent' AND makeup_attendance_id IS NULL \
-                              THEN class_minutes ELSE 0 END), 0) AS needed \
+            SUM(CASE WHEN status='absent' THEN 1 ELSE 0 END) AS absent_count \
          FROM regular_attendances \
          WHERE student_id = ? AND year_month = ?",
     )
@@ -905,7 +921,24 @@ async fn compute_summary(
 
     let present_count: i64 = row.try_get::<Option<i64>, _>("present_count").map_err(|e| e.to_string())?.unwrap_or(0);
     let absent_count: i64 = row.try_get::<Option<i64>, _>("absent_count").map_err(|e| e.to_string())?.unwrap_or(0);
-    let needed: i64 = row.try_get("needed").map_err(|e| e.to_string())?;
+
+    // 보강필요시간은 이월 누적 — 조회월 이전 달의 미보강 결석도 포함 (Sprint 14 버그픽스).
+    // 기준: status='absent' AND 미매칭 AND 소멸기한 미도래(deadline NULL 또는 ≥ 조회월) AND 재원생.
+    // earliest_pending_absence_date 의 술어와 정합. 퇴교생은 보강 대상 아님 → 0.
+    let needed: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(ra.class_minutes), 0) \
+         FROM regular_attendances ra \
+         JOIN students s ON s.id = ra.student_id \
+         WHERE ra.student_id = ? \
+           AND ra.status = 'absent' AND ra.makeup_attendance_id IS NULL \
+           AND (ra.makeup_deadline IS NULL OR ra.makeup_deadline >= ?) \
+           AND s.withdraw_date IS NULL",
+    )
+    .bind(student_id)
+    .bind(year_month)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("보강필요시간 조회 실패: {}", e))?;
 
     let completed_row = sqlx::query(
         "SELECT COALESCE(SUM(class_minutes), 0) AS completed \
@@ -927,6 +960,40 @@ async fn compute_summary(
         makeup_needed_minutes: needed,
         makeup_completed_minutes: completed,
     })
+}
+
+/// 보강필요 셀 hover 내역 — compute_summary 의 `needed` 와 동일 술어의 결석 목록.
+/// (이월 누적, 소멸기한 ≥ 조회월, 퇴교생 제외) 일자 오름차순.
+async fn fetch_pending_absences(
+    pool: &SqlitePool,
+    student_id: i64,
+    year_month: &str,
+) -> Result<Vec<PendingMakeupDetail>, String> {
+    let rows = sqlx::query(
+        "SELECT ra.event_date, ra.class_minutes, ra.makeup_deadline \
+         FROM regular_attendances ra \
+         JOIN students s ON s.id = ra.student_id \
+         WHERE ra.student_id = ? \
+           AND ra.status = 'absent' AND ra.makeup_attendance_id IS NULL \
+           AND (ra.makeup_deadline IS NULL OR ra.makeup_deadline >= ?) \
+           AND s.withdraw_date IS NULL \
+         ORDER BY ra.event_date",
+    )
+    .bind(student_id)
+    .bind(year_month)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("보강필요 내역 조회 실패: {}", e))?;
+
+    rows.into_iter()
+        .map(|r| {
+            Ok(PendingMakeupDetail {
+                event_date: r.try_get("event_date").map_err(|e: sqlx::Error| e.to_string())?,
+                class_minutes: r.try_get("class_minutes").map_err(|e: sqlx::Error| e.to_string())?,
+                makeup_deadline: r.try_get("makeup_deadline").map_err(|e: sqlx::Error| e.to_string())?,
+            })
+        })
+        .collect()
 }
 
 /// `YYYY-MM` 다음 달을 `YYYY-MM` 형식으로 반환. 12월 → 다음해 01.
@@ -1618,6 +1685,73 @@ mod tests {
         let s = compute_summary(&pool, sid, "2026-06").await.expect("summary");
         assert_eq!(s.absent_count, 2);
         assert_eq!(s.makeup_needed_minutes, 60, "매칭된 결석은 needed 에서 제외");
+    }
+
+    // ─────── Sprint 14 버그픽스: 이월 누적 + 퇴교 제외 + hover 내역 ───────
+
+    /// 이전 월(5월) 미보강 결석이 다음 달(6월) 보강필요시간에 이월된다 (고길동 0 버그).
+    #[tokio::test]
+    async fn summary_carries_over_previous_month_absence() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-05", "2026-05-01", "2026-05-31", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await; // 월 60분
+        generate_impl(&pool, "2026-05").await.expect("gen may");
+        let aid = first_attendance_id(&pool, sid, "2026-05").await;
+        toggle_impl(&pool, aid, "absent").await.expect("absent"); // 소멸기한 2026-06
+
+        let s = compute_summary(&pool, sid, "2026-06").await.expect("june");
+        assert_eq!(s.makeup_needed_minutes, 60, "5월 미보강 결석이 6월에 이월되어야 함");
+        assert_eq!(s.absent_count, 0, "6월 결석 건수는 월별 유지(0)");
+    }
+
+    /// 퇴교 원생은 보강필요시간 집계에서 제외(0) — 자동 소멸 누락 경로 재현 (홍길동 버그).
+    #[tokio::test]
+    async fn summary_excludes_withdrawn_student_from_needed() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-05", "2026-05-01", "2026-05-31", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-05").await.expect("gen");
+        let aid = first_attendance_id(&pool, sid, "2026-05").await;
+        toggle_impl(&pool, aid, "absent").await.expect("absent");
+        assert_eq!(
+            compute_summary(&pool, sid, "2026-05").await.unwrap().makeup_needed_minutes,
+            60,
+            "재원 중에는 보강필요 60"
+        );
+        // withdraw_date 직접 설정(소멸 전이 누락 경로).
+        sqlx::query("UPDATE students SET withdraw_date='2026-05-20' WHERE id=?")
+            .bind(sid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            compute_summary(&pool, sid, "2026-05").await.unwrap().makeup_needed_minutes,
+            0,
+            "퇴교생은 보강필요 집계 제외"
+        );
+    }
+
+    /// 보강필요 셀 hover 내역(pending_absences)이 이월 결석을 포함한다.
+    #[tokio::test]
+    async fn grid_pending_absences_lists_carryover() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-05", "2026-05-01", "2026-05-31", 1).await;
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-05").await.expect("gen may");
+        generate_impl(&pool, "2026-06").await.expect("gen jun");
+        let aid = first_attendance_id(&pool, sid, "2026-05").await;
+        toggle_impl(&pool, aid, "absent").await.expect("absent");
+
+        let grid = get_grid_impl(&pool, "2026-06").await.expect("grid");
+        let stu = grid
+            .students
+            .iter()
+            .find(|s| s.student_id == sid)
+            .expect("학생이 6월 그리드에 존재");
+        assert_eq!(stu.summary.makeup_needed_minutes, 60);
+        assert_eq!(stu.pending_absences.len(), 1, "이월 결석 1건이 hover 내역에 포함");
+        assert_eq!(stu.pending_absences[0].makeup_deadline.as_deref(), Some("2026-06"));
     }
 
     // ─────── T5: 보강필요시간 + 소멸기한 규칙 전수 ───────

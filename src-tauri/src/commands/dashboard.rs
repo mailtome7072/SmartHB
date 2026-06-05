@@ -22,7 +22,12 @@ use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 
+/// 레거시 단일 메모 키 (3장 메모 도입 전). 슬롯 0 의 fallback 으로만 읽는다.
 const KEY_DASHBOARD_MEMO: &str = "dashboard_memo";
+/// 대시보드 메모 장수 (포스트잇 3장).
+const MEMO_COUNT: usize = 3;
+/// 메모 포스트잇 기본 높이(px) — 미저장 시.
+const MEMO_DEFAULT_HEIGHT: i64 = 140;
 
 /// 라벨 + 개수 — 성별/학년/학교 분포 공통 표현.
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -559,9 +564,12 @@ async fn dashboard_alerts(
     }
 
     // 2) 보강 소멸 임박 (makeup_deadline 이 당월인 결석) — 주황.
+    //    퇴교 원생은 보강 대상이 아니므로 제외 (withdraw_date IS NULL).
     let expiring: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM regular_attendances \
-         WHERE status = 'absent' AND makeup_deadline = ?",
+        "SELECT COUNT(*) FROM regular_attendances ra \
+         JOIN students s ON s.id = ra.student_id \
+         WHERE ra.status = 'absent' AND ra.makeup_deadline = ? \
+           AND s.withdraw_date IS NULL",
     )
     .bind(&ym)
     .fetch_one(pool)
@@ -638,29 +646,82 @@ async fn dashboard_alerts(
 }
 
 // ----------------------------------------------------------------------------
-// 4.11.6 메모
+// 4.11.6 메모 (포스트잇 3장 — 각 내용 + 높이를 app_settings 에 보관)
 // ----------------------------------------------------------------------------
 
-async fn get_memo(pool: &SqlitePool) -> Result<Option<String>, AppError> {
+/// 메모 포스트잇 1장 — 내용 + 사용자가 조정한 높이(px).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct MemoNote {
+    pub content: String,
+    pub height: i64,
+}
+
+/// 슬롯 i 의 내용 키 (`dashboard_memo_0` …).
+fn memo_content_key(index: usize) -> String {
+    format!("dashboard_memo_{}", index)
+}
+
+/// 슬롯 i 의 높이 키 (`dashboard_memo_0_h` …).
+fn memo_height_key(index: usize) -> String {
+    format!("dashboard_memo_{}_h", index)
+}
+
+/// app_settings 단일 값 조회 (없으면 None).
+async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, AppError> {
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
-        .bind(KEY_DASHBOARD_MEMO)
+        .bind(key)
         .fetch_optional(pool)
         .await
         .map_err(AppError::Db)?;
     Ok(row.map(|r| r.get::<String, _>("value")))
 }
 
-async fn save_memo(pool: &SqlitePool, content: &str) -> Result<(), AppError> {
+/// app_settings 단일 값 upsert.
+async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO app_settings (key, value) VALUES (?, ?) \
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
     )
-    .bind(KEY_DASHBOARD_MEMO)
-    .bind(content)
+    .bind(key)
+    .bind(value)
     .execute(pool)
     .await
     .map_err(AppError::Db)?;
+    Ok(())
+}
+
+/// 메모 3장 조회. 슬롯 0 은 미저장 시 레거시 단일 메모(`dashboard_memo`)를 흡수한다.
+async fn get_memos(pool: &SqlitePool) -> Result<Vec<MemoNote>, AppError> {
+    let mut notes = Vec::with_capacity(MEMO_COUNT);
+    for i in 0..MEMO_COUNT {
+        let mut content = get_setting(pool, &memo_content_key(i)).await?;
+        if content.is_none() && i == 0 {
+            // 레거시 단일 메모 마이그레이션(읽기 시점 흡수) — 첫 저장 시 슬롯 0 키로 영속화된다.
+            content = get_setting(pool, KEY_DASHBOARD_MEMO).await?;
+        }
+        let height = get_setting(pool, &memo_height_key(i))
+            .await?
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(MEMO_DEFAULT_HEIGHT);
+        notes.push(MemoNote { content: content.unwrap_or_default(), height });
+    }
+    Ok(notes)
+}
+
+/// 메모 1장 저장 (내용 + 높이). index 범위 밖이면 오류, 높이는 합리적 범위로 clamp.
+async fn save_memo_slot(
+    pool: &SqlitePool,
+    index: usize,
+    content: &str,
+    height: i64,
+) -> Result<(), AppError> {
+    if index >= MEMO_COUNT {
+        return Err(AppError::UserFacing("잘못된 메모 위치입니다.".to_string()));
+    }
+    let height = height.clamp(60, 2000);
+    set_setting(pool, &memo_content_key(index), content).await?;
+    set_setting(pool, &memo_height_key(index), &height.to_string()).await?;
     Ok(())
 }
 
@@ -708,15 +769,17 @@ pub async fn get_dashboard_alerts() -> Result<Vec<DashboardAlert>, String> {
 }
 
 #[tauri::command]
-pub async fn get_dashboard_memo() -> Result<Option<String>, String> {
+pub async fn get_dashboard_memos() -> Result<Vec<MemoNote>, String> {
     let pool = pool().map_err(String::from)?;
-    get_memo(pool).await.map_err(String::from)
+    get_memos(pool).await.map_err(String::from)
 }
 
 #[tauri::command]
-pub async fn save_dashboard_memo(content: String) -> Result<(), String> {
+pub async fn save_dashboard_memo(index: usize, content: String, height: i64) -> Result<(), String> {
     let pool = pool().map_err(String::from)?;
-    save_memo(pool, &content).await.map_err(String::from)
+    save_memo_slot(pool, index, &content, height)
+        .await
+        .map_err(String::from)
 }
 
 #[cfg(all(test, not(feature = "cipher")))]
@@ -933,15 +996,44 @@ mod tests {
         assert!(billing_trend(&pool).await.unwrap().is_empty());
     }
 
-    // ── 메모 ──
+    // ── 메모 (포스트잇 3장) ──
     #[tokio::test]
-    async fn memo_roundtrip() {
+    async fn memos_default_three_empty() {
         let pool = test_pool_in_memory().await.unwrap();
-        assert_eq!(get_memo(&pool).await.unwrap(), None);
-        save_memo(&pool, "오늘 보강 챙기기").await.unwrap();
-        assert_eq!(get_memo(&pool).await.unwrap(), Some("오늘 보강 챙기기".to_string()));
-        // 덮어쓰기
-        save_memo(&pool, "수정됨").await.unwrap();
-        assert_eq!(get_memo(&pool).await.unwrap(), Some("수정됨".to_string()));
+        let notes = get_memos(&pool).await.unwrap();
+        assert_eq!(notes.len(), MEMO_COUNT);
+        for n in &notes {
+            assert_eq!(n.content, "");
+            assert_eq!(n.height, MEMO_DEFAULT_HEIGHT);
+        }
+    }
+
+    #[tokio::test]
+    async fn memo_slot_roundtrip_and_height_clamp() {
+        let pool = test_pool_in_memory().await.unwrap();
+        // 슬롯 1 에 내용 + 높이 저장.
+        save_memo_slot(&pool, 1, "보강 챙기기", 200).await.unwrap();
+        let notes = get_memos(&pool).await.unwrap();
+        assert_eq!(notes[1].content, "보강 챙기기");
+        assert_eq!(notes[1].height, 200);
+        assert_eq!(notes[0].content, ""); // 다른 슬롯 영향 없음
+
+        // 높이 clamp (상한 2000 / 하한 60).
+        save_memo_slot(&pool, 1, "보강 챙기기", 9999).await.unwrap();
+        assert_eq!(get_memos(&pool).await.unwrap()[1].height, 2000);
+
+        // 범위 밖 인덱스는 오류.
+        assert!(save_memo_slot(&pool, MEMO_COUNT, "x", 100).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn memo_slot0_absorbs_legacy_single_memo() {
+        let pool = test_pool_in_memory().await.unwrap();
+        // 레거시 단일 메모만 존재 → 슬롯 0 이 이를 흡수.
+        set_setting(&pool, KEY_DASHBOARD_MEMO, "예전 메모").await.unwrap();
+        assert_eq!(get_memos(&pool).await.unwrap()[0].content, "예전 메모");
+        // 슬롯 0 키로 저장하면 이후 슬롯 0 키가 우선.
+        save_memo_slot(&pool, 0, "새 메모", MEMO_DEFAULT_HEIGHT).await.unwrap();
+        assert_eq!(get_memos(&pool).await.unwrap()[0].content, "새 메모");
     }
 }

@@ -16,12 +16,12 @@ import {
   getAttendanceProgress,
   getBillingTrend,
   getDashboardAlerts,
-  getDashboardMemo,
+  getDashboardMemos,
   getMonthlySummary,
   getTodaySchedule,
   saveDashboardMemo,
 } from '@/lib/tauri'
-import type { DashboardAlert } from '@/types/dashboard'
+import type { DashboardAlert, MemoNote } from '@/types/dashboard'
 
 const OverviewCharts = dynamic(
   () => import('./charts').then((m) => m.OverviewCharts),
@@ -44,6 +44,22 @@ function currentYearMonth(): string {
 function won(n: number): string {
   return `${n.toLocaleString('ko-KR')}원`
 }
+
+/** 수업 시작시간 "16:00:00" → "pm.4시" (분이 있으면 "pm.4시30분"). */
+function formatSlotTime(t: string): string {
+  const [hh, mm] = t.split(':')
+  const h = parseInt(hh, 10)
+  const minute = parseInt(mm ?? '0', 10)
+  if (Number.isNaN(h)) return t
+  const ampm = h < 12 ? 'am' : 'pm'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return minute === 0 ? `${ampm}.${h12}시` : `${ampm}.${h12}시${minute}분`
+}
+
+/** 메모 포스트잇 기본 높이(px) — 백엔드 MEMO_DEFAULT_HEIGHT 와 일치. */
+const MEMO_DEFAULT_HEIGHT = 140
+/** 포스트잇 3장 배경색 (노랑/민트/핑크). */
+const MEMO_COLORS = ['#fff8b8', '#d8f5d0', '#ffd9e6']
 
 export function DashboardView() {
   const ym = currentYearMonth()
@@ -116,9 +132,13 @@ export function DashboardView() {
             ) : (
               <ul className="h-full space-y-3 overflow-y-auto">
                 {today.data.slots.map((slot) => (
-                  <li key={slot.start_time} className="flex gap-3">
-                    <span className="w-16 shrink-0 font-bold text-[var(--accent)]">{slot.start_time}</span>
-                    <span className="text-gray-700">{slot.students.join(', ')} ({slot.students.length}명)</span>
+                  <li key={slot.start_time} className="text-gray-700">
+                    <span className="font-bold text-[var(--accent)]">
+                      {formatSlotTime(slot.start_time)}
+                    </span>{' '}
+                    <span className="text-black">({slot.students.length}명)</span>
+                    {' - '}
+                    {slot.students.join(', ')}
                   </li>
                 ))}
               </ul>
@@ -266,41 +286,83 @@ function ProgressBody({
 
 function MemoWidget() {
   const initial = useQuery({
-    queryKey: ['dashboard', 'memo'],
-    queryFn: getDashboardMemo,
+    queryKey: ['dashboard', 'memos'],
+    queryFn: getDashboardMemos,
     staleTime: STALE,
   })
-  const [text, setText] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 로드 전엔 null. 로드 후 항상 3장으로 보정.
+  const [notes, setNotes] = useState<MemoNote[] | null>(null)
 
-  // 최초 로드 값 반영 (사용자 입력 시작 전).
   useEffect(() => {
-    if (text === null && initial.data !== undefined) {
-      setText(initial.data ?? '')
+    if (notes === null && initial.data !== undefined) {
+      const loaded = initial.data
+      setNotes(
+        Array.from({ length: 3 }, (_, i) => loaded[i] ?? { content: '', height: MEMO_DEFAULT_HEIGHT }),
+      )
     }
-  }, [initial.data, text])
+  }, [initial.data, notes])
+
+  // 박스(타이틀·배경·테두리) 없이 포스트잇만 노출. 한 행에 3장 — 너비 flex 가변,
+  // items-start 로 행 높이 = 가장 큰 포스트잇.
+  if (notes === null) return null
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+      {notes.map((note, i) => (
+        <MemoNoteCard key={i} index={i} note={note} color={MEMO_COLORS[i % MEMO_COLORS.length]} />
+      ))}
+    </div>
+  )
+}
+
+/** 포스트잇 1장 — 내용은 1초 디바운스, 높이(드래그)는 0.6초 디바운스로 각각 자동 저장. */
+function MemoNoteCard({ index, note, color }: { index: number; note: MemoNote; color: string }) {
+  const [content, setContent] = useState(note.content)
+  const [saved, setSaved] = useState(false)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  const contentRef = useRef(note.content)
+  const heightRef = useRef(note.height)
+  const contentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const heightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleChange = (v: string) => {
-    setText(v)
+    setContent(v)
+    contentRef.current = v
     setSaved(false)
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => {
-      void saveDashboardMemo(v).then(() => setSaved(true))
+    if (contentTimer.current) clearTimeout(contentTimer.current)
+    contentTimer.current = setTimeout(() => {
+      void saveDashboardMemo(index, v, heightRef.current).then(() => setSaved(true))
     }, 1000)
   }
 
+  // 높이 드래그 조정 감지 → 디바운스 저장 (reload 시 복원).
+  useEffect(() => {
+    const el = taRef.current
+    if (el === null || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight
+      if (Math.abs(h - heightRef.current) < 3) return // 초기/너비변경 무시
+      heightRef.current = h
+      if (heightTimer.current) clearTimeout(heightTimer.current)
+      heightTimer.current = setTimeout(() => {
+        void saveDashboardMemo(index, contentRef.current, h)
+      }, 600)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [index])
+
   return (
-    <Widget title="메모">
+    <div className="flex flex-1 flex-col">
       <textarea
-        value={text ?? ''}
+        ref={taRef}
+        value={content}
         onChange={(e) => handleChange(e.target.value)}
-        placeholder="자유 메모 — 입력 1초 후 자동 저장됩니다."
-        rows={4}
-        className="w-full resize-y rounded-md border border-[var(--border)] bg-[#fffdf5] p-3 text-base text-[var(--foreground)] focus:border-[var(--accent)] focus:outline-none"
+        placeholder="메모..."
+        style={{ height: `${note.height}px`, backgroundColor: color }}
+        className="min-h-[80px] w-full resize-y rounded-md border border-black/10 p-3 text-base text-[var(--foreground)] shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
       />
       <p className="mt-1 h-4 text-xs text-gray-500">{saved ? '저장됨' : ''}</p>
-    </Widget>
+    </div>
   )
 }
 
