@@ -42,6 +42,11 @@ const CARDS: SettingCard[] = [
     description: '원생·출결·청구 데이터 정합성 7종 점검. 매월 1일 자동 + 수동 실행, 최근 12개월 이력.',
   },
   {
+    href: '/settings/data',
+    title: '데이터 내보내기',
+    description: '원생·출결·청구 데이터를 CSV 파일로 저장. 엑셀에서 바로 열람 가능 (전체/월별).',
+  },
+  {
     href: '/settings/pin',
     title: 'PIN 번호 변경',
     description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',

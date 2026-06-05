@@ -16,17 +16,18 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 | src-tauri/src/commands/backup.rs | [0회] | T7 — 복원 리허설 IPC 확장 |
 | src-tauri/src/commands/mod.rs | [3회] | T1/T3/T5 — pub mod diagnosis/dashboard/export 등록 |
 | src-tauri/src/lib.rs | [3회] | T1/T3/T5 — invoke_handler 4+7+3종 등록 (T7 추가 예정) |
-| src/lib/tauri/index.ts | [2회] | T2/T4 — 자가 진단 4종 + 대시보드 7종 IPC 래퍼 (T6/T7 추가 예정) |
+| src/lib/tauri/index.ts | [3회] | T2/T4/T6 — 자가 진단 4종 + 대시보드 7종 + 내보내기 3종 IPC 래퍼 + showCsvSaveDialog (T7 추가 예정) |
 | src/types/diagnosis.ts | [신규] ✅ | T2 — DiagnosisIssue/Result/HistoryRow |
 | src/app/settings/diagnosis/page.tsx | [신규] ✅ | T2 — 자가 진단 화면(신규 라우트). **계획의 'page.tsx 인라인 섹션' 대신 전용 라우트로 구현** — hours/codes/pin 등 기존 설정 라우트 패턴과 일관. 실행 버튼 + 12개월 이력 + 결과 상세 + 이동 링크 |
-| src/app/settings/page.tsx | [1회] ✅ | T2 — '데이터 자가 진단' 카드 추가 (T6/T7 데이터관리/백업 카드 추가 예정) |
+| src/app/settings/page.tsx | [2회] ✅ | T2 '데이터 자가 진단' + T6 '데이터 내보내기' 카드 추가 (T7 백업 카드 추가 예정) |
 | src/components/layout/app-shell.tsx | [1회] ✅ | T2 — 자동 진단 트리거(세션 1회, unlock 후 백그라운드, AC-6.6-1/R97) |
 | src/types/dashboard.ts | [신규] ✅ | T4 — Overview/TodaySchedule/MonthlySummary/Alert/Progress |
 | src/app/page.tsx | [1회] ✅ | T4 — unlock 시 placeholder → `<DashboardView/>` 교체 (인증 게이트 로직 유지) |
 | src/components/dashboard/ | [신규] ✅ | T4 — DashboardView(위젯 6 + 알림 5 + 메모) + charts.tsx(recharts, ssr:false 동적 import) |
 | src/lib/menu-config.ts | [1회] ✅ | T4 — 대시보드 disabledHint 제거(F3 해소) |
 | package.json | [신규] ✅ | T4 — recharts **3.8.1 설치** (계획 ^2.x → 최신 3.x. v3 API 사용, dynamic import ssr:false R96) |
-| src/types/export.ts | [신규] | T6 |
+| src/types/export.ts | [신규] ✅ | T6 — ExportResult/ExportTarget |
+| src/app/settings/data/page.tsx | [신규] ✅ | T6 — 데이터 내보내기 화면(신규 라우트, diagnosis와 동일 패턴). 대상 3종 선택 + 기간(전체/특정월, 출결·청구만) + showCsvSaveDialog + 결과 배너 |
 | src/components/layout/sidebar.tsx | [1회] | scope 외 추가 (2026-06-04, 사용자 요청) — "종료" 클릭 시 프로그램 종료 확인 다이얼로그 추가 (PRD §5.7, 기존 AlertDialog 재사용, 의존성·DB 변경 없음) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
@@ -57,8 +58,10 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 - **세션 #2 (2026-06-04) 이어서**: T4(대시보드 위젯 UI) 완료. dashboard.ts + 래퍼 7종 + `/` 대시보드 교체 + 위젯 6 + 알림 5 + 메모. shadcn 내장 차트 부재 확인 → recharts 3.8.1 설치(ssr:false 동적 import). F3 해소. `lint`/`tsc`/`build`(export 3/3, index.html) 통과.
 - **세션 #3 (2026-06-05)**: T5(데이터 내보내기 백엔드) 완료. `export.rs` 신규 — IPC 3종 + CSV 유틸(csv_field/csv_row/with_bom/write_csv) + 라벨변환 4종 + 단위테스트 9건(계획 6 + escape/BOM/필터 보강). `cargo test --lib` 356 passed / clippy clean. simplify 4-agent 검토 결과 변경 없음(제네릭 래퍼·enum Display 승격은 스코프 밖/이득 미미로 skip).
   - `.sqlx` 캐시: 런타임 `query()` 패턴이라 갱신 불필요. T8 cipher 빌드 점검 시 일괄 확인.
-- **다음 진입점 = T6 (데이터 내보내기 프론트엔드)**: `types/export.ts` + IPC 래퍼 3종 + 설정>데이터관리 섹션 + Tauri save Dialog(`@tauri-apps/plugin-dialog` 재사용). 기본 파일명 `{대상}_{기간}.csv`.
-  - **사용자 검증 대기**: T2 자가 진단(A/B/C/D) + T4 대시보드(위젯 6 렌더링/차트/알림 클릭 이동/출결 진행률 금요일 강조/메모 자동저장). 모두 `/restart` 후 실앱 시각 검증.
+- **세션 #3 (2026-06-05) 이어서**: T6(데이터 내보내기 프론트) 완료. `types/export.ts` + IPC 래퍼 3종 + `showCsvSaveDialog` + `/settings/data` 신규 라우트(diagnosis 패턴) + 설정 카드. `pnpm lint`/`tsc`/`build`(export 성공, `/settings/data` 1.97kB 생성) 통과.
+  - **사용자 검증 완료(2026-06-05)**: T2 자가 진단(A/B/C/D) + T4 대시보드(위젯 6/차트/알림 이동/출결 진행률/메모 자동저장) 실앱 시각 검증 통과.
+- **다음 진입점 = T7 (복원 리허설)**: `backup.rs` 확장(run_backup_rehearsal: 임시복사→PRAGMA integrity_check→행수→삭제 + list_backup_files) + 설정>백업관리 UI. cipher off 개발빌드는 평문백업만 리허설(R98).
+  - **T6 사용자 검증 대기**: `/settings/data`에서 원생/출결/청구 CSV 저장 → 엑셀 열기 한글 정상 + 기간(전체/월) 동작. `pnpm tauri:dev`로 실제 save 다이얼로그 확인 필요.
 
 ## 발견된 이슈
 - **T2 검증 중 자가진단 check 1(보강필요시간 음수) 오탐 수정** (2026-06-04, 사용자 보고 — 성춘향 케이스): 정상 매칭된 결석↔보강 쌍이 음수로 오탐. 원인은 결석 합산이 `status='absent'`만 세고 `makeup_done`을 누락 → 보강완료분만 차감돼 음수. 앱 SSOT(`attendance.rs` 보강필요시간 정의)에 맞춰 결석 대상을 **`absent`+`makeup_done`(소멸 `makeup_expired`은 면제로 제외)**로 변경. 회귀 테스트 2건 추가(성춘향 매칭 쌍 / 소멸 제외). 사용자 DB의 오탐 이력 1건(id=1 auto, 수정 전 생성)은 일회성 수동 삭제. **자가 진단 이력 수동 삭제 기능(B안)은 Sprint 15로 이연**(ROADMAP 기록) — 자동 삭제는 감사로그 훼손 우려로 미도입 결정.

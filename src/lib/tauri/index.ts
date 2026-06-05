@@ -36,6 +36,7 @@ import type {
   DiagnosisHistoryRow,
   DiagnosisResult,
 } from '@/types/diagnosis'
+import type { ExportResult } from '@/types/export'
 import type {
   AcademyOverview,
   AttendanceProgress,
@@ -1528,6 +1529,53 @@ export async function checkAutoDiagnosisNeeded(): Promise<boolean> {
   const inv = await getInvoke()
   if (!inv) return false
   return inv('check_auto_diagnosis_needed') as Promise<boolean>
+}
+
+// ============================================================================
+// Sprint 14 — 데이터 내보내기 (T5/T6, PRD §4.13.2)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/export.rs (CSV + UTF-8 BOM).
+
+/** CSV 저장 다이얼로그 — 사용자가 선택한 경로 반환(취소 시 null). */
+export async function showCsvSaveDialog(defaultPath: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const selected = await save({ defaultPath, filters: [{ name: 'CSV 파일', extensions: ['csv'] }] })
+    return selected ?? null
+  } catch {
+    return null
+  }
+}
+
+/** dev 모드(브라우저) fallback 결과 — 실제 저장 없이 0건. */
+const EXPORT_DEV_FALLBACK: ExportResult = { file_path: '', row_count: 0, byte_size: 0 }
+
+/** 원생 명단을 CSV 로 내보낸다. */
+export async function exportStudents(filePath: string): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_students', { filePath }) as Promise<ExportResult>
+}
+
+/** 출결 데이터를 CSV 로 내보낸다. `yearMonth` 가 null 이면 전체 기간. */
+export async function exportAttendances(
+  yearMonth: string | null,
+  filePath: string,
+): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_attendances', { yearMonth, filePath }) as Promise<ExportResult>
+}
+
+/** 청구-수납 데이터를 CSV 로 내보낸다. `yearMonth` 가 null 이면 전체 기간. */
+export async function exportBilling(
+  yearMonth: string | null,
+  filePath: string,
+): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_billing', { yearMonth, filePath }) as Promise<ExportResult>
 }
 
 // ============================================================================
