@@ -10,6 +10,7 @@ pub mod dashboard;
 pub mod db;
 pub mod diagnosis;
 pub mod expiration;
+pub mod export;
 pub mod fees;
 pub mod integrity;
 pub mod lock;
