@@ -7,15 +7,15 @@
  * - 기간 선택: 전체 / 특정 월 (원생 명단은 기간 무관 — 전체)
  * - "내보내기" → Tauri save 다이얼로그로 저장 경로 지정 → IPC 호출 → 결과 표시 (AC-4.13-3)
  *
- * CSV 는 UTF-8 BOM 으로 저장되어 Excel 에서 한글이 깨지지 않는다 (R99).
- * Excel(.xlsx) + 비밀번호 보호는 Sprint 15 로 이연.
+ * 엑셀(.xlsx) 로 저장 — 금전 천단위 콤마·우측정렬, 컬럼 너비 자동, 수업시간 '시간' 통일.
+ * 비밀번호 보호 옵션은 Sprint 15 로 이연.
  */
 
 import Link from 'next/link'
 import { useState } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
-import { exportAttendances, exportBilling, exportStudents, showCsvSaveDialog } from '@/lib/tauri'
+import { exportAttendances, exportBilling, exportStudents, showXlsxSaveDialog } from '@/lib/tauri'
 import type { ExportResult, ExportTarget } from '@/types/export'
 
 interface TargetMeta {
@@ -45,10 +45,10 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-/** 기본 파일명 — `{대상}_{기간}.csv` (예: 원생명단_전체.csv, 출결_2026-06.csv). */
+/** 기본 파일명 — `{대상}_{기간}.xlsx` (예: 원생명단_전체.xlsx, 출결_2026-06.xlsx). */
 function buildFileName(target: ExportTarget, period: string | null): string {
   const suffix = period ?? '전체'
-  return `${FILE_BASE[target]}_${suffix}.csv`
+  return `${FILE_BASE[target]}_${suffix}.xlsx`
 }
 
 export default function DataExportPage() {
@@ -68,7 +68,7 @@ export default function DataExportPage() {
     setError(null)
     setResult(null)
 
-    const path = await showCsvSaveDialog(buildFileName(target, period))
+    const path = await showXlsxSaveDialog(buildFileName(target, period))
     if (path === null) return // 사용자가 취소
 
     setRunning(true)
@@ -100,7 +100,7 @@ export default function DataExportPage() {
 
         <h1 className="text-2xl font-bold">데이터 내보내기</h1>
         <p className="mt-1 mb-6 text-base text-gray-600">
-          원생·출결·청구 데이터를 CSV 파일로 저장합니다. 엑셀에서 바로 열 수 있습니다.
+          원생·출결·청구 데이터를 엑셀(.xlsx) 파일로 저장합니다. 금액은 천단위로 표시되고 열 너비가 자동 맞춤됩니다.
         </p>
 
         {/* 대상 선택 */}
@@ -172,7 +172,7 @@ export default function DataExportPage() {
           disabled={running}
           className="h-12 rounded-md bg-[var(--accent)] px-6 text-base font-bold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
         >
-          {running ? '내보내는 중...' : 'CSV로 내보내기'}
+          {running ? '내보내는 중...' : '엑셀로 내보내기'}
         </button>
 
         {error !== null && (

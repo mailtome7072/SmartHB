@@ -44,7 +44,7 @@ const CARDS: SettingCard[] = [
   {
     href: '/settings/data',
     title: '데이터 내보내기',
-    description: '원생·출결·청구 데이터를 CSV 파일로 저장. 엑셀에서 바로 열람 가능 (전체/월별).',
+    description: '원생·출결·청구 데이터를 엑셀(.xlsx) 파일로 저장. 천단위·정렬·열너비 서식 적용 (전체/월별).',
   },
   {
     href: '/settings/pin',

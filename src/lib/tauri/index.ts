@@ -1535,14 +1535,17 @@ export async function checkAutoDiagnosisNeeded(): Promise<boolean> {
 // ============================================================================
 // Sprint 14 — 데이터 내보내기 (T5/T6, PRD §4.13.2)
 // ============================================================================
-// 백엔드: src-tauri/src/commands/export.rs (CSV + UTF-8 BOM).
+// 백엔드: src-tauri/src/commands/export.rs (엑셀 .xlsx — 정렬/천단위/너비 서식).
 
-/** CSV 저장 다이얼로그 — 사용자가 선택한 경로 반환(취소 시 null). */
-export async function showCsvSaveDialog(defaultPath: string): Promise<string | null> {
+/** 엑셀(.xlsx) 저장 다이얼로그 — 사용자가 선택한 경로 반환(취소 시 null). */
+export async function showXlsxSaveDialog(defaultPath: string): Promise<string | null> {
   if (typeof window === 'undefined') return null
   try {
     const { save } = await import('@tauri-apps/plugin-dialog')
-    const selected = await save({ defaultPath, filters: [{ name: 'CSV 파일', extensions: ['csv'] }] })
+    const selected = await save({
+      defaultPath,
+      filters: [{ name: '엑셀 파일', extensions: ['xlsx'] }],
+    })
     return selected ?? null
   } catch {
     return null

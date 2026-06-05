@@ -37,9 +37,11 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 
 ## 신규 의존성 (사전 승인 완료)
 - recharts ^2.x (대시보드 차트, 사용자 승인 2026-06-02). dynamic import 로 대시보드 라우트 한정 로드(R96).
+- **rust_xlsxwriter 0.95** (내보내기 .xlsx, 사용자 승인 2026-06-05). 순수 Rust(Perl/OpenSSL 불필요 — Win/Mac 안전). CSV→엑셀 전환으로 정렬·천단위콤마·우측정렬·컬럼너비 서식 지원. Sprint 15 예정분(Excel)을 14로 당김(비번보호만 15 잔류).
 
 ## 신규 마이그레이션
 - V303 diagnosis_history (300번대 도메인 확장 블록 연속). 추가 후 .sqlx 캐시 갱신 + CLAUDE.md 현황 갱신(A92).
+- V304 expire_withdrawn_pending_makeup (퇴교생 미보강 결석 백필, 2026-06-05 버그픽스).
 
 ## 완료 기준 (sprint14.md DoD 요약)
 - [x] T0 carry-over (A91/A93) — startup cipher-off 주석 + ADR-008 정정 + /lock 단일 로딩. (R93=CLAUDE.md V302 sprint-review 기반영, R94=T8, F3=T4)
@@ -71,4 +73,5 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 - **마이그레이션 파일명**: 문서의 "V303"은 약칭, 실제 파일은 `303__`(기존 301/302 무접두 컨벤션 일치).
 - **보강 정합성 버그픽스 2건 + 호버 힌트** (2026-06-05, T6 검증 중 사용자 보고 — 실DB 데이터로 근본원인 확정): **버그A 홍길동(퇴교생)** 미보강 결석이 보강소멸 임박 알림에 노출 — 원인①퇴교 시 자동소멸 누락(update_student/withdraw_date 직접설정 경로가 process_withdrawal_makeup 우회) ②알림 쿼리에 퇴교 필터 없음. **버그B 고길동** 6월 보강필요시간 0 — `compute_summary`가 `year_month=조회월` 제약으로 이월 결석 누락. **수정**(사용자 결정: 이월누적 + 쿼리제외+백필): (1) `attendance.rs::compute_summary` 보강필요시간을 **이월 누적**(소멸기한 ≥ 조회월 + 퇴교 제외, earliest_pending과 정합)으로, (2) `dashboard.rs` 보강소멸 알림 **퇴교생 제외**, (3) **신규 마이그레이션 `304__expire_withdrawn_pending_makeup.sql`**(기존 퇴교생 미보강 결석 일괄 makeup_expired 백필 — 멱등), (4) **보강필요/보강완료 셀 hover 힌트**(기존 title 방식): 보강필요=이월 결석 내역(백엔드 `pending_absences` 필드 신설), 보강완료=당월 보강출결 내역. 회귀테스트 3건. **수정파일**: attendance.rs(struct+compute_summary+fetch_pending_absences+grid), dashboard.rs, migration 304, types/attendance.ts, AttendanceGrid.tsx, CLAUDE.md(V304). 실DB 검증: 홍길동→makeup_expired, 알림 4→2건, 고길동 6월 120분. cargo test 361 / clippy / lint / tsc 통과.
 - **T4 대시보드 추가 개선 2건** (2026-06-05, T6 검증 중 사용자 요청): (1) **당일 수업 표현 변경** — `16:00:00 성춘향, 이자영 (2명)` → `pm.4시 2명 - 성춘향, 이자영` (DashboardView `formatSlotTime`, 12시간제 am/pm + 분 있으면 표기). (2) **메모를 포스트잇 3장**으로 변경 — 한 행에 flex-1 가변 너비, 각 높이 드래그 조정(resize-y + ResizeObserver 디바운스 저장, reload 복원), 박스 높이=가장 큰 포스트잇(items-start). 백엔드: dashboard.rs 메모를 단일→3슬롯(`dashboard_memo_{i}` 내용 + `_h` 높이, 슬롯0은 레거시 단일메모 흡수), IPC `get_dashboard_memos`+`save_dashboard_memo(index,content,height)`, 테스트 3건. lib.rs 등록 갱신. **수정 파일**: dashboard.rs, lib.rs, types/dashboard.ts, lib/tauri/index.ts, components/dashboard/DashboardView.tsx.
+- **내보내기 CSV→엑셀(.xlsx) 전환** (2026-06-05, 사용자 요청 — 정렬/우측정렬/컬럼너비는 CSV 불가능): `export.rs` 전면 재작성(SheetData/Cell 구조로 테스트 분리 + write_xlsx 서식 적용). 요청 충족: 원생 **일련번호 오름차순**, 금전(교습비/청구액/할인액/최종액) **천단위 콤마 숫자+우측정렬**, 그외 좌측정렬, **autofit 컬럼너비**, 수업시간 **'시간' 단위 통일**(분→시간). 신규 의존성 rust_xlsxwriter. 프론트: showCsvSaveDialog→showXlsxSaveDialog(.xlsx 필터), 파일명 .xlsx, 카피 수정. 테스트 6건 재작성(정렬순서/금전셀/시간환산/파일생성). **수정파일**: export.rs, lib/tauri/index.ts, app/settings/data/page.tsx, app/settings/page.tsx, Cargo.toml. cargo test 358 / clippy / lint / tsc 통과.
 - **T5 계획 대비 정제 3건** (2026-06-05, 구현 시 결정 — sprint14.md 본문은 sprint-close 시 반영 권장): (1) 출결 CSV는 단순 "보강여부" 플래그 대신 **정규+보강 출결 UNION + `구분` 컬럼** — 보강 세션도 실제 출결 기록이라 누락 방지. (2) 청구 CSV에 **`청구상태`(미확정/확정) 컬럼 추가**. (3) 출결/청구 `year_month`는 **`Option<String>`**(None=전체) — 계획의 단월/전체 요구 충족. 교습비는 `standard_fees`(V201 보정값, 주4시간=200000) LEFT JOIN.
