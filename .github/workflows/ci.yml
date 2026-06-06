@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - develop
-      - main
+      - master
 
 jobs:
   # ── Job 1: Rust (cargo fmt + clippy + test) ────────────────────────────
@@ -108,13 +108,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: main 브랜치 fetch
-        run: git fetch origin main
+      - name: master 브랜치 fetch
+        run: git fetch origin master
 
       - name: Hotfix 범위 검증
         run: |
-          FILES=$(git diff origin/main...HEAD --name-only | grep -v '^$' | wc -l | tr -d ' ')
-          LINES=$(git diff origin/main...HEAD | grep -E '^[+-][^+-]' | wc -l | tr -d ' ')
+          FILES=$(git diff origin/master...HEAD --name-only | grep -v '^$' | wc -l | tr -d ' ')
+          LINES=$(git diff origin/master...HEAD | grep -E '^[+-][^+-]' | wc -l | tr -d ' ')
 
           echo "── Hotfix 범위 검증 ──────────────────────────"
           echo "변경 파일 수: ${FILES} (허용: ≤ 3)"
@@ -139,13 +139,13 @@ jobs:
 
           exit $FAIL
 
-  # ── Job 4: Tauri 빌드 매트릭스 (main PR에서만) ────────────────────────
-  # develop → main PR 시에만 실행 (Windows + macOS 빌드 검증)
+  # ── Job 4: Tauri 빌드 매트릭스 (master PR에서만) ────────────────────────
+  # develop → master PR 시에만 실행 (Windows + macOS 빌드 검증)
   # cipher feature 활성화 — SQLCipher + vendored OpenSSL 통합 검증 (T11, ADR-001)
   tauri-build:
     name: Tauri 빌드 (${{ matrix.platform }})
     needs: [rust, frontend]
-    if: github.base_ref == 'main'
+    if: github.base_ref == 'master'
     strategy:
       fail-fast: false
       matrix:
