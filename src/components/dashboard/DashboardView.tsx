@@ -128,7 +128,7 @@ export function DashboardView() {
           <div className="flex flex-col gap-6 sm:flex-row lg:flex-1 lg:min-h-0">
             <Widget
               title={
-                <span className="text-[0.675rem]">{`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}</span>
+                <span className="text-[0.5625rem]">{`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}</span>
               }
               className="sm:w-1/2 sm:min-h-0"
             >
@@ -152,7 +152,7 @@ export function DashboardView() {
               )}
             </Widget>
 
-            <Widget title={<span className="text-[0.675rem]">이달의 생일</span>} className="sm:w-1/2 sm:min-h-0">
+            <Widget title={<span className="text-[0.5625rem]">이달의 생일</span>} className="sm:w-1/2 sm:min-h-0">
               {birthdays.isLoading || birthdays.data === undefined ? (
                 <Loading />
               ) : birthdays.data.length === 0 ? (
