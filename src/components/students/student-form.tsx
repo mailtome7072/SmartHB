@@ -244,19 +244,19 @@ export function StudentForm({
             ))}
           </select>
         </Field>
-        <Field label="입교일">
-          <input
-            type="date"
-            value={form.enroll_date}
-            onChange={(e) => update('enroll_date', e.target.value)}
-            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
-          />
-        </Field>
         <Field label="생년월일">
           <input
             type="date"
             value={form.birth_date}
             onChange={(e) => update('birth_date', e.target.value)}
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
+          />
+        </Field>
+        <Field label="입교일">
+          <input
+            type="date"
+            value={form.enroll_date}
+            onChange={(e) => update('enroll_date', e.target.value)}
             className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
