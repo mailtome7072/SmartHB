@@ -29,6 +29,7 @@ use crate::commands::runtime::run_blocking;
 use crate::error::AppError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::path::{Path, PathBuf};
 
 /// 백업 디렉토리 서브패스 — `paths::data_root()` 하위.
@@ -81,6 +82,32 @@ pub struct BackupMetadata {
     pub layer: BackupLayer,
     pub created_at: DateTime<Utc>,
     pub size_bytes: u64,
+}
+
+/// 복원 리허설로 검증한 주요 테이블의 행 수 (PRD §5.4 "검증된 데이터 건수").
+#[derive(Debug, Serialize, Clone)]
+pub struct TableCount {
+    pub table: String,
+    pub count: i64,
+}
+
+/// 복원 리허설 결과 — IPC 응답.
+///
+/// 백업 파일을 격리된 임시 사본으로 복사해 `PRAGMA integrity_check` + 행 수 카운트를 수행한
+/// 결과다. **운영 DB 에는 어떤 영향도 주지 않는다** (사본만 열람 후 폐기).
+///
+/// - `success`: 무결성 검증 통과 + 주요 테이블 열람 성공 시 true.
+/// - `integrity_detail`: 실패 시 사유 — 손상 메시지(integrity_check 비-ok 행) 또는 열기/복호화
+///   실패 메시지. 성공 시 None.
+/// - `table_counts`: 검증된 주요 테이블 행 수. 성공 시에만 채워진다.
+#[derive(Debug, Serialize, Clone)]
+pub struct RehearsalResult {
+    pub backup_path: String,
+    pub size_bytes: u64,
+    pub success: bool,
+    pub integrity_detail: Option<String>,
+    pub table_counts: Vec<TableCount>,
+    pub total_rows: i64,
 }
 
 fn backup_root() -> PathBuf {
@@ -224,6 +251,136 @@ fn perform_backup_with_cipher(_source: &Path, _dest: &Path) -> Result<(), AppErr
 }
 
 // ----------------------------------------------------------------------------
+// 복원 리허설 (PRD §5.4) — 백업 파일을 격리 사본으로 검증, 운영 DB 무영향
+// ----------------------------------------------------------------------------
+
+/// 리허설 시 행 수를 세는 주요 테이블 — 컴파일 타임 고정 allowlist (사용자 입력 아님).
+///
+/// `COUNT(*)` 쿼리에 직접 보간되므로 반드시 정적 상수만 사용한다 (SQL 인젝션 무관).
+const REHEARSAL_TABLES: [&str; 6] = [
+    "students",
+    "student_schedules",
+    "regular_attendances",
+    "makeup_attendances",
+    "bills",
+    "payments",
+];
+
+/// 리허설용 임시 사본 connection 에 SQLCipher 키를 적용한다.
+///
+/// cipher on 빌드: 운영 DB 와 동일 키로 백업 사본을 복호화 (백업은 암호화 상태 그대로 보관됨).
+/// cipher off 빌드(R98): 평문 백업만 리허설 대상이므로 PRAGMA key 미적용.
+#[cfg(feature = "cipher")]
+async fn apply_rehearsal_key(pool: &SqlitePool) -> Result<(), AppError> {
+    use crate::commands::auth::get_cached_or_load_key;
+    let key = get_cached_or_load_key()?;
+    let hex_key = key.to_hex();
+    sqlx::query(&paths::pragma_key_sql(hex_key.as_str()))
+        .execute(pool)
+        .await
+        .map_err(|e| app_err!(Backup, "백업 사본 복호화 키 적용 실패", e))?;
+    Ok(())
+}
+
+#[cfg(not(feature = "cipher"))]
+async fn apply_rehearsal_key(_pool: &SqlitePool) -> Result<(), AppError> {
+    Ok(())
+}
+
+/// 격리된 임시 사본을 열어 무결성 검증 + 주요 테이블 행 수를 수집한다.
+///
+/// 열기/복호화/검증 단계 실패는 Err 가 아닌 "실패한 리허설 결과"로 변환되어야 하므로
+/// (백업이 복원 가능한지 판별하는 것이 리허설의 목적), 이 어댑터는 검증 단계의 에러를
+/// `(false, Some(reason), _)` 로 매핑한다. 파일 복사/임시 디렉토리 같은 전제 조건
+/// 실패만 [`run_backup_rehearsal_inner`] 에서 Err 로 처리한다.
+async fn verify_rehearsal_copy(temp_db: &Path) -> (bool, Option<String>, Vec<TableCount>) {
+    match collect_rehearsal_findings(temp_db).await {
+        Ok(counts) => (true, None, counts),
+        Err(reason) => (false, Some(reason), Vec::new()),
+    }
+}
+
+/// 사본을 read-only 로 열어 무결성 검증 후 주요 테이블 행 수를 수집한다.
+///
+/// 열기/복호화/무결성/조회 단계의 실패는 모두 사용자 메시지 `Err(String)` 로 반환된다.
+async fn collect_rehearsal_findings(temp_db: &Path) -> Result<Vec<TableCount>, String> {
+    let options = SqliteConnectOptions::new()
+        .filename(temp_db)
+        .create_if_missing(false)
+        .read_only(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await
+        .map_err(|e| format!("백업 파일을 열 수 없습니다: {}", e))?;
+
+    // 검증 결과를 먼저 받은 뒤 pool 을 닫아, 검증 실패 시에도 connection 을 누수하지 않는다.
+    let result = async {
+        apply_rehearsal_key(&pool).await.map_err(String::from)?;
+
+        let integrity_rows: Vec<String> = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("무결성 검증을 실행할 수 없습니다: {}", e))?;
+        if !(integrity_rows.len() == 1 && integrity_rows[0] == "ok") {
+            return Err(integrity_rows.join("\n"));
+        }
+
+        let mut counts = Vec::with_capacity(REHEARSAL_TABLES.len());
+        for table in REHEARSAL_TABLES {
+            // table 은 정적 allowlist 상수 — 사용자 입력 아님 (SQL 인젝션 무관).
+            let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", table))
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| format!("'{}' 테이블을 읽을 수 없습니다: {}", table, e))?;
+            counts.push(TableCount {
+                table: table.to_string(),
+                count,
+            });
+        }
+        Ok(counts)
+    }
+    .await;
+
+    pool.close().await;
+    result
+}
+
+/// 백업 파일을 임시 디렉토리에 복사해 무결성·행 수를 검증한 뒤 사본을 폐기한다.
+///
+/// WAL 사이드카까지 안전히 제거하기 위해 단일 파일이 아닌 전용 임시 디렉토리에 복사한다.
+async fn run_backup_rehearsal_inner(backup_path: String) -> Result<RehearsalResult, AppError> {
+    let src = PathBuf::from(&backup_path);
+    let size_bytes = std::fs::metadata(&src)
+        .map_err(|e| app_err!(Backup, "백업 파일을 찾을 수 없습니다", e))?
+        .len();
+
+    let temp_dir = std::env::temp_dir().join(format!("smarthb_rehearsal_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| app_err!(Backup, "리허설 임시 디렉토리 생성 실패", e))?;
+    let temp_db = temp_dir.join("rehearsal.db");
+
+    let findings = match std::fs::copy(&src, &temp_db) {
+        Ok(_) => Ok(verify_rehearsal_copy(&temp_db).await),
+        Err(e) => Err(app_err!(Backup, "백업 파일 복사 실패", e)),
+    };
+
+    // 검증 성공/실패와 무관하게 임시 사본(+WAL 사이드카) 전체 제거.
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    let (success, integrity_detail, table_counts) = findings?;
+    let total_rows = table_counts.iter().map(|t| t.count).sum();
+    Ok(RehearsalResult {
+        backup_path,
+        size_bytes,
+        success,
+        integrity_detail,
+        table_counts,
+        total_rows,
+    })
+}
+
+// ----------------------------------------------------------------------------
 // 동기 헬퍼 — Tauri IPC 가 spawn_blocking 으로 호출
 // ----------------------------------------------------------------------------
 
@@ -311,6 +468,18 @@ pub async fn restore_backup(path: String) -> Result<crate::commands::integrity::
     .await?;
     audit::try_record(AuditEventType::BackupRestored, Some(&path), None).await;
     Ok(result)
+}
+
+/// 백업 파일이 복원 가능한지 격리된 사본으로 검증한다 (PRD §5.4 복원 리허설).
+///
+/// 운영 DB 에는 영향이 없다 — 백업을 임시 디렉토리에 복사해 `PRAGMA integrity_check` 와
+/// 주요 테이블 행 수를 확인한 뒤 사본을 폐기한다. cipher off 개발 빌드는 평문 백업만
+/// 리허설 대상이다 (R98).
+#[tauri::command]
+pub async fn run_backup_rehearsal(backup_path: String) -> Result<RehearsalResult, String> {
+    run_backup_rehearsal_inner(backup_path)
+        .await
+        .map_err(String::from)
 }
 
 #[cfg(test)]
@@ -474,5 +643,121 @@ mod tests {
             "사용자 메시지: {}",
             err
         );
+    }
+
+    // ------------------------------------------------------------------------
+    // 복원 리허설 테스트 (cipher off — 평문 백업, R98)
+    // ------------------------------------------------------------------------
+
+    /// 평문 SQLite 백업 사본을 만들어 리허설 검증한다. cipher off 전용 (cipher on 은 키 조회 필요).
+    #[cfg(not(feature = "cipher"))]
+    async fn make_plaintext_backup(rows_in_students: usize) -> (PathBuf, PathBuf) {
+        use sqlx::sqlite::SqliteJournalMode;
+
+        let dir = std::env::temp_dir().join(format!("smarthb_rehearsal_src_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("소스 디렉토리 생성");
+        let db_path = dir.join("source.db");
+
+        let options = SqliteConnectOptions::new()
+            .filename(&db_path)
+            .create_if_missing(true)
+            // WAL 사이드카 없이 단일 파일에 모든 데이터를 두어 복사 시 누락을 방지.
+            .journal_mode(SqliteJournalMode::Delete);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("소스 풀 생성");
+
+        for table in REHEARSAL_TABLES {
+            sqlx::query(&format!("CREATE TABLE {} (id INTEGER PRIMARY KEY)", table))
+                .execute(&pool)
+                .await
+                .expect("테이블 생성");
+        }
+        for i in 0..rows_in_students {
+            sqlx::query("INSERT INTO students (id) VALUES (?)")
+                .bind(i as i64 + 1)
+                .execute(&pool)
+                .await
+                .expect("행 삽입");
+        }
+        pool.close().await;
+        (dir, db_path)
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn rehearsal_succeeds_on_valid_plaintext_backup() {
+        let (dir, db_path) = make_plaintext_backup(3).await;
+
+        let result = run_backup_rehearsal_inner(db_path.to_string_lossy().into_owned())
+            .await
+            .expect("정상 백업은 Err 가 아니어야 함");
+
+        assert!(result.success, "무결성 통과 시 success=true");
+        assert!(result.integrity_detail.is_none(), "성공 시 사유 없음");
+        assert_eq!(result.table_counts.len(), REHEARSAL_TABLES.len());
+        assert_eq!(result.total_rows, 3, "students 3행만 존재");
+        let students = result
+            .table_counts
+            .iter()
+            .find(|t| t.table == "students")
+            .expect("students 항목");
+        assert_eq!(students.count, 3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn rehearsal_reports_failure_on_corrupt_backup() {
+        let dir = std::env::temp_dir().join(format!("smarthb_rehearsal_bad_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad = dir.join("corrupt.db");
+        // 유효한 SQLite 헤더가 아닌 쓰레기 바이트 — 열기 또는 검증 단계에서 실패.
+        std::fs::write(&bad, b"this is definitely not a sqlite database file").unwrap();
+
+        let result = run_backup_rehearsal_inner(bad.to_string_lossy().into_owned())
+            .await
+            .expect("손상 파일도 결과 객체로 보고 (Err 아님)");
+
+        assert!(!result.success, "손상 백업은 success=false");
+        assert!(result.integrity_detail.is_some(), "실패 사유가 채워져야 함");
+        assert!(result.table_counts.is_empty(), "실패 시 행 수 미수집");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `REHEARSAL_TABLES` 가 실제 스키마와 동기화되어 있는지 보장한다.
+    ///
+    /// 정적 목록이라 새 도메인 테이블이 추가되거나 테이블명이 바뀌면 stale 될 수 있다. 그
+    /// 경우 리허설이 해당 테이블을 누락한 채 "성공"으로 보고하는 거짓 안심을 막기 위해, 갓
+    /// 마이그레이션한 DB 에 모든 항목이 존재하는지 CI 에서 검증한다.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn rehearsal_tables_exist_in_current_schema() {
+        let pool = crate::commands::db::test_pool_in_memory()
+            .await
+            .expect("테스트 마이그레이션");
+        for table in REHEARSAL_TABLES {
+            let exists: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?")
+                    .bind(table)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("sqlite_master 조회");
+            assert_eq!(exists, 1, "REHEARSAL_TABLES 의 '{}' 가 스키마에 없음 (목록 갱신 필요)", table);
+        }
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn rehearsal_errors_on_missing_file() {
+        let missing = std::env::temp_dir()
+            .join(format!("smarthb_rehearsal_missing_{}.db", uuid::Uuid::new_v4()));
+        let result = run_backup_rehearsal_inner(missing.to_string_lossy().into_owned()).await;
+        let err: String = result.expect_err("존재하지 않는 파일은 전제 조건 실패 Err").into();
+        assert!(err.contains("백업"), "사용자 메시지: {}", err);
     }
 }

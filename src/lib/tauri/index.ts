@@ -11,6 +11,7 @@ import type {
   IntegrityCheckResult,
   IntegrityMode,
   LockStatus,
+  RehearsalResult,
   RestoreResult,
   StartupResult,
   SyncStatus,
@@ -273,6 +274,37 @@ export async function restoreBackup(path: string): Promise<RestoreResult> {
     }
   }
   return inv('restore_backup', { path }) as Promise<RestoreResult>
+}
+
+/**
+ * 백업 파일이 복원 가능한지 격리된 사본으로 검증한다 (PRD §5.4 복원 리허설).
+ *
+ * 운영 DB 에는 영향이 없다 — 백업을 임시 디렉토리에 복사해 `PRAGMA integrity_check` 와
+ * 주요 테이블 행 수를 확인한 뒤 사본을 폐기한다. cipher off 개발 빌드는 평문 백업만
+ * 리허설 대상이다 (R98).
+ *
+ * 브라우저 개발 모드에서는 더미 성공 결과를 반환하여 UI 흐름만 검증 가능.
+ */
+export async function runBackupRehearsal(backupPath: string): Promise<RehearsalResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      backup_path: `[개발 모드] ${backupPath}`,
+      size_bytes: 0,
+      success: true,
+      integrity_detail: null,
+      table_counts: [
+        { table: 'students', count: 0 },
+        { table: 'student_schedules', count: 0 },
+        { table: 'regular_attendances', count: 0 },
+        { table: 'makeup_attendances', count: 0 },
+        { table: 'bills', count: 0 },
+        { table: 'payments', count: 0 },
+      ],
+      total_rows: 0,
+    }
+  }
+  return inv('run_backup_rehearsal', { backupPath }) as Promise<RehearsalResult>
 }
 
 /**

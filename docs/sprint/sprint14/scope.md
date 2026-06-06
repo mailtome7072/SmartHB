@@ -1,5 +1,5 @@
 ---
-Sprint: 14  |  Date: 2026-06-02  |  Session: #1
+Sprint: 14  |  Date: 2026-06-06  |  Session: #4
 ---
 
 ## 이번 세션에서 수정할 파일
@@ -8,18 +8,18 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 |------|---------|------|
 | src-tauri/src/startup.rs | [1회] | T0 — A91 cipher-off 동작 명시 주석 |
 | docs/arch/adr-008-optional-pin-gate.md | [1회] | T0 — A91 구현 메모 실제 동작으로 수정 |
-| src/app/lock/page.tsx | [1회] | T0 — A93 SplashScreen 이중 표시 통합 |
+| src/app/lock/page.tsx | [3회 ⚠️] | T0 — A93 SplashScreen 이중 표시 통합 |
 | src-tauri/migrations/303__create_diagnosis_history.sql | [신규] ✅ | T1 — 자가 진단 이력 테이블. **실제 파일명은 `303__`** (V 접두사 없음 — 기존 301/302 컨벤션). 임시 DB로 001~303 전체 적용 검증 |
 | src-tauri/src/commands/diagnosis.rs | [신규] ✅ | T1 — 자가 진단 IPC 4종 + 검사 7종 + 단위테스트 20건. 검사 5는 `makeup_deadline`(계획의 expiry_date 오류 정정), 검사 7은 `bills.adjusted_amount`+카드사 누락 기준(계획의 payments.amount 없음 정정) |
 | src-tauri/src/commands/dashboard.rs | [신규] ✅ | T3 — 대시보드 집계 IPC 7종(현황/당일/월요약/출결진행률/알림/메모 get·save) + 알림 5종 + 테스트 9건 |
 | src-tauri/src/commands/export.rs | [신규] ✅ | T5 — CSV 내보내기 IPC 3종(원생/출결/청구-수납) + BOM(UTF-8) + 라벨변환 + 단위테스트 9건. 출결은 정규+보강 UNION(구분 컬럼), 청구는 청구상태 컬럼 추가, year_month는 Option(None=전체) |
-| src-tauri/src/commands/backup.rs | [0회] | T7 — 복원 리허설 IPC 확장 |
-| src-tauri/src/commands/mod.rs | [3회] | T1/T3/T5 — pub mod diagnosis/dashboard/export 등록 |
-| src-tauri/src/lib.rs | [3회] | T1/T3/T5 — invoke_handler 4+7+3종 등록 (T7 추가 예정) |
-| src/lib/tauri/index.ts | [3회] | T2/T4/T6 — 자가 진단 4종 + 대시보드 7종 + 내보내기 3종 IPC 래퍼 + showCsvSaveDialog (T7 추가 예정) |
+| src-tauri/src/commands/backup.rs | [9회 ⚠️] | T7 — 복원 리허설 IPC 확장 (run_backup_rehearsal + RehearsalResult/TableCount). list_backups는 기존 재사용. cipher off는 평문 백업만 리허설(R98, apply_rehearsal_key 게이트) |
+| src-tauri/src/commands/mod.rs | [3회] | T1/T3/T5 — pub mod diagnosis/dashboard/export 등록 (backup은 기존 등록) |
+| src-tauri/src/lib.rs | [5회 ⚠️] | T1/T3/T5 + T7 — invoke_handler 4+7+3종 + run_backup_rehearsal 등록 |
+| src/lib/tauri/index.ts | [7회 ⚠️] | T2/T4/T6 + T7 — 진단4 + 대시보드7 + 내보내기3 래퍼 + runBackupRehearsal (listBackups는 기존 재사용) |
 | src/types/diagnosis.ts | [신규] ✅ | T2 — DiagnosisIssue/Result/HistoryRow |
 | src/app/settings/diagnosis/page.tsx | [신규] ✅ | T2 — 자가 진단 화면(신규 라우트). **계획의 'page.tsx 인라인 섹션' 대신 전용 라우트로 구현** — hours/codes/pin 등 기존 설정 라우트 패턴과 일관. 실행 버튼 + 12개월 이력 + 결과 상세 + 이동 링크 |
-| src/app/settings/page.tsx | [2회] ✅ | T2 '데이터 자가 진단' + T6 '데이터 내보내기' 카드 추가 (T7 백업 카드 추가 예정) |
+| src/app/settings/page.tsx | [3회] | T2 '데이터 자가 진단' + T6 '데이터 내보내기' + T7 '백업 관리' 카드 추가 |
 | src/components/layout/app-shell.tsx | [1회] ✅ | T2 — 자동 진단 트리거(세션 1회, unlock 후 백그라운드, AC-6.6-1/R97) |
 | src/types/dashboard.ts | [신규] ✅ | T4 — Overview/TodaySchedule/MonthlySummary/Alert/Progress |
 | src/app/page.tsx | [1회] ✅ | T4 — unlock 시 placeholder → `<DashboardView/>` 교체 (인증 게이트 로직 유지) |
@@ -29,6 +29,8 @@ Sprint: 14  |  Date: 2026-06-02  |  Session: #1
 | src/types/export.ts | [신규] ✅ | T6 — ExportResult/ExportTarget |
 | src/app/settings/data/page.tsx | [신규] ✅ | T6 — 데이터 내보내기 화면(신규 라우트, diagnosis와 동일 패턴). 대상 3종 선택 + 기간(전체/특정월, 출결·청구만) + showCsvSaveDialog + 결과 배너 |
 | src/components/layout/sidebar.tsx | [1회] | scope 외 추가 (2026-06-04, 사용자 요청) — "종료" 클릭 시 프로그램 종료 확인 다이얼로그 추가 (PRD §5.7, 기존 AlertDialog 재사용, 의존성·DB 변경 없음) |
+| src/types/index.ts | [1회] | T7 — RehearsalResult/TableCount 타입 추가 (BackupMetadata 인접) |
+| src/app/settings/backup/page.tsx | [신규] | T7 — 백업 관리 화면(신규 라우트, diagnosis/data 동일 패턴). 백업 목록 + 복원 리허설 버튼 + 결과 패널 + 운영데이터 무영향 안내 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD (hook 차단)

@@ -48,6 +48,7 @@ pub fn run() {
             commands::backup::create_backup,
             commands::backup::list_backups,
             commands::backup::restore_backup,
+            commands::backup::run_backup_rehearsal,
             commands::integrity::check_integrity,
             commands::integrity::auto_restore,
             commands::sync::check_sync_status,
