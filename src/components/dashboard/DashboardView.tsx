@@ -43,6 +43,13 @@ function currentYearMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+/** YYYY-MM 에 delta 개월을 더한 연월 (연도 경계 자동 처리). */
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 function won(n: number): string {
   return `${n.toLocaleString('ko-KR')}원`
 }
@@ -64,8 +71,6 @@ const MEMO_DEFAULT_HEIGHT = 140
 const MEMO_COLORS = ['#fff8b8', '#d8f5d0', '#ffd9e6']
 
 export function DashboardView() {
-  const ym = currentYearMonth()
-
   const overview = useQuery({
     queryKey: ['dashboard', 'overview'],
     queryFn: getAcademyOverview,
@@ -74,11 +79,6 @@ export function DashboardView() {
   const today = useQuery({
     queryKey: ['dashboard', 'today'],
     queryFn: getTodaySchedule,
-    staleTime: STALE,
-  })
-  const monthly = useQuery({
-    queryKey: ['dashboard', 'monthly', ym],
-    queryFn: () => getMonthlySummary(ym),
     staleTime: STALE,
   })
   const alerts = useQuery({
@@ -155,21 +155,56 @@ export function DashboardView() {
 
       </div>
 
-      <Widget title={`${ym} 월 요약`}>
-        {monthly.isLoading || monthly.data === undefined ? (
-          <Loading />
-        ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            <Stat label="청구 총액" value={won(monthly.data.bill_total)} />
-            <Stat label="입금" value={won(monthly.data.paid_total)} />
-            <Stat label="미납" value={won(monthly.data.unpaid_total)} danger={monthly.data.unpaid_total > 0} />
-            <Stat label="청구 건수" value={`${monthly.data.paid_count}/${monthly.data.bill_count} 수납`} />
-            <Stat label="당월 입교" value={`${monthly.data.enrolled_this_month}명`} />
-            <Stat label="당월 퇴교" value={`${monthly.data.withdrawn_this_month}명`} />
-          </div>
-        )}
-      </Widget>
+      <MonthlySummaryWidget />
     </div>
+  )
+}
+
+// ── 월 요약 (이전/다음 월 전환) ──
+
+function MonthlySummaryWidget() {
+  const [month, setMonth] = useState(currentYearMonth())
+  const monthly = useQuery({
+    queryKey: ['dashboard', 'monthly', month],
+    queryFn: () => getMonthlySummary(month),
+    staleTime: STALE,
+  })
+
+  const navBtn =
+    'inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border)] text-xl text-gray-600 hover:bg-[var(--background)]'
+  const action = (
+    <div className="flex items-center gap-1">
+      <button type="button" aria-label="이전 달" onClick={() => setMonth((m) => shiftMonth(m, -1))} className={navBtn}>
+        ‹
+      </button>
+      <button
+        type="button"
+        onClick={() => setMonth(currentYearMonth())}
+        className="inline-flex h-10 items-center justify-center rounded-md border border-[var(--border)] px-3 text-sm text-gray-600 hover:bg-[var(--background)]"
+      >
+        이번 달
+      </button>
+      <button type="button" aria-label="다음 달" onClick={() => setMonth((m) => shiftMonth(m, 1))} className={navBtn}>
+        ›
+      </button>
+    </div>
+  )
+
+  return (
+    <Widget title={`${month} 월 요약`} action={action}>
+      {monthly.isLoading || monthly.data === undefined ? (
+        <Loading />
+      ) : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          <Stat label="청구 총액" value={won(monthly.data.bill_total)} />
+          <Stat label="입금" value={won(monthly.data.paid_total)} />
+          <Stat label="미납" value={won(monthly.data.unpaid_total)} danger={monthly.data.unpaid_total > 0} />
+          <Stat label="청구 건수" value={`${monthly.data.paid_count}/${monthly.data.bill_count} 수납`} />
+          <Stat label="당월 입교" value={`${monthly.data.enrolled_this_month}명`} />
+          <Stat label="당월 퇴교" value={`${monthly.data.withdrawn_this_month}명`} />
+        </div>
+      )}
+    </Widget>
   )
 }
 
@@ -303,10 +338,12 @@ function MemoNoteCard({ index, note, color }: { index: number; note: MemoNote; c
 
 function Widget({
   title,
+  action,
   children,
   className,
 }: {
-  title: string
+  title: React.ReactNode
+  action?: React.ReactNode
   children: React.ReactNode
   className?: string
 }) {
@@ -314,7 +351,10 @@ function Widget({
     <section
       className={`flex flex-col rounded-lg border border-[var(--border)] bg-white p-5 ${className ?? ''}`}
     >
-      <h2 className="mb-4 text-lg font-bold text-[var(--foreground)]">{title}</h2>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="text-lg font-bold text-[var(--foreground)]">{title}</h2>
+        {action}
+      </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>
   )
