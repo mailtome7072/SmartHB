@@ -122,33 +122,51 @@ export function DashboardView() {
           )}
         </Widget>
 
-        {/* 오른쪽 열: 당일 수업 + 월별 청구총액 추이 스택.
-            grid stretch 로 컬럼 높이 = 교습소 현황 높이, 두 위젯이 lg:flex-1 로 균등 분할 →
-            당일 수업이 비어도 (당일수업 + 추이) 합이 교습소 현황 높이와 같게 고정된다. */}
+        {/* 오른쪽 열: (당일 수업 | 이달의 생일) 50/50 행 + 월별 청구총액 추이 스택.
+            grid stretch 로 컬럼 높이 = 교습소 현황 높이. */}
         <div className="flex flex-col gap-6 lg:h-full">
-          <Widget
-            title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}
-            className="lg:flex-1 lg:min-h-0"
-          >
-            {today.isLoading || today.data === undefined ? (
-              <Loading />
-            ) : today.data.slots.length === 0 ? (
-              <Empty>오늘은 예정된 수업이 없습니다.</Empty>
-            ) : (
-              <ul className="h-full space-y-3 overflow-y-auto">
-                {today.data.slots.map((slot) => (
-                  <li key={slot.start_time} className="text-gray-700">
-                    <span className="font-bold text-[var(--accent)]">
-                      {formatSlotTime(slot.start_time)}
-                    </span>{' '}
-                    <span className="text-black">({slot.students.length}명)</span>
-                    {' - '}
-                    {slot.students.join(', ')}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Widget>
+          <div className="flex flex-col gap-6 sm:flex-row lg:flex-1 lg:min-h-0">
+            <Widget
+              title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}
+              className="sm:w-1/2 sm:min-h-0"
+            >
+              {today.isLoading || today.data === undefined ? (
+                <Loading />
+              ) : today.data.slots.length === 0 ? (
+                <Empty>오늘은 예정된 수업이 없습니다.</Empty>
+              ) : (
+                <ul className="h-full space-y-3 overflow-y-auto">
+                  {today.data.slots.map((slot) => (
+                    <li key={slot.start_time} className="text-gray-700">
+                      <span className="font-bold text-[var(--accent)]">
+                        {formatSlotTime(slot.start_time)}
+                      </span>{' '}
+                      <span className="text-black">({slot.students.length}명)</span>
+                      {' - '}
+                      {slot.students.join(', ')}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Widget>
+
+            <Widget title="이달의 생일" className="sm:w-1/2 sm:min-h-0">
+              {birthdays.isLoading || birthdays.data === undefined ? (
+                <Loading />
+              ) : birthdays.data.length === 0 ? (
+                <Empty>이달 생일인 원생이 없습니다.</Empty>
+              ) : (
+                <div className="flex h-full flex-wrap content-start gap-x-4 gap-y-2 overflow-y-auto text-base text-[var(--foreground)]">
+                  {birthdays.data.map((b, i) => (
+                    <span key={`${b.name}-${b.day}-${i}`}>
+                      {b.name}
+                      <span className="font-medium text-[var(--accent)]">({b.day}일)</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Widget>
+          </div>
 
           <Widget title="월별 청구총액 추이 (최근 12개월)" className="lg:flex-1 lg:min-h-0">
             {trend.isLoading || trend.data === undefined ? (
@@ -161,23 +179,6 @@ export function DashboardView() {
           </Widget>
         </div>
       </div>
-
-      <Widget title="이달의 생일">
-        {birthdays.isLoading || birthdays.data === undefined ? (
-          <Loading />
-        ) : birthdays.data.length === 0 ? (
-          <Empty>이달 생일인 원생이 없습니다.</Empty>
-        ) : (
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-base text-[var(--foreground)]">
-            {birthdays.data.map((b, i) => (
-              <span key={`${b.name}-${b.day}-${i}`}>
-                {b.name}
-                <span className="font-medium text-[var(--accent)]">({b.day}일)</span>
-              </span>
-            ))}
-          </div>
-        )}
-      </Widget>
     </div>
   )
 }
