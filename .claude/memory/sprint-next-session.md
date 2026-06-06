@@ -1,21 +1,23 @@
 ---
 name: sprint-next-session
-description: "Sprint 14 완료(sprint-close+review). 다음 = develop 직접 머지 + tauri:dev 수동확인 → deploy-prod. 새 환경 릴레이 시 가장 먼저 확인"
+description: "Sprint 14 완료 + develop 머지·QA 통과. 다음 = deploy-prod(프로덕션 배포, 보류 중). 새 환경 릴레이 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
   originSessionId: sprint14-close-2026-06-06
 ---
 
-**현재 위치(2026-06-06, 집 Mac)**: **Sprint 14 완료** — 구현·검수·sprint-close·sprint-review 전부 끝. 브랜치 **`sprint14`**(origin push 완료, HEAD `5d114d4`). **다음 진입점 = develop 직접 머지 → tauri:dev 수동 확인 → deploy-prod**.
+**현재 위치(2026-06-06, 집 Mac)**: **Sprint 14 완료 + develop 머지·QA 통과**. sprint14 → develop `--no-ff` 머지 완료(develop HEAD `4df06dd`, origin push 완료). 머지 후 검증 통과(test 369/clippy/lint/tsc, V303~V305 적용). 사용자 수동 검증 완료. **다음 진입점 = deploy-prod(프로덕션 배포) — 사용자가 "지금은 배포 안 함" 선택해 보류 중.**
 > Sprint 12·13 완료·머지. Phase 5 취소 ([[exam-feature-cancelled]]).
 
-## 다음 할 일 (순서)
-1. **develop 직접 머지** (PR 생략, 단일 개발자 [[workflow-no-pr]]):
-   ```
-   git checkout develop && git pull origin develop
-   git merge --no-ff sprint14 && git push origin develop
-   ```
+## 다음 할 일 — 프로덕션 배포 (재개 시)
+- 사용자가 **"프로덕션 배포 준비해줘"** 하면 → **deploy-prod 에이전트**.
+- ⚠️ **프로덕션 브랜치는 `master`** (원격에 `main` 없음 — CLAUDE.md의 "main"은 master로 읽을 것).
+- **버전 상향 필요**: 현재 0.5.0은 이미 `v0.5.0` 태그 릴리즈됨. Sprint 14 배포는 **0.6.0(minor) 권장**(대시보드·자가진단·내보내기·복원리허설·생년월일 신규). package.json + src-tauri/Cargo.toml 동시 갱신 → develop→master 머지 → `vX.Y.Z` 태그 push → GitHub Actions가 Win/macOS 인스톨러·Release 자동 생성.
+- (참고) 이미 끝난 단계 — develop 머지/QA/마이그레이션 적용:
+  ```
+  # 완료됨: git merge --no-ff sprint14 → develop, sqlx migrate run --source src-tauri/migrations
+  ```
 2. **`sqlx migrate run`** — V303~V305 적용 확인 (개발 DB).
 3. **`pnpm tauri:dev` 수동 확인** (DEPLOY.md ⬜ 항목): 엑셀 내보내기 3종 + **복원 리허설**(cipher off 개발빌드는 평문 백업을 `SmartHB-data/backup/{layer}/app_*.db`에 수동 배치해야 동작). 대시보드 위젯·자가진단·원생 생년월일은 이미 검수 완료.
 4. develop QA 통과 시: "프로덕션 배포 준비해줘" → **deploy-prod** 에이전트(태그 push → GitHub Actions 인스톨러 빌드).
