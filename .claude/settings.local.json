@@ -89,7 +89,15 @@
       "Bash(awk 'NR>103' /private/tmp/claude-501/-Users-skyang-Projects-SmartHB/ec4d61da-b37e-4b96-b4fa-46be64cd6178/tasks/bissu5yuu.output)",
       "Bash(perl -i -pe 's/학사 스케줄 관리/일정 관리/g; s/학사 스케줄/일정 관리/g' src/types/academic.ts src/app/attendance/page.tsx src/app/academic/page.tsx src/app/billing/page.tsx src/lib/tauri/index.ts src-tauri/src/commands/academic.rs)",
       "Bash(perl -i -pe 's/학사 관리/일정 관리/g' src/lib/menu-config.ts)",
-      "Bash(awk 'NR>=160{print NR\": \"$0}' src/components/LockScreen.tsx)"
+      "Bash(awk 'NR>=160{print NR\": \"$0}' src/components/LockScreen.tsx)",
+      "Bash(git --no-pager diff HEAD -- src-tauri/src/commands/backup.rs src-tauri/src/lib.rs src/app/settings/page.tsx src/lib/tauri/index.ts src/types/index.ts)",
+      "Read(//tmp/**)",
+      "Bash(echo \"pnpm: $\\(pnpm --version\\)\")",
+      "Bash(NODE_OPTIONS=\"--no-turbo-fast-api-calls\" node -e \"console.log\\('flag accepted ok'\\)\")",
+      "Bash(pkill -f \"next dev -p 1420\")",
+      "Bash(lsof -ti:1420)",
+      "Bash(xargs kill -9)",
+      "Bash(sqlite3 *)"
     ]
   },
   "enableAllProjectMcpServers": true,
