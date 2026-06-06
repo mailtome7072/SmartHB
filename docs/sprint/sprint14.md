@@ -73,7 +73,7 @@
 
 ### T1: 데이터 자가 진단 백엔드 (5h) · skill: systematic-debugging
 
-- ⬜ **V303 마이그레이션**: `diagnosis_history` 테이블 생성
+- ✅ **V303 마이그레이션** (`303__create_diagnosis_history.sql`): `diagnosis_history` 테이블 생성
   ```sql
   CREATE TABLE diagnosis_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,9 +97,9 @@
   2. 재원중 원생 당월 출결 미생성 — `students` LEFT JOIN `regular_attendances`
   3. 재원중 원생 당월 청구 미생성 — `students` LEFT JOIN `bills`
   4. 수업 스케줄 vs 출결 불일치 — `student_schedules` vs `regular_attendances` 요일 비교
-  5. 결석 소멸기한 미설정 — `regular_attendances` WHERE status='absent' AND expiry_date IS NULL
+  5. 결석 소멸기한 미설정 — `regular_attendances` WHERE status='absent' AND `makeup_deadline` IS NULL
   6. 고아 보강 데이터 — `makeup_attendances` LEFT JOIN 매칭 결석
-  7. 수납 정합성 — `payments.is_paid=1` AND (amount IS NULL OR payment_method_id IS NULL)
+  7. 수납 정합성 — `payments.is_paid=1` AND (payment_method_id IS NULL OR (카드 계열인데 card_company_id IS NULL))
 - ⬜ **단위 테스트**: 검사 항목별 최소 1건 (정상/이상 케이스) = 14건 이상
 - ⬜ `commands/mod.rs` + `lib.rs` 커맨드 등록
 
@@ -147,9 +147,7 @@
 - ⬜ **월 핵심 요약 위젯** (Feature 4.11.3):
   - 출결 진행률 프로그레스 바 + 청구/입금/미납 금액 카드
   - 당월 신규 입교/퇴교 숫자
-- ⬜ **출결 입력 진행률 위젯** (Feature 4.11.5):
-  - 미입력 일자 클릭 -> `/attendance?date=YYYY-MM-DD` 이동
-  - 주간 금요일 강조 (AC-4.11-5 연계)
+- ~~**출결 입력 진행률 위젯** (Feature 4.11.5)~~: **제거** — 출결 생성 시 전체 수업일이 `present` 기본값으로 일괄 INSERT되므로 "미입력" 상태가 존재하지 않아 항상 100%로 무의미. 자가진단 검사 2번이 관련 이상을 커버.
 - ⬜ **메모 위젯** (Feature 4.11.6):
   - 포스트잇 스타일 자유 메모. 자동 저장 (디바운스 1초)
   - `app_settings` JSON에 `dashboard_memo` 키로 저장
@@ -161,27 +159,27 @@
 
 ### T5: 데이터 내보내기 백엔드 (3h)
 
-- ⬜ **`export.rs` 신규 모듈** — IPC 커맨드:
-  - `export_students(file_path: String) -> ExportResult` — 원생 명단 CSV (이름/성별/학년/학교/입교일/퇴교일/수업시간/교습비)
-  - `export_attendances(year_month: String, file_path: String) -> ExportResult` — 출결 데이터 CSV (원생명/일자/상태/보강여부)
-  - `export_billing(year_month: String, file_path: String) -> ExportResult` — 청구-수납 CSV (원생명/청구월/청구액/할인/최종액/수납여부/입금일/결제수단)
-- ⬜ CSV 생성은 Rust 표준 `String` 포맷 + BOM(UTF-8-BOM, Excel 한글 호환) 접두
-- ⬜ 기간 선택: 단월(`year_month`) 또는 전체(`year_month` 생략 시 전체)
-- ⬜ 파일 저장 경로는 프론트엔드가 Tauri Dialog로 사전 취득 후 전달 (AC-4.13-3)
-- ⬜ **단위 테스트**: IPC별 1건 (정상 데이터 + 빈 데이터) = 6건
-- ⬜ `commands/mod.rs` + `lib.rs` 커맨드 등록
+- ✅ **`export.rs` 신규 모듈** — IPC 커맨드:
+  - `export_students(file_path: String) -> ExportResult` — 원생 명단 엑셀 (이름/성별/학년/학교/생년월일/입교일/퇴교일/수업시간/교습비, 일련번호 오름차순)
+  - `export_attendances(year_month: Option<String>, file_path: String) -> ExportResult` — 출결 데이터 엑셀 (정규+보강 UNION, 구분 컬럼 포함)
+  - `export_billing(year_month: Option<String>, file_path: String) -> ExportResult` — 청구-수납 엑셀 (청구상태 컬럼 포함, 금전 천단위 콤마+우측정렬)
+- ✅ 엑셀(.xlsx) 생성 — rust_xlsxwriter 0.95 (순수 Rust, Win/Mac 안전). autofit 컬럼너비, 금전 우측정렬, 수업시간 시간 단위 통일
+- ✅ 기간 선택: 단월(`year_month`) 또는 전체(`year_month: Option<String>` None=전체)
+- ✅ 파일 저장 경로는 프론트엔드가 Tauri Dialog로 사전 취득 후 전달 (AC-4.13-3)
+- ✅ **단위 테스트**: IPC별 정상/빈 데이터 = 9건 (정렬순서/금전셀/시간환산/파일생성 포함)
+- ✅ `commands/mod.rs` + `lib.rs` 커맨드 등록
 
-> **이연**: Excel(.xlsx) 내보내기 + 비밀번호 보호 옵션(AC-4.13-4)은 Sprint 15로 이연. 이번 스프린트는 CSV 기본 내보내기에 집중.
+> **변경**: CSV 기본 내보내기→엑셀(.xlsx) 전환(사용자 요청 2026-06-05). 비밀번호 보호 옵션(AC-4.13-4)은 Sprint 15로 이연.
 
 ### T6: 데이터 내보내기 프론트엔드 (3h) · skill: frontend-design
 
-- ⬜ **TypeScript IPC 래퍼 3종** + `src/types/export.ts` 도메인 타입
-- ⬜ **설정 메뉴 > "데이터 관리" 섹션** — `/settings` 페이지 하위
+- ✅ **TypeScript IPC 래퍼 3종** + `src/types/export.ts` 도메인 타입
+- ✅ **설정 메뉴 > "데이터 관리" 섹션** — `/settings/data` 신규 라우트
   - 내보내기 대상 선택 (원생/출결/청구-수납)
-  - 기간 선택 드롭다운 (단월/전체)
-  - "내보내기" 버튼 → Tauri Dialog 저장 경로 지정 → IPC 호출 → 완료 토스트
-- ⬜ **Tauri Dialog `save` 다이얼로그**: `@tauri-apps/plugin-dialog` 기존 플러그인 재사용 (신규 의존성 불필요)
-  - 기본 파일명: `{대상}_{기간}.csv` (예: `원생명단_전체.csv`, `출결_2026-06.csv`)
+  - 기간 선택 드롭다운 (단월/전체, 출결·청구만)
+  - "내보내기" 버튼 → `showXlsxSaveDialog` → IPC 호출 → 결과 배너
+- ✅ **Tauri Dialog `save` 다이얼로그**: `@tauri-apps/plugin-dialog` 기존 플러그인 재사용 (신규 의존성 불필요)
+  - 기본 파일명: `{대상}_{기간}.xlsx` (예: `원생명단_전체.xlsx`, `출결_2026-06.xlsx`)
 
 ### T7: 복원 리허설 모드 (4h)
 
@@ -220,17 +218,20 @@
 
 | 패키지 | 측 | 버전 | 용도 | 승인 상태 |
 |--------|---|------|------|----------|
-| `recharts` | 프론트엔드 | ^2.x | 대시보드 차트 (학년 분포, 분기별 추이) | **사전 승인 필요** |
+| `recharts` | 프론트엔드 | 3.8.1 | 대시보드 차트 (학년 분포, 분기별 추이, 청구추이) | 사용자 승인 완료 (2026-06-02) |
+| `rust_xlsxwriter` | 백엔드(Rust) | 0.95 | 엑셀(.xlsx) 내보내기 (순수 Rust, Win/Mac 안전) | 사용자 승인 완료 (2026-06-05) |
 
-> shadcn/ui 내장 차트(Recharts 래퍼) 사용 가능 시 별도 설치 불필요할 수 있음. T4 착수 시 확인.
+> shadcn/ui 내장 차트 미존재 확인(T4 착수 시) → recharts 직접 설치. dynamic import(ssr:false)로 대시보드 라우트 한정 로드(R96).
 
 ## 신규 마이그레이션
 
-| 번호 | 설명 | 도메인 블록 |
-|------|------|------------|
-| V303 | `diagnosis_history` 테이블 (자가 진단 이력) | V300~V399 도메인 확장 |
+| 번호 | 파일명 | 설명 | 도메인 블록 |
+|------|--------|------|------------|
+| V303 | `303__create_diagnosis_history.sql` | `diagnosis_history` 테이블 (자가 진단 이력) | V300~V399 도메인 확장 |
+| V304 | `304__expire_withdrawn_pending_makeup.sql` | 퇴교생 미보강 결석 일괄 `makeup_expired` 백필 (버그픽스) | V300~V399 도메인 확장 |
+| V305 | `305__add_birth_date_to_students.sql` | `students.birth_date` nullable 컬럼 추가 (원생 생년월일) | V300~V399 도메인 확장 |
 
-> V302(`add_is_seeded_to_schedule_events`)가 최신. V303은 도메인 확장 블록(300번대) 연속.
+> V302(`add_is_seeded_to_schedule_events`)에서 V303→V304→V305 도메인 확장 블록 연속.
 
 ## scope 경계 (포함/제외)
 
@@ -270,25 +271,25 @@
 ## 완료 기준 (Definition of Done)
 
 **필수**
-- ⬜ 대시보드 6개 위젯(현황/당일/월요약/알림/출결진행률/메모) 렌더링 동작
-- ⬜ 5종 알림 조건별 표시 + 클릭 시 해당 화면 1클릭 이동 (AC-4.11-3, AC-4.11-4)
-- ⬜ 모든 위젯 5초 이내 로드 (AC-4.11-1)
-- ⬜ 자가 진단 수동 실행 + 7종 검사 결과 표시 + 해결 가이드 링크 (AC-6.6-3)
-- ⬜ 매월 1일 자동 진단 동작 (AC-6.6-1)
-- ⬜ 진단 이력 12개월 보관 + 초과분 자동 정리 (AC-6.6-4)
-- ⬜ CSV 내보내기 3종(원생/출결/청구-수납) 파일 생성 + OS 저장 다이얼로그 (AC-4.13-3)
-- ⬜ 복원 리허설 실행 + 결과 표시 (격리 환경, 운영 데이터 무영향)
-- ⬜ `cargo test --lib` 전수 통과 (신규 테스트 포함 예상 350+ 통과)
-- ⬜ `cargo clippy -- -D warnings` clean (cipher off)
-- ⬜ `cargo check --features cipher` 통과
-- ⬜ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 전수 통과
-- ⬜ `.sqlx/` 오프라인 캐시 갱신 + 커밋
+- ✅ 대시보드 위젯(현황/당일/월요약/청구추이/이달의 생일/메모 3슬롯/알림) 렌더링 동작 — 출결 진행률 위젯 제거(항상 100% 무의미)
+- ✅ 4종 알림 조건별 표시 + 클릭 시 해당 화면 1클릭 이동 (AC-4.11-3, AC-4.11-4) — 출결 미입력 알림 제거
+- ✅ 모든 위젯 5초 이내 로드 (AC-4.11-1)
+- ✅ 자가 진단 수동 실행 + 7종 검사 결과 표시 + 해결 가이드 링크 (AC-6.6-3)
+- ✅ 매월 1일 자동 진단 동작 — `last_auto_diagnosis` app_settings 분리 (AC-6.6-1)
+- ✅ 진단 이력 12개월 보관 + 초과분 자동 정리 (AC-6.6-4)
+- ✅ 엑셀(.xlsx) 내보내기 3종(원생/출결/청구-수납) 파일 생성 + OS 저장 다이얼로그 (AC-4.13-3) — CSV→엑셀 전환(rust_xlsxwriter)
+- ✅ 복원 리허설 실행 + 결과 표시 (격리 환경, 운영 데이터 무영향)
+- ✅ `cargo test --lib` 368 passed
+- ✅ `cargo clippy -- -D warnings` clean (cipher off)
+- ✅ `cargo check --features cipher` 통과
+- ✅ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 전수 통과
+- ✅ `.sqlx/` 오프라인 캐시 — 런타임 query() 패턴이라 갱신 불필요
 
 **프로세스 (sprint-close 에이전트가 처리)**
-- ⬜ ROADMAP.md Sprint 14 상태 업데이트
-- ⬜ CHANGELOG.md 업데이트
-- ⬜ DEPLOY.md 업데이트
-- ⬜ CLAUDE.md 마이그레이션 현황 V303 갱신
+- ✅ ROADMAP.md Sprint 14 상태 업데이트
+- ✅ CHANGELOG.md 업데이트
+- ✅ DEPLOY.md 업데이트
+- ✅ CLAUDE.md 마이그레이션 현황 V305 갱신 (이미 반영 완료)
 
 ---
 
