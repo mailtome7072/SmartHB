@@ -98,6 +98,8 @@ export function DashboardView() {
 
       <MemoWidget />
 
+      <MonthlySummaryWidget />
+
       <AlertsPanel alerts={alerts.data ?? []} loading={alerts.isLoading} />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -154,8 +156,6 @@ export function DashboardView() {
         </div>
 
       </div>
-
-      <MonthlySummaryWidget />
     </div>
   )
 }
