@@ -32,6 +32,7 @@ interface FormState {
   phone_student: string
   phone_mother: string
   phone_father: string
+  birth_date: string
   enroll_date: string
 }
 
@@ -46,6 +47,7 @@ function emptyForm(): FormState {
     phone_student: '',
     phone_mother: '',
     phone_father: '',
+    birth_date: '',
     enroll_date: new Date().toISOString().slice(0, 10),
   }
 }
@@ -61,6 +63,7 @@ function studentToForm(s: Student): FormState {
     phone_student: s.phone_student ?? '',
     phone_mother: s.phone_mother ?? '',
     phone_father: s.phone_father ?? '',
+    birth_date: s.birth_date ?? '',
     enroll_date: s.enroll_date,
   }
 }
@@ -76,6 +79,7 @@ function formToPayload(f: FormState): NewStudent {
     phone_student: f.phone_student.trim() || null,
     phone_mother: f.phone_mother.trim() || null,
     phone_father: f.phone_father.trim() || null,
+    birth_date: f.birth_date === '' ? null : f.birth_date,
     enroll_date: f.enroll_date,
   }
 }
@@ -239,6 +243,14 @@ export function StudentForm({
               </option>
             ))}
           </select>
+        </Field>
+        <Field label="생년월일">
+          <input
+            type="date"
+            value={form.birth_date}
+            onChange={(e) => update('birth_date', e.target.value)}
+            className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
+          />
         </Field>
         <Field label="입교일">
           <input

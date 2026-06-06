@@ -141,6 +141,8 @@ pub struct Student {
     pub phone_student: Option<String>,
     pub phone_mother: Option<String>,
     pub phone_father: Option<String>,
+    /// 생년월일 (선택, YYYY-MM-DD). 미입력 시 None.
+    pub birth_date: Option<String>,
     pub enroll_date: String,
     pub withdraw_date: Option<String>,
     pub created_at: String,
@@ -164,6 +166,7 @@ impl Student {
             phone_student: row.try_get("phone_student")?,
             phone_mother: row.try_get("phone_mother")?,
             phone_father: row.try_get("phone_father")?,
+            birth_date: row.try_get("birth_date")?,
             enroll_date: row.try_get("enroll_date")?,
             withdraw_date: row.try_get("withdraw_date")?,
             // list_students 외 SELECT 에는 컬럼이 없으므로 try_get().ok() 로 None fallback
@@ -187,6 +190,7 @@ pub struct NewStudent {
     pub phone_student: Option<String>,
     pub phone_mother: Option<String>,
     pub phone_father: Option<String>,
+    pub birth_date: Option<String>,
     pub enroll_date: String,
 }
 
@@ -202,6 +206,7 @@ pub struct StudentUpdate {
     pub phone_student: Option<String>,
     pub phone_mother: Option<String>,
     pub phone_father: Option<String>,
+    pub birth_date: Option<String>,
     pub enroll_date: String,
     pub withdraw_date: Option<String>,
 }
@@ -300,10 +305,10 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
     let row = sqlx::query(
         "INSERT INTO students \
             (serial_no, name, gender, school_level, grade, school_id, \
-             phone_student, phone_mother, phone_father, enroll_date) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             phone_student, phone_mother, phone_father, birth_date, enroll_date) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          RETURNING id, serial_no, name, gender, school_level, grade, school_id, \
-                   phone_student, phone_mother, phone_father, enroll_date, withdraw_date, \
+                   phone_student, phone_mother, phone_father, birth_date, enroll_date, withdraw_date, \
                    created_at, updated_at",
     )
     .bind(&serial)
@@ -315,6 +320,7 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
     .bind(payload.phone_student.as_deref())
     .bind(payload.phone_mother.as_deref())
     .bind(payload.phone_father.as_deref())
+    .bind(payload.birth_date.as_deref())
     .bind(&payload.enroll_date)
     .fetch_one(&mut *tx)
     .await
@@ -341,11 +347,11 @@ pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, 
         "UPDATE students SET \
             name = ?, gender = ?, school_level = ?, grade = ?, \
             school_id = ?, phone_student = ?, phone_mother = ?, phone_father = ?, \
-            enroll_date = ?, withdraw_date = ?, \
+            birth_date = ?, enroll_date = ?, withdraw_date = ?, \
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
          WHERE id = ? \
          RETURNING id, serial_no, name, gender, school_level, grade, school_id, \
-                   phone_student, phone_mother, phone_father, enroll_date, withdraw_date, \
+                   phone_student, phone_mother, phone_father, birth_date, enroll_date, withdraw_date, \
                    created_at, updated_at",
     )
     .bind(&payload.name)
@@ -356,6 +362,7 @@ pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, 
     .bind(payload.phone_student.as_deref())
     .bind(payload.phone_mother.as_deref())
     .bind(payload.phone_father.as_deref())
+    .bind(payload.birth_date.as_deref())
     .bind(&payload.enroll_date)
     .bind(payload.withdraw_date.as_deref())
     .bind(id)
@@ -378,7 +385,7 @@ pub async fn get_student(id: i64) -> Result<Student, String> {
     let pool = db::pool().map_err(String::from)?;
     let row = sqlx::query(
         "SELECT id, serial_no, name, gender, school_level, grade, school_id, \
-                phone_student, phone_mother, phone_father, enroll_date, withdraw_date, \
+                phone_student, phone_mother, phone_father, birth_date, enroll_date, withdraw_date, \
                 created_at, updated_at \
          FROM students WHERE id = ?",
     )
@@ -582,7 +589,7 @@ pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String
     // SQLite 가 자동 최적화 (사용자 ~100명 규모에서 PRAGMA cache_size 만으로 충분).
     let mut sql = String::from(
         "SELECT s.id, s.serial_no, s.name, s.gender, s.school_level, s.grade, s.school_id, \
-                s.phone_student, s.phone_mother, s.phone_father, s.enroll_date, s.withdraw_date, \
+                s.phone_student, s.phone_mother, s.phone_father, s.birth_date, s.enroll_date, s.withdraw_date, \
                 s.created_at, s.updated_at, \
                 (SELECT COALESCE(SUM(duration_hours), 0) FROM student_schedules \
                  WHERE student_id = s.id AND effective_to IS NULL) AS weekly_hours, \
@@ -650,6 +657,7 @@ mod tests {
             phone_student: None,
             phone_mother: Some("010-0000-0000".to_string()),
             phone_father: None,
+            birth_date: Some("2017-05-10".to_string()),
             enroll_date: "2026-03-01".to_string(),
         }
     }

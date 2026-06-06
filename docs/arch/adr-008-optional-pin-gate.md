@@ -57,5 +57,5 @@
 - 토글을 **절대 DB에 저장하지 말 것**(닭-달걀).
 - 키는 PC별 키체인 — OFF는 "키 있는 그 PC에서만" 적용.
 - macOS 키체인 접근 시 OS 프롬프트("항상 허용") 발생 가능 — dev 빌드는 재컴파일마다 재프롬프트. 프로덕션 서명 빌드에서는 1회.
-- `cipher` feature OFF(개발) 빌드에서는 키체인 키 로드 경로가 stub/즉시성공으로 동작해야 함(평문 DB라 키 불필요).
+- `cipher` feature 무관하게 `auto_unlock_with_keychain` 은 `get_cached_or_load_key()` 로 salt(파일)+key(keyring) 로드를 동일하게 수행한다. cipher OFF(개발) 빌드에서는 로드한 키를 PRAGMA key 에 쓰지 않을 뿐(평문 DB), 키체인 접근과 "키 존재=이 PC 인증 키 보유" 판정은 양 빌드 공통이다. (당초 "stub/즉시성공" 기술은 부정확 — Sprint 14 A91 에서 정정). 키 부재 시 양 빌드 모두 `KeyNotFound` 반환 → LockScreen 폴백. 개발 모드(Tauri 미동작, 브라우저)에서는 프론트 래퍼가 먼저 reject.
 - 복구 코드는 Sprint 12에서 제거됨 — PIN 분실 대비 안내를 설정 토글 근처에 표시("PIN을 잊으면 앱 데이터를 초기화해야 합니다").

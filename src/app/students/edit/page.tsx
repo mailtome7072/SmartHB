@@ -83,6 +83,7 @@ function StudentDetailContent() {
       phone_student: payload.phone_student ?? null,
       phone_mother: payload.phone_mother ?? null,
       phone_father: payload.phone_father ?? null,
+      birth_date: payload.birth_date ?? null,
       withdraw_date: student.withdraw_date,
     })
     qc.invalidateQueries({ queryKey: ['students'] })

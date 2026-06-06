@@ -31,6 +31,8 @@ export interface Student {
   phone_student: string | null
   phone_mother: string | null
   phone_father: string | null
+  /** 생년월일 (YYYY-MM-DD). 미입력 시 null. */
+  birth_date: string | null
   enroll_date: string
   withdraw_date: string | null
   created_at: string
@@ -48,6 +50,7 @@ export interface NewStudent {
   phone_student?: string | null
   phone_mother?: string | null
   phone_father?: string | null
+  birth_date?: string | null
   enroll_date: string
 }
 
@@ -62,6 +65,7 @@ export interface StudentUpdate {
   phone_student: string | null
   phone_mother: string | null
   phone_father: string | null
+  birth_date: string | null
   enroll_date: string
   withdraw_date: string | null
 }

@@ -14,7 +14,7 @@ export interface MenuItem {
 // V19 (Sprint 7 post-review): 모든 메뉴 단축키 제거 — 50대 사용자 친화 UX 단순화.
 // Sprint 13: Phase 5(단원 평가/학습 보고서) 전면 취소 — 두 메뉴 항목 제거 (원장 지시).
 export const MENU_ITEMS: MenuItem[] = [
-  { label: '대시보드', href: '/', disabledHint: 'Phase 5 에서 제공' },
+  { label: '대시보드', href: '/' },
   { label: '원생 관리', href: '/students' },
   { label: '일정 관리', href: '/academic' },
   { label: '출결 관리', href: '/attendance' },

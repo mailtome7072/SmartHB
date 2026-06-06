@@ -11,6 +11,7 @@ import type {
   IntegrityCheckResult,
   IntegrityMode,
   LockStatus,
+  RehearsalResult,
   RestoreResult,
   StartupResult,
   SyncStatus,
@@ -32,6 +33,20 @@ import type {
   GenerateResult,
   ToggleResult,
 } from '@/types/attendance'
+import type {
+  DiagnosisHistoryRow,
+  DiagnosisResult,
+} from '@/types/diagnosis'
+import type { ExportResult } from '@/types/export'
+import type {
+  AcademyOverview,
+  BillingTrendPoint,
+  BirthdayEntry,
+  DashboardAlert,
+  MemoNote,
+  MonthlySummary,
+  TodaySchedule,
+} from '@/types/dashboard'
 import type {
   AbsenceHistoryItem,
   CreateMakeupPayload,
@@ -262,6 +277,37 @@ export async function restoreBackup(path: string): Promise<RestoreResult> {
 }
 
 /**
+ * 백업 파일이 복원 가능한지 격리된 사본으로 검증한다 (PRD §5.4 복원 리허설).
+ *
+ * 운영 DB 에는 영향이 없다 — 백업을 임시 디렉토리에 복사해 `PRAGMA integrity_check` 와
+ * 주요 테이블 행 수를 확인한 뒤 사본을 폐기한다. cipher off 개발 빌드는 평문 백업만
+ * 리허설 대상이다 (R98).
+ *
+ * 브라우저 개발 모드에서는 더미 성공 결과를 반환하여 UI 흐름만 검증 가능.
+ */
+export async function runBackupRehearsal(backupPath: string): Promise<RehearsalResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      backup_path: `[개발 모드] ${backupPath}`,
+      size_bytes: 0,
+      success: true,
+      integrity_detail: null,
+      table_counts: [
+        { table: 'students', count: 0 },
+        { table: 'student_schedules', count: 0 },
+        { table: 'regular_attendances', count: 0 },
+        { table: 'makeup_attendances', count: 0 },
+        { table: 'bills', count: 0 },
+        { table: 'payments', count: 0 },
+      ],
+      total_rows: 0,
+    }
+  }
+  return inv('run_backup_rehearsal', { backupPath }) as Promise<RehearsalResult>
+}
+
+/**
  * 현재 DB 의 무결성을 검증한다 (T8 PRD §5.3/§5.4).
  *
  * - `'quick'`: PRAGMA quick_check (~50ms, 앱 시작 시 사용)
@@ -411,6 +457,7 @@ export async function createStudent(payload: NewStudent): Promise<Student> {
       phone_student: payload.phone_student ?? null,
       phone_mother: payload.phone_mother ?? null,
       phone_father: payload.phone_father ?? null,
+      birth_date: payload.birth_date ?? null,
       enroll_date: payload.enroll_date,
       withdraw_date: null,
       created_at: new Date().toISOString(),
@@ -1480,4 +1527,177 @@ export async function showSaveDialog(defaultPath: string): Promise<string | null
   } catch {
     return null
   }
+}
+
+// ============================================================================
+// Sprint 14 — 데이터 자가 진단 (T1/T2, PRD §6.6)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/diagnosis.rs (검사 7종 + 이력).
+
+/** 자가 진단 실행 (수동/자동). 7종 검사 + 이력 저장 + 12개월 초과 정리. */
+export async function runDiagnosis(runType: 'auto' | 'manual'): Promise<DiagnosisResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    // dev fallback — 이상 0건
+    return { run_date: '', run_type: runType, total_checks: 7, issues_found: 0, issues: [] }
+  }
+  return inv('run_diagnosis', { runType }) as Promise<DiagnosisResult>
+}
+
+/** 진단 이력 조회 (최신순 limit 건). */
+export async function getDiagnosisHistory(limit: number): Promise<DiagnosisHistoryRow[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_diagnosis_history', { limit }) as Promise<DiagnosisHistoryRow[]>
+}
+
+/** 대시보드 알림용 최신 진단 결과 1건 (없으면 null). */
+export async function getLatestDiagnosis(): Promise<DiagnosisHistoryRow | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_latest_diagnosis') as Promise<DiagnosisHistoryRow | null>
+}
+
+/** 당월 자동 진단 필요 여부 (매월 1일 첫 실행 판단, AC-6.6-1). */
+export async function checkAutoDiagnosisNeeded(): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('check_auto_diagnosis_needed') as Promise<boolean>
+}
+
+// ============================================================================
+// Sprint 14 — 데이터 내보내기 (T5/T6, PRD §4.13.2)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/export.rs (엑셀 .xlsx — 정렬/천단위/너비 서식).
+
+/** 엑셀(.xlsx) 저장 다이얼로그 — 시스템 다운로드 폴더를 기본 위치로 제시. 취소 시 null. */
+export async function showXlsxSaveDialog(defaultName: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    // 기본 폴더 = 시스템 다운로드 폴더(권한/플랫폼 미지원 시 파일명만 → 다이얼로그 기본 폴더).
+    let defaultPath = defaultName
+    try {
+      const { downloadDir, join } = await import('@tauri-apps/api/path')
+      defaultPath = await join(await downloadDir(), defaultName)
+    } catch {
+      /* path API 불가 — 파일명만 사용 */
+    }
+    const selected = await save({
+      defaultPath,
+      filters: [{ name: '엑셀 파일', extensions: ['xlsx'] }],
+    })
+    return selected ?? null
+  } catch {
+    return null
+  }
+}
+
+/** dev 모드(브라우저) fallback 결과 — 실제 저장 없이 0건. */
+const EXPORT_DEV_FALLBACK: ExportResult = { file_path: '', row_count: 0, byte_size: 0 }
+
+/** 원생 명단을 CSV 로 내보낸다. */
+export async function exportStudents(filePath: string): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_students', { filePath }) as Promise<ExportResult>
+}
+
+/** 출결 데이터를 CSV 로 내보낸다. `yearMonth` 가 null 이면 전체 기간. */
+export async function exportAttendances(
+  yearMonth: string | null,
+  filePath: string,
+): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_attendances', { yearMonth, filePath }) as Promise<ExportResult>
+}
+
+/** 청구-수납 데이터를 CSV 로 내보낸다. `yearMonth` 가 null 이면 전체 기간. */
+export async function exportBilling(
+  yearMonth: string | null,
+  filePath: string,
+): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_billing', { yearMonth, filePath }) as Promise<ExportResult>
+}
+
+// ============================================================================
+// Sprint 14 — 대시보드 (T3/T4, PRD §4.11)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/dashboard.rs.
+
+/** 4.11.1 교습소 현황 (재원/성별/학년/학교 분포 + 분기별 입퇴교). */
+export async function getAcademyOverview(): Promise<AcademyOverview> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { total_active: 0, by_gender: [], by_grade: [], by_school: [], quarterly: [] }
+  }
+  return inv('get_academy_overview') as Promise<AcademyOverview>
+}
+
+/** 4.11.2 당일 수업 — 시간대별 명단. */
+export async function getTodaySchedule(): Promise<TodaySchedule> {
+  const inv = await getInvoke()
+  if (!inv) return { weekday: 1, slots: [] }
+  return inv('get_today_schedule') as Promise<TodaySchedule>
+}
+
+/** 4.11.3 월 핵심 요약 (청구/입금/미납 + 당월 입퇴교 + 출결 기록일수). */
+export async function getMonthlySummary(yearMonth: string): Promise<MonthlySummary> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      year_month: yearMonth,
+      bill_total: 0,
+      paid_total: 0,
+      unpaid_total: 0,
+      bill_count: 0,
+      paid_count: 0,
+      enrolled_this_month: 0,
+      withdrawn_this_month: 0,
+      attendance_recorded_days: 0,
+    }
+  }
+  return inv('get_monthly_summary', { yearMonth }) as Promise<MonthlySummary>
+}
+
+/** 4.11.4 알림 (조건 충족분만 반환). */
+export async function getDashboardAlerts(): Promise<DashboardAlert[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_dashboard_alerts') as Promise<DashboardAlert[]>
+}
+
+/** 교습소 월별 청구총액 추이 (마지막 청구월 기준 최근 12개월, 빈 달 0). */
+export async function getBillingTrend(): Promise<BillingTrendPoint[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_billing_trend') as Promise<BillingTrendPoint[]>
+}
+
+/** 이달의 생일 원생 (재원생, 생일 일자 빠른 순). */
+export async function getBirthdaysThisMonth(): Promise<BirthdayEntry[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_birthdays_this_month') as Promise<BirthdayEntry[]>
+}
+
+/** 4.11.6 메모 포스트잇 3장 조회 (내용 + 높이). */
+export async function getDashboardMemos(): Promise<MemoNote[]> {
+  const inv = await getInvoke()
+  if (!inv) return [] // dev fallback — 컴포넌트가 기본 3장으로 보정
+  return inv('get_dashboard_memos') as Promise<MemoNote[]>
+}
+
+/** 4.11.6 메모 1장 저장 (내용 + 높이, 디바운스 자동 저장). */
+export async function saveDashboardMemo(
+  index: number,
+  content: string,
+  height: number,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_dashboard_memo', { index, content, height })
 }

@@ -271,12 +271,13 @@ export default function StudentsPage() {
                     입교일{sortIndicator(sort, 'enroll')}
                   </button>
                 </th>
+                <th className="px-3 py-3 text-sm font-bold">생년월일</th>
               </tr>
             </thead>
             <tbody>
               {students.length === 0 && !isFetching && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-500">
                     {total === 0 ? '등록된 원생이 없습니다.' : '필터에 맞는 원생이 없습니다.'}
                   </td>
                 </tr>
@@ -303,6 +304,7 @@ export default function StudentsPage() {
                       : '-'}
                   </td>
                   <td className="px-3 py-3 text-base">{s.enroll_date}</td>
+                  <td className="px-3 py-3 text-base text-gray-700">{s.birth_date ?? '-'}</td>
                 </tr>
               ))}
             </tbody>

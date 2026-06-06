@@ -3,18 +3,21 @@
 이 파일은 sprint-planner 에이전트의 영구 메모리입니다.
 프로젝트 진행 상황, 기술 스택, 패턴 등을 기록합니다.
 
+- [프로젝트 현황](project-status.md) -- Sprint 14 진행 중, 기술 스택, 마이그레이션 V302 최신
+- [Velocity 참고](velocity.md) -- 과거 스프린트 실적 기반 Capacity 추정 가이드
 - [Sprint 현황](sprint-status.md) -- Sprint 13 계획 수립 완료, PIN 인증 옵션화 + Phase 5 취소 반영
-- [마이그레이션 번호 정책](migration-numbering.md) -- V111 완료 (Sprint 13은 DB 마이그레이션 없음 -- config.json 활용)
+- [마이그레이션 번호 정책](migration-numbering.md) -- V302 최신 (Sprint 14에서 V303 예정)
 - [Capacity 패턴](capacity-pattern.md) -- Sprint 9(38h계획/52h실측, +37%) → Sprint 10(실측 22.5h) → Sprint 11(계획 30.5h, 실측 16.5h)
 - [Velocity 참조](velocity-reference.md) -- Sprint 11 실측 16.5h, Capacity 34h 기준
-- [CSV 가져오기 이연](csv-import-defer.md) -- ROADMAP Sprint 12에 포함돼있던 CSV 가져오기를 Sprint 14(구 15)로 이연
+- [CSV 가져오기 이연](csv-import-defer.md) -- ROADMAP Sprint 12에 포함돼있던 CSV 가져오기를 Sprint 15로 이연
 - [Phase 5 취소 + 번호 재매핑](phase5-cancellation.md) -- Sprint 13에서 Phase 5 제거, Phase 6→5, Phase 7→6, Sprint 15→14, 16→15, 17→16
 
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 13 (2026-06-02)
-- 다음 스프린트 번호: 14
+- 마지막 완료 스프린트: Sprint 14 (2026-06-06)
+- 다음 스프린트 번호: 15
+- Sprint 14 계획 수립: 2026-06-02 (대시보드+자가진단+내보내기+복원리허설 -- T0~T8 9개 Task, 38h 예상, Recharts 신규 의존성)
 - Sprint 13 계획 수립: 2026-06-02 (PIN 인증 옵션화 C안 + Phase 5 취소 반영 + carry-over 4건, 38h 예상)
 - Sprint 12 계획 수립: 2026-05-30 (Phase 4 공지문 이미지 -- T0~T9 10개 Task, 31h+6h 예상, PI-14 react-rnd 사용자 결정 대기)
 - Sprint 11 계획 수립: 2026-05-28 (Phase 4 청구+수납 -- T0~T9 10개 Task, 30.5h 예상, PI-10~12 사용자 결정 대기)

@@ -83,6 +83,33 @@ export interface RestoreResult {
 }
 
 /**
+ * 복원 리허설로 검증한 테이블 행 수 — `backup.rs::TableCount` 와 정합.
+ */
+export interface TableCount {
+  table: string
+  count: number
+}
+
+/**
+ * 복원 리허설 결과 — `src-tauri/src/commands/backup.rs::RehearsalResult` 와 정합 (PRD §5.4).
+ *
+ * 백업 파일을 격리된 임시 사본으로 복사해 `PRAGMA integrity_check` + 주요 테이블 행 수를
+ * 검증한 결과다. **운영 DB 에는 영향이 없다.**
+ *
+ * - `success`: 무결성 통과 + 주요 테이블 열람 성공 시 true.
+ * - `integrity_detail`: 실패 시 사유(손상 메시지 또는 열기/복호화 실패). 성공 시 null.
+ * - `table_counts`: 검증된 주요 테이블 행 수. 성공 시에만 채워진다.
+ */
+export interface RehearsalResult {
+  backup_path: string
+  size_bytes: number
+  success: boolean
+  integrity_detail: string | null
+  table_counts: TableCount[]
+  total_rows: number
+}
+
+/**
  * 클라우드 동기화 대기 상태 — T9 PRD §5.3.
  *
  * `src-tauri/src/commands/sync.rs::SyncStatus` 와 serde `tag = "kind"` + `kebab-case` 정합.

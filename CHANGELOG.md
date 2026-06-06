@@ -38,6 +38,14 @@
 ## [Unreleased]
 
 ### Added
+- Sprint 14: 대시보드 (`/`) — 교습소 현황 위젯(재원 총원·학년별/성별/학교별 비율·분기별 입퇴교 추이), 당일 수업 위젯(12시간제 am/pm·시간대별 인원/명단), 월 요약 위젯(이전/다음 월 전환·청구/입금/미납/당월 입퇴교), 교습소 월별 청구총액 추이 그래프(최근 12개월), 이달의 생일 위젯, 메모 3슬롯(포스트잇·드래그 리사이즈·1초 디바운스 자동저장), 알림 4종(보강 소멸 임박·미확정 청구·학사 미수립·자가 진단 이상)
+- Sprint 14: 데이터 자가 진단 (`/settings/diagnosis`) — 검사 7종(보강필요시간 음수·재원중 출결 미생성·재원중 청구 미생성·스케줄-출결 불일치·결석 소멸기한 미설정·고아 보강 데이터·수납 정합성), 수동 실행 + 매월 1일 자동 실행(app_settings last_auto_diagnosis 분리), 12개월 이력 보관, 해결 항목 자동 재검증·정리
+- Sprint 14: 데이터 내보내기 (`/settings/data`) — 원생 명단·출결·청구-수납 엑셀(.xlsx) 내보내기(rust_xlsxwriter 0.95, 단월/전체 기간 선택, OS 저장 다이얼로그, 금전 천단위 콤마+우측정렬, autofit 컬럼너비)
+- Sprint 14: 복원 리허설 (`/settings/backup`) — 백업 파일 목록 표시 + "복원 리허설" 버튼(임시 복사→integrity_check→주요 6종 행수→사본 폐기, 운영 데이터 무영향)
+- Sprint 14: 원생 생년월일 필드 추가 — 원생 등록/수정 폼, 원생 목록 컬럼, 엑셀 내보내기 컬럼 포함(선택 입력, V305 마이그레이션)
+- Sprint 14: DB 마이그레이션 V303(`diagnosis_history` 테이블), V304(퇴교생 미보강 결석 일괄 소멸 백필), V305(`students.birth_date` 컬럼)
+- Sprint 14: recharts 3.8.1 신규 의존성 (대시보드 차트, dynamic import ssr:false)
+- Sprint 14: rust_xlsxwriter 0.95 신규 의존성 (엑셀 내보내기, 순수 Rust, Win/Mac 안전)
 - Sprint 13: 실행 시 PIN 인증 옵션화 (ADR-008: 기기별 선택적 PIN 게이트) — `/settings` 화면에 '실행 시 PIN 인증 사용' 토글(Switch) 추가. OFF 설정 시 앱 재시작 시 키체인 자동 잠금해제 → PIN 입력 없이 메인 진입. 키체인 키 부재 시 안전 폴백(PIN 입력 요구)
 - Sprint 13: `auto_unlock_with_keychain` IPC 신규 (`startup.rs`) — 키체인 유도키 직접 로드, `run_startup` 공통 시퀀스 추출 (락+무결성+DB초기화+heartbeat/backup+소멸전이 공통화)
 - Sprint 13: `skip_pin_on_launch` config.json 플래그 get/set IPC — `get_pin_skip_setting` / `set_pin_skip_setting` (DB 밖, app_config_dir, PC별 독립, unlock 전 호출 가능)
@@ -45,9 +53,17 @@
 - Sprint 13: ADR-008 신규 작성 (`docs/arch/adr-008-optional-pin-gate.md`) — PRD §5.5 인증 의무 완화 결정, 데이터 보호를 OS 계정+키체인 ACL로 위임하는 트레이드오프 명시
 
 ### Changed
+- Sprint 14: 대시보드가 기본 진입 화면(`/`)으로 활성화 — 기존 리다이렉트 placeholder에서 실제 대시보드 컴포넌트로 교체
+- Sprint 14: 내보내기 형식 CSV→엑셀(.xlsx) 전환 — 정렬·서식(천단위 콤마·우측정렬·autofit) 지원, BOM 불필요
+- Sprint 14: `compute_summary` 보강필요시간 이월 누적으로 변경 — 소멸기한이 조회월 이상인 이월 결석 포함(퇴교생 제외), `earliest_pending`과 정합
+- Sprint 14: `next.config.ts` dev 전용 webpack 캐시 비활성화 — Node 25 V8 webpack 캐시 직렬화 abort 크래시 회피(production 빌드 무영향)
 - Sprint 13: `/lock` 진입 흐름 분기 — `skip_pin_on_launch=true` 시 `autoUnlockWithKeychain` → 성공 시 메인 진입, 실패 시 기존 LockScreen 폴백. 자동 잠금해제 중 로딩 스피너 표시
 
 ### Fixed
+- Sprint 14: 자가진단 검사 1(보강필요시간 음수) 오탐 수정 — 결석 대상을 `absent`+`makeup_done`으로 변경(소멸 `makeup_expired` 면제)
+- Sprint 14: 대시보드 출결 진행률 공휴일 오탐 수정 — `allows_regular_class=0` 학사일정 기간을 비수업일에서 제외하도록 보정
+- Sprint 14: 보강 소멸 임박 알림 퇴교생 제외 — 퇴교한 원생의 미보강 결석이 알림에 노출되던 버그 수정
+- Sprint 14: `update_student`·`withdraw_student` 경로 퇴교 시 미보강 결석 미처리 버그 — V304 마이그레이션으로 기존 데이터 백필 + 알림 쿼리 퇴교 필터 추가
 - Sprint 13: 글로벌 검색 원생 클릭 404 수정 — `/students/{id}` 라우트 미존재로 404 발생하던 버그를 `/students/edit?id=` 경로로 교정
 - Sprint 13: 글로벌 검색 드롭다운 방향키 탐색 + 한글 IME 처리 — `ArrowUp`/`ArrowDown`/`Enter`/`Escape` 키 바인딩 추가, 한글 조합 중(`isComposing`) 방향키 오작동 방지
 - Sprint 13: `save_notice_preview` 경로 경계 검증 (R88) — 절대경로 + `.png` 확장자 검사 + path traversal 차단, `data_root()` 밖 폴더 자동생성 금지

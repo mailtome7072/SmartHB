@@ -99,11 +99,7 @@ export default function LockPage() {
     )
   }
 
-  if (lockStatus === null) {
-    return <SplashScreen message="잠금 상태를 확인하는 중입니다..." />
-  }
-
-  if (lockStatus.kind === 'owned-by-other') {
+  if (lockStatus !== null && lockStatus.kind === 'owned-by-other') {
     return (
       <LockWarning
         initialSecondsAgo={lockStatus.last_heartbeat_seconds_ago}
@@ -113,9 +109,9 @@ export default function LockPage() {
     )
   }
 
-  // 자동 잠금해제 시도 중(또는 skip 설정 확인 중) — 결과 확정 전까지 로딩 표시.
-  if (!autoUnlockTried) {
-    return <SplashScreen message="자동 로그인 중..." />
+  // A93: 잠금 상태 확인 + 자동 잠금해제 시도를 단일 로딩 메시지로 통합 (메시지 스왑 깜빡임 제거).
+  if (lockStatus === null || !autoUnlockTried) {
+    return <SplashScreen message="앱을 여는 중입니다..." />
   }
 
   return <LockScreen onUnlocked={handleUnlocked} />
