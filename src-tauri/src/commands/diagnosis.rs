@@ -369,25 +369,30 @@ async fn run_and_record(
     let details = serde_json::to_string(&issues)
         .map_err(|e| AppError::Config(format!("진단 결과 직렬화 실패: {}", e)))?;
 
-    sqlx::query(
-        "INSERT INTO diagnosis_history \
-            (run_date, run_type, total_checks, issues_found, details) \
-         VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(run_date)
-    .bind(run_type)
-    .bind(TOTAL_CHECKS)
-    .bind(issues_found)
-    .bind(&details)
-    .execute(pool)
-    .await
-    .map_err(AppError::Db)?;
-
-    // 12개월 초과 이력 자동 정리 (AC-6.6-4).
-    sqlx::query("DELETE FROM diagnosis_history WHERE run_date < date('now', '-12 months')")
+    // 직전 점검과 결과가 동일하면 이력에 새 행을 추가하지 않는다 — 자동/수동 반복 실행 시
+    // 동일 결과가 중복 누적되는 것을 막는다 (화면에는 항상 최신 결과를 반환). 결과(이상 건수 +
+    // 상세 JSON)가 바뀐 시점에만 새 이력이 쌓여 "데이터 변화 추이" 로그로 의미를 유지한다.
+    if !is_same_as_latest(pool, issues_found, &details).await? {
+        sqlx::query(
+            "INSERT INTO diagnosis_history \
+                (run_date, run_type, total_checks, issues_found, details) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(run_date)
+        .bind(run_type)
+        .bind(TOTAL_CHECKS)
+        .bind(issues_found)
+        .bind(&details)
         .execute(pool)
         .await
         .map_err(AppError::Db)?;
+
+        // 12개월 초과 이력 자동 정리 (AC-6.6-4) — 새 이력이 추가된 경우에만 수행.
+        sqlx::query("DELETE FROM diagnosis_history WHERE run_date < date('now', '-12 months')")
+            .execute(pool)
+            .await
+            .map_err(AppError::Db)?;
+    }
 
     Ok(DiagnosisResult {
         run_date: run_date.to_string(),
@@ -396,6 +401,32 @@ async fn run_and_record(
         issues_found,
         issues,
     })
+}
+
+/// 가장 최근 이력의 결과가 주어진 (이상 건수, 상세 JSON) 와 동일한지 판정한다.
+///
+/// `details` 는 동일 데이터·동일 검사 순서면 serde_json 직렬화가 결정적이라 문자열 비교로
+/// 충분하다. 이력이 하나도 없으면 (첫 실행) `false` 를 반환해 반드시 기록되게 한다.
+async fn is_same_as_latest(
+    pool: &SqlitePool,
+    issues_found: i64,
+    details: &str,
+) -> Result<bool, AppError> {
+    let row = sqlx::query(
+        "SELECT issues_found, details FROM diagnosis_history ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Db)?;
+
+    match row {
+        Some(r) => {
+            let prev_found: i64 = r.try_get("issues_found").map_err(AppError::Db)?;
+            let prev_details: String = r.try_get("details").map_err(AppError::Db)?;
+            Ok(prev_found == issues_found && prev_details == details)
+        }
+        None => Ok(false),
+    }
 }
 
 /// 이력 조회 (내부 — pool 주입). 최신순 limit 건.
@@ -774,9 +805,43 @@ mod tests {
     async fn get_latest_returns_most_recent() {
         let pool = test_pool_in_memory().await.unwrap();
         run_and_record(&pool, "auto", "2026-05-01", "2026-05").await.unwrap();
+        // 결과가 달라지도록 데이터 변경 — 동일 결과면 dedup 으로 두 번째 기록이 스킵된다.
+        let sid = insert_student(&pool, "S1", "김학생").await;
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '15:00', 2, '2026-01-01')")
+            .bind(sid).execute(&pool).await.unwrap();
         run_and_record(&pool, "manual", "2026-06-01", "2026-06").await.unwrap();
         let latest = fetch_history(&pool, 1).await.unwrap();
         assert_eq!(latest.len(), 1);
         assert_eq!(latest[0].run_date, "2026-06-01");
+    }
+
+    #[tokio::test]
+    async fn run_and_record_skips_duplicate_when_unchanged() {
+        let pool = test_pool_in_memory().await.unwrap();
+        // 동일 데이터로 자동→수동→수동 3회 실행 (사용자 보고 시나리오 재현).
+        run_and_record(&pool, "auto", "2026-06-06", "2026-06").await.unwrap();
+        run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
+        run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
+        // 결과가 변하지 않았으므로 이력은 첫 1건만 남는다.
+        let history = fetch_history(&pool, 10).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].run_type, "auto");
+    }
+
+    #[tokio::test]
+    async fn run_and_record_appends_when_result_changes() {
+        let pool = test_pool_in_memory().await.unwrap();
+        // 1차: 빈 데이터 → 이상 0건.
+        let first = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
+        assert_eq!(first.issues_found, 0);
+        // 데이터 변경으로 결과가 달라지게 한 뒤 2차 실행.
+        let sid = insert_student(&pool, "S1", "김학생").await;
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '15:00', 2, '2026-01-01')")
+            .bind(sid).execute(&pool).await.unwrap();
+        let second = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
+        assert!(second.issues_found >= 1);
+        // 결과가 바뀌었으므로 새 이력이 추가되어 2건.
+        let history = fetch_history(&pool, 10).await.unwrap();
+        assert_eq!(history.len(), 2);
     }
 }
