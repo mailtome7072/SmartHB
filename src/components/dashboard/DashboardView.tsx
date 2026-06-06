@@ -351,9 +351,9 @@ function Widget({
     <section
       className={`flex flex-col rounded-lg border border-[var(--border)] bg-white p-5 ${className ?? ''}`}
     >
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h2 className="text-lg font-bold text-[var(--foreground)]">{title}</h2>
+      <div className="mb-4 flex items-center gap-2">
         {action}
+        <h2 className="text-lg font-bold text-[var(--foreground)]">{title}</h2>
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>
