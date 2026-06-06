@@ -3,8 +3,11 @@
 /**
  * 대시보드 (Sprint 14 T4, PRD §4.11).
  *
- * 6개 위젯 + 5종 알림. TanStack Query 로 위젯별 IPC 병렬 호출 + staleTime 캐싱(AC-4.11-1).
+ * 위젯(교습소 현황 / 당일 수업 / 청구총액 추이 / 월 요약 / 메모) + 알림. TanStack Query 로
+ * 위젯별 IPC 병렬 호출 + staleTime 캐싱(AC-4.11-1).
  * 차트는 recharts 를 `next/dynamic` ssr:false 로 로드 (static export 안전 + 번들 분리 R96).
+ * (출결 입력 진행률 위젯은 Sprint 14 검증 중 제거 — 출결이 월 단위 'present' 일괄 생성
+ *  모델이라 항상 100%가 되어 무의미.)
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -13,7 +16,6 @@ import dynamic from 'next/dynamic'
 import { useQuery } from '@tanstack/react-query'
 import {
   getAcademyOverview,
-  getAttendanceProgress,
   getBillingTrend,
   getDashboardAlerts,
   getDashboardMemos,
@@ -77,11 +79,6 @@ export function DashboardView() {
   const monthly = useQuery({
     queryKey: ['dashboard', 'monthly', ym],
     queryFn: () => getMonthlySummary(ym),
-    staleTime: STALE,
-  })
-  const progress = useQuery({
-    queryKey: ['dashboard', 'progress', ym],
-    queryFn: () => getAttendanceProgress(ym),
     staleTime: STALE,
   })
   const alerts = useQuery({
@@ -156,33 +153,22 @@ export function DashboardView() {
           </Widget>
         </div>
 
-        <Widget title={`${ym} 월 요약`}>
-          {monthly.isLoading || monthly.data === undefined ? (
-            <Loading />
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              <Stat label="청구 총액" value={won(monthly.data.bill_total)} />
-              <Stat label="입금" value={won(monthly.data.paid_total)} />
-              <Stat label="미납" value={won(monthly.data.unpaid_total)} danger={monthly.data.unpaid_total > 0} />
-              <Stat label="청구 건수" value={`${monthly.data.paid_count}/${monthly.data.bill_count} 수납`} />
-              <Stat label="당월 입교" value={`${monthly.data.enrolled_this_month}명`} />
-              <Stat label="당월 퇴교" value={`${monthly.data.withdrawn_this_month}명`} />
-            </div>
-          )}
-        </Widget>
-
-        <Widget title="출결 입력 진행률">
-          {progress.isLoading || progress.data === undefined ? (
-            <Loading />
-          ) : (
-            <ProgressBody
-              expected={progress.data.expected_days}
-              recorded={progress.data.recorded_days}
-              missing={progress.data.missing_dates}
-            />
-          )}
-        </Widget>
       </div>
+
+      <Widget title={`${ym} 월 요약`}>
+        {monthly.isLoading || monthly.data === undefined ? (
+          <Loading />
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <Stat label="청구 총액" value={won(monthly.data.bill_total)} />
+            <Stat label="입금" value={won(monthly.data.paid_total)} />
+            <Stat label="미납" value={won(monthly.data.unpaid_total)} danger={monthly.data.unpaid_total > 0} />
+            <Stat label="청구 건수" value={`${monthly.data.paid_count}/${monthly.data.bill_count} 수납`} />
+            <Stat label="당월 입교" value={`${monthly.data.enrolled_this_month}명`} />
+            <Stat label="당월 퇴교" value={`${monthly.data.withdrawn_this_month}명`} />
+          </div>
+        )}
+      </Widget>
     </div>
   )
 }
@@ -190,7 +176,6 @@ export function DashboardView() {
 // ── 알림 ──
 
 const ALERT_ROUTE: Record<string, string> = {
-  attendance_missing: '/attendance',
   makeup_expiring: '/attendance',
   draft_bills: '/billing',
   academic_not_set: '/academic',
@@ -226,58 +211,6 @@ function AlertsPanel({ alerts, loading }: { alerts: DashboardAlert[]; loading: b
           </Link>
         )
       })}
-    </div>
-  )
-}
-
-// ── 출결 진행률 ──
-
-function ProgressBody({
-  expected,
-  recorded,
-  missing,
-}: {
-  expected: number
-  recorded: number
-  missing: string[]
-}) {
-  const pct = expected === 0 ? 100 : Math.round((recorded / expected) * 100)
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline justify-between">
-        <span className="text-2xl font-bold text-[var(--foreground)]">{pct}%</span>
-        <span className="text-sm text-gray-600">
-          {recorded}/{expected} 수업일 입력
-        </span>
-      </div>
-      <div className="mb-4 h-3 w-full overflow-hidden rounded-full bg-gray-200">
-        <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${pct}%` }} />
-      </div>
-      {missing.length === 0 ? (
-        <Empty>미입력 일자가 없습니다.</Empty>
-      ) : (
-        <div>
-          <p className="mb-2 text-sm text-gray-600">미입력 일자 (클릭 시 출결 화면 이동)</p>
-          <div className="flex flex-wrap gap-2">
-            {missing.map((d) => {
-              const isFriday = new Date(d).getDay() === 5 // AC-4.11-5 금요일 강조
-              return (
-                <Link
-                  key={d}
-                  href={`/attendance?date=${d}`}
-                  className={`min-h-[44px] rounded-md border px-3 py-2 text-sm transition-colors hover:bg-[var(--background)] ${
-                    isFriday
-                      ? 'border-[var(--accent)] font-bold text-[var(--accent)]'
-                      : 'border-[var(--border)] text-gray-700'
-                  }`}
-                >
-                  {d.slice(5)}
-                </Link>
-              )
-            })}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

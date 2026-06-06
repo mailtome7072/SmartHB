@@ -40,7 +40,6 @@ import type {
 import type { ExportResult } from '@/types/export'
 import type {
   AcademyOverview,
-  AttendanceProgress,
   BillingTrendPoint,
   DashboardAlert,
   MemoNote,
@@ -1662,14 +1661,7 @@ export async function getMonthlySummary(yearMonth: string): Promise<MonthlySumma
   return inv('get_monthly_summary', { yearMonth }) as Promise<MonthlySummary>
 }
 
-/** 4.11.5 출결 입력 진행률 — 미입력 일자 목록. */
-export async function getAttendanceProgress(yearMonth: string): Promise<AttendanceProgress> {
-  const inv = await getInvoke()
-  if (!inv) return { year_month: yearMonth, expected_days: 0, recorded_days: 0, missing_dates: [] }
-  return inv('get_attendance_progress', { yearMonth }) as Promise<AttendanceProgress>
-}
-
-/** 4.11.4 알림 5종 (조건 충족분만 반환). */
+/** 4.11.4 알림 (조건 충족분만 반환). */
 export async function getDashboardAlerts(): Promise<DashboardAlert[]> {
   const inv = await getInvoke()
   if (!inv) return []
