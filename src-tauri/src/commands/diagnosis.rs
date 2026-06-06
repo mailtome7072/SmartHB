@@ -27,6 +27,10 @@ use sqlx::{Row, SqlitePool};
 /// 총 검사 항목 수 (PRD §6.6.1).
 const TOTAL_CHECKS: i64 = 7;
 
+/// 월 1회 자동진단 추적 키 (app_settings) — 이상 0건이면 이력을 남기지 않으므로(완전 0건 정책),
+/// "이번 달 자동진단 실행 여부"는 이력이 아닌 이 설정값으로 판정한다 (AC-6.6-1).
+const LAST_AUTO_DIAGNOSIS_KEY: &str = "last_auto_diagnosis";
+
 /// 자가 진단에서 발견된 개별 이상 항목. `diagnosis_history.details` JSON 배열의 원소.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct DiagnosisIssue {
@@ -370,14 +374,27 @@ async fn run_and_record(
         .map_err(|e| AppError::Config(format!("진단 결과 직렬화 실패: {}", e)))?;
 
     // 기존 이력 재검증 — 수동/자동 실행 시마다 이전 진단결과 항목이 현재도 검출되는지 확인하여
-    // 이미 해결된(현재 미검출) 항목은 각 이력에서 자동 제거하고, 모든 항목이 해결된 이력은 삭제한다.
+    // 이미 해결된(현재 미검출) 항목은 각 이력에서 자동 제거하고, 항목이 모두 비게 된 이력은 삭제한다.
     reconcile_resolved_issues(pool, &issues).await?;
 
-    // 현재 실행 기록 — 직전 이력과 결과가 다를 때만 새 이력을 추가한다(변경 시에만 기록).
-    // 재검증으로 직전 이력이 현재 결과와 같아졌다면 추가하지 않아 중복을 막는다. 이상 0건도
-    // "이상 없음" 결과로 1건 남겨 화면 표시·월 자동진단 추적을 유지한다(재검증이 과거의 해결된
-    // 이력은 이미 정리하므로 누적되지 않음).
-    if !is_same_as_latest(pool, issues_found, &details).await? {
+    // 자동진단 월 추적 — 이상 0건이면 이력을 남기지 않으므로(완전 0건 정책), 월 1회 자동 실행
+    // 여부(AC-6.6-1)는 app_settings 에 별도 보관한다.
+    if run_type == "auto" {
+        sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(LAST_AUTO_DIAGNOSIS_KEY)
+        .bind(year_month)
+        .execute(pool)
+        .await
+        .map_err(AppError::Db)?;
+    }
+
+    // 현재 실행 기록 — 이상이 있을 때만(>0) 직전 이력과 다르면 새 이력을 추가한다.
+    // 완전 0건 정책: 모든 이상이 해결되면 재검증이 과거 이상-이력을 이미 삭제하고, 새 이력도
+    // 남기지 않으므로 "아무 기록도 없음" 상태가 된다(화면은 실행 결과를 직접 표시).
+    if issues_found > 0 && !is_same_as_latest(pool, issues_found, &details).await? {
         sqlx::query(
             "INSERT INTO diagnosis_history \
                 (run_date, run_type, total_checks, issues_found, details) \
@@ -445,9 +462,9 @@ async fn reconcile_resolved_issues(
             .filter_map(|i| current_by_id.get(&issue_identity(i)).map(|cur| (*cur).clone()))
             .collect();
 
-        if original_len > 0 && kept.is_empty() {
-            // 이상이 있던 이력의 모든 항목이 해결됨 → 이력 삭제. (원래 비어있던 '이상 없음'
-            // 이력은 삭제하지 않아 화면 표시·자동진단 추적을 유지한다.)
+        if kept.is_empty() {
+            // 항목이 모두 비게 됨(전부 해결 또는 빈 이력) → 이력 삭제. 완전 0건 정책상 빈
+            // 이력은 남기지 않는다(레거시 '이상 없음' 이력도 다음 실행 때 정리된다).
             sqlx::query("DELETE FROM diagnosis_history WHERE id = ?")
                 .bind(id)
                 .execute(pool)
@@ -532,16 +549,13 @@ fn row_to_history(r: sqlx::sqlite::SqliteRow) -> Result<DiagnosisHistoryRow, App
 
 /// 당월 자동 진단 필요 여부 (내부 — pool 주입). 당월 'auto' 기록이 없으면 true.
 async fn auto_needed(pool: &SqlitePool, year_month: &str) -> Result<bool, AppError> {
-    let row = sqlx::query(
-        "SELECT EXISTS(SELECT 1 FROM diagnosis_history \
-                       WHERE run_type = 'auto' AND substr(run_date, 1, 7) = ?) AS done",
-    )
-    .bind(year_month)
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::Db)?;
-    let done: i64 = row.try_get("done").map_err(AppError::Db)?;
-    Ok(done == 0)
+    // 완전 0건 정책: 이상이 없으면 이력이 없으므로, 자동 실행 여부는 app_settings 추적값으로 판정.
+    let last: Option<String> = sqlx::query_scalar("SELECT value FROM app_settings WHERE key = ?")
+        .bind(LAST_AUTO_DIAGNOSIS_KEY)
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::Db)?;
+    Ok(last.as_deref() != Some(year_month))
 }
 
 // ----------------------------------------------------------------------------
@@ -886,6 +900,8 @@ mod tests {
     #[tokio::test]
     async fn run_and_record_skips_duplicate_when_unchanged() {
         let pool = test_pool_in_memory().await.unwrap();
+        // 이상 1건(청구 미생성)을 보장 — 완전 0건 정책상 0건이면 기록이 안 남으므로.
+        insert_student(&pool, "S1", "김학생").await;
         // 동일 데이터로 자동→수동→수동 3회 실행 (사용자 보고 시나리오 재현).
         run_and_record(&pool, "auto", "2026-06-06", "2026-06").await.unwrap();
         run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
@@ -899,15 +915,14 @@ mod tests {
     #[tokio::test]
     async fn run_and_record_appends_when_result_changes() {
         let pool = test_pool_in_memory().await.unwrap();
-        // 1차: 빈 데이터 → 이상 0건.
+        // 1차: 원생 A 1명 → 청구 미생성 1건.
+        insert_student(&pool, "A1", "가").await;
         let first = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
-        assert_eq!(first.issues_found, 0);
-        // 데이터 변경으로 결과가 달라지게 한 뒤 2차 실행.
-        let sid = insert_student(&pool, "S1", "김학생").await;
-        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '15:00', 2, '2026-01-01')")
-            .bind(sid).execute(&pool).await.unwrap();
-        let second = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
-        assert!(second.issues_found >= 1);
+        assert_eq!(first.issues_found, 1);
+        // 원생 B 추가로 결과가 달라짐(이상 2건) → 새 이력 추가.
+        insert_student(&pool, "B1", "나").await;
+        let second = run_and_record(&pool, "manual", "2026-06-07", "2026-06").await.unwrap();
+        assert_eq!(second.issues_found, 2);
         // 결과가 바뀌었으므로 새 이력이 추가되어 2건.
         let history = fetch_history(&pool, 10).await.unwrap();
         assert_eq!(history.len(), 2);
@@ -949,10 +964,20 @@ mod tests {
         let second = run_and_record(&pool, "manual", "2026-06-07", "2026-06").await.unwrap();
         assert_eq!(second.issues_found, 0);
 
+        // 완전 0건 정책: 모든 이상이 해결되면 아무 이력도 남지 않는다.
         let history = fetch_history(&pool, 10).await.unwrap();
-        assert!(
-            history.iter().all(|h| h.issues_found == 0),
-            "모든 이상이 해결되면 이상을 보유한 이력은 남지 않아야 함"
-        );
+        assert!(history.is_empty(), "모든 이상이 해결되면 이력이 완전히 비어야 함");
+    }
+
+    #[tokio::test]
+    async fn auto_run_tracked_even_when_no_issues() {
+        // 완전 0건이어도 자동진단은 월 1회로 추적되어야 한다 (AC-6.6-1).
+        let pool = test_pool_in_memory().await.unwrap();
+        assert!(auto_needed(&pool, "2026-06").await.unwrap());
+        // 빈 데이터(이상 0건)로 auto 실행 → 이력은 안 남지만 추적값은 기록.
+        run_and_record(&pool, "auto", "2026-06-01", "2026-06").await.unwrap();
+        assert!(fetch_history(&pool, 10).await.unwrap().is_empty(), "0건이면 이력 없음");
+        assert!(!auto_needed(&pool, "2026-06").await.unwrap(), "이번 달 자동진단 완료로 추적");
+        assert!(auto_needed(&pool, "2026-07").await.unwrap(), "다음 달은 여전히 필요");
     }
 }

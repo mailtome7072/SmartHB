@@ -15,7 +15,23 @@ import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { getDiagnosisHistory, runDiagnosis } from '@/lib/tauri'
-import type { DiagnosisHistoryRow, DiagnosisIssue } from '@/types/diagnosis'
+import type { DiagnosisHistoryRow, DiagnosisIssue, DiagnosisResult } from '@/types/diagnosis'
+
+/**
+ * 실행 결과를 이력 행 형태로 변환 — 완전 0건 정책상 이상이 없으면 이력이 남지 않으므로,
+ * 방금 실행 결과(이상 없음)를 상세 패널에 직접 표시하기 위한 합성 행 (id=0, 목록에는 없음).
+ */
+function resultToRow(r: DiagnosisResult): DiagnosisHistoryRow {
+  return {
+    id: 0,
+    run_date: r.run_date,
+    run_type: r.run_type,
+    total_checks: r.total_checks,
+    issues_found: r.issues_found,
+    issues: r.issues,
+    created_at: '',
+  }
+}
 
 /** 검사별 해결 가이드 (check_id 기준, AC-6.6-3). */
 const GUIDE: Record<string, string> = {
@@ -80,10 +96,11 @@ export default function DiagnosisPage() {
     setRunning(true)
     setError(null)
     try {
-      await runDiagnosis('manual')
+      const result = await runDiagnosis('manual')
       const rows = await getDiagnosisHistory(12)
       setHistory(rows)
-      setSelected(rows[0] ?? null)
+      // 완전 0건이면 이력이 비므로 방금 실행 결과를 직접 표시("이상 없음").
+      setSelected(rows[0] ?? resultToRow(result))
     } catch (e) {
       setError(typeof e === 'string' ? e : '진단을 실행할 수 없습니다.')
     } finally {
