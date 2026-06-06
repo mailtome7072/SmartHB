@@ -221,6 +221,7 @@ async fn build_students_sheet(pool: &SqlitePool) -> Result<SheetData, AppError> 
         "학교급",
         "학년",
         "학교",
+        "생년월일",
         "입교일",
         "퇴교일",
         "주수업시간(시간)",
@@ -232,7 +233,7 @@ async fn build_students_sheet(pool: &SqlitePool) -> Result<SheetData, AppError> 
     // 정렬: 일련번호 오름차순(숫자 기준).
     let db_rows = sqlx::query(
         "SELECT s.serial_no, s.name, s.gender, s.school_level, s.grade, \
-                sc.name AS school_name, s.enroll_date, s.withdraw_date, \
+                sc.name AS school_name, s.birth_date, s.enroll_date, s.withdraw_date, \
                 COALESCE(wh.weekly_hours, 0) AS weekly_hours, sf.amount AS fee_amount \
          FROM students s \
          LEFT JOIN schools sc ON sc.id = s.school_id \
@@ -254,6 +255,7 @@ async fn build_students_sheet(pool: &SqlitePool) -> Result<SheetData, AppError> 
         let school_level: String = r.try_get("school_level")?;
         let grade: i64 = r.try_get("grade")?;
         let school_name: Option<String> = r.try_get("school_name")?;
+        let birth_date: Option<String> = r.try_get("birth_date")?;
         let enroll_date: String = r.try_get("enroll_date")?;
         let withdraw_date: Option<String> = r.try_get("withdraw_date")?;
         let weekly_hours: i64 = r.try_get("weekly_hours")?;
@@ -271,6 +273,7 @@ async fn build_students_sheet(pool: &SqlitePool) -> Result<SheetData, AppError> 
             Cell::Text(school_level_label(&school_level).to_string()),
             Cell::Int(grade),
             Cell::Text(school_name.unwrap_or_default()),
+            Cell::Text(birth_date.unwrap_or_default()),
             Cell::Text(enroll_date),
             Cell::Text(withdraw_date.unwrap_or_default()),
             Cell::Hours(weekly_hours as f64),
@@ -476,6 +479,12 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
+        // 박일에 생년월일 설정 → 생년월일 컬럼(index 6) 검증.
+        sqlx::query("UPDATE students SET birth_date = '2017-05-10' WHERE id = ?")
+            .bind(sid1)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let sheet = build_students_sheet(&pool).await.unwrap();
         assert_eq!(sheet.rows.len(), 3);
@@ -485,9 +494,12 @@ mod tests {
         assert_eq!(sheet.rows[2][0], Cell::Int(10));
         // 학년도 숫자 형식.
         assert_eq!(sheet.rows[0][4], Cell::Int(1));
-        // 박일(serial 1): 주수업시간 Hours(4), 교습비 Money(200000).
-        assert_eq!(sheet.rows[0][8], Cell::Hours(4.0));
-        assert_eq!(sheet.rows[0][9], Cell::Money(200_000));
+        // 박일(serial 1): 생년월일(index 6), 주수업시간 Hours(4), 교습비 Money(200000).
+        assert_eq!(sheet.rows[0][6], Cell::Text("2017-05-10".into()));
+        assert_eq!(sheet.rows[0][9], Cell::Hours(4.0));
+        assert_eq!(sheet.rows[0][10], Cell::Money(200_000));
+        // 생년월일 미설정 원생은 공란.
+        assert_eq!(sheet.rows[1][6], Cell::Text(String::new()));
         // 성별/학교급 라벨.
         assert_eq!(sheet.rows[0][2], Cell::Text("여".into()));
         assert_eq!(sheet.rows[0][3], Cell::Text("중등".into()));
