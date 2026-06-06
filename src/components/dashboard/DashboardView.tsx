@@ -216,7 +216,7 @@ function MonthlySummaryWidget() {
   )
 
   return (
-    <Widget title={`${month} 월 요약`} action={action}>
+    <Widget title={<span style={{ fontSize: '20px' }}>{`${month} 월 요약`}</span>} action={action}>
       {monthly.isLoading || monthly.data === undefined ? (
         <Loading />
       ) : (
