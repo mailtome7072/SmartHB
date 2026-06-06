@@ -369,9 +369,14 @@ async fn run_and_record(
     let details = serde_json::to_string(&issues)
         .map_err(|e| AppError::Config(format!("진단 결과 직렬화 실패: {}", e)))?;
 
-    // 직전 점검과 결과가 동일하면 이력에 새 행을 추가하지 않는다 — 자동/수동 반복 실행 시
-    // 동일 결과가 중복 누적되는 것을 막는다 (화면에는 항상 최신 결과를 반환). 결과(이상 건수 +
-    // 상세 JSON)가 바뀐 시점에만 새 이력이 쌓여 "데이터 변화 추이" 로그로 의미를 유지한다.
+    // 기존 이력 재검증 — 수동/자동 실행 시마다 이전 진단결과 항목이 현재도 검출되는지 확인하여
+    // 이미 해결된(현재 미검출) 항목은 각 이력에서 자동 제거하고, 모든 항목이 해결된 이력은 삭제한다.
+    reconcile_resolved_issues(pool, &issues).await?;
+
+    // 현재 실행 기록 — 직전 이력과 결과가 다를 때만 새 이력을 추가한다(변경 시에만 기록).
+    // 재검증으로 직전 이력이 현재 결과와 같아졌다면 추가하지 않아 중복을 막는다. 이상 0건도
+    // "이상 없음" 결과로 1건 남겨 화면 표시·월 자동진단 추적을 유지한다(재검증이 과거의 해결된
+    // 이력은 이미 정리하므로 누적되지 않음).
     if !is_same_as_latest(pool, issues_found, &details).await? {
         sqlx::query(
             "INSERT INTO diagnosis_history \
@@ -386,13 +391,13 @@ async fn run_and_record(
         .execute(pool)
         .await
         .map_err(AppError::Db)?;
-
-        // 12개월 초과 이력 자동 정리 (AC-6.6-4) — 새 이력이 추가된 경우에만 수행.
-        sqlx::query("DELETE FROM diagnosis_history WHERE run_date < date('now', '-12 months')")
-            .execute(pool)
-            .await
-            .map_err(AppError::Db)?;
     }
+
+    // 12개월 초과 이력 자동 정리 (AC-6.6-4).
+    sqlx::query("DELETE FROM diagnosis_history WHERE run_date < date('now', '-12 months')")
+        .execute(pool)
+        .await
+        .map_err(AppError::Db)?;
 
     Ok(DiagnosisResult {
         run_date: run_date.to_string(),
@@ -401,6 +406,69 @@ async fn run_and_record(
         issues_found,
         issues,
     })
+}
+
+/// 이상 항목의 안정적 식별자 — 메시지 텍스트는 제외하여(카운트 변동에도) 같은 문제로 인식한다.
+fn issue_identity(i: &DiagnosisIssue) -> (String, Option<String>, Option<i64>) {
+    (i.check_id.clone(), i.target_table.clone(), i.target_id)
+}
+
+/// 기존 이력 재검증 (PRD §6.6 — 자동 해결 반영).
+///
+/// 현재 검출 목록(`current`)에 더 이상 없는(= 해결된) 항목을 각 이력에서 제거한다. 남은 항목은
+/// 현재 검출 내용으로 메시지를 갱신하고(카운트 변동 반영 + 중복 적재 방지), 모든 항목이 해결된
+/// 이력은 삭제한다.
+async fn reconcile_resolved_issues(
+    pool: &SqlitePool,
+    current: &[DiagnosisIssue],
+) -> Result<(), AppError> {
+    use std::collections::HashMap;
+    // 현재 검출 항목을 식별자로 매핑 — 남은 항목을 최신 내용으로 교체하기 위함.
+    let current_by_id: HashMap<(String, Option<String>, Option<i64>), &DiagnosisIssue> =
+        current.iter().map(|i| (issue_identity(i), i)).collect();
+
+    let rows = sqlx::query("SELECT id, details FROM diagnosis_history")
+        .fetch_all(pool)
+        .await
+        .map_err(AppError::Db)?;
+
+    for row in rows {
+        let id: i64 = row.try_get("id").map_err(AppError::Db)?;
+        let details: String = row.try_get("details").map_err(AppError::Db)?;
+        let stored: Vec<DiagnosisIssue> = serde_json::from_str(&details)
+            .map_err(|e| AppError::Config(format!("진단 이력 details 파싱 실패: {}", e)))?;
+        let original_len = stored.len();
+
+        // 여전히 검출되는 항목만, 현재 내용(메시지 최신화)으로 유지 — 저장 순서 보존.
+        let kept: Vec<DiagnosisIssue> = stored
+            .iter()
+            .filter_map(|i| current_by_id.get(&issue_identity(i)).map(|cur| (*cur).clone()))
+            .collect();
+
+        if original_len > 0 && kept.is_empty() {
+            // 이상이 있던 이력의 모든 항목이 해결됨 → 이력 삭제. (원래 비어있던 '이상 없음'
+            // 이력은 삭제하지 않아 화면 표시·자동진단 추적을 유지한다.)
+            sqlx::query("DELETE FROM diagnosis_history WHERE id = ?")
+                .bind(id)
+                .execute(pool)
+                .await
+                .map_err(AppError::Db)?;
+        } else if kept.len() != original_len
+            || kept.iter().zip(&stored).any(|(k, s)| k.message != s.message)
+        {
+            // 일부 해결되었거나 메시지가 바뀜 → 남은 항목으로 갱신.
+            let new_details = serde_json::to_string(&kept)
+                .map_err(|e| AppError::Config(format!("진단 결과 직렬화 실패: {}", e)))?;
+            sqlx::query("UPDATE diagnosis_history SET details = ?, issues_found = ? WHERE id = ?")
+                .bind(&new_details)
+                .bind(kept.len() as i64)
+                .bind(id)
+                .execute(pool)
+                .await
+                .map_err(AppError::Db)?;
+        }
+    }
+    Ok(())
 }
 
 /// 가장 최근 이력의 결과가 주어진 (이상 건수, 상세 JSON) 와 동일한지 판정한다.
@@ -843,5 +911,48 @@ mod tests {
         // 결과가 바뀌었으므로 새 이력이 추가되어 2건.
         let history = fetch_history(&pool, 10).await.unwrap();
         assert_eq!(history.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn run_and_record_prunes_resolved_issue_on_rerun() {
+        let pool = test_pool_in_memory().await.unwrap();
+        // 스케줄 없는 원생 2명 → 각각 청구 미생성 1건씩 (missing_billing). 다른 검사는 미해당.
+        let a = insert_student(&pool, "A1", "가").await;
+        let b = insert_student(&pool, "B1", "나").await;
+        let first = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
+        assert_eq!(first.issues_found, 2);
+
+        // A의 청구를 생성 → A의 missing_billing 해결. 재실행 시 재검증으로 A 항목만 제거.
+        sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount) VALUES (?, '2026-06', 4, 200000, 200000)")
+            .bind(a).execute(&pool).await.unwrap();
+        let second = run_and_record(&pool, "manual", "2026-06-07", "2026-06").await.unwrap();
+        assert_eq!(second.issues_found, 1);
+
+        // 이력은 1건(갱신), 남은 항목은 B의 청구 미생성뿐.
+        let history = fetch_history(&pool, 10).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].issues_found, 1);
+        assert_eq!(history[0].issues[0].check_id, "missing_billing");
+        assert_eq!(history[0].issues[0].target_id, Some(b));
+    }
+
+    #[tokio::test]
+    async fn run_and_record_deletes_record_when_all_resolved() {
+        let pool = test_pool_in_memory().await.unwrap();
+        let a = insert_student(&pool, "A1", "가").await;
+        let first = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
+        assert_eq!(first.issues_found, 1);
+
+        // 유일한 이상(A 청구 미생성) 해결 → 재실행 시 그 이력은 삭제되고 이상 보유 이력이 사라진다.
+        sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount) VALUES (?, '2026-06', 4, 200000, 200000)")
+            .bind(a).execute(&pool).await.unwrap();
+        let second = run_and_record(&pool, "manual", "2026-06-07", "2026-06").await.unwrap();
+        assert_eq!(second.issues_found, 0);
+
+        let history = fetch_history(&pool, 10).await.unwrap();
+        assert!(
+            history.iter().all(|h| h.issues_found == 0),
+            "모든 이상이 해결되면 이상을 보유한 이력은 남지 않아야 함"
+        );
     }
 }
