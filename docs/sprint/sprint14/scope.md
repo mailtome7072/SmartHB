@@ -15,8 +15,8 @@ Sprint: 14  |  Date: 2026-06-06  |  Session: #4
 | src-tauri/src/commands/export.rs | [신규] ✅ | T5 — CSV 내보내기 IPC 3종(원생/출결/청구-수납) + BOM(UTF-8) + 라벨변환 + 단위테스트 9건. 출결은 정규+보강 UNION(구분 컬럼), 청구는 청구상태 컬럼 추가, year_month는 Option(None=전체) |
 | src-tauri/src/commands/backup.rs | [9회 ⚠️] | T7 — 복원 리허설 IPC 확장 (run_backup_rehearsal + RehearsalResult/TableCount). list_backups는 기존 재사용. cipher off는 평문 백업만 리허설(R98, apply_rehearsal_key 게이트) |
 | src-tauri/src/commands/mod.rs | [3회] | T1/T3/T5 — pub mod diagnosis/dashboard/export 등록 (backup은 기존 등록) |
-| src-tauri/src/lib.rs | [6회 ⚠️] | T1/T3/T5 + T7 — invoke_handler 4+7+3종 + run_backup_rehearsal 등록 |
-| src/lib/tauri/index.ts | [10회 ⚠️] | T2/T4/T6 + T7 — 진단4 + 대시보드7 + 내보내기3 래퍼 + runBackupRehearsal (listBackups는 기존 재사용) |
+| src-tauri/src/lib.rs | [7회 ⚠️] | T1/T3/T5 + T7 — invoke_handler 4+7+3종 + run_backup_rehearsal 등록 |
+| src/lib/tauri/index.ts | [12회 ⚠️] | T2/T4/T6 + T7 — 진단4 + 대시보드7 + 내보내기3 래퍼 + runBackupRehearsal (listBackups는 기존 재사용) |
 | src/types/diagnosis.ts | [신규] ✅ | T2 — DiagnosisIssue/Result/HistoryRow |
 | src/app/settings/diagnosis/page.tsx | [신규] ✅ | T2 — 자가 진단 화면(신규 라우트). **계획의 'page.tsx 인라인 섹션' 대신 전용 라우트로 구현** — hours/codes/pin 등 기존 설정 라우트 패턴과 일관. 실행 버튼 + 12개월 이력 + 결과 상세 + 이동 링크 |
 | src/app/settings/page.tsx | [3회] | T2 '데이터 자가 진단' + T6 '데이터 내보내기' + T7 '백업 관리' 카드 추가 |
