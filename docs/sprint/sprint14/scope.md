@@ -8,7 +8,7 @@ Sprint: 14  |  Date: 2026-06-06  |  Session: #4
 |------|---------|------|
 | src-tauri/src/startup.rs | [1회] | T0 — A91 cipher-off 동작 명시 주석 |
 | docs/arch/adr-008-optional-pin-gate.md | [1회] | T0 — A91 구현 메모 실제 동작으로 수정 |
-| src/app/lock/page.tsx | [3회 ⚠️] | T0 — A93 SplashScreen 이중 표시 통합 |
+| src/app/lock/page.tsx | [4회 ⚠️] | T0 — A93 SplashScreen 이중 표시 통합 |
 | src-tauri/migrations/303__create_diagnosis_history.sql | [신규] ✅ | T1 — 자가 진단 이력 테이블. **실제 파일명은 `303__`** (V 접두사 없음 — 기존 301/302 컨벤션). 임시 DB로 001~303 전체 적용 검증 |
 | src-tauri/src/commands/diagnosis.rs | [신규] ✅ | T1 — 자가 진단 IPC 4종 + 검사 7종 + 단위테스트 20건. 검사 5는 `makeup_deadline`(계획의 expiry_date 오류 정정), 검사 7은 `bills.adjusted_amount`+카드사 누락 기준(계획의 payments.amount 없음 정정) |
 | src-tauri/src/commands/dashboard.rs | [신규] ✅ | T3 — 대시보드 집계 IPC 7종(현황/당일/월요약/출결진행률/알림/메모 get·save) + 알림 5종 + 테스트 9건 |
@@ -16,7 +16,7 @@ Sprint: 14  |  Date: 2026-06-06  |  Session: #4
 | src-tauri/src/commands/backup.rs | [9회 ⚠️] | T7 — 복원 리허설 IPC 확장 (run_backup_rehearsal + RehearsalResult/TableCount). list_backups는 기존 재사용. cipher off는 평문 백업만 리허설(R98, apply_rehearsal_key 게이트) |
 | src-tauri/src/commands/mod.rs | [3회] | T1/T3/T5 — pub mod diagnosis/dashboard/export 등록 (backup은 기존 등록) |
 | src-tauri/src/lib.rs | [6회 ⚠️] | T1/T3/T5 + T7 — invoke_handler 4+7+3종 + run_backup_rehearsal 등록 |
-| src/lib/tauri/index.ts | [9회 ⚠️] | T2/T4/T6 + T7 — 진단4 + 대시보드7 + 내보내기3 래퍼 + runBackupRehearsal (listBackups는 기존 재사용) |
+| src/lib/tauri/index.ts | [10회 ⚠️] | T2/T4/T6 + T7 — 진단4 + 대시보드7 + 내보내기3 래퍼 + runBackupRehearsal (listBackups는 기존 재사용) |
 | src/types/diagnosis.ts | [신규] ✅ | T2 — DiagnosisIssue/Result/HistoryRow |
 | src/app/settings/diagnosis/page.tsx | [신규] ✅ | T2 — 자가 진단 화면(신규 라우트). **계획의 'page.tsx 인라인 섹션' 대신 전용 라우트로 구현** — hours/codes/pin 등 기존 설정 라우트 패턴과 일관. 실행 버튼 + 12개월 이력 + 결과 상세 + 이동 링크 |
 | src/app/settings/page.tsx | [3회] | T2 '데이터 자가 진단' + T6 '데이터 내보내기' + T7 '백업 관리' 카드 추가 |
@@ -44,6 +44,7 @@ Sprint: 14  |  Date: 2026-06-06  |  Session: #4
 ## 신규 마이그레이션
 - V303 diagnosis_history (300번대 도메인 확장 블록 연속). 추가 후 .sqlx 캐시 갱신 + CLAUDE.md 현황 갱신(A92).
 - V304 expire_withdrawn_pending_makeup (퇴교생 미보강 결석 백필, 2026-06-05 버그픽스).
+- V305 add_birth_date_to_students (원생 생년월일 nullable 컬럼, 2026-06-06 사용자 요청). 런타임 query 패턴이라 .sqlx 불필요. CLAUDE.md 현황 V305 갱신 완료.
 
 ## 완료 기준 (sprint14.md DoD 요약)
 - [x] T0 carry-over (A91/A93) — startup cipher-off 주석 + ADR-008 정정 + /lock 단일 로딩. (R93=CLAUDE.md V302 sprint-review 기반영, R94=T8, F3=T4)
@@ -86,3 +87,4 @@ Sprint: 14  |  Date: 2026-06-06  |  Session: #4
 - **Node 25 dev CSS 404(화면 깨짐) 복구** (2026-06-06): 빠른 편집→HMR 반복 + dev 캐시 비활성화로 `layout.css` 청크 해시 어긋나 stale 404 → 무스타일 화면. `.next` 전체 삭제 + dev 클린 재기동으로 해소(코드 무관, `pnpm build`는 정상). 재발 시 동일 조치.
 - **자가진단 해결 항목 자동 재검증·정리** (2026-06-06, 사용자 요청 — 버튼 아닌 자동): 수동/자동 실행 시마다 이전 진단결과 항목이 현재도 검출되는지 재검증해 **해결된(미검출) 항목을 각 이력에서 자동 제거**, 남은 항목 메시지 최신화, **이상이 있던 이력의 모든 항목이 해결되면 그 이력 삭제**. **구현**: `diagnosis.rs`에 `issue_identity`(check_id+target_table+target_id, 메시지 제외)·`reconcile_resolved_issues`(run_and_record 시작부 호출) 추가. 항목 식별자로 현재 검출 집합과 대조. 0건 결과는 "이상 없음" 1건 유지(화면 표시·월 자동진단 추적, 재검증이 과거 해결 이력 정리하므로 누적 없음) — **부분 해결 = 항목만 제거, 전부 해결 = 이력 삭제**. 마이그레이션 불필요. 회귀 테스트 2건(부분 해결→1건 남김 / 전부 해결→이상 보유 이력 0). cargo test 367 / clippy 통과. **수정파일**: diagnosis.rs.
   - **참고(미결)**: 전부 해결 시 옛 이상-이력은 삭제되나 현재 실행의 "이상 없음" 이력 1건은 남김(UX·auto_needed 보존 목적). 사용자가 "완전 0건" 원하면 skip-0 + 프론트 결과 직접표시 + app_settings 자동진단월 분리로 후속 처리.
+- **원생 생년월일 추가** (2026-06-06, 사용자 요청 — 신규 기능): 원생에 생년월일(선택) 필드 추가. **마이그레이션 V305**(`students.birth_date TEXT` nullable). 백엔드 `students.rs`: Student/NewStudent/StudentUpdate + from_row + create/update/get/list 쿼리 4종에 birth_date 반영. 프론트: `types/student.ts`(3 인터페이스) + `lib/tauri/index.ts`(createStudent dev fallback) + `student-form.tsx`(FormState/emptyForm/studentToForm/formToPayload + 생년월일 date input) + `students/edit/page.tsx`(StudentUpdate 매핑 `?? null`). 등록/수정 폼에서 입력·표시. 목록 컬럼 표시는 미추가(요청 시 추가). cargo test 367 / clippy / lint / tsc / build 통과. **수정파일**: migration 305, students.rs, CLAUDE.md, types/student.ts, lib/tauri/index.ts, student-form.tsx, students/edit/page.tsx.

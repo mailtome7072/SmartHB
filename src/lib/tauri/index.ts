@@ -456,6 +456,7 @@ export async function createStudent(payload: NewStudent): Promise<Student> {
       phone_student: payload.phone_student ?? null,
       phone_mother: payload.phone_mother ?? null,
       phone_father: payload.phone_father ?? null,
+      birth_date: payload.birth_date ?? null,
       enroll_date: payload.enroll_date,
       withdraw_date: null,
       created_at: new Date().toISOString(),
