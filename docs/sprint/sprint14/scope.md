@@ -50,8 +50,8 @@ Sprint: 14  |  Date: 2026-06-06  |  Session: #4
 - [ ] T1/T2 자가 진단 (백엔드 7종 + 프론트 + 자동 트리거)
 - [ ] T3/T4 대시보드 (집계 IPC 6종 + 위젯 6 + 알림 5)
 - [ ] T5/T6 내보내기 CSV 3종
-- [ ] T7 복원 리허설
-- [ ] T8 통합 검증 (test/clippy/cipher/lint/tsc/build + .sqlx + CLAUDE.md V303)
+- [x] T7 복원 리허설 — run_backup_rehearsal(임시복사→integrity_check→행수6종→폐기, cipher off 평문 R98) + /settings/backup 라우트 + 카드. 테스트 4건. cargo test 365/clippy/lint/tsc/build 통과. 커밋 `1182111`.
+- [x] T8 통합 검증 (자동) — cargo test 365 passed / clippy clean / `cargo check --features cipher` clean / pnpm lint·tsc·build(/settings/backup 2.5kB) / `.sqlx` 런타임 query 패턴이라 갱신 불필요 / CLAUDE.md 마이그레이션 현황 이미 V304. **시각 검증(복원 리허설 실행)은 사용자 대기** — cipher off 개발빌드는 실제 백업 파일이 없어 빈 목록 표시(평문 백업 수동 배치 시에만 리허설 가능).
 
 ## 세션 체크포인트 / 다음 진입점
 - **세션 #1 (2026-06-02)**: 계획 + T0 완료, 커밋됨. 자동검증(clippy/lint/tsc) 통과.
@@ -64,8 +64,10 @@ Sprint: 14  |  Date: 2026-06-06  |  Session: #4
   - `.sqlx` 캐시: 런타임 `query()` 패턴이라 갱신 불필요. T8 cipher 빌드 점검 시 일괄 확인.
 - **세션 #3 (2026-06-05) 이어서**: T6(데이터 내보내기 프론트) 완료. `types/export.ts` + IPC 래퍼 3종 + `showCsvSaveDialog` + `/settings/data` 신규 라우트(diagnosis 패턴) + 설정 카드. `pnpm lint`/`tsc`/`build`(export 성공, `/settings/data` 1.97kB 생성) 통과.
   - **사용자 검증 완료(2026-06-05)**: T2 자가 진단(A/B/C/D) + T4 대시보드(위젯 6/차트/알림 이동/출결 진행률/메모 자동저장) 실앱 시각 검증 통과.
-- **다음 진입점 = T7 (복원 리허설)**: `backup.rs` 확장(run_backup_rehearsal: 임시복사→PRAGMA integrity_check→행수→삭제 + list_backup_files) + 설정>백업관리 UI. cipher off 개발빌드는 평문백업만 리허설(R98).
-  - **T6 사용자 검증 대기**: `/settings/data`에서 원생/출결/청구 CSV 저장 → 엑셀 열기 한글 정상 + 기간(전체/월) 동작. `pnpm tauri:dev`로 실제 save 다이얼로그 확인 필요.
+- **세션 #4 (2026-06-06, 집 Mac)**: T7(복원 리허설) + T8(통합 검증 자동) 완료. `backup.rs` run_backup_rehearsal(임시디렉토리 복사→read-only sqlx 풀→integrity_check→주요 6종 행수→사본 폐기, cipher 게이트 apply_rehearsal_key) + RehearsalResult/TableCount + `/settings/backup` 라우트 + 설정 카드 + 타입/래퍼. 테스트 4건(정상/손상/없는파일/스키마동기화가드). simplify 적용: Result<Vec,String> 리팩터(반복 튜플 4개 제거) + staleness 가드 테스트. 커밋 `1182111`.
+  - **T8 자동 검증 통과**: cargo test 365 / clippy / `cargo check --features cipher` / lint / tsc / build / `.sqlx` 불필요 / CLAUDE.md V304 기반영.
+  - **사용자 시각 검증 대기 (sprint-close 전)**: ① **T7 복원 리허설** — cipher off 개발빌드는 백업 파일이 없어 `/settings/backup` 목록이 비어있음(빈 상태 UI만 확인 가능). 실제 리허설은 평문 SQLite 파일을 `SmartHB-data/backup/{layer}/`에 수동 배치하거나 cipher on 빌드에서 확인. ② **T6 내보내기** — `/settings/data` 엑셀 저장(전체/월). `pnpm tauri:dev`로 확인.
+  - **다음 진입점 = sprint-close** (구현 전부 완료). sprint14.md 본문 정정 목록은 아래 "마무리 후" 참조.
 
 ## 발견된 이슈
 - **T2 검증 중 자가진단 check 1(보강필요시간 음수) 오탐 수정** (2026-06-04, 사용자 보고 — 성춘향 케이스): 정상 매칭된 결석↔보강 쌍이 음수로 오탐. 원인은 결석 합산이 `status='absent'`만 세고 `makeup_done`을 누락 → 보강완료분만 차감돼 음수. 앱 SSOT(`attendance.rs` 보강필요시간 정의)에 맞춰 결석 대상을 **`absent`+`makeup_done`(소멸 `makeup_expired`은 면제로 제외)**로 변경. 회귀 테스트 2건 추가(성춘향 매칭 쌍 / 소멸 제외). 사용자 DB의 오탐 이력 1건(id=1 auto, 수정 전 생성)은 일회성 수동 삭제. **자가 진단 이력 수동 삭제 기능(B안)은 Sprint 15로 이연**(ROADMAP 기록) — 자동 삭제는 감사로그 훼손 우려로 미도입 결정.
