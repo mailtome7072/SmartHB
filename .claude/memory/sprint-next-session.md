@@ -12,7 +12,7 @@ metadata:
 
 ## 다음 할 일 — 프로덕션 배포 (재개 시)
 - 사용자가 **"프로덕션 배포 준비해줘"** 하면 → **deploy-prod 에이전트**.
-- ⚠️ **프로덕션 브랜치는 `master`** (원격에 `main` 없음 — CLAUDE.md의 "main"은 master로 읽을 것).
+- **프로덕션 브랜치는 `master`** (원격에 `main` 없음). 2026-06-06 hotfix로 ci.yml·CLAUDE.md의 잘못된 `main` 표기를 전부 `master`로 통일함(master·develop 양쪽 반영 완료). bash-guard 훅은 미변경(master 직접 push 허용 — deploy 워크플로우 의존).
 - **버전 상향 필요**: 현재 0.5.0은 이미 `v0.5.0` 태그 릴리즈됨. Sprint 14 배포는 **0.6.0(minor) 권장**(대시보드·자가진단·내보내기·복원리허설·생년월일 신규). package.json + src-tauri/Cargo.toml 동시 갱신 → develop→master 머지 → `vX.Y.Z` 태그 push → GitHub Actions가 Win/macOS 인스톨러·Release 자동 생성.
 - (참고) 이미 끝난 단계 — develop 머지/QA/마이그레이션 적용:
   ```
