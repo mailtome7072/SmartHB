@@ -69,3 +69,9 @@ export interface BillingTrendPoint {
   year_month: string
   total: number
 }
+
+/** 이달의 생일 1건 — 원생 이름 + 생일 일자(1~31). `dashboard.rs::BirthdayEntry` 와 정합. */
+export interface BirthdayEntry {
+  name: string
+  day: number
+}

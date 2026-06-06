@@ -124,6 +124,7 @@ pub fn run() {
             commands::dashboard::get_today_schedule,
             commands::dashboard::get_monthly_summary,
             commands::dashboard::get_billing_trend,
+            commands::dashboard::get_birthdays_this_month,
             commands::dashboard::get_dashboard_alerts,
             commands::dashboard::get_dashboard_memos,
             commands::dashboard::save_dashboard_memo,

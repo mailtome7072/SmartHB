@@ -99,6 +99,14 @@ pub struct BillingTrendPoint {
     pub total: i64,
 }
 
+/// 이달의 생일 1건 — 원생 이름 + 생일 일자. 대시보드 위젯용(일자 빠른 순).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct BirthdayEntry {
+    pub name: String,
+    /// 생일 일(1~31).
+    pub day: i64,
+}
+
 fn today_naive() -> NaiveDate {
     chrono::Local::now().date_naive()
 }
@@ -405,6 +413,35 @@ async fn billing_trend(pool: &SqlitePool) -> Result<Vec<BillingTrendPoint>, AppE
     Ok(out)
 }
 
+/// 이달(생일 월 = 오늘의 월)에 생일이 있는 재원생 목록 — 일자 오름차순(빠른 순).
+///
+/// 생일은 매년 반복되므로 연도 무관하게 **월(MM)** 만 비교한다. `birth_date` 미입력·퇴교생 제외.
+async fn birthdays_this_month(
+    pool: &SqlitePool,
+    today: NaiveDate,
+) -> Result<Vec<BirthdayEntry>, AppError> {
+    let month = today.format("%m").to_string(); // "01"~"12" (birth_date 의 %m 과 동일 포맷)
+    let rows = sqlx::query(
+        "SELECT name, CAST(strftime('%d', birth_date) AS INTEGER) AS day \
+         FROM students \
+         WHERE withdraw_date IS NULL AND birth_date IS NOT NULL \
+           AND strftime('%m', birth_date) = ? \
+         ORDER BY day ASC, name ASC",
+    )
+    .bind(&month)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Db)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| BirthdayEntry {
+            name: r.get::<String, _>("name"),
+            day: r.get::<i64, _>("day"),
+        })
+        .collect())
+}
+
 // ----------------------------------------------------------------------------
 // 4.11.4 알림 5종
 // ----------------------------------------------------------------------------
@@ -608,6 +645,12 @@ pub async fn get_billing_trend() -> Result<Vec<BillingTrendPoint>, String> {
 }
 
 #[tauri::command]
+pub async fn get_birthdays_this_month() -> Result<Vec<BirthdayEntry>, String> {
+    let pool = pool().map_err(String::from)?;
+    birthdays_this_month(pool, today_naive()).await.map_err(String::from)
+}
+
+#[tauri::command]
 pub async fn get_dashboard_alerts() -> Result<Vec<DashboardAlert>, String> {
     let pool = pool().map_err(String::from)?;
     dashboard_alerts(pool, today_naive()).await.map_err(String::from)
@@ -797,6 +840,31 @@ mod tests {
     async fn billing_trend_empty_when_no_bills() {
         let pool = test_pool_in_memory().await.unwrap();
         assert!(billing_trend(&pool).await.unwrap().is_empty());
+    }
+
+    // ── 이달의 생일 ──
+    #[tokio::test]
+    async fn birthdays_this_month_sorted_by_day_and_filtered() {
+        let pool = test_pool_in_memory().await.unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 6, 10).unwrap(); // 6월
+        // 6월 생일 2명(연도 무관) + 5월 생일 1명 + 생일 미입력 1명 + 6월 생일 퇴교생 1명.
+        let a = insert_student(&pool, "S1", "가", "male", "elementary", 3, "2026-01-01", None).await;
+        let b = insert_student(&pool, "S2", "나", "female", "middle", 1, "2026-01-01", None).await;
+        let c = insert_student(&pool, "S3", "다", "male", "elementary", 4, "2026-01-01", None).await;
+        let d = insert_student(&pool, "S4", "라", "female", "middle", 2, "2026-01-01", None).await;
+        let e = insert_student(&pool, "S5", "마", "male", "elementary", 5, "2026-01-01", Some("2026-03-01")).await;
+        sqlx::query("UPDATE students SET birth_date = ? WHERE id = ?").bind("2015-06-20").bind(a).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE students SET birth_date = ? WHERE id = ?").bind("2016-06-05").bind(b).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE students SET birth_date = ? WHERE id = ?").bind("2015-05-30").bind(c).execute(&pool).await.unwrap();
+        // d: 생일 미입력(NULL 유지)
+        let _ = d;
+        sqlx::query("UPDATE students SET birth_date = ? WHERE id = ?").bind("2014-06-01").bind(e).execute(&pool).await.unwrap();
+
+        let list = birthdays_this_month(&pool, today).await.unwrap();
+        // 6월 재원생만, 일자 빠른 순: 나(5일) → 가(20일). (다=5월 제외, 라=미입력 제외, 마=퇴교 제외)
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0], BirthdayEntry { name: "나".into(), day: 5 });
+        assert_eq!(list[1], BirthdayEntry { name: "가".into(), day: 20 });
     }
 
     // ── 메모 (포스트잇 3장) ──

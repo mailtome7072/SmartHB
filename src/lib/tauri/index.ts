@@ -41,6 +41,7 @@ import type { ExportResult } from '@/types/export'
 import type {
   AcademyOverview,
   BillingTrendPoint,
+  BirthdayEntry,
   DashboardAlert,
   MemoNote,
   MonthlySummary,
@@ -1674,6 +1675,13 @@ export async function getBillingTrend(): Promise<BillingTrendPoint[]> {
   const inv = await getInvoke()
   if (!inv) return []
   return inv('get_billing_trend') as Promise<BillingTrendPoint[]>
+}
+
+/** 이달의 생일 원생 (재원생, 생일 일자 빠른 순). */
+export async function getBirthdaysThisMonth(): Promise<BirthdayEntry[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_birthdays_this_month') as Promise<BirthdayEntry[]>
 }
 
 /** 4.11.6 메모 포스트잇 3장 조회 (내용 + 높이). */

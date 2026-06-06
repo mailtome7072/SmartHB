@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getAcademyOverview,
   getBillingTrend,
+  getBirthdaysThisMonth,
   getDashboardAlerts,
   getDashboardMemos,
   getMonthlySummary,
@@ -91,6 +92,11 @@ export function DashboardView() {
     queryFn: getBillingTrend,
     staleTime: STALE,
   })
+  const birthdays = useQuery({
+    queryKey: ['dashboard', 'birthdays'],
+    queryFn: getBirthdaysThisMonth,
+    staleTime: STALE,
+  })
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -154,8 +160,24 @@ export function DashboardView() {
             )}
           </Widget>
         </div>
-
       </div>
+
+      <Widget title="이달의 생일">
+        {birthdays.isLoading || birthdays.data === undefined ? (
+          <Loading />
+        ) : birthdays.data.length === 0 ? (
+          <Empty>이달 생일인 원생이 없습니다.</Empty>
+        ) : (
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-base text-[var(--foreground)]">
+            {birthdays.data.map((b, i) => (
+              <span key={`${b.name}-${b.day}-${i}`}>
+                {b.name}
+                <span className="font-medium text-[var(--accent)]">({b.day}일)</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </Widget>
     </div>
   )
 }
