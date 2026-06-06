@@ -1,39 +1,46 @@
 ---
 name: sprint-next-session
-description: "Sprint 14 구현 전부 완료(T0~T8). 다음 진입점 = sprint-close(사용자 시각검증 후). 미push 커밋 2건 있음. 새 환경 릴레이 시 가장 먼저 확인"
+description: "Sprint 14 완료(sprint-close+review). 다음 = develop 직접 머지 + tauri:dev 수동확인 → deploy-prod. 새 환경 릴레이 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
-  originSessionId: sprint14-T7-T8-2026-06-06
+  originSessionId: sprint14-close-2026-06-06
 ---
 
-**현재 위치(2026-06-06, 집 Mac)**: **Sprint 14 구현 전부 완료(T0~T8)**. 브랜치 **`sprint14`**(develop 기반). **다음 진입점 = sprint-close**(사용자 시각 검증 통과 후). ⚠️ **로컬에 미push 커밋 2건**(`1182111` T7, `98264cb` scope) — 다른 환경 릴레이 전 `git push` 필요.
+**현재 위치(2026-06-06, 집 Mac)**: **Sprint 14 완료** — 구현·검수·sprint-close·sprint-review 전부 끝. 브랜치 **`sprint14`**(origin push 완료, HEAD `5d114d4`). **다음 진입점 = develop 직접 머지 → tauri:dev 수동 확인 → deploy-prod**.
 > Sprint 12·13 완료·머지. Phase 5 취소 ([[exam-feature-cancelled]]).
 
-## 릴레이 시작 절차 (집/회사 공통)
-1. `git fetch origin && git checkout sprint14 && git pull`
-2. **`pnpm install`** — recharts 3.8.1(pnpm-lock 반영). 엑셀 크레이트 `rust_xlsxwriter 0.95`는 Rust 의존성이라 cargo가 자동 fetch.
-3. `pnpm tauri:dev` — 마이그레이션 자동 적용(**V304까지**). 집/회사 각자 cloud path·DB(독립).
-4. **PIN**: salt.bin 클라우드 동기화 → 같은 PIN.
-5. `.claude/memory/` 미러는 sprint14에 커밋돼 동기화됨.
-6. ⚠️ dev 재시작 시 `app.lock` os-error-33/손상 로그 잠깐 → free fallback 정상 복구(설계됨, [[ntfs-power-loss-pattern]]).
+## 다음 할 일 (순서)
+1. **develop 직접 머지** (PR 생략, 단일 개발자 [[workflow-no-pr]]):
+   ```
+   git checkout develop && git pull origin develop
+   git merge --no-ff sprint14 && git push origin develop
+   ```
+2. **`sqlx migrate run`** — V303~V305 적용 확인 (개발 DB).
+3. **`pnpm tauri:dev` 수동 확인** (DEPLOY.md ⬜ 항목): 엑셀 내보내기 3종 + **복원 리허설**(cipher off 개발빌드는 평문 백업을 `SmartHB-data/backup/{layer}/app_*.db`에 수동 배치해야 동작). 대시보드 위젯·자가진단·원생 생년월일은 이미 검수 완료.
+4. develop QA 통과 시: "프로덕션 배포 준비해줘" → **deploy-prod** 에이전트(태그 push → GitHub Actions 인스톨러 빌드).
 
-## 완료 (세션 #4, 2026-06-06 집 Mac)
-- ✅ **T7 복원 리허설** (`1182111`) — `backup.rs::run_backup_rehearsal(backup_path)`: 임시 디렉토리 복사 → **read-only sqlx 풀**로 열기 → `PRAGMA integrity_check` → 주요 6종(students/student_schedules/regular_attendances/makeup_attendances/bills/payments) `COUNT(*)` → 사본 폐기. 운영 DB 무영향. cipher 게이트 `apply_rehearsal_key`(on=PRAGMA key via paths::pragma_key_sql, **off=평문 백업만 R98**). `list_backups`는 기존 재사용. `RehearsalResult{backup_path,size_bytes,success,integrity_detail,table_counts,total_rows}`+`TableCount{table,count}`(snake_case IPC). 프론트: `/settings/backup` 라우트(목록+리허설+결과패널) + 설정 카드 + 타입 + `runBackupRehearsal` 래퍼. **테스트 4건**(정상/손상/없는파일/REHEARSAL_TABLES 스키마동기화 가드). simplify 적용: 검증 로직을 `Result<Vec<TableCount>,String>`+`?`로 리팩터(반복 튜플 4개 제거).
-  - **설계 근거**: integrity.rs는 rusqlite+cipher-only(off는 stub Err)라 R98 위반 → 별도 sqlx 경로가 정당(altitude 검토 통과). cipher on 빌드는 sqlx도 SQLCipher 링크(libsqlite3-sys 공유)라 PRAGMA key 동작.
-- ✅ **T8 통합 검증(자동)** (`98264cb`) — cargo test **365 passed** / clippy clean / **`cargo check --features cipher` clean** / lint / tsc / build(`/settings/backup` 2.5kB) / `.sqlx` 런타임 query 패턴이라 갱신 불필요 / CLAUDE.md 마이그레이션 현황 이미 **V304** 반영.
+## Sprint 14 결과 요약
+- **마이그레이션 최신 = V305** (V303 diagnosis_history / V304 퇴교생 미보강결석 백필 / V305 students.birth_date). CLAUDE.md 현황 갱신됨.
+- **신규 의존성**: recharts 3.8.1(대시보드 차트), **rust_xlsxwriter 0.95**(엑셀 내보내기 — 내보내기가 CSV→엑셀(.xlsx)로 전환됨).
+- **sprint-review**: Critical 0 / High 0 / **Medium 1**(F1: monthly_summary 1:1 청구-수납 암묵 의존, Sprint 15 확장 시 리팩토링) / Low 2. cargo test **369** / clippy / `cargo check --features cipher` / lint / tsc / build 전수 통과.
+- 산출물: `docs/test-reports/2026-06-06.md`, `docs/code-reviews/sprint14.md`, `docs/sprint-retrospectives/sprint14-retrospective.md`, 리스크 R99.
 
-## 사용자 시각 검증 대기 (sprint-close 전 — `pnpm tauri:dev`)
-- ⬜ **T7 복원 리허설**: ⚠️ cipher off 개발빌드는 백업 파일이 없어 `/settings/backup` 목록이 **빈 상태**(빈 UI만 확인 가능). 실제 리허설 보려면 평문 SQLite를 `SmartHB-data/backup/{exit|daily|...}/app_YYYYMMDD_HHMMSS.db` 형식으로 수동 배치하거나 cipher on 빌드에서 확인.
-- ⬜ **T6 내보내기**(이전 세션 잔여): `/settings/data` 엑셀 저장 전체/월 동작.
+## 이번 세션(#4) 주요 구현 (origin 1ecd789..5d114d4)
+- **T7 복원 리허설** `backup.rs::run_backup_rehearsal`(임시복사→read-only sqlx→PRAGMA integrity_check→주요6종 행수→폐기, cipher 게이트 apply_rehearsal_key, R98). `/settings/backup` 라우트.
+- **T8 통합검증** 통과.
+- **자가진단 "완전 0건"**: 실행마다 `reconcile_resolved_issues`로 해결항목 자동제거+빈이력 삭제, skip-0(0건이면 이력 미보관), auto_needed를 app_settings `last_auto_diagnosis`로 월1회 판정(AC-6.6-1). 0건이면 화면은 실행결과 직접 표시(`resultToRow`).
+- **출결 입력 진행률 위젯·알림 제거**(출결이 월단위 'present' 일괄생성 모델이라 항상 100% 무의미).
+- **대시보드**: 월 청구총액 추이 위젯 / 월 요약 이전·다음월 전환(메모 아래 배치) / **이달의 생일 위젯**(`get_birthdays_this_month`, '홍길동(5일)' 형식, 일자순) — 당일수업과 50/50. 타이틀 폰트 inline 24px(당일수업·생일·월요약), 다른 위젯은 전역 h2 28px.
+- **원생 생년월일**(V305): 등록/수정 폼(생년월일→입교일 순) + 원생 목록 컬럼 + 엑셀 컬럼.
+- **Node 25 dev 크래시 회피**: `next.config.ts` dev 전용 `config.cache=false`(webpack 캐시 직렬화 abort 회피). 정석은 Node LTS(v20/v22) 전환이나 이 Mac엔 node@25만 설치.
 
-## 마무리 후 (sprint-close 시 sprint14.md 본문 정정 필요)
-- 검사5 `expiry_date`→`makeup_deadline` / 검사7 `payments.amount` 미존재→결제수단·카드사 누락 / 마이그레이션 "V303"→실제 `303__` / dashboard IPC "6종"→실제 8종 / **내보내기 CSV→엑셀(.xlsx) 전환** / 메모 단일→3슬롯 / **T7 list_backup_files→기존 list_backups 재사용**.
-- **검증-phase 보강·simplify 결정은 scope.md "발견된 이슈"/체크포인트에 전수 기록됨**.
-- 순서: **sprint-close → sprint-review**(코드리뷰+검증+회고), DoD/AC 전수 마킹.
+## 환경 주의 (재릴레이 시)
+- **Node 25 + dev 동시 build 금지**: `pnpm tauri:dev` 실행 중 `pnpm build` 돌리면 `.next` 충돌로 dev가 500/CSS404로 깨짐 → `.next` 삭제 + dev 클린 재기동으로 복구. build는 dev 끈 상태에서만.
+- dev 화면 깨지면: 프로세스 kill + `rm -rf .next` + 재기동.
 
-## Sprint 15로 이연 (ROADMAP 기록됨)
-- 교습소 정보 화면 / **'DB 폴더 변경'**(copy-then-switch + salt.bin/WAL/backup 동반, ADR 필요) / **자가진단 이력 수동 삭제(B안)** / **내보내기 비밀번호 보호 옵션** / **CSV 가져오기**(PRD §4.13.1).
+## Sprint 15 이연 (ROADMAP)
+- 교습소 정보 화면 / **DB 폴더 변경** / 자가진단 이력 수동삭제(완전0건으로 사실상 해소됨) / **내보내기 비밀번호 보호**(엑셀 본체는 14에서 완료) / CSV 가져오기(§4.13.1) / monthly_summary 청구집계 리팩토링(F1).
 
 ## 정책
 - **PR 생략, 직접 머지** ([[workflow-no-pr]]). 메모리 추가/수정 시 **사용자 메모리 + `.claude/memory/` 양쪽 갱신 후 commit**. cipher: dev off / CI·release on ([[cipher-test-gate-trap]]).
