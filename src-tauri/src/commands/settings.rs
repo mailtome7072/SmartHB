@@ -127,6 +127,99 @@ pub async fn save_operating_hours(hours: Vec<DayHours>) -> Result<(), String> {
     Ok(())
 }
 
+// ─────────────────────── 교습소 정보 (Sprint 15 T1) ───────────────────────
+//
+// PRD §4.12 교습소 기본 정보. `app_settings.academy_info` 에 JSON 저장(텍스트 필드 +
+// 로고/2D바코드 이미지 파일명). 이미지 본체는 `assets/` 에 파일로 저장하고(notice.rs
+// `save_notice_asset` 재사용) 여기에는 파일명만 보관 — DB 비대화 방지 + 양 PC 동기화.
+// 공지문(§4.10)에는 연동하지 않는 교습소 정보 화면 전용 데이터. DB 마이그레이션 불필요.
+
+const KEY_ACADEMY_INFO: &str = "academy_info";
+
+/// 교습소 기본 정보. 텍스트 필드 + 이미지 파일명(`assets/` 하위).
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
+pub struct AcademyInfo {
+    /// 교습소명 (필수)
+    pub academy_name: String,
+    /// 대표자(원장명)
+    pub representative: String,
+    /// 연락처
+    pub phone: String,
+    /// 주소
+    pub address: String,
+    /// 사업자등록번호 (선택)
+    pub business_number: Option<String>,
+    /// 교습 최대인원 수 (선택)
+    pub max_capacity: Option<i64>,
+    /// 교습소 면적 — 제곱미터(㎡) (선택)
+    pub area_sqm: Option<f64>,
+    /// 로고 이미지 파일명 — `assets/` 하위 (선택)
+    pub logo_filename: Option<String>,
+    /// 2D바코드 이미지 파일명 — `assets/` 하위 (선택)
+    pub barcode_filename: Option<String>,
+}
+
+/// 교습소 정보 조회. 저장된 값 없으면 빈 정보(Default) 반환.
+#[tauri::command]
+pub async fn get_academy_info() -> Result<AcademyInfo, String> {
+    let pool = pool().map_err(String::from)?;
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
+        .bind(KEY_ACADEMY_INFO)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| String::from(AppError::Db(e)))?;
+
+    match row {
+        Some(r) => {
+            let json: String = r
+                .try_get("value")
+                .map_err(|e| String::from(AppError::Db(e)))?;
+            serde_json::from_str(&json).map_err(|e| {
+                String::from(AppError::Config(format!("academy_info 파싱 실패: {}", e)))
+            })
+        }
+        None => Ok(AcademyInfo::default()),
+    }
+}
+
+/// 교습소 정보 저장. 교습소명 필수, 최대인원/면적은 음수 불가.
+#[tauri::command]
+pub async fn save_academy_info(info: AcademyInfo) -> Result<(), String> {
+    if info.academy_name.trim().is_empty() {
+        return Err(String::from(AppError::UserFacing(
+            "교습소명을 입력해주세요.".to_string(),
+        )));
+    }
+    if matches!(info.max_capacity, Some(c) if c < 0) {
+        return Err(String::from(AppError::UserFacing(
+            "교습 최대인원 수는 0 이상이어야 합니다.".to_string(),
+        )));
+    }
+    if matches!(info.area_sqm, Some(a) if a < 0.0) {
+        return Err(String::from(AppError::UserFacing(
+            "교습소 면적은 0 이상이어야 합니다.".to_string(),
+        )));
+    }
+
+    let pool = pool().map_err(String::from)?;
+    let json = serde_json::to_string(&info).map_err(|e| {
+        String::from(AppError::Config(format!("academy_info 직렬화 실패: {}", e)))
+    })?;
+
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+    )
+    .bind(KEY_ACADEMY_INFO)
+    .bind(json)
+    .execute(pool)
+    .await
+    .map_err(|e| String::from(AppError::Db(e)))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +283,40 @@ mod tests {
         let back: Vec<DayHours> = serde_json::from_str(&json).unwrap();
         assert_eq!(back.len(), 7);
         assert_eq!(back, default);
+    }
+
+    #[test]
+    fn academy_info_default_is_empty() {
+        let info = AcademyInfo::default();
+        assert!(info.academy_name.is_empty());
+        assert!(info.business_number.is_none());
+        assert!(info.logo_filename.is_none());
+    }
+
+    #[test]
+    fn academy_info_serde_roundtrip_full_and_optional() {
+        let full = AcademyInfo {
+            academy_name: "스마트해법수학 서현효자점".to_string(),
+            representative: "홍길동".to_string(),
+            phone: "031-000-0000".to_string(),
+            address: "성남시 분당구".to_string(),
+            business_number: Some("123-45-67890".to_string()),
+            max_capacity: Some(30),
+            area_sqm: Some(82.5),
+            logo_filename: Some("academy_logo.png".to_string()),
+            barcode_filename: Some("academy_barcode.png".to_string()),
+        };
+        let back: AcademyInfo =
+            serde_json::from_str(&serde_json::to_string(&full).unwrap()).unwrap();
+        assert_eq!(back, full);
+
+        // 선택 필드 None 도 라운드트립 보존.
+        let minimal = AcademyInfo {
+            academy_name: "교습소".to_string(),
+            ..Default::default()
+        };
+        let back2: AcademyInfo =
+            serde_json::from_str(&serde_json::to_string(&minimal).unwrap()).unwrap();
+        assert_eq!(back2, minimal);
     }
 }

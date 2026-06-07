@@ -809,6 +809,53 @@ export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
   await inv('save_operating_hours', { hours })
 }
 
+/**
+ * 교습소 기본 정보 (PRD §4.12). 텍스트 필드 + 로고/2D바코드 이미지 파일명.
+ *
+ * `src-tauri/src/commands/settings.rs::AcademyInfo` 와 정합.
+ * 이미지 본체는 `assets/` 에 파일로 저장(saveNoticeAsset 재사용)하고 파일명만 보관.
+ */
+export interface AcademyInfo {
+  academy_name: string
+  representative: string
+  phone: string
+  address: string
+  business_number: string | null
+  max_capacity: number | null
+  area_sqm: number | null
+  logo_filename: string | null
+  barcode_filename: string | null
+}
+
+/** 빈 교습소 정보 (dev fallback / 미저장 초기값). */
+function emptyAcademyInfo(): AcademyInfo {
+  return {
+    academy_name: '',
+    representative: '',
+    phone: '',
+    address: '',
+    business_number: null,
+    max_capacity: null,
+    area_sqm: null,
+    logo_filename: null,
+    barcode_filename: null,
+  }
+}
+
+/** 교습소 정보 조회 — 저장값 없으면 빈 정보. */
+export async function getAcademyInfo(): Promise<AcademyInfo> {
+  const inv = await getInvoke()
+  if (!inv) return emptyAcademyInfo()
+  return inv('get_academy_info') as Promise<AcademyInfo>
+}
+
+/** 교습소 정보 저장 — 교습소명 필수, 백엔드가 검증. */
+export async function saveAcademyInfo(info: AcademyInfo): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_academy_info', { info })
+}
+
 // ============================================================================
 // Sprint 6 — 일정 관리 도메인 (T8, PRD §4.4)
 // ============================================================================

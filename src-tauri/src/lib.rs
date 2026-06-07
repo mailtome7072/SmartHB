@@ -116,6 +116,8 @@ pub fn run() {
             commands::setup::set_pin_skip_setting,
             commands::settings::get_operating_hours,
             commands::settings::save_operating_hours,
+            commands::settings::get_academy_info,
+            commands::settings::save_academy_info,
             commands::diagnosis::run_diagnosis,
             commands::diagnosis::get_diagnosis_history,
             commands::diagnosis::get_latest_diagnosis,

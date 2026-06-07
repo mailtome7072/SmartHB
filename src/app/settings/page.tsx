@@ -59,8 +59,7 @@ const CARDS: SettingCard[] = [
   {
     href: '/settings/info',
     title: '교습소 정보',
-    description: '교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 (예정)',
-    disabledHint: '후속 sprint 에서 제공',
+    description: '교습소명 / 대표자 / 연락처 / 주소 / 사업자등록번호 / 최대인원 / 면적 + 로고·2D바코드 이미지',
   },
   {
     href: '/setup',

@@ -13,14 +13,11 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 | src-tauri/src/commands/dashboard.rs | [2회] | T0-A95: monthly_summary() GROUP BY b.id 리팩토링 + 테스트 수정/엣지케이스 추가 |
 | src/components/dashboard/DashboardView.tsx | [1회] | T0-A97: 위젯 타이틀 inline fontSize 24px → Tailwind text-2xl (3건) |
 
-<!-- T1 착수 시 추가 예정 (착수 전 scope 갱신):
-| src-tauri/src/commands/settings.rs | [0회] | T1: get/save_academy_info IPC |
-| src-tauri/src/commands/mod.rs | [0회] | T1: 커맨드 등록 |
-| src-tauri/src/lib.rs | [0회] | T1: invoke_handler 등록 |
-| src/app/settings/info/page.tsx | [0회] | T1: 교습소 정보 폼 |
-| src/types/settings.ts | [0회] | T1: AcademyInfo 타입 |
-| src/lib/tauri/index.ts | [0회] | T1: IPC 래퍼 |
--->
+| src-tauri/src/commands/settings.rs | [2회] | T1: AcademyInfo + get/save_academy_info IPC (operating_hours 패턴 재사용) |
+| src-tauri/src/lib.rs | [1회] | T1: invoke_handler 등록 (이미지는 기존 notice_asset IPC 재사용) |
+| src/app/settings/info/page.tsx | [2회] | T1: 교습소 정보 폼 신규 생성 (info 디렉토리 자체가 없었음) |
+| src/app/settings/page.tsx | [1회] | T1: '교습소 정보' 카드 disabledHint 제거(활성화) |
+| src/lib/tauri/index.ts | [1회] | T1: AcademyInfo 타입(DayHours 옆 inline) + getAcademyInfo/saveAcademyInfo 래퍼. types/settings.ts는 비어있어 미사용 — 기존 패턴 따름 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)
