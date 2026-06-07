@@ -461,7 +461,7 @@ function NoticesContent() {
           type="button"
           onClick={() => removeTextbox(i)}
           aria-label="텍스트박스 삭제"
-          className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+          className="rounded px-1 text-xs text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
         >
           ✕
         </button>
@@ -964,7 +964,7 @@ function NoticesContent() {
                                 type="button"
                                 onClick={() => handleDeleteAsset(a.name)}
                                 aria-label={`${a.name} 삭제`}
-                                className="rounded px-1.5 text-sm text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+                                className="rounded px-1.5 text-sm text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
                               >
                                 ✕
                               </button>
@@ -1384,7 +1384,7 @@ function NoticesContent() {
               저장된 템플릿
             </div>
             {templates.length === 0 ? (
-              <p className="text-xs text-gray-400">저장된 템플릿이 없습니다.</p>
+              <p className="text-xs text-gray-600">저장된 템플릿이 없습니다.</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {sortedTemplates.map((name) => (
@@ -1401,7 +1401,7 @@ function NoticesContent() {
                       type="button"
                       onClick={() => handleDeleteTemplate(name)}
                       aria-label={`${name} 삭제`}
-                      className="rounded px-1 text-xs text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+                      className="rounded px-1 text-xs text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
                     >
                       ✕
                     </button>

@@ -172,7 +172,7 @@ function ProgressBar({ step }: { step: Step }) {
           <li
             key={label}
             className={`flex-1 text-center ${
-              active ? 'font-bold text-[var(--accent)]' : done ? 'text-gray-600' : 'text-gray-400'
+              active ? 'font-bold text-[var(--accent)]' : done ? 'text-gray-600' : 'text-gray-600'
             }`}
           >
             <span aria-hidden="true">{done ? '✓' : idx + 1}</span> {label}

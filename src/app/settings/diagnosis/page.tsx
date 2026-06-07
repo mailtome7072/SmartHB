@@ -215,7 +215,7 @@ export default function DiagnosisPage() {
                         onClick={() => setConfirm({ kind: 'one', id: row.id })}
                         aria-label="이 진단 이력 삭제"
                         title="이 진단 이력 삭제"
-                        className="flex min-h-[44px] w-11 shrink-0 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-[var(--danger)]"
+                        className="flex min-h-[44px] w-11 shrink-0 items-center justify-center rounded-md text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

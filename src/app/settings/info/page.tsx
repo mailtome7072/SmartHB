@@ -344,7 +344,7 @@ function ImageField({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={previewUrl} alt={`${label} 미리보기`} className="max-h-28 max-w-full object-contain" />
         ) : (
-          <span className="text-sm text-gray-400">등록된 이미지가 없습니다 (PNG/JPG)</span>
+          <span className="text-sm text-gray-600">등록된 이미지가 없습니다 (PNG/JPG)</span>
         )}
       </div>
       <input

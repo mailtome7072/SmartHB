@@ -397,7 +397,7 @@ function Stat({ label, value, danger }: { label: string; value: string; danger?:
 }
 
 function Loading() {
-  return <p className="text-sm text-gray-400">불러오는 중...</p>
+  return <p className="text-sm text-gray-600">불러오는 중...</p>
 }
 
 function ChartSkeleton() {

@@ -57,7 +57,7 @@ export function Sidebar() {
               <span
                 aria-disabled="true"
                 title={item.disabledHint}
-                className="flex min-h-[44px] cursor-not-allowed items-center px-4 py-3 text-gray-400"
+                className="flex min-h-[44px] cursor-not-allowed items-center px-4 py-3 text-gray-600"
               >
                 {item.label}
               </span>

@@ -310,7 +310,7 @@ function SortableCodeRow({
       <button
         type="button"
         aria-label="순서 변경 드래그 핸들"
-        className="flex h-10 w-8 cursor-grab items-center justify-center text-gray-400 hover:text-gray-700 active:cursor-grabbing"
+        className="flex h-10 w-8 cursor-grab items-center justify-center text-gray-600 hover:text-gray-700 active:cursor-grabbing"
         {...attributes}
         {...listeners}
       >
@@ -323,7 +323,7 @@ function SortableCodeRow({
         onBlur={() => label !== entry.label && onSave({ ...entry, label })}
         className="h-10 flex-1 rounded-md border border-[var(--border)] px-3"
       />
-      <span className="w-12 text-right text-sm text-gray-400" title="정렬순서">
+      <span className="w-12 text-right text-sm text-gray-600" title="정렬순서">
         {entry.sort_order}
       </span>
       <label className="flex h-10 items-center gap-2 text-sm">

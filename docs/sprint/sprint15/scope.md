@@ -6,7 +6,8 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 - **T0** ✅ Sprint 14 액션 아이템 (A95 monthly_summary GROUP BY + A97 위젯 폰트)
 - **T1** ✅ 교습소 정보 화면 (텍스트 9필드 + 로고/2D바코드 이미지)
 - **T5** ✅ 마이너 UI 개선 (시각 검증 병행: 위젯 폰트, 설정 카드 순서, DB폴더 카드, 원생관리 버튼, 전역 툴팁 20px)
-- **T2** 🔄 자가 진단 이력 수동 삭제 (행 단위 + 전체 비우기)
+- **T2** ✅ 자가 진단 이력 수동 삭제 (행 단위 + 전체 비우기, 검증 완료)
+- **T3** ✅ 접근성 감사 (보고서 + Critical: gray-400→600 대비, Ctrl+F·Ctrl+N 단축키. 밀집UI 44px·gray-500·F1·Ctrl+S는 Sprint16 이연)
 
 ## 이번 세션에서 수정할 파일
 <!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행. 아래는 실제 Edit/Write 호출 기준 정정값(hook 자동 카운트는 일부 오집계). -->
@@ -24,7 +25,7 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 | src/app/students/edit/page.tsx | [1회] | T5: 상단 '원생관리 메인' 버튼 추가 |
 | src/components/schedules/ClassCalendar.tsx | [3회] | T5: 월 보기 인원 배지 hover 툴팁 → 전역 GlobalTooltip 위임으로 통일(title 복원). 루프 아님: 사용자 지시 변화(수업 2배→전역 20px), 매 단계 lint/tsc 통과 |
 | src/components/layout/GlobalTooltip.tsx | [1회] | T5: 전역 title 툴팁 가로채기 → 20px 커스텀 팝업 (신규, document 위임) |
-| src/components/layout/app-shell.tsx | [2회] | T5: GlobalTooltip 마운트 |
+| src/components/layout/app-shell.tsx | [4회 ⚠️] | T5: GlobalTooltip 마운트 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)

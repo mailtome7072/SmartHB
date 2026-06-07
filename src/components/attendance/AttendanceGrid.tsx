@@ -643,7 +643,7 @@ function CellView({
         <button
           type="button"
           aria-label="보강 등록"
-          className="block h-[44px] w-full min-w-[44px] text-base text-gray-400 hover:text-amber-700"
+          className="block h-[44px] w-full min-w-[44px] text-base text-gray-600 hover:text-amber-700"
         >
           +
         </button>
