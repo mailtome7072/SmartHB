@@ -122,6 +122,8 @@ pub fn run() {
             commands::diagnosis::get_diagnosis_history,
             commands::diagnosis::get_latest_diagnosis,
             commands::diagnosis::check_auto_diagnosis_needed,
+            commands::diagnosis::delete_diagnosis_history,
+            commands::diagnosis::clear_diagnosis_history,
             commands::dashboard::get_academy_overview,
             commands::dashboard::get_today_schedule,
             commands::dashboard::get_monthly_summary,

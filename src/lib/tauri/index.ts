@@ -1598,6 +1598,20 @@ export async function getDiagnosisHistory(limit: number): Promise<DiagnosisHisto
   return inv('get_diagnosis_history', { limit }) as Promise<DiagnosisHistoryRow[]>
 }
 
+/** 진단 이력 1건 삭제 (행 단위). 존재하지 않는 id 는 무시(멱등). */
+export async function deleteDiagnosisHistory(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_diagnosis_history', { id })
+}
+
+/** 진단 이력 전체 삭제 ("이력 비우기"). */
+export async function clearDiagnosisHistory(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('clear_diagnosis_history')
+}
+
 /** 대시보드 알림용 최신 진단 결과 1건 (없으면 null). */
 export async function getLatestDiagnosis(): Promise<DiagnosisHistoryRow | null> {
   const inv = await getInvoke()

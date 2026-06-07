@@ -600,6 +600,37 @@ pub async fn check_auto_diagnosis_needed() -> Result<bool, String> {
         .map_err(String::from)
 }
 
+/// 진단 이력 1건 삭제 (행 단위). 존재하지 않는 id 는 무시한다(멱등).
+#[tauri::command]
+pub async fn delete_diagnosis_history(id: i64) -> Result<(), String> {
+    let pool = pool().map_err(String::from)?;
+    delete_history_row(pool, id).await.map_err(String::from)
+}
+
+/// 진단 이력 전체 삭제 ("이력 비우기").
+#[tauri::command]
+pub async fn clear_diagnosis_history() -> Result<(), String> {
+    let pool = pool().map_err(String::from)?;
+    clear_history(pool).await.map_err(String::from)
+}
+
+async fn delete_history_row(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM diagnosis_history WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(AppError::Db)?;
+    Ok(())
+}
+
+async fn clear_history(pool: &SqlitePool) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM diagnosis_history")
+        .execute(pool)
+        .await
+        .map_err(AppError::Db)?;
+    Ok(())
+}
+
 #[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
@@ -979,5 +1010,39 @@ mod tests {
         assert!(fetch_history(&pool, 10).await.unwrap().is_empty(), "0건이면 이력 없음");
         assert!(!auto_needed(&pool, "2026-06").await.unwrap(), "이번 달 자동진단 완료로 추적");
         assert!(auto_needed(&pool, "2026-07").await.unwrap(), "다음 달은 여전히 필요");
+    }
+
+    // ── 이력 수동 삭제 (T2) ──
+    #[tokio::test]
+    async fn delete_history_row_removes_only_target() {
+        let pool = test_pool_in_memory().await.unwrap();
+        let id1: (i64,) = sqlx::query_as("INSERT INTO diagnosis_history (run_date, run_type, total_checks, issues_found, details) VALUES ('2026-06-01', 'manual', 7, 0, '[]') RETURNING id")
+            .fetch_one(&pool).await.unwrap();
+        sqlx::query("INSERT INTO diagnosis_history (run_date, run_type, total_checks, issues_found, details) VALUES ('2026-06-02', 'manual', 7, 1, '[]')")
+            .execute(&pool).await.unwrap();
+        delete_history_row(&pool, id1.0).await.unwrap();
+        let rows = fetch_history(&pool, 120).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].run_date, "2026-06-02");
+    }
+
+    #[tokio::test]
+    async fn delete_history_row_nonexistent_is_noop() {
+        let pool = test_pool_in_memory().await.unwrap();
+        sqlx::query("INSERT INTO diagnosis_history (run_date, run_type, total_checks, issues_found, details) VALUES ('2026-06-01', 'manual', 7, 0, '[]')")
+            .execute(&pool).await.unwrap();
+        delete_history_row(&pool, 99_999).await.unwrap(); // 존재하지 않는 id — 에러 없이 멱등
+        assert_eq!(fetch_history(&pool, 120).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn clear_history_removes_all() {
+        let pool = test_pool_in_memory().await.unwrap();
+        for d in ["2026-06-01", "2026-06-02", "2026-06-03"] {
+            sqlx::query("INSERT INTO diagnosis_history (run_date, run_type, total_checks, issues_found, details) VALUES (?, 'manual', 7, 0, '[]')")
+                .bind(d).execute(&pool).await.unwrap();
+        }
+        clear_history(&pool).await.unwrap();
+        assert!(fetch_history(&pool, 120).await.unwrap().is_empty());
     }
 }

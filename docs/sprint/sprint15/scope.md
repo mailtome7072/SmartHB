@@ -2,9 +2,11 @@
 Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 ---
 
-## 이번 세션 목표 Task
-- **T0**: Sprint 14 액션 아이템 해소 (A95 monthly_summary 리팩토링 + A97 inline style 통일)
-- (여유 시) **T1**: 교습소 정보 화면 착수
+## 이번 세션 목표 Task (실제 진행)
+- **T0** ✅ Sprint 14 액션 아이템 (A95 monthly_summary GROUP BY + A97 위젯 폰트)
+- **T1** ✅ 교습소 정보 화면 (텍스트 9필드 + 로고/2D바코드 이미지)
+- **T5** ✅ 마이너 UI 개선 (시각 검증 병행: 위젯 폰트, 설정 카드 순서, DB폴더 카드, 원생관리 버튼, 전역 툴팁 20px)
+- **T2** 🔄 자가 진단 이력 수동 삭제 (행 단위 + 전체 비우기)
 
 ## 이번 세션에서 수정할 파일
 <!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행. 아래는 실제 Edit/Write 호출 기준 정정값(hook 자동 카운트는 일부 오집계). -->
@@ -13,10 +15,12 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 | src-tauri/src/commands/dashboard.rs | [2회] | T0-A95: monthly_summary() GROUP BY 서브쿼리 + 엣지 테스트 |
 | src/components/dashboard/DashboardView.tsx | [2회] | T0-A97: inline fontSize→text-2xl / T5: 24px→22px(text-[22px]) |
 | src-tauri/src/commands/settings.rs | [2회] | T1: AcademyInfo + get/save_academy_info IPC |
-| src-tauri/src/lib.rs | [1회] | T1: invoke_handler 등록 |
-| src/app/settings/info/page.tsx | [4회 ⚠️] | T1: 교습소 정보 폼 신규 생성 (Write 1회 — hook이 [5회]로 오집계, 실제 루프 아님: lint/tsc 통과) |
+| src-tauri/src/lib.rs | [2회] | T1+T2: invoke_handler 등록 (academy_info, diagnosis 이력 삭제) |
+| src/app/settings/info/page.tsx | [1회] | T1: 교습소 정보 폼 신규 생성 (Write 1회 — hook [10회]는 타 파일 Edit 누적 오집계, 루프 아님) |
 | src/app/settings/page.tsx | [4회] | T1: 카드 활성화 / T5: 순서변경(정보 맨앞)+마법사→DB폴더변경(예정)+PIN↔백업 순서. (disabledHint 확대는 오해로 적용 후 원복) |
-| src/lib/tauri/index.ts | [1회] | T1: AcademyInfo 타입 + 래퍼 (types/settings.ts 미사용, 기존 패턴 따름) |
+| src/lib/tauri/index.ts | [2회] | T1+T2: AcademyInfo 타입+래퍼 / diagnosis 이력 삭제 래퍼 2종 |
+| src-tauri/src/commands/diagnosis.rs | [2회] | T2: delete/clear_diagnosis_history IPC + 내부함수 + 테스트 3건 |
+| src/app/settings/diagnosis/page.tsx | [1회] | T2: 행 단위 삭제 버튼(Trash2) + 이력 비우기 + 확인 모달 |
 | src/app/students/edit/page.tsx | [1회] | T5: 상단 '원생관리 메인' 버튼 추가 |
 | src/components/schedules/ClassCalendar.tsx | [3회] | T5: 월 보기 인원 배지 hover 툴팁 → 전역 GlobalTooltip 위임으로 통일(title 복원). 루프 아님: 사용자 지시 변화(수업 2배→전역 20px), 매 단계 lint/tsc 통과 |
 | src/components/layout/GlobalTooltip.tsx | [1회] | T5: 전역 title 툴팁 가로채기 → 20px 커스텀 팝업 (신규, document 위임) |
