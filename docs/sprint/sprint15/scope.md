@@ -38,7 +38,7 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 - [x] A95: monthly_summary() GROUP BY 서브쿼리 리팩토링, R99 해소
 - [x] A95: 기존 테스트(monthly_summary_totals_billing_and_paid) 통과 + 엣지 케이스 1건 추가
 - [x] A97: DashboardView 위젯 타이틀 3건 Tailwind text-2xl 통일 (포스트잇 동적 높이 inline 유지)
-- [x] A89: /notices/page.tsx(1539줄) 분리 → **Sprint 16 이연 확정**. 사용자 결정으로 현 구현 유지. 분리 계획(위험도순): ①순수 유틸 추출 ②템플릿/배경서식 패널 ③미리보기 팝업 ④편집 캔버스 훅(상태 22개 강결합, 고위험). 안정화 스프린트 회귀 리스크로 이연
+- [x] A89: /notices/page.tsx(1539줄) 분리 → **Sprint 16 이연 확정**(사용자 결정, 현 구현 유지). **정정**: 로직 레이어는 이미 분리 완료 — 렌더/생성/색상런/이미지 변환은 `lib/notice-generator.ts`(250줄), 타입은 `types/notice.ts`(68줄), IPC는 `lib/tauri`. A89의 실질 잔여는 ①거대 UI 컴포넌트 구획화(NoticesContent → 템플릿/배경서식/미리보기/캔버스 패널, 편집 상태 22개 강결합·고난도) ②page 로컬 헬퍼 9개(75~194줄, 색상·레이아웃 정규화 — 소규모) **둘뿐**. 비즈니스/로직 부채는 이미 해소 상태 → 순수 유지보수성 개선이라 우선순위 낮음
 - [x] cargo test / clippy / pnpm lint / tsc 통과 후 커밋
 
 ## 발견된 이슈
