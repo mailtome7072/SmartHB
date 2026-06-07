@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react'
 import { Sidebar } from './sidebar'
 import { TopBar } from './top-bar'
+import { GlobalTooltip } from './GlobalTooltip'
 import { useAppStore } from '@/stores/app-store'
 import { useSessionStore } from '@/stores/session-store'
 import {
@@ -102,6 +103,7 @@ export function AppShell({
 
   return (
     <div className="flex h-screen">
+      <GlobalTooltip />
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar latestBackupAt={latestBackupAt} syncStatus={syncStatus}>

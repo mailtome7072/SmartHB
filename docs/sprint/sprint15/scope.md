@@ -18,7 +18,9 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 | src/app/settings/page.tsx | [4회] | T1: 카드 활성화 / T5: 순서변경(정보 맨앞)+마법사→DB폴더변경(예정)+PIN↔백업 순서. (disabledHint 확대는 오해로 적용 후 원복) |
 | src/lib/tauri/index.ts | [1회] | T1: AcademyInfo 타입 + 래퍼 (types/settings.ts 미사용, 기존 패턴 따름) |
 | src/app/students/edit/page.tsx | [1회] | T5: 상단 '원생관리 메인' 버튼 추가 |
-| src/components/schedules/ClassCalendar.tsx | [2회] | T5: 월 보기 인원 배지 hover 툴팁 native title→커스텀 div(폰트 24px, 2배) |
+| src/components/schedules/ClassCalendar.tsx | [3회] | T5: 월 보기 인원 배지 hover 툴팁 → 전역 GlobalTooltip 위임으로 통일(title 복원). 루프 아님: 사용자 지시 변화(수업 2배→전역 20px), 매 단계 lint/tsc 통과 |
+| src/components/layout/GlobalTooltip.tsx | [1회] | T5: 전역 title 툴팁 가로채기 → 20px 커스텀 팝업 (신규, document 위임) |
+| src/components/layout/app-shell.tsx | [2회] | T5: GlobalTooltip 마운트 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)

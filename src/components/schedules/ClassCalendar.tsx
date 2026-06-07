@@ -30,35 +30,6 @@ interface Props {
   onStudentNameClick: (studentName: string) => void
 }
 
-// 월 보기 인원수 배지 hover 시 시간대별 명단 팝업.
-// native `title` 속성 툴팁은 브라우저가 그려 폰트 크기를 키울 수 없으므로, document.body 에
-// 커스텀 div 를 띄워 가독성 있는 큰 폰트(24px ≈ native 의 2배)로 표시한다. 단일 인스턴스만 유지.
-const CLASS_TOOLTIP_ID = 'shb-class-tooltip'
-
-function hideClassTooltip() {
-  document.getElementById(CLASS_TOOLTIP_ID)?.remove()
-}
-
-function showClassTooltip(text: string, anchor: HTMLElement) {
-  hideClassTooltip()
-  if (text === '') return
-  const tip = document.createElement('div')
-  tip.id = CLASS_TOOLTIP_ID
-  tip.textContent = text
-  tip.style.cssText =
-    'position:fixed;z-index:9999;pointer-events:none;background:#111;color:#fff;' +
-    'padding:10px 14px;border-radius:8px;font-size:24px;line-height:1.5;' +
-    'white-space:pre-line;max-width:520px;box-shadow:0 4px 12px rgba(0,0,0,0.3);'
-  document.body.appendChild(tip)
-  // 배지 중앙 위쪽에 배치하되 화면 경계를 넘지 않도록 보정. 위 공간이 부족하면 아래로.
-  const a = anchor.getBoundingClientRect()
-  const t = tip.getBoundingClientRect()
-  const left = Math.max(8, Math.min(a.left + a.width / 2 - t.width / 2, window.innerWidth - t.width - 8))
-  const top = a.top - t.height - 8
-  tip.style.left = `${left}px`
-  tip.style.top = `${top < 8 ? a.bottom + 8 : top}px`
-}
-
 /** 학사일정 코드명 → 텍스트 색 (academic CalendarCell 팔레트). */
 const EVENT_TEXT_COLOR: Record<string, string> = {
   공휴일: '#dc2626',
@@ -244,18 +215,15 @@ export default function ClassCalendar({
       frame.style.position = 'relative'
       const badge = document.createElement('div')
       badge.className = 'shb-count-badge'
+      // title 은 전역 GlobalTooltip(AppShell)이 20px 커스텀 팝업으로 표시한다.
+      badge.title = info.tooltip
       badge.textContent = `${info.count}명`
       badge.style.cssText =
         'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
         'font-size:28px;font-weight:400;color:#111;cursor:pointer;' +
         'z-index:5;pointer-events:auto;white-space:nowrap;'
-      // native `title` 대신 커스텀 큰 폰트 팝업 — 시간대별 명단을 가독성 있게 표시.
-      const tip = info.tooltip
-      badge.addEventListener('mouseenter', () => showClassTooltip(tip, badge))
-      badge.addEventListener('mouseleave', hideClassTooltip)
       frame.appendChild(badge)
     })
-    return () => hideClassTooltip()
   }, [dayInfo, viewType])
 
   // 뷰 전환 — 주/일은 오늘 날짜가 포함되도록 이동, 월은 현재 위치 유지.
