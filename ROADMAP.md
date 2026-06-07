@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 93% (14/15 스프린트 완료, Phase 5 취소로 17→15 스프린트) |
-| 현재 Phase | Sprint 15 진행 중: 양 OS 빌드 검증 + 성능 최적화 + 접근성 감사 |
-| 다음 마일스톤 | 양 OS 빌드 검증 + 최적화 + UAT (Sprint 15~16) |
+| 전체 진행률 | 97% (15/16 스프린트 완료, Phase 5 취소로 17→16 스프린트) |
+| 현재 Phase | Sprint 16 예정: UAT(원장 2주 파일럿) + 피드백 반영 + v1.0 릴리즈 |
+| 다음 마일스톤 | UAT + v1.0 릴리즈 (Sprint 16) |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -787,94 +787,81 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
 ### 목표
 양 OS 빌드 검증, 성능 최적화, 접근성 감사를 완료하고, 원장 2주 UAT를 통해 v1.0을 릴리즈한다.
 
-### Sprint 15: 양 OS 빌드 검증 + 최적화 (2주) 🔄 진행 중
+### Sprint 15: 양 OS 빌드 검증 + 최적화 + 접근성 감사 (2주) ✅ 완료 (2026-06-07)
 
-#### 작업 목록
+> 계획 문서: `docs/sprint/sprint15.md` / Task T0~T6(+T5) 완료, T7~T9 Sprint 16 이연
+> 신규 의존성 없음 / DB 마이그레이션 없음
 
-- ⬜ **양 OS 빌드 산출물 검증**
-  - Windows: `.msi` + `.exe` 인스톨러 → 설치/실행/언인스톨 테스트
-  - macOS: `.dmg` → 설치/실행/삭제 테스트
-  - WebView2 런타임 확인 (Windows)
-  - Apple Silicon + Intel 유니버설 바이너리 확인 (macOS)
-- ⬜ **성능 최적화**
-  - 화면 전환 300ms 이내 확인
-  - 출결표 50명 x 31일 렌더링 1초 이내
-  - 청구 50명 생성 3초 이내
-  - 공지문 50장 생성 30초 이내
-  - 앱 시작 ~ 메인 화면 진입 3초 이내
-  - 병목 지점 프로파일링 + 개선
-- ⬜ **접근성 감사**
-  - Pretendard 18pt 본문 / 24pt+ 헤더 / 행간 1.5 전체 화면 확인
-  - WCAG AA 명도 대비 4.5:1 전체 검증
-  - 44x44px 최소 클릭 영역 전체 검증
-  - 키보드 단축키 7종 동작 확인
-  - 저자극 톤 색상 확인
-- ⬜ **E2E 테스트 (UC-1~UC-5)**: Tauri WebDriver 기반
-  - UC-1: 신규 원생 등록
-  - UC-2: 월말 학사 일정 수립
-  - UC-3: 일일 출결 입력
-  - UC-4: 결석 원생 보강 처리
-  - UC-5: 월 교습비 청구 + 공지문
-  - ~~UC-6: 단원평가 점수 입력~~ (Phase 5 취소)
-- ⬜ **양 PC 동기화 시나리오 테스트**: Windows → 종료 → Mac 시작 → 데이터 확인
-- ⬜ **기술 부채 정리**: 코드 리뷰 + 리팩토링 + 미사용 코드 제거
+#### 실제 완료 범위 (T0~T6+T5)
 
-##### 추가 기능 보강 — 설정 화면 3건 (2026-06-04 계획, sprint14에서 이연)
-> 출처: 2026-06-04 대화. sprint14가 capacity 풀(38/40h)이라 sprint15로 이연 결정.
-> 본 항목들은 안정화 sprint에 얹는 기능 작업이므로, sprint15 진입 시 `sprint-planner`가 Capacity를 재산정하고 필요 시 Sprint 16/별도 sprint로 재배치한다.
+- ✅ **T0**: `dashboard.rs` `monthly_summary` GROUP BY 서브쿼리 리팩토링 (R99 해소) + 대시보드 위젯 타이틀 inline fontSize → Tailwind `text-2xl` 통일 (A97)
+- ✅ **T1**: 교습소 정보 화면 신설 (`/settings/info`) — AcademyInfo 텍스트 9필드 + 로고/2D바코드 이미지 2종 업로드/미리보기/삭제. `get_academy_info`/`save_academy_info` IPC + `app_settings` JSON 저장 + `notice_asset` IPC 재사용. 설정 허브 카드 활성화
+- ✅ **T5** (마이너 UI 개선, 사용자 시각 검증 완료):
+  - 설정 허브 카드 순서 변경 (PIN 위치 조정)
+  - '마법사 재실행' 카드 → 'DB 폴더 변경(예정)' 안내 카드 (disabled, Sprint 16 이연 명시)
+  - 원생 상세 화면에 '원생 관리 메인으로' 버튼 추가
+  - 전역 `GlobalTooltip` 컴포넌트 도입 (브라우저 `title` 속성 툴팁 20px 통일)
+  - 대시보드 위젯 폰트 미세 조정
+- ✅ **T2**: 자가 진단 이력 수동 삭제 — `delete_diagnosis_history(id)` / `clear_diagnosis_history()` IPC 2종 + UI 삭제 버튼 + 확인 모달, 단위 테스트 3건
+- ✅ **T3**: 접근성 감사 — `text-gray-400` → `text-gray-600` 17건 수정(WCAG AA 명도 기준 통과), `GlobalShortcuts` 컴포넌트 신설(Ctrl+F / Ctrl+N 단축키 전역 등록). 감사 보고서: `docs/sprint/sprint15/accessibility-audit.md`
+- ✅ **T4**: 기술 부채 정리 — `cargo clippy --all-targets` 부채 6건 해소. A89(`/notices/page.tsx` 분리)는 로직이 이미 별도 모듈로 분리된 상태 확인 → UI 구획화만 Sprint 16 이연
+- ✅ **T6**: 청구 생성 `standard_fees` N+1 쿼리 제거 (IN 쿼리 단일 배치로 전환). 성능 보고서: `docs/sprint/sprint15/performance-report.md`
 
-- ⬜ **설정 — '교습소 정보' 화면 신설 (§4.12 보강)** _(저위험, 예상 3~4h)_
-  - 교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 CRUD — `app_settings` key/value JSON 저장 (`operating_hours` 패턴 재사용, **DB 마이그레이션 없음**)
-  - 설정 허브의 '교습소 정보' 카드 활성화 (현재 `/settings/info` disabled stub)
-  - **착수 전 확정 필요**: (1) 필드 목록(사업자번호/교습소 등록번호 포함 여부), (2) 노출 위치 — 공지문(§4.10) 헤더 등 실제 소비처 연결 여부. PRD §4.x에 정식 Feature/AC 없음 → 필드·노출처 미확정 시 scope 번짐 주의
-- ⬜ **설정 — '초기 설정 마법사 재실행' → 'DB 폴더 변경(경로 재지정)' 전환** _(고위험, 독립 Task 규모)_
-  - 현재 disabled '마법사 재실행' 카드(`/setup`)를 **'DB 폴더 변경' 단일 기능**으로 교체. (PIN 변경은 `change_pin`이 이미 대체, 마법사 재실행의 잔여 실용 기능은 폴더 재지정뿐)
-  - **안전 원칙 = copy-then-switch (이동 금지)**: 복사 → 새 위치 `PRAGMA integrity_check` + 동일 PIN으로 열림 검증 → `config.json` 경로 전환 → **앱 재시작**으로 반영(`POOL: OnceCell`은 런타임 재지정 불가)
-  - **세트로 동반 이전**: `app.db`(+`-wal`/`-shm`) + **`salt.bin`** + `backup/` 전체. salt 누락 시 cipher ON에서 **DB 영구 잠김**(키 = PBKDF2(PIN, salt)), WAL 누락 시 최근 거래 손실
-  - 옛 폴더 `app.lock` 해제 + 새 폴더 락 획득, 클라우드 동기화 완료 대기 안내, 옛 데이터는 즉시 삭제 금지(사후 수동 정리)
-  - 시나리오 분기: **A 이전**(빈 폴더로 데이터 복사) / **B 연결**(기존 데이터 있는 폴더에 이 PC 연결)
-  - **R12 salt.bin 이전(backlog)과 상호 의존** — 함께 설계/처리. 진입 시 ADR로 PRD §4.0.2(마법사 재실행 요구) 라벨/기능 변경 결정 기록
-  - **검증**: cipher ON 빌드 + 실파일 + 양 PC 시나리오 필수 (인메모리/cipher off는 salt·WAL·lock 미검출). 중간 강제 종료 시 옛 경로로 정상 복귀 확인
-- ⬜ **자가 진단 이력 수동 삭제 기능 (B안)** _(저위험, 소규모)_ — 출처: 2026-06-04 Sprint 14 검증 대화
-  - `/settings/diagnosis` 이력 목록에 **"이 기록 삭제"(행 단위)** 및/또는 **"이력 비우기"** 추가 — 위험 동작 확인 다이얼로그 필수(PRD §5.7)
-  - 백엔드 IPC: `delete_diagnosis_history(id)` / `clear_diagnosis_history()` (DELETE FROM diagnosis_history)
-  - **자동 삭제는 도입하지 않음** — diagnosis_history는 감사 로그 성격이라 "해결 시 자동 삭제"는 추적성 훼손 + "해결됨" 판정 모호. **사용자 수동 삭제만** 제공 (Sprint 14 검증 시 결정)
-  - 참고: 현재 상태(알림/최신)는 마지막 실행만 반영하므로 재실행 시 자동 정상화됨 — 본 기능은 과거 로그 정리 용도
+#### Sprint 16으로 이연 (T7~T9 + 기타)
+
+- **T7 양 OS 빌드 검증** — 물리 환경 의존(Windows PC), Sprint 16 UAT와 통합
+- **T8 양 PC 동기화 시나리오** — 물리 환경 의존(양 PC), Sprint 16 UAT와 통합
+- **T9 통합검증(빌드 산출물·양OS 실검증)** — 코드 검증(cargo test 375 passed / clippy --all-targets / lint / tsc)은 이번 스프린트 통과. 빌드 산출물·양 OS 실검증만 Sprint 16
+- 출결표 N+1 재설계·셀 memo·`makeup_attendances` 인덱스 (실측 후 결정)
+- 공지문 I/O 병렬화
+- 접근성 밀집UI 44px·gray-500·F1·Ctrl+S 미달 항목 (Medium/Low)
+- A89 `/notices` UI 구획화 (로직 분리 완료, UI 3분할만 잔여)
+- DB 폴더 변경(경로 재지정) — 고위험, R12 salt.bin 이전과 함께 Sprint 16 설계·ADR
+- CSV 가져오기 (Sprint 16 UAT 환경 준비 첫 번째 작업)
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 양 OS 인스톨러 설치/실행/삭제 정상
-- ⬜ 모든 성능 요구사항 충족
-- ⬜ 접근성 기준 전체 통과
-- ⬜ E2E UC-1~UC-5 모두 통과 (UC-6 Phase 5 취소)
-- ⬜ 양 PC 동기화 시나리오 통과
-- ⬜ (추가 기능) 교습소 정보 저장/조회 + 노출처 반영
-- ⬜ (추가 기능) DB 폴더 변경 — copy-then-switch + salt/WAL/backup 동반 이전 + 재시작 반영, 양 PC cipher ON 검증 통과
 
-#### 🧪 Playwright MCP 검증 시나리오
-```
-(이 스프린트는 Tauri WebDriver E2E로 검증 — UC-1~UC-5 전체)
-1. tauri-driver로 앱 실행
-2. UC-1: 원생 등록 흐름
-3. UC-2: 학사 일정 수립 흐름
-4. UC-3: 출결 입력 흐름
-5. UC-4: 보강 처리 흐름
-6. UC-5: 청구 + 공지문 흐름
-```
+- ✅ 교습소 정보 저장/조회 정상 — 텍스트 9필드 + 이미지 2종 업로드/미리보기/삭제
+- ✅ 자가 진단 이력 행 단위 삭제 + 전체 비우기 정상
+- ✅ monthly_summary GROUP BY 리팩토링 완료 (R99 해소)
+- ✅ 접근성 Critical 수정 — WCAG AA 명도 대비 17건 수정, 전역 단축키 Ctrl+F/Ctrl+N 등록
+- ✅ `cargo test --lib` 375 passed
+- ✅ `cargo clippy --all-targets -- -D warnings` clean
+- ✅ `cargo check --features cipher` 통과
+- ✅ `pnpm lint` + `pnpm tsc --noEmit` + `pnpm build` 전수 통과
+- ⬜ macOS .dmg / Windows .msi 빌드 설치 검증 → Sprint 16
+- ⬜ 양 PC 동기화 시나리오 → Sprint 16
+- ⬜ E2E UC-1~UC-5 자동화 → Post-MVP backlog
+
+#### 마이그레이션 self-check
+
+V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없음 확인).
 
 #### 기술 고려사항
-- Tauri WebDriver 설정: `tauri-driver` + WebDriver 클라이언트
-- 양 OS CI: GitHub Actions matrix (windows-latest, macos-latest)
-- 성능 프로파일링: Rust → `flamegraph`, Frontend → Chrome DevTools
+- Tauri WebDriver E2E 자동화 설정: Sprint 16 이연 (별도 인프라 세팅 8~12h, Post-MVP backlog)
+- 양 OS CI: GitHub Actions matrix (windows-latest, macos-latest) → Sprint 16에서 실행
 
 ---
 
-### Sprint 16: UAT + v1.0 릴리즈 (2주) 📋 예정
+### Sprint 16: 양 OS 빌드 검증 + UAT + v1.0 릴리즈 (2주) 📋 예정
+
+> Sprint 15에서 이연된 T7(양 OS 빌드) · T8(양 PC 동기화) · T9(통합검증 빌드 부분)를 흡수.
 
 #### 작업 목록
 
-- ⬜ **UAT 환경 준비**: 원장 실데이터 일부 마이그레이션
-  - CSV 가져오기로 원생 데이터 이관
+- ⬜ **[Sprint 15 이연] 양 OS 빌드 검증**:
+  - macOS: `pnpm tauri:build` → `.dmg` 생성, 설치/실행/삭제, Apple Silicon arch 확인
+  - Windows: GitHub Actions CI matrix(windows-latest) 빌드, `.msi`/`.exe` 설치/실행/언인스톨, WebView2 런타임 확인
+  - 인스톨러 체크리스트: 앱 아이콘, 시작 메뉴/Dock, 기존 데이터 유지, 잔여 파일 없음
+- ⬜ **[Sprint 15 이연] 양 PC 동기화 시나리오 테스트**:
+  - 시나리오 1: Windows → Mac 전환 (app.lock 해제 + 클라우드 동기화 + Mac 진입 데이터 정합)
+  - 시나리오 2: Mac → Windows 역방향
+  - 시나리오 3: 비정상 종료 후 5분 임계 강제 점유
+- ⬜ **DB 폴더 변경(경로 재지정)** — copy-then-switch + salt.bin/WAL/backup 동반 이전 + 앱 재시작. R12 salt.bin 이전과 함께 설계. ADR 필요. cipher ON + 양 PC 시나리오 검증 필수
+- ⬜ **CSV 가져오기** (PRD §4.13.1) — UAT 환경 준비 첫 번째 작업. 원생 데이터 이관
+- ⬜ **UAT 환경 준비**:
   - 교습소 PC(Windows) + 자택 Mac에 설치
+  - CSV 가져오기로 원생 실데이터 이관
 - ⬜ **UAT 실행 (2주)**: 원장 실사용 + 피드백 수집
   - 일일 피드백 기록 (화면별 사용성, 글씨 크기, 동선)
   - 주간 리뷰 미팅 (2회)
@@ -883,11 +870,17 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
   - Critical: 기능 오류 수정
   - High: UX 개선 (글씨 크기, 버튼 위치, 동선)
   - Medium: 미세 조정 (색상, 간격, 문구)
+- ⬜ **Sprint 15 이연 기술 부채 처리** (Capacity 여유 시):
+  - 접근성 밀집UI 44px·gray-500·F1·Ctrl+S 미달 항목 (Medium/Low)
+  - A89 `/notices` UI 구획화
+  - 출결표 N+1 재설계·셀 memo·`makeup_attendances` 인덱스 (실측 후)
 - ⬜ **CHANGELOG.md 최종 정리**: v1.0 릴리즈 노트
 - ⬜ **v1.0 태그 + GitHub Release**: `v1.0.0` 태그 push → CI가 인스톨러 빌드/첨부
 - ⬜ **배포 후 검증**: deploy-prod agent CV 체크리스트
 
 #### 완료 기준 (Definition of Done)
+- ⬜ 양 OS 인스톨러 설치/실행/삭제 정상 (Sprint 15 이연)
+- ⬜ 양 PC 동기화 시나리오 3종 중 최소 1종 통과 (Sprint 15 이연)
 - ⬜ 원장 UAT 2주 완료 + 주요 피드백 반영
 - ⬜ 사용자 만족도 4.5/5 이상 (자가 평가)
 - ⬜ 사용자 학습 기간 1주 이내 확인
@@ -920,7 +913,8 @@ Phase 6 (안정화+UAT, 구 Phase 7)  ← Phase 5 완료 필수
 | ~~M6: 평가+보고서~~ | ~~Phase 5~~ | — | — | ❌ 전면 취소 (2026-05-31) |
 | M6: PIN 옵션화 | — | Sprint 13 | +24주 ✅ | PIN 스킵 토글 + Phase 5 취소 반영 |
 | M7: 대시보드 | Phase 5 | Sprint 14 | +26주 ✅ | 대시보드 + 자가 진단 + 내보내기 |
-| M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +30주 | 양 OS 빌드 + UAT + v1.0.0 |
+| M7.5: 안정화 | Phase 6 | Sprint 15 | +28주 ✅ | 교습소 정보 + 접근성 감사 + 성능 최적화 (T7~T9 Sprint 16 이연) |
+| M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +32주 | 양 OS 빌드 검증 + UAT + v1.0.0 |
 
 ---
 
