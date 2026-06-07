@@ -993,15 +993,15 @@ mod tests {
 
     // ─────────────── T3: create_makeup_with_absences (트랜잭션 매칭) ───────────────
 
-    /// T3 픽스처 — 학생 1명 (월~금 정규 수업 5요일) + 보강 가능 코드 (공휴수업일) 일자
-    /// + 미처리 결석 N건. event_date 는 토요일(2026-06-13) 또는 일요일(2026-06-14)로
-    /// 정규 수업 요일 아닌 일자.
+    /// T3 픽스처 — 학생 1명 (월~금 정규 수업 5요일) + 보강 가능 코드(공휴수업일) 일자 +
+    /// 미처리 결석 N건. event_date 는 토요일(2026-06-13) 또는 일요일(2026-06-14)로 정규 수업
+    /// 요일이 아닌 일자.
     async fn fixture_student_with_absences(
         pool: &SqlitePool,
         absence_dates: &[&str],
     ) -> (i64, Vec<i64>) {
         let sid = seed_student(
-            &pool,
+            pool,
             "S001",
             "2026-01-01",
             None,
@@ -1011,7 +1011,7 @@ mod tests {
         .await;
         let mut absence_ids = Vec::with_capacity(absence_dates.len());
         for date in absence_dates {
-            let aid = insert_absence(&pool, sid, date, "2026-06", 60, Some("2026-07")).await;
+            let aid = insert_absence(pool, sid, date, "2026-06", 60, Some("2026-07")).await;
             absence_ids.push(aid);
         }
         (sid, absence_ids)
@@ -1019,8 +1019,8 @@ mod tests {
 
     /// T3 픽스처 — event_date 에 보강 가능 학사일정 1건 등록 (공휴수업일).
     async fn fixture_makeup_eligible_date(pool: &SqlitePool, event_date: &str) {
-        let code = schedule_code_id(&pool, "공휴수업일").await;
-        insert_schedule_event(&pool, code, event_date, None).await;
+        let code = schedule_code_id(pool, "공휴수업일").await;
+        insert_schedule_event(pool, code, event_date, None).await;
     }
 
     fn payload(student_id: i64, event_date: &str, absence_ids: Vec<i64>) -> CreateMakeupPayload {

@@ -683,6 +683,7 @@ mod tests {
     use super::*;
     use crate::commands::db::test_pool_in_memory;
 
+    #[allow(clippy::too_many_arguments)] // 테스트 픽스처 — 원생 필드 다수를 직접 주입
     async fn insert_student(
         pool: &SqlitePool,
         serial: &str,

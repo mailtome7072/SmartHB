@@ -13,7 +13,8 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 <!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행. 아래는 실제 Edit/Write 호출 기준 정정값(hook 자동 카운트는 일부 오집계). -->
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src-tauri/src/commands/dashboard.rs | [2회] | T0-A95: monthly_summary() GROUP BY 서브쿼리 + 엣지 테스트 |
+| src-tauri/src/commands/dashboard.rs | [3회] | T0: monthly_summary GROUP BY+엣지테스트 / T4: insert_student 픽스처 clippy allow(too_many_args). 루프 아님(별개 의도) |
+| src-tauri/src/commands/makeup.rs | [2회] | T4: 테스트 clippy 정리(needless_borrow 4 + doc 주석) — `--all-targets` 미적용 누적 부채 |
 | src/components/dashboard/DashboardView.tsx | [2회] | T0-A97: inline fontSize→text-2xl / T5: 24px→22px(text-[22px]) |
 | src-tauri/src/commands/settings.rs | [2회] | T1: AcademyInfo + get/save_academy_info IPC |
 | src-tauri/src/lib.rs | [2회] | T1+T2: invoke_handler 등록 (academy_info, diagnosis 이력 삭제) |
