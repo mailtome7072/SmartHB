@@ -38,7 +38,7 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 - [x] A95: monthly_summary() GROUP BY 서브쿼리 리팩토링, R99 해소
 - [x] A95: 기존 테스트(monthly_summary_totals_billing_and_paid) 통과 + 엣지 케이스 1건 추가
 - [x] A97: DashboardView 위젯 타이틀 3건 Tailwind text-2xl 통일 (포스트잇 동적 높이 inline 유지)
-- [~] A89: /notices/page.tsx 분리 여부 판단 → T4에서 처리 (이번 세션 범위 외, 계획대로)
+- [x] A89: /notices/page.tsx(1539줄) 분리 → **Sprint 16 이연 확정**. 사용자 결정으로 현 구현 유지. 분리 계획(위험도순): ①순수 유틸 추출 ②템플릿/배경서식 패널 ③미리보기 팝업 ④편집 캔버스 훅(상태 22개 강결합, 고위험). 안정화 스프린트 회귀 리스크로 이연
 - [x] cargo test / clippy / pnpm lint / tsc 통과 후 커밋
 
 ## 발견된 이슈
