@@ -9,6 +9,7 @@
  */
 
 import { Suspense, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/app-shell'
@@ -141,6 +142,12 @@ function StudentDetailContent() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-3xl">
+        <Link
+          href="/students"
+          className="mb-4 inline-flex min-h-[44px] items-center gap-1 rounded-md border border-[var(--border)] bg-white px-3 py-2 text-base text-[var(--foreground)] hover:bg-gray-50"
+        >
+          ← 원생관리 메인
+        </Link>
         <h1 className="mb-6 text-2xl font-bold">원생 상세 / 수정</h1>
 
         {justCreated && student !== undefined && student.withdraw_date === null && (

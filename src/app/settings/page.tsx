@@ -22,6 +22,11 @@ interface SettingCard {
 
 const CARDS: SettingCard[] = [
   {
+    href: '/settings/info',
+    title: '교습소 정보',
+    description: '교습소명 / 대표자 / 연락처 / 주소 / 사업자등록번호 / 최대인원 / 면적 + 로고·2D바코드 이미지',
+  },
+  {
     href: '/settings/hours',
     title: '교습소 운영 시간',
     description: '요일별 시작/종료 시간 설정. 수업 스케줄 시작 시간 콤보 기준.',
@@ -57,15 +62,10 @@ const CARDS: SettingCard[] = [
     description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',
   },
   {
-    href: '/settings/info',
-    title: '교습소 정보',
-    description: '교습소명 / 대표자 / 연락처 / 주소 / 사업자등록번호 / 최대인원 / 면적 + 로고·2D바코드 이미지',
-  },
-  {
-    href: '/setup',
-    title: '초기 설정 마법사 재실행',
-    description: '클라우드 폴더 변경 등 마법사를 다시 진행합니다. (예정)',
-    disabledHint: '재실행 흐름 정비 후 활성화',
+    href: '/settings/db-folder',
+    title: 'DB 폴더 변경',
+    description: '데이터가 저장되는 클라우드 동기화 폴더(DB 위치)를 재지정합니다. (Sprint 16 제공 예정)',
+    disabledHint: 'Sprint 16 제공 예정',
   },
 ]
 
