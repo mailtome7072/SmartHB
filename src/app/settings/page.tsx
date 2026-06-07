@@ -155,7 +155,7 @@ export default function SettingsHubPage() {
               >
                 <h2 className="mb-2 text-lg font-bold text-gray-500">{card.title}</h2>
                 <p className="text-sm text-gray-500">{card.description}</p>
-                <p className="mt-3 text-xs text-gray-400">{card.disabledHint}</p>
+                <p className="mt-3 text-2xl text-gray-400">{card.disabledHint}</p>
               </div>
             ) : (
               <Link
