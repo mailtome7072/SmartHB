@@ -303,13 +303,21 @@ async fn today_schedule(pool: &SqlitePool, weekday: u8) -> Result<TodaySchedule,
 
 async fn monthly_summary(pool: &SqlitePool, ym: &str) -> Result<MonthlySummary, AppError> {
     // 청구/입금 — 금액 기준은 adjusted_amount, 입금은 payments.is_paid=1 (billing.rs 와 정합).
+    //
+    // payments 를 bill_id 단위로 먼저 집계(GROUP BY)한 뒤 bills 와 LEFT JOIN 한다.
+    // 현재 스키마는 payments.bill_id UNIQUE(청구:수납 = 1:1)지만, 향후 부분 수납으로
+    // 한 청구에 결제 행이 여러 개 결합되어도 청구(bills)가 fan-out 되지 않아
+    // bill_total/bill_count 의 중복 합산을 원천 차단한다 (R99 해소). 결제 존재 여부는
+    // MAX(is_paid) 로 판정 — 결제 행 중 하나라도 납부면 수납으로 본다.
     let row = sqlx::query(
         "SELECT \
             COALESCE(SUM(b.adjusted_amount), 0) AS bill_total, \
             COUNT(*) AS bill_count, \
-            COALESCE(SUM(CASE WHEN p.is_paid = 1 THEN b.adjusted_amount ELSE 0 END), 0) AS paid_total, \
-            COALESCE(SUM(CASE WHEN p.is_paid = 1 THEN 1 ELSE 0 END), 0) AS paid_count \
-         FROM bills b LEFT JOIN payments p ON p.bill_id = b.id \
+            COALESCE(SUM(CASE WHEN paid.paid_flag = 1 THEN b.adjusted_amount ELSE 0 END), 0) AS paid_total, \
+            COALESCE(SUM(CASE WHEN paid.paid_flag = 1 THEN 1 ELSE 0 END), 0) AS paid_count \
+         FROM bills b \
+         LEFT JOIN (SELECT bill_id, MAX(is_paid) AS paid_flag FROM payments GROUP BY bill_id) paid \
+            ON paid.bill_id = b.id \
          WHERE b.bill_year_month = ?",
     )
     .bind(ym)
@@ -779,6 +787,28 @@ mod tests {
         assert_eq!(sum.bill_count, 2);
         assert_eq!(sum.paid_count, 1);
         assert_eq!(sum.enrolled_this_month, 1, "2026-06 입교 1명");
+    }
+
+    #[tokio::test]
+    async fn monthly_summary_unpaid_payment_row_excluded_and_no_fanout() {
+        // R99 회귀 방지: 결제행(is_paid=0)이 존재해도 수납 합산에서 제외되고,
+        // 결제행이 청구(bills)를 fan-out 시켜 bill_total/bill_count 를 부풀리지 않는다.
+        // payments.bill_id UNIQUE 로 현재는 청구당 결제행 1개지만, GROUP BY 서브쿼리는
+        // 향후 부분 수납(청구당 결제행 다수) 확장 시에도 동일하게 fan-out 을 차단한다.
+        let pool = test_pool_in_memory().await.unwrap();
+        let sid = insert_student(&pool, "S1", "가", "male", "elementary", 3, "2026-06-05", None).await;
+        let b1: (i64,) = sqlx::query_as("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount) VALUES (?, '2026-06', 4, 200000, 200000) RETURNING id")
+            .bind(sid).fetch_one(&pool).await.unwrap();
+        // 결제행은 존재하나 미납(is_paid=0).
+        sqlx::query("INSERT INTO payments (bill_id, is_paid) VALUES (?, 0)")
+            .bind(b1.0).execute(&pool).await.unwrap();
+
+        let sum = monthly_summary(&pool, "2026-06").await.unwrap();
+        assert_eq!(sum.bill_total, 200000);
+        assert_eq!(sum.bill_count, 1, "결제행이 청구를 fan-out 시키지 않음");
+        assert_eq!(sum.paid_total, 0, "is_paid=0 결제행은 수납 합산 제외");
+        assert_eq!(sum.paid_count, 0);
+        assert_eq!(sum.unpaid_total, 200000);
     }
 
     // ── 알림 ──
