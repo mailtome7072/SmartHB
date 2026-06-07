@@ -14,10 +14,11 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 | src/components/dashboard/DashboardView.tsx | [2회] | T0-A97: inline fontSize→text-2xl / T5: 24px→22px(text-[22px]) |
 | src-tauri/src/commands/settings.rs | [2회] | T1: AcademyInfo + get/save_academy_info IPC |
 | src-tauri/src/lib.rs | [1회] | T1: invoke_handler 등록 |
-| src/app/settings/info/page.tsx | [1회] | T1: 교습소 정보 폼 신규 생성 (Write 1회 — hook이 [5회]로 오집계, 실제 루프 아님: lint/tsc 통과) |
-| src/app/settings/page.tsx | [2회] | T1: 카드 활성화 / T5: 순서변경(정보 맨앞)+마법사→DB폴더변경(예정) |
+| src/app/settings/info/page.tsx | [4회 ⚠️] | T1: 교습소 정보 폼 신규 생성 (Write 1회 — hook이 [5회]로 오집계, 실제 루프 아님: lint/tsc 통과) |
+| src/app/settings/page.tsx | [4회] | T1: 카드 활성화 / T5: 순서변경(정보 맨앞)+마법사→DB폴더변경(예정)+PIN↔백업 순서. (disabledHint 확대는 오해로 적용 후 원복) |
 | src/lib/tauri/index.ts | [1회] | T1: AcademyInfo 타입 + 래퍼 (types/settings.ts 미사용, 기존 패턴 따름) |
 | src/app/students/edit/page.tsx | [1회] | T5: 상단 '원생관리 메인' 버튼 추가 |
+| src/components/schedules/ClassCalendar.tsx | [2회] | T5: 월 보기 인원 배지 hover 툴팁 native title→커스텀 div(폰트 24px, 2배) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)
