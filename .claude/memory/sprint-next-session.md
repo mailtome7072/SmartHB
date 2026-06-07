@@ -1,6 +1,6 @@
 ---
 name: sprint-next-session
-description: "Sprint 15 마감+develop 머지+tauri:dev QA 완료(develop push 7857963). 다음 = Sprint 16 계획(UAT+v1.0) 또는 v0.6.0/v1.0 배포 결정. 새 세션 진입 시 가장 먼저 확인"
+description: "Sprint 15 마감+develop 머지+tauri:dev QA 완료(develop push 7857963). 결정확정: Sprint 16까지 묶어 v1.0 직행(v0.6.0 배포 폐기). ⚠️배포(deploy-prod)는 사용자 명시 지시 전까지 금지. 다음 = Sprint 16 계획. 새 세션 진입 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
@@ -8,12 +8,12 @@ metadata:
 ---
 
 **현재 위치(2026-06-07, 집 Mac)**: **Sprint 15 마감 + develop 머지 + tauri:dev QA 완료**. develop HEAD `7857963`(origin push 완료, 로컬=원격). sprint15 머지 `--no-ff`. 범위 = **T0~T6(+T5) 완료, T7~T9는 Sprint 16 이연**. 작업트리 clean(develop 브랜치).
-> Sprint 14 완료·0.6.0 버전확정까지 됨. **deploy-prod(v0.6.0 태그)는 여전히 보류**. Phase 5 취소([[exam-feature-cancelled]]).
+> Sprint 14 완료·0.6.0 버전확정까지 됨. **결정(2026-06-08, 사용자): v0.6.0 단독 배포는 폐기, Sprint 16까지 묶어 v1.0 직행**. Phase 5 취소([[exam-feature-cancelled]]).
 
-## 다음 할 일 (재개 시 분기)
-develop에 Sprint 15까지 반영됨. 남은 선택:
+## 다음 할 일 (확정 경로 — v1.0 직행)
+develop에 Sprint 15까지 반영됨. **Sprint 16까지 완료 후 한 번에 v1.0 배포**가 확정 방향.
 1. **Sprint 16 계획**(sprint-planner) — Phase 6 마지막: UAT + v1.0 릴리즈 + 이연항목 흡수(T7 양OS빌드·T8 양PC동기화·T9 통합검증 빌드부, CSV가져오기, DB폴더변경+salt.bin, 출결표 성능, 공지문 I/O, A89, R105 등).
-2. **배포 결정**: v0.6.0(보류 중) 태그 배포 vs Sprint 16 후 v1.0 직행. deploy-prod 에이전트. 프로덕션 브랜치 `master`(develop→master `--no-ff` + `v*` 태그 push → GitHub Actions 인스톨러).
+2. ⚠️ **배포 금지**: deploy-prod(태그 push)는 **사용자가 명시적으로 지시할 때까지 절대 진행하지 않는다**. Sprint 16 완료 후에도 사용자 지시 대기. 프로덕션 브랜치 `master`(develop→master `--no-ff` + `v*` 태그 push → GitHub Actions 인스톨러).
 
 ## Sprint 15 결과 (sprint15 브랜치, 15커밋)
 - **코드리뷰**: Critical 0 / High 0 / **Medium 1**(F3: 교습소 정보 미저장 이탈 경고 누락 → R105, Sprint16 이연) / Low 2(GlobalTooltip title 일시제거 스크린리더 영향 낮음 / Ctrl+N 입력필드 방어 미적용). `docs/code-reviews/sprint15.md`
