@@ -108,7 +108,7 @@ cargo test --manifest-path src-tauri/Cargo.toml                          # 전�
 cargo test --manifest-path src-tauri/Cargo.toml test_greet               # 단일 테스트 실행
 cargo test --manifest-path src-tauri/Cargo.toml test_greet -- --nocapture  # 출력 포함
 cargo fmt --manifest-path src-tauri/Cargo.toml                           # 코드 포맷
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings         # 정적 분석
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings  # 정적 분석 (테스트 코드 포함)
 ```
 
 #### `cipher` Cargo feature (SQLCipher + 백업)

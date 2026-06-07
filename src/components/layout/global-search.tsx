@@ -158,6 +158,7 @@ export function GlobalSearch() {
     <div className="relative mx-auto w-full max-w-md">
       <input
         ref={inputRef}
+        id="global-search-input"
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}

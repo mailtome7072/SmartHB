@@ -215,6 +215,7 @@ export default function ClassCalendar({
       frame.style.position = 'relative'
       const badge = document.createElement('div')
       badge.className = 'shb-count-badge'
+      // title 은 전역 GlobalTooltip(AppShell)이 20px 커스텀 팝업으로 표시한다.
       badge.title = info.tooltip
       badge.textContent = `${info.count}명`
       badge.style.cssText =

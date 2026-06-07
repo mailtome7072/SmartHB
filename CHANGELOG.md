@@ -37,6 +37,22 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 15: 교습소 정보 화면 신설 (`/settings/info`) — 교습소명·대표자·연락처·주소·사업자등록번호·최대 인원·면적·운영 시간 등 9필드 CRUD + 로고/2D바코드 이미지 2종 업로드·미리보기·삭제. `app_settings` JSON 저장(마이그레이션 없음), 기존 `notice_asset` IPC 재사용
+- Sprint 15: 자가 진단 이력 수동 삭제 — `/settings/diagnosis` 이력 목록에 행 단위 삭제 버튼 + 전체 비우기 버튼 추가. `delete_diagnosis_history(id)` / `clear_diagnosis_history()` IPC 2종, 확인 다이얼로그(PRD §5.7), 단위 테스트 3건
+- Sprint 15: 전역 `GlobalShortcuts` 컴포넌트 신설 — Ctrl+F(글로벌 검색 포커스), Ctrl+N(신규 원생) 단축키 전역 등록
+- Sprint 15: 전역 `GlobalTooltip` 컴포넌트 신설 — 브라우저 기본 `title` 툴팁을 20px 커스텀 팝업으로 통일
+- Sprint 15: 원생 상세 화면에 '원생 관리 메인으로' 버튼 추가
+
+### Changed
+- Sprint 15: 설정 허브 카드 순서 재배치 (PIN 카드 위치 조정) + '마법사 재실행' 카드 → 'DB 폴더 변경(예정)' 안내 카드 전환(disabled, Sprint 16 예정)
+- Sprint 15: `dashboard.rs` `monthly_summary` GROUP BY 서브쿼리 패턴으로 리팩토링 (R99 해소 — 부분 수납 확장 대비)
+- Sprint 15: 대시보드 위젯 타이틀 inline `fontSize` → Tailwind `text-2xl` 통일 (A97)
+- Sprint 15: 청구 생성 `standard_fees` 조회 N+1 쿼리 → IN 쿼리 단일 배치로 전환
+
+### Fixed
+- Sprint 15: WCAG AA 명도 대비 미달 `text-gray-400` → `text-gray-600` 17건 수정 (전체 화면)
+
 ## [0.6.0] - 2026-06-06
 
 ### Added

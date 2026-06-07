@@ -22,6 +22,11 @@ interface SettingCard {
 
 const CARDS: SettingCard[] = [
   {
+    href: '/settings/info',
+    title: '교습소 정보',
+    description: '교습소명 / 대표자 / 연락처 / 주소 / 사업자등록번호 / 최대인원 / 면적 + 로고·2D바코드 이미지',
+  },
+  {
     href: '/settings/hours',
     title: '교습소 운영 시간',
     description: '요일별 시작/종료 시간 설정. 수업 스케줄 시작 시간 콤보 기준.',
@@ -47,26 +52,20 @@ const CARDS: SettingCard[] = [
     description: '원생·출결·청구 데이터를 엑셀(.xlsx) 파일로 저장. 천단위·정렬·열너비 서식 적용 (전체/월별).',
   },
   {
-    href: '/settings/backup',
-    title: '백업 관리',
-    description: '자동 백업 목록 확인 + 복원 리허설. 백업이 실제로 복원 가능한지 운영 데이터 영향 없이 검증.',
-  },
-  {
     href: '/settings/pin',
     title: 'PIN 번호 변경',
     description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',
   },
   {
-    href: '/settings/info',
-    title: '교습소 정보',
-    description: '교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 (예정)',
-    disabledHint: '후속 sprint 에서 제공',
+    href: '/settings/db-folder',
+    title: 'DB 폴더 변경',
+    description: '데이터가 저장되는 클라우드 동기화 폴더(DB 위치)를 재지정합니다. (Sprint 16 제공 예정)',
+    disabledHint: 'Sprint 16 제공 예정',
   },
   {
-    href: '/setup',
-    title: '초기 설정 마법사 재실행',
-    description: '클라우드 폴더 변경 등 마법사를 다시 진행합니다. (예정)',
-    disabledHint: '재실행 흐름 정비 후 활성화',
+    href: '/settings/backup',
+    title: '백업 관리',
+    description: '자동 백업 목록 확인 + 복원 리허설. 백업이 실제로 복원 가능한지 운영 데이터 영향 없이 검증.',
   },
 ]
 
@@ -156,7 +155,7 @@ export default function SettingsHubPage() {
               >
                 <h2 className="mb-2 text-lg font-bold text-gray-500">{card.title}</h2>
                 <p className="text-sm text-gray-500">{card.description}</p>
-                <p className="mt-3 text-xs text-gray-400">{card.disabledHint}</p>
+                <p className="mt-3 text-xs text-gray-600">{card.disabledHint}</p>
               </div>
             ) : (
               <Link

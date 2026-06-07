@@ -14,7 +14,13 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
-import { getDiagnosisHistory, runDiagnosis } from '@/lib/tauri'
+import { Trash2 } from 'lucide-react'
+import {
+  clearDiagnosisHistory,
+  deleteDiagnosisHistory,
+  getDiagnosisHistory,
+  runDiagnosis,
+} from '@/lib/tauri'
 import type { DiagnosisHistoryRow, DiagnosisIssue, DiagnosisResult } from '@/types/diagnosis'
 
 /**
@@ -72,6 +78,7 @@ export default function DiagnosisPage() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<{ kind: 'one'; id: number } | { kind: 'all' } | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -105,6 +112,30 @@ export default function DiagnosisPage() {
       setError(typeof e === 'string' ? e : '진단을 실행할 수 없습니다.')
     } finally {
       setRunning(false)
+    }
+  }
+
+  const handleDeleteOne = async (id: number) => {
+    setConfirm(null)
+    try {
+      await deleteDiagnosisHistory(id)
+      const rows = await getDiagnosisHistory(12)
+      setHistory(rows)
+      // 삭제된 항목이 선택 중이었으면 첫 행으로, 아니면 선택 유지.
+      setSelected((prev) => (prev !== null && rows.some((r) => r.id === prev.id) ? prev : (rows[0] ?? null)))
+    } catch (e) {
+      setError(typeof e === 'string' ? e : '이력 삭제에 실패했습니다.')
+    }
+  }
+
+  const handleClearAll = async () => {
+    setConfirm(null)
+    try {
+      await clearDiagnosisHistory()
+      setHistory([])
+      setSelected(null)
+    } catch (e) {
+      setError(typeof e === 'string' ? e : '이력 삭제에 실패했습니다.')
     }
   }
 
@@ -143,7 +174,18 @@ export default function DiagnosisPage() {
         <div className="grid gap-6 md:grid-cols-[260px_1fr]">
           {/* 이력 목록 */}
           <section aria-label="진단 이력" className="rounded-lg border border-[var(--border)] bg-white p-4">
-            <h2 className="mb-3 text-lg font-bold">최근 이력</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-lg font-bold">최근 이력</h2>
+              {history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setConfirm({ kind: 'all' })}
+                  className="rounded px-2 py-1 text-sm text-[var(--danger)] hover:bg-red-50"
+                >
+                  이력 비우기
+                </button>
+              )}
+            </div>
             {loading ? (
               <p className="text-sm text-gray-500">불러오는 중...</p>
             ) : history.length === 0 ? (
@@ -153,11 +195,11 @@ export default function DiagnosisPage() {
                 {history.map((row) => {
                   const active = selected?.id === row.id
                   return (
-                    <li key={row.id}>
+                    <li key={row.id} className="flex items-stretch gap-1">
                       <button
                         type="button"
                         onClick={() => setSelected(row)}
-                        className={`flex min-h-[44px] w-full flex-col items-start rounded-md px-3 py-2 text-left transition-colors ${
+                        className={`flex min-h-[44px] flex-1 flex-col items-start rounded-md px-3 py-2 text-left transition-colors ${
                           active ? 'bg-[var(--background)] ring-1 ring-[var(--accent)]' : 'hover:bg-[var(--background)]'
                         }`}
                       >
@@ -167,6 +209,15 @@ export default function DiagnosisPage() {
                         <span className={`text-xs ${row.issues_found > 0 ? 'text-[var(--danger)]' : 'text-green-600'}`}>
                           {row.issues_found > 0 ? `이상 ${row.issues_found}건` : '이상 없음'}
                         </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirm({ kind: 'one', id: row.id })}
+                        aria-label="이 진단 이력 삭제"
+                        title="이 진단 이력 삭제"
+                        className="flex min-h-[44px] w-11 shrink-0 items-center justify-center rounded-md text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </li>
                   )
@@ -187,6 +238,37 @@ export default function DiagnosisPage() {
           </section>
         </div>
       </div>
+
+      {confirm !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="mx-4 w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+            <p className="text-base text-[var(--foreground)]">
+              {confirm.kind === 'all'
+                ? '모든 진단 이력을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'
+                : '이 진단 이력을 삭제하시겠습니까?'}
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirm(null)}
+                className="h-11 rounded-md border border-[var(--border)] px-4 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm.kind === 'all') void handleClearAll()
+                  else void handleDeleteOne(confirm.id)
+                }}
+                className="h-11 rounded-md bg-[var(--danger)] px-4 font-semibold text-white hover:opacity-90"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   )
 }

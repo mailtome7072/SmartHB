@@ -33,6 +33,7 @@ use crate::error::AppError;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
+use std::collections::HashMap;
 
 // ─────────────────────── 직렬화 타입 ───────────────────────
 
@@ -111,6 +112,17 @@ pub(crate) async fn generate_bills_impl(
     .await
     .map_err(|e| format!("청구 대상 원생 조회 실패: {}", e))?;
 
+    // 표준 교습비를 1회 로드해 N+1 제거 (weekly_hours → amount, 활성 항목만).
+    // standard_fees 는 소규모 코드 테이블이라 인덱스 없이도 단일 조회로 충분.
+    let fee_rows = sqlx::query("SELECT weekly_hours, amount FROM standard_fees WHERE is_active = 1")
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| format!("표준 교습비 조회 실패: {}", e))?;
+    let fee_map: HashMap<i64, i64> = fee_rows
+        .iter()
+        .map(|r| (r.get::<i64, _>("weekly_hours"), r.get::<i64, _>("amount")))
+        .collect();
+
     let mut generated_count: i64 = 0;
     let mut skipped_count: i64 = 0;
 
@@ -127,18 +139,9 @@ pub(crate) async fn generate_bills_impl(
             continue;
         }
 
-        // standard_fees 매핑 — 없으면 skip.
-        let fee: Option<i64> = sqlx::query_scalar(
-            "SELECT amount FROM standard_fees \
-             WHERE weekly_hours = ? AND is_active = 1",
-        )
-        .bind(weekly_hours)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| format!("표준 교습비 조회 실패: {}", e))?;
-
-        let bill_amount = match fee {
-            Some(a) => a,
+        // standard_fees 매핑 — 사전 로드한 맵에서 조회(없으면 skip).
+        let bill_amount = match fee_map.get(&weekly_hours) {
+            Some(&a) => a,
             None => {
                 skipped_count += 1;
                 continue;
