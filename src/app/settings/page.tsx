@@ -52,11 +52,6 @@ const CARDS: SettingCard[] = [
     description: '원생·출결·청구 데이터를 엑셀(.xlsx) 파일로 저장. 천단위·정렬·열너비 서식 적용 (전체/월별).',
   },
   {
-    href: '/settings/backup',
-    title: '백업 관리',
-    description: '자동 백업 목록 확인 + 복원 리허설. 백업이 실제로 복원 가능한지 운영 데이터 영향 없이 검증.',
-  },
-  {
     href: '/settings/pin',
     title: 'PIN 번호 변경',
     description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',
@@ -66,6 +61,11 @@ const CARDS: SettingCard[] = [
     title: 'DB 폴더 변경',
     description: '데이터가 저장되는 클라우드 동기화 폴더(DB 위치)를 재지정합니다. (Sprint 16 제공 예정)',
     disabledHint: 'Sprint 16 제공 예정',
+  },
+  {
+    href: '/settings/backup',
+    title: '백업 관리',
+    description: '자동 백업 목록 확인 + 복원 리허설. 백업이 실제로 복원 가능한지 운영 데이터 영향 없이 검증.',
   },
 ]
 
