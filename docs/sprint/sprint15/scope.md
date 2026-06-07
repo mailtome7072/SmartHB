@@ -8,6 +8,8 @@ Sprint: 15  |  Date: 2026-06-07  |  Session: #1
 - **T5** ✅ 마이너 UI 개선 (시각 검증 병행: 위젯 폰트, 설정 카드 순서, DB폴더 카드, 원생관리 버튼, 전역 툴팁 20px)
 - **T2** ✅ 자가 진단 이력 수동 삭제 (행 단위 + 전체 비우기, 검증 완료)
 - **T3** ✅ 접근성 감사 (보고서 + Critical: gray-400→600 대비, Ctrl+F·Ctrl+N 단축키. 밀집UI 44px·gray-500·F1·Ctrl+S는 Sprint16 이연)
+- **T4** ✅ 기술 부채 정리 (테스트 clippy `--all-targets` 부채 6건 해소, console.log 0·문서 정확 확인, A89는 로직 분리 완료·UI구획화만 Sprint16 이연)
+- **T6** ✅ 성능 프로파일링 (정적 분석 + 보고서. 안전 최적화: 청구 standard_fees N+1 제거. staleTime:0은 의도적 유지. 출결표 N+1·인덱스·공지문 I/O는 실측 후 Sprint16)
 
 ## 이번 세션에서 수정할 파일
 <!-- 수정 횟수가 [3회 ⚠️]에 도달하면 loop-detection 스킬 즉시 실행. 아래는 실제 Edit/Write 호출 기준 정정값(hook 자동 카운트는 일부 오집계). -->
