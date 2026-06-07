@@ -97,7 +97,12 @@
       "Bash(pkill -f \"next dev -p 1420\")",
       "Bash(lsof -ti:1420)",
       "Bash(xargs kill -9)",
-      "Bash(sqlite3 *)"
+      "Bash(sqlite3 *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(xargs sed -i '' 's/text-gray-400/text-gray-600/g')",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(pkill -f \"next-server\")"
     ]
   },
   "enableAllProjectMcpServers": true,
