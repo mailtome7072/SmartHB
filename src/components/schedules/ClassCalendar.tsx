@@ -356,8 +356,9 @@ export default function ClassCalendar({
           eventDidMount={(arg) => {
             if (arg.event.display === 'background') {
               arg.el.style.backgroundColor = 'transparent'
-              arg.el.style.border = '2px solid #111827'
-              arg.el.style.borderRadius = '6px'
+              // 샤프하고 진한 강조 — 각진 모서리 + 완전 검정 + 두꺼운 선.
+              arg.el.style.border = '2.5px solid #000'
+              arg.el.style.borderRadius = '0'
               arg.el.style.boxSizing = 'border-box'
             }
           }}
@@ -510,7 +511,7 @@ export default function ClassCalendar({
                         })
                       }
                       onMouseLeave={() => setHovered(null)}
-                      className="flex cursor-pointer items-baseline gap-0.5 truncate rounded px-1 py-0.5 font-semibold hover:underline"
+                      className="flex cursor-pointer items-center justify-center gap-0.5 truncate rounded px-1 py-0.5 text-center font-semibold hover:underline"
                       style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
                       title={`${st.studentName} ${hoursLabel(st.classMinutes)}`}
                     >
