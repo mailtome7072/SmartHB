@@ -179,6 +179,14 @@ export default function ClassCalendar({
     return map
   }, [data])
 
+  // 원생 칩 hover 시 그 원생 수업 시간 범위(시작~종료)를 시간 그리드에 음영 강조.
+  const [hovered, setHovered] = useState<{
+    date: string
+    startTime: string
+    classMinutes: number
+    color: string
+  } | null>(null)
+
   // 주/일 보기 이벤트 — 시간대별로 원생을 하나의 블록에 묶고, 내부를 2열 grid(2×N)로 표시.
   // (원생별 색칩으로 구분. 학사일정은 dayHeaderContent 안에 표기.)
   const events = useMemo<EventInput[]>(() => {
@@ -218,6 +226,20 @@ export default function ClassCalendar({
     }
     return result
   }, [data, isTimeGrid])
+
+  // hover 강조용 background 이벤트를 합쳐서 전달.
+  const allEvents = useMemo<EventInput[]>(() => {
+    if (hovered === null) return events
+    return [
+      ...events,
+      {
+        start: `${hovered.date}T${toIsoTime(hovered.startTime)}`,
+        end: `${hovered.date}T${addMinutes(hovered.startTime, hovered.classMinutes)}`,
+        display: 'background',
+        backgroundColor: hovered.color,
+      },
+    ]
+  }, [events, hovered])
 
   function api() {
     return calendarRef.current?.getApi()
@@ -331,7 +353,7 @@ export default function ClassCalendar({
           locale={koLocale}
           firstDay={1}
           headerToolbar={false}
-          events={events}
+          events={allEvents}
           height="100%"
           expandRows
           slotDuration="01:00:00"
@@ -473,6 +495,15 @@ export default function ClassCalendar({
                         ev.stopPropagation()
                         onStudentNameClick(st.studentName)
                       }}
+                      onMouseEnter={() =>
+                        setHovered({
+                          date: arg.event.startStr.slice(0, 10),
+                          startTime: arg.event.startStr.slice(11, 16),
+                          classMinutes: st.classMinutes,
+                          color: c.border,
+                        })
+                      }
+                      onMouseLeave={() => setHovered(null)}
                       className="flex cursor-pointer items-baseline gap-0.5 truncate rounded px-1 py-0.5 font-semibold hover:underline"
                       style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
                       title={`${st.studentName} ${hoursLabel(st.classMinutes)}`}
