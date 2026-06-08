@@ -354,6 +354,15 @@ export default function ClassCalendar({
           firstDay={1}
           headerToolbar={false}
           events={allEvents}
+          // hover 강조 background 이벤트는 채움(음영) 대신 테두리만 표시한다.
+          eventDidMount={(arg) => {
+            if (arg.event.display === 'background') {
+              arg.el.style.backgroundColor = 'transparent'
+              arg.el.style.border = `2px solid ${arg.event.backgroundColor || '#3b82f6'}`
+              arg.el.style.borderRadius = '6px'
+              arg.el.style.boxSizing = 'border-box'
+            }
+          }}
           height="100%"
           expandRows
           slotDuration="01:00:00"
