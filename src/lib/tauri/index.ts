@@ -31,6 +31,8 @@ import type {
   AttendanceGrid,
   AttendanceSummary,
   GenerateResult,
+  MoveAttendanceResult,
+  ScheduleChangeResult,
   ToggleResult,
 } from '@/types/attendance'
 import type {
@@ -1228,6 +1230,39 @@ export async function getAttendanceSummary(
     }
   }
   return inv('get_attendance_summary', { studentId, yearMonth }) as Promise<AttendanceSummary>
+}
+
+// ──────────────────── 수업일 변경 (Sprint 16 T0) ────────────────────
+
+/**
+ * 케이스1 — 특정일 1회성 수업일 이동. present 출결 1건의 날짜를 옮기고 메모를 남긴다.
+ * 동월 한정, 도착일 OFF/공휴일·충돌 차단.
+ */
+export async function moveAttendance(
+  studentId: number,
+  fromDate: string,
+  toDate: string,
+): Promise<MoveAttendanceResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('move_attendance', { studentId, fromDate, toDate }) as Promise<MoveAttendanceResult>
+}
+
+/**
+ * 케이스2 — 변경일 이후 스케줄 변경을 출결에 반영. 선행: setSchedule(effectiveFrom=effectiveDate).
+ * 변경일 이후 present 출결만 재생성, 결석/보강/메모 행은 보존. 사전(미래)·사후(과거) 양방향.
+ */
+export async function applyScheduleChange(
+  studentId: number,
+  effectiveDate: string,
+): Promise<ScheduleChangeResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('apply_schedule_change', { studentId, effectiveDate }) as Promise<ScheduleChangeResult>
 }
 
 // ──────────────────── 보강 도메인 (Sprint 9 T2~T4) ────────────────────
