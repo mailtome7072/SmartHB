@@ -196,3 +196,8 @@ h6 { font-size: 18px; }
   font-size: 12px;
 }
 
+/* 주 보기 시간 슬롯 높이 — 한 셀에 최대 6명(2열×3행)이 표기되도록 확보. */
+.fc-timeGridWeek-view .fc-timegrid-slot {
+  height: 5rem;
+}
+
