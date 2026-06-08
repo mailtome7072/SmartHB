@@ -11,7 +11,7 @@
  *   — 현 단계는 09:00 ~ 22:00 하드코딩 가드만 적용
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   applyScheduleChange,
@@ -73,6 +73,25 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
   const [error, setError] = useState<string | null>(null)
   // Sprint 16 T0 케이스2 — 변경 적용 결과 안내 (재생성/보존/청구 변동).
   const [notice, setNotice] = useState<string | null>(null)
+  // 수정 중인 원래 요일 (null = 추가 모드). 요일 변경 시 원래 요일 종료에 사용.
+  const [editingDay, setEditingDay] = useState<number | null>(null)
+
+  // 선택 가능 요일: 아직 등록되지 않은 요일 + (수정 중이면 자기 요일).
+  const availableDays = useMemo(() => {
+    const used = new Set(schedules.map((s) => s.day_of_week))
+    return [1, 2, 3, 4, 5, 6, 7].filter((d) => !used.has(d) || d === editingDay)
+  }, [schedules, editingDay])
+
+  // 추가 모드에서 현재 draft 요일이 더 이상 선택 불가하면 첫 가용 요일로 보정.
+  useEffect(() => {
+    if (
+      editingDay === null &&
+      availableDays.length > 0 &&
+      !availableDays.includes(draft.day_of_week)
+    ) {
+      setDraft((d) => ({ ...d, day_of_week: availableDays[0] }))
+    }
+  }, [availableDays, editingDay, draft.day_of_week])
 
   // 선택된 요일의 운영 시간 → 1시간 단위 시작 옵션 (close 1시간 전까지)
   const startTimeOptions = useMemo(() => {
@@ -99,6 +118,10 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         throw new Error('시작 시간이 올바르지 않습니다.')
       if (row.effective_from === '')
         throw new Error('적용 시작일을 선택해주세요.')
+      // 수정 모드에서 요일을 바꾸면 원래 요일을 변경일부터 종료한다 (중복 등록 방지).
+      if (editingDay !== null && editingDay !== row.day_of_week) {
+        await deleteSchedule(studentId, editingDay, row.effective_from)
+      }
       await setSchedule({
         student_id: studentId,
         day_of_week: row.day_of_week,
@@ -111,6 +134,7 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
     },
     onSuccess: (result) => {
       setError(null)
+      setEditingDay(null)
       setDraft({ ...EMPTY_ROW, effective_from: today })
       // 변경일 이후 출결 반영 결과 안내.
       const parts = [`변경일 이후 출결 ${result.regeneratedCount}건 재생성`]
@@ -129,10 +153,21 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
   })
 
   const remove = useMutation({
-    mutationFn: (dayOfWeek: number) => deleteSchedule(studentId, dayOfWeek, today),
-    onSuccess: () => {
+    mutationFn: async (dayOfWeek: number) => {
+      // 오늘부터 해당 요일 스케줄 종료 + 오늘 이후 출결 정리(미처리만 제거, 처리행 보존).
+      await deleteSchedule(studentId, dayOfWeek, today)
+      return applyScheduleChange(studentId, today)
+    },
+    onSuccess: (result) => {
+      setError(null)
+      const parts = ['스케줄 삭제 — 오늘 이후 해당 요일 출결이 정리되었습니다']
+      if (result.preservedCount > 0) {
+        parts.push(`결석·보강 ${result.preservedCount}건은 보존`)
+      }
+      setNotice(parts.join(' · '))
       qc.invalidateQueries({ queryKey: ['schedules', studentId] })
       qc.invalidateQueries({ queryKey: ['weekly-hours', studentId] })
+      qc.invalidateQueries({ queryKey: ['attendance-grid'] })
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
@@ -140,6 +175,7 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
   // T9 (이슈 #10): 기존 행 "수정" — 폼에 값 prefill, 사용자가 변경 후 "추가/변경" 클릭하면
   // set_schedule 의 upsert 패턴(같은 요일 자동 close+insert)으로 처리.
   const handleEdit = (s: StudentSchedule) => {
+    setEditingDay(s.day_of_week)
     setDraft({
       day_of_week: s.day_of_week,
       start_time: s.start_time.slice(0, 5),
@@ -147,6 +183,11 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
       // 변경 적용일은 사용자가 새로 정한다 (기존 effective_from 이 아님) — 기본 오늘.
       effective_from: today,
     })
+  }
+
+  const cancelEdit = () => {
+    setEditingDay(null)
+    setDraft({ ...EMPTY_ROW, day_of_week: availableDays[0] ?? 1, effective_from: today })
   }
 
   return (
@@ -158,6 +199,12 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
           {matchedFee && ` / 매칭 교습비: ${matchedFee.amount.toLocaleString()} 원`}
         </p>
       </header>
+
+      {editingDay !== null && (
+        <p className="mb-1 text-sm font-semibold text-amber-700">
+          {DAY_LABELS[editingDay]}요일 수업 수정 중 — 요일/시작시간/시간/적용 시작일을 바꾼 뒤 &lsquo;변경&rsquo;을 누르세요. (요일을 바꾸면 원래 요일은 종료됩니다)
+        </p>
+      )}
 
       {/* T11: 폼이 그리드 위 — 사용자 시선 흐름 자연스럽게. */}
       <form
@@ -175,7 +222,9 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
             onChange={(e) => setDraft({ ...draft, day_of_week: Number(e.target.value) })}
             className="h-11 rounded-md border border-[var(--border)] px-3"
           >
-            {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+            {/* 이미 등록된 요일은 선택 불가 — 미등록 요일 + (수정 중) 자기 요일만 노출.
+                수정 중 다른 요일 선택 시 upsert 가 원래 요일을 종료하고 새 요일로 변경한다. */}
+            {availableDays.map((d) => (
               <option key={d} value={d}>
                 {DAY_LABELS[d]}
               </option>
@@ -231,12 +280,22 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         </label>
         <button
           type="submit"
-          disabled={upsert.isPending || startTimeOptions.length === 0}
+          disabled={upsert.isPending || startTimeOptions.length === 0 || availableDays.length === 0}
           title={startTimeOptions.length === 0 ? '미운영 요일 — 운영시간 설정에서 활성화 후 추가 가능' : undefined}
           className="h-11 rounded-md bg-[var(--accent)] px-4 font-bold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
         >
-          {upsert.isPending ? '저장 중...' : '추가/변경'}
+          {upsert.isPending ? '저장 중...' : editingDay !== null ? '변경' : '추가'}
         </button>
+        {editingDay !== null && (
+          <button
+            type="button"
+            onClick={cancelEdit}
+            disabled={upsert.isPending}
+            className="h-11 rounded-md border border-[var(--border)] px-4 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            취소
+          </button>
+        )}
       </form>
 
       {error !== null && (
