@@ -736,9 +736,14 @@ function cellTooltip(cell: AttendanceCell, makeupHintDate?: string): string {
         ? `결석 (보강일: ${makeupHintDate})`
         : '결석 (보강 매칭됨)',
     )
+  } else if (cell.status === 'present') {
+    // 출석 셀 hover 시 기호('○') 대신 의미를 명확히 표기.
+    parts.push('(출석)')
   } else {
     parts.push(statusCellClass(cell.status).label)
   }
+  // Sprint 16 T0 케이스1 — 1회성 수업일 이동 메모 (예: "6/8(월)→6/10(수) 이동").
+  if (cell.note !== null) parts.push(cell.note)
   if (cell.absenceMemo !== null) parts.push(`메모: ${cell.absenceMemo}`)
   if (cell.makeupDeadline !== null) parts.push(`소멸기한: ${cell.makeupDeadline}`)
   return parts.join('\n')

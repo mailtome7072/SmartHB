@@ -1101,22 +1101,46 @@ pub struct MoveAttendanceResult {
 /// 케이스1 — 특정일 1회성 수업일 이동.
 ///
 /// 출결 행(present) 1건의 `event_date` 를 다른 날로 옮기고 `note` 에 이동 내역을 남긴다.
+/// 사용자가 도착일의 수업 시작시간(`start_time`, "HH:MM")을 입력하면 `regular_attendances`
+/// 에 저장하여 수업 캘린더가 시간을 표시할 수 있게 한다 (PI-28).
 /// 동월 한정, 도착일 OFF/공휴일·충돌 차단 (PI-25). class_minutes 유지 → 청구·주당시간 불변.
 #[tauri::command]
 pub async fn move_attendance(
     student_id: i64,
     from_date: String,
     to_date: String,
+    start_time: String,
 ) -> Result<MoveAttendanceResult, String> {
     let pool = pool().map_err(|e| e.to_string())?;
-    let result = move_attendance_impl(pool, student_id, &from_date, &to_date).await?;
+    let result = move_attendance_impl(pool, student_id, &from_date, &to_date, &start_time).await?;
     audit::try_record(
         AuditEventType::AttendanceRescheduled,
         Some(&student_id.to_string()),
-        Some(&format!(r#"{{"from":"{}","to":"{}"}}"#, from_date, to_date)),
+        Some(&format!(
+            r#"{{"from":"{}","to":"{}","startTime":"{}"}}"#,
+            from_date, to_date, start_time
+        )),
     )
     .await;
     Ok(result)
+}
+
+/// "HH:MM" 또는 "HH:MM:SS" → "HH:MM:SS" 정규화. 형식 위반 시 Err.
+fn normalize_time(t: &str) -> Result<String, String> {
+    let parts: Vec<&str> = t.split(':').collect();
+    if parts.len() < 2 || parts.len() > 3 {
+        return Err("수업 시작시간 형식이 올바르지 않습니다 (예: 16:00).".to_string());
+    }
+    let h: u32 = parts[0]
+        .parse()
+        .map_err(|_| "수업 시작시간의 시(時)가 올바르지 않습니다.".to_string())?;
+    let m: u32 = parts[1]
+        .parse()
+        .map_err(|_| "수업 시작시간의 분(分)이 올바르지 않습니다.".to_string())?;
+    if h > 23 || m > 59 {
+        return Err("수업 시작시간 범위가 올바르지 않습니다 (00:00~23:59).".to_string());
+    }
+    Ok(format!("{:02}:{:02}:00", h, m))
 }
 
 async fn move_attendance_impl(
@@ -1124,9 +1148,11 @@ async fn move_attendance_impl(
     student_id: i64,
     from_date: &str,
     to_date: &str,
+    start_time: &str,
 ) -> Result<MoveAttendanceResult, String> {
     let from_d = parse_date(from_date)?;
     let to_d = parse_date(to_date)?;
+    let start_time = normalize_time(start_time)?;
     if from_d == to_d {
         return Err("출발일과 도착일이 같습니다.".to_string());
     }
@@ -1183,11 +1209,12 @@ async fn move_attendance_impl(
         weekday_ko(to_d)
     );
     sqlx::query(
-        "UPDATE regular_attendances SET event_date = ?, note = ?, \
+        "UPDATE regular_attendances SET event_date = ?, note = ?, start_time = ?, \
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
     )
     .bind(to_date)
     .bind(&note)
+    .bind(&start_time)
     .bind(att_id)
     .execute(pool)
     .await
@@ -2341,7 +2368,7 @@ mod tests {
         let to_d = from_d.succ_opt().unwrap(); // 다음날(화요일, 비수업·비OFF·동월)
         let to = to_d.format("%Y-%m-%d").to_string();
 
-        let r = move_attendance_impl(&pool, sid, &from, &to).await.expect("이동 성공");
+        let r = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.expect("이동 성공");
         assert_eq!(r.to_date, to);
         assert!(r.note.contains("이동"));
 
@@ -2359,6 +2386,24 @@ mod tests {
         let cell = fetch_cell(&pool, to_id).await;
         assert_eq!(cell.status, "present");
         assert!(cell.note.is_some());
+
+        // PI-28: 입력한 시작시간이 "HH:MM:SS" 로 저장되어야 (캘린더 표시용)
+        let saved_time: Option<String> = sqlx::query_scalar(
+            "SELECT start_time FROM regular_attendances WHERE id = ?",
+        )
+        .bind(to_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(saved_time.as_deref(), Some("16:00:00"));
+    }
+
+    #[test]
+    fn normalize_time_formats_and_validates() {
+        assert_eq!(normalize_time("16:00").unwrap(), "16:00:00");
+        assert_eq!(normalize_time("9:5").unwrap(), "09:05:00");
+        assert_eq!(normalize_time("16:00:00").unwrap(), "16:00:00");
+        assert!(normalize_time("25:00").is_err());
+        assert!(normalize_time("16:75").is_err());
+        assert!(normalize_time("abc").is_err());
+        assert!(normalize_time("16").is_err());
     }
 
     #[tokio::test]
@@ -2376,7 +2421,7 @@ mod tests {
         let code = schedule_code_id(&pool, "공휴일").await;
         add_schedule_event(&pool, code, &to, None).await;
 
-        let err = move_attendance_impl(&pool, sid, &from, &to).await.unwrap_err();
+        let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
         assert!(err.contains("옮길 수 없습니다"), "OFF일 차단: {}", err);
     }
 
@@ -2388,7 +2433,7 @@ mod tests {
         generate_impl(&pool, "2026-06").await.expect("generate");
         let from = first_event_date(&pool, sid).await;
 
-        let err = move_attendance_impl(&pool, sid, &from, "2026-07-06").await.unwrap_err();
+        let err = move_attendance_impl(&pool, sid, &from, "2026-07-06", "16:00").await.unwrap_err();
         assert!(err.contains("같은 달"), "월 경계 차단: {}", err);
     }
 
@@ -2409,7 +2454,7 @@ mod tests {
         )
         .bind(sid).bind(&to).fetch_optional(&pool).await.unwrap();
         if to_has.is_some() {
-            let err = move_attendance_impl(&pool, sid, &from, &to).await.unwrap_err();
+            let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
             assert!(err.contains("이미 수업"), "충돌 차단: {}", err);
         }
     }
@@ -2427,7 +2472,7 @@ mod tests {
         sqlx::query("UPDATE regular_attendances SET status = 'absent' WHERE student_id = ? AND event_date = ?")
             .bind(sid).bind(&from).execute(&pool).await.unwrap();
 
-        let err = move_attendance_impl(&pool, sid, &from, &to).await.unwrap_err();
+        let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
         assert!(err.contains("출석(미처리)"), "present 외 거부: {}", err);
     }
 

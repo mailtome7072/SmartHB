@@ -37,6 +37,8 @@ export function MoveAttendanceDialog({
 }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // PI-28: 도착일의 수업 시작시간 입력 (캘린더 표시용). 기본 16:00.
+  const [startTime, setStartTime] = useState('16:00')
   const queryClient = useQueryClient()
 
   const [year, month] = yearMonth.split('-').map(Number)
@@ -71,10 +73,14 @@ export function MoveAttendanceDialog({
 
   async function handleSelect(day: number) {
     const to = dateStr(day)
+    if (startTime === '') {
+      setError('수업 시작시간을 입력해주세요.')
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
-      await moveAttendance(student.studentId, fromDate, to)
+      await moveAttendance(student.studentId, fromDate, to, startTime)
       void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
       onSuccess()
     } catch (e) {
@@ -108,6 +114,21 @@ export function MoveAttendanceDialog({
         <p className="mt-1 text-sm text-gray-500">
           같은 달 안에서만 이동할 수 있습니다. 휴일·이미 수업이 있는 날은 선택할 수 없습니다.
         </p>
+
+        <div className="mt-3 flex items-center gap-2">
+          <label htmlFor="move-start-time" className="text-base text-gray-700">
+            수업 시작시간:
+          </label>
+          <input
+            id="move-start-time"
+            type="time"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            className="min-h-[40px] rounded-md border-2 border-[var(--border)] px-3 text-base"
+            aria-label="도착일 수업 시작시간"
+          />
+          <span className="text-sm text-gray-500">날짜를 클릭하면 이 시간으로 이동</span>
+        </div>
 
         {error !== null && (
           <div

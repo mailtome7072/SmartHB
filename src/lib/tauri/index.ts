@@ -1242,12 +1242,18 @@ export async function moveAttendance(
   studentId: number,
   fromDate: string,
   toDate: string,
+  startTime: string,
 ): Promise<MoveAttendanceResult> {
   const inv = await getInvoke()
   if (!inv) {
     throw new Error('Tauri 환경에서만 사용 가능')
   }
-  return inv('move_attendance', { studentId, fromDate, toDate }) as Promise<MoveAttendanceResult>
+  return inv('move_attendance', {
+    studentId,
+    fromDate,
+    toDate,
+    startTime,
+  }) as Promise<MoveAttendanceResult>
 }
 
 /**
