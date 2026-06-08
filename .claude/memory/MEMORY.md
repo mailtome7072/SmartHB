@@ -1,5 +1,5 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
-- [Sprint 다음 세션](sprint-next-session.md) — Sprint 15 마감+develop 머지+tauri:dev QA 완료(develop push f6421a2). 다음 = Sprint 16 계획(UAT+v1.0) 또는 v0.6.0/v1.0 배포 결정. 새 환경 릴레이 절차 포함 — 진입 시 가장 먼저 확인
+- [Sprint 다음 세션](sprint-next-session.md) — Sprint 16 계획 수립 완료(docs/sprint/sprint16.md, 43h/11Task). 다음 = `/sprint-dev 16` 구현 진입. UAT 파일럿 폐기+DB폴더변경 포함 결정 반영. ⚠️배포 금지 — 진입 시 가장 먼저 확인
 - [Sprint 13 PIN 옵션화](sprint13-pin-optional.md) — 실행 시 PIN 인증 옵션화(C안: 키체인 자동 스킵). Sprint 13 완료·머지
 - [Phase 5 취소](exam-feature-cancelled.md) — 단원평가(/exams) + 학습보고서(/reports) 개발 전면 취소. 다음 계획 시 Phase 5 통째 제외, 메뉴 2개 제거
 - [NTFS power-loss 패턴](ntfs-power-loss-pattern.md) — fs::write+rename 후 데이터가 NULL로 손상, atomic write 헬퍼에 손상 감지+fallback 필수

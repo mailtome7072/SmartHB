@@ -843,61 +843,41 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
-### Sprint 16: 양 OS 빌드 검증 + UAT + v1.0 릴리즈 (2주) 📋 예정
+### Sprint 16: 양 OS 빌드 검증 + DB 폴더 변경 + 실사용 개시 + v1.0 릴리즈 (2주) 🔄 진행 중
 
 > Sprint 15에서 이연된 T7(양 OS 빌드) · T8(양 PC 동기화) · T9(통합검증 빌드 부분)를 흡수.
+> PI-16 확정(2026-06-08): DB 폴더 변경 + salt.bin 이전 Sprint 16 포함.
+> PI-18 확정(2026-06-08): 격식 2주 UAT 폐기 → 바로 실사용 개시, 피드백은 실사용 중 수집.
 
 #### 작업 목록
 
-- ⬜ **[Sprint 15 이연] 양 OS 빌드 검증**:
-  - macOS: `pnpm tauri:build` → `.dmg` 생성, 설치/실행/삭제, Apple Silicon arch 확인
-  - Windows: GitHub Actions CI matrix(windows-latest) 빌드, `.msi`/`.exe` 설치/실행/언인스톨, WebView2 런타임 확인
-  - 인스톨러 체크리스트: 앱 아이콘, 시작 메뉴/Dock, 기존 데이터 유지, 잔여 파일 없음
-- ⬜ **[Sprint 15 이연] 양 PC 동기화 시나리오 테스트**:
-  - 시나리오 1: Windows → Mac 전환 (app.lock 해제 + 클라우드 동기화 + Mac 진입 데이터 정합)
-  - 시나리오 2: Mac → Windows 역방향
-  - 시나리오 3: 비정상 종료 후 5분 임계 강제 점유
-- ⬜ **DB 폴더 변경(경로 재지정)** — copy-then-switch + salt.bin/WAL/backup 동반 이전 + 앱 재시작. R12 salt.bin 이전과 함께 설계. ADR 필요. cipher ON + 양 PC 시나리오 검증 필수
-- ⬜ **CSV 가져오기** (PRD §4.13.1) — UAT 환경 준비 첫 번째 작업. 원생 데이터 이관
-- ⬜ **UAT 환경 준비**:
-  - 교습소 PC(Windows) + 자택 Mac에 설치
-  - CSV 가져오기로 원생 실데이터 이관
-- ⬜ **UAT 실행 (2주)**: 원장 실사용 + 피드백 수집
-  - 일일 피드백 기록 (화면별 사용성, 글씨 크기, 동선)
-  - 주간 리뷰 미팅 (2회)
-  - 사용자 학습 기간 1주 이내 목표 확인
-- ⬜ **피드백 반영**: 우선순위별 수정
-  - Critical: 기능 오류 수정
-  - High: UX 개선 (글씨 크기, 버튼 위치, 동선)
-  - Medium: 미세 조정 (색상, 간격, 문구)
-- ⬜ **Sprint 15 이연 기술 부채 처리** (Capacity 여유 시):
-  - 접근성 밀집UI 44px·gray-500·F1·Ctrl+S 미달 항목 (Medium/Low)
-  - A89 `/notices` UI 구획화
-  - 출결표 N+1 재설계·셀 memo·`makeup_attendances` 인덱스 (실측 후)
-- ⬜ **CHANGELOG.md 최종 정리**: v1.0 릴리즈 노트
-- ⬜ **v1.0 태그 + GitHub Release**: `v1.0.0` 태그 push → CI가 인스톨러 빌드/첨부
+- ⬜ **T0: 회고 액션** — A99(Ctrl+N 방어) + A100(미저장 이탈 경고 공통 훅) + Ctrl+S 저장 단축키
+- ⬜ **T1: CSV 가져오기** (PRD §4.13.1) — 실사용 개시 첫 번째 작업. 원생 데이터 이관
+- ⬜ **T2: DB 폴더 변경 + salt.bin 이전** — copy-then-switch + salt.bin/WAL/backup 동반 이전 + 앱 재시작. ADR 작성. cipher ON + 양 PC 시나리오 검증 필수. R12 salt.bin 이전 최종 해소
+- ⬜ **T3 [Sprint 15 이연] 양 OS 빌드 검증** — macOS `.dmg` + Windows `.msi` 설치/실행/삭제
+- ⬜ **T4 [Sprint 15 이연] 양 PC 동기화 시나리오 테스트** — Win→Mac, Mac→Win, 비정상 종료 강제 점유 3종
+- ⬜ **T5: 실사용 개시 준비** — 양 OS 설치 + 데이터 이관 확인 + 기동 검증
+- ⬜ **T6: 초기 실사용 피드백 대응** — Critical/High 즉시 수정 (버퍼)
+- ⬜ **T7: 접근성 잔여 개선** (SHOULD) — 밀집UI 44px·gray-500·F1 단축키
+- ⬜ **T8: 공지문 I/O 병렬화** (SHOULD) — 50장 일괄 생성 성능
+- ⬜ **T9: v1.0 릴리즈 준비** — CHANGELOG v1.0.0 + 버전 업데이트 + 배포 대기
+- ⬜ **T10: 통합 검증** — cargo test + clippy + cipher check + lint + tsc + build
+- ⬜ **v1.0 태그 + GitHub Release**: `v1.0.0` 태그 push → CI가 인스톨러 빌드/첨부 (**사용자 명시 지시 후**)
 - ⬜ **배포 후 검증**: deploy-prod agent CV 체크리스트
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 양 OS 인스톨러 설치/실행/삭제 정상 (Sprint 15 이연)
-- ⬜ 양 PC 동기화 시나리오 3종 중 최소 1종 통과 (Sprint 15 이연)
-- ⬜ 원장 UAT 2주 완료 + 주요 피드백 반영
-- ⬜ 사용자 만족도 4.5/5 이상 (자가 평가)
-- ⬜ 사용자 학습 기간 1주 이내 확인
-- ⬜ v1.0.0 GitHub Release 생성 + 양 OS 인스톨러 첨부
+- ⬜ 양 OS 인스톨러 설치/실행/삭제 정상
+- ⬜ 양 PC 동기화 시나리오 최소 2종 통과 (Win→Mac, Mac→Win)
+- ⬜ DB 폴더 변경 정상 동작 + 양 PC 경로 인식 정합 확인
+- ⬜ CSV 가져오기로 원생 실데이터 이관 성공
+- ⬜ 실사용 개시 완료 + 초기 Critical/High 피드백 반영
+- ⬜ v1.0.0 GitHub Release 생성 + 양 OS 인스톨러 첨부 (배포 대기)
 - ⬜ 배포 후 CV 체크리스트 통과
 
-#### 🧪 Playwright MCP 검증 시나리오
-```
-(UAT는 원장 수동 테스트 — 자동 검증은 Sprint 16에서 완료)
-1. 배포 후 양 OS 인스톨러로 설치 확인
-2. 앱 시작 → 잠금 해제 → 대시보드 진입 확인
-3. 양 PC 전환 (Windows → Mac) 데이터 동기화 확인
-```
-
 #### 기술 고려사항
-- UAT 중 심각한 이슈 발견 시 Sprint 16 연장 가능 (최대 1주)
+- DB 폴더 변경: copy-then-switch + WAL checkpoint + fsync. salt.bin 손상 감지 적용
 - GitHub Release: `deploy.yml` 워크플로우 자동 실행
+- 배포(deploy-prod): 사용자 명시 지시 전까지 절대 진행하지 않음
 
 ---
 

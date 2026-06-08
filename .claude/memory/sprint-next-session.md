@@ -1,6 +1,6 @@
 ---
 name: sprint-next-session
-description: "Sprint 15 마감+develop 머지+tauri:dev QA 완료(develop push 7857963). 결정확정: Sprint 16까지 묶어 v1.0 직행(v0.6.0 배포 폐기). ⚠️배포(deploy-prod)는 사용자 명시 지시 전까지 금지. 다음 = Sprint 16 계획. 새 세션 진입 시 가장 먼저 확인"
+description: "Sprint 16 계획 수립 완료(docs/sprint/sprint16.md, 43h/11Task). 결정확정: v1.0 직행. ⚠️배포(deploy-prod)는 사용자 명시 지시 전까지 금지. 다음 = /sprint-dev 16 진입. 새 세션 진입 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
@@ -12,7 +12,12 @@ metadata:
 
 ## 다음 할 일 (확정 경로 — v1.0 직행)
 develop에 Sprint 15까지 반영됨. **Sprint 16까지 완료 후 한 번에 v1.0 배포**가 확정 방향.
-1. **Sprint 16 계획**(sprint-planner) — Phase 6 마지막: UAT + v1.0 릴리즈 + 이연항목 흡수(T7 양OS빌드·T8 양PC동기화·T9 통합검증 빌드부, CSV가져오기, DB폴더변경+salt.bin, 출결표 성능, 공지문 I/O, A89, R105 등).
+1. **Sprint 16 계획 수립 완료(2026-06-08)** — `docs/sprint/sprint16.md`(43h/11Task, MUST 36h·SHOULD 7h). 다음 단계는 **`/sprint-dev 16` 구현 진입**. 아직 sprint16 브랜치 미생성·미구현.
+   - Task: T0 회고액션 / T1 CSV가져오기 / **T2 DB폴더변경+salt.bin(신규 MUST 8h)** / T3 양OS빌드 / T4 양PC동기화 / T5 실사용개시준비 / T6 초기피드백대응 / T7 접근성잔여(SHOULD) / T8 공지문I/O(SHOULD) / T9 v1.0릴리즈준비 / T10 통합검증.
+   - **사용자 결정 2건 반영**: ⓐ PI-16 DB폴더변경 → Sprint16 포함(T2 신규). ⓑ PI-18 **UAT 2주 파일럿 폐기** → 원장 본인이 v1.0 바로 실사용 개시, 피드백은 실사용 중 수집(T5/T6 재구성). 단 양OS빌드·양PC동기화·통합검증은 개시 전 필수 유지.
+   - 남은 미결정: PI-17(출결표 N+1 재설계)·PI-19(셀 memo) — 둘 다 Post-MVP 기본값, 진입 시 결정 불필요.
+   - 신규 리스크: R111(DB폴더 이전 중 강제종료), R112(config.json PC별 로컬→양PC 경로 불일치). `docs/risk-register/2026-06-08.md`.
+   - A89 notices UI 구획화는 **Post-MVP 이연 확정**(Sprint16 범위 제외).
 2. ⚠️ **배포 금지**: deploy-prod(태그 push)는 **사용자가 명시적으로 지시할 때까지 절대 진행하지 않는다**. Sprint 16 완료 후에도 사용자 지시 대기. 프로덕션 브랜치 `master`(develop→master `--no-ff` + `v*` 태그 push → GitHub Actions 인스톨러).
 
 ## Sprint 15 결과 (sprint15 브랜치, 15커밋)
