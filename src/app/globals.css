@@ -172,6 +172,15 @@ h6 { font-size: 18px; }
   background-color: transparent !important;
 }
 
+/* 주 보기 토/일 컬럼 너비를 평일의 절반으로 (header + body 동시 적용).
+   평일 5칸(각 2단위) + 주말 2칸(각 1단위) = 12단위 → 주말 ≈ 8.3%, 평일 자동 분배. */
+.fc-timeGridWeek-view th.fc-day-sat,
+.fc-timeGridWeek-view th.fc-day-sun,
+.fc-timeGridWeek-view td.fc-day-sat,
+.fc-timeGridWeek-view td.fc-day-sun {
+  width: 8.3% !important;
+}
+
 /* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑). 볼드 미적용. */
 .shb-sun .fc-daygrid-day-number {
   color: #b91c1c;
