@@ -159,6 +159,8 @@ pub fn run() {
             commands::attendance::toggle_attendance,
             commands::attendance::update_absence_memo,
             commands::attendance::get_attendance_summary,
+            commands::attendance::move_attendance,
+            commands::attendance::apply_schedule_change,
             commands::makeup::get_pending_absences,
             commands::makeup::get_makeup_eligible_dates,
             commands::makeup::create_makeup_with_absences,

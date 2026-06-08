@@ -54,6 +54,11 @@ pub enum AuditEventType {
     MakeupExpired,
     // Sprint 11 T3 — 청구 상태 머신 (PRD §4.9.3). 마감(month-closed/closed-modified)은 V111 폐기.
     BillConfirmed,
+    // Sprint 16 T0 — 수업일 변경 (사용자 이슈 2026-06-08)
+    // 케이스1: 특정일 1회성 수업일 이동 (출결 행 event_date 변경)
+    AttendanceRescheduled,
+    // 케이스2: 특정일 이후 영구 스케줄 변경 + 변경일 이후 출결 재생성
+    ScheduleChangedWithRegen,
 }
 
 impl AuditEventType {
@@ -75,6 +80,8 @@ impl AuditEventType {
             Self::MakeupCancelled => "makeup-cancelled",
             Self::MakeupExpired => "makeup-expired",
             Self::BillConfirmed => "bill-confirmed",
+            Self::AttendanceRescheduled => "attendance-rescheduled",
+            Self::ScheduleChangedWithRegen => "schedule-changed-with-regen",
         }
     }
 }
