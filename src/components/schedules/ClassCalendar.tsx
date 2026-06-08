@@ -186,45 +186,67 @@ export default function ClassCalendar({
     classMinutes: number
   } | null>(null)
 
-  // 주/일 보기 이벤트 — 시간대별로 원생을 하나의 블록에 묶고, 내부를 2열 grid(2×N)로 표시.
-  // (원생별 색칩으로 구분. 학사일정은 dayHeaderContent 안에 표기.)
+  // 주 보기: 시간대별 원생을 한 블록에 묶어 2열 grid(2×N). 셀이 좁아 길이는 칩 텍스트로 표기.
+  // 일 보기: 원생별 개별 블록(실제 수업 길이 → 1h/3h 높이로 시각 구분, 같은 시간대는 가로 나란히).
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
+    const isDay = viewType === 'timeGridDay'
     const result: EventInput[] = []
     for (const day of data.days) {
-      const bySlot = new Map<
-        string,
-        {
-          students: { studentId: number; studentName: string; classMinutes: number }[]
-          maxMin: number
+      // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
+      const valid = day.regularSessions.filter((s) => s.startTime && s.startTime.includes(':'))
+      if (isDay) {
+        for (const s of valid) {
+          result.push({
+            start: `${day.eventDate}T${toIsoTime(s.startTime)}`,
+            end: `${day.eventDate}T${addMinutes(s.startTime!, s.classMinutes)}`,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            editable: false,
+            extendedProps: {
+              kind: 'class',
+              students: [
+                {
+                  studentId: s.studentId,
+                  studentName: s.studentName,
+                  classMinutes: s.classMinutes,
+                },
+              ],
+            },
+          })
         }
-      >()
-      for (const s of day.regularSessions) {
-        // 시작시간 미상(null/빈값/형식이상)인 정규 수업은 시간 슬롯에 배치 불가 → 주/일 뷰에서 생략.
-        // (이동된 출결처럼 스케줄 없는 요일의 수업. 월 뷰에서는 '시간미정'으로 표시됨.)
-        if (!s.startTime || !s.startTime.includes(':')) continue
-        const cur = bySlot.get(s.startTime) ?? { students: [], maxMin: 0 }
-        cur.students.push({
-          studentId: s.studentId,
-          studentName: s.studentName,
-          classMinutes: s.classMinutes,
-        })
-        cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
-        bySlot.set(s.startTime, cur)
-      }
-      for (const [startTime, { students, maxMin }] of bySlot) {
-        result.push({
-          start: `${day.eventDate}T${toIsoTime(startTime)}`,
-          end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
-          backgroundColor: 'transparent',
-          borderColor: 'transparent',
-          editable: false,
-          extendedProps: { kind: 'class', students },
-        })
+      } else {
+        const bySlot = new Map<
+          string,
+          {
+            students: { studentId: number; studentName: string; classMinutes: number }[]
+            maxMin: number
+          }
+        >()
+        for (const s of valid) {
+          const cur = bySlot.get(s.startTime!) ?? { students: [], maxMin: 0 }
+          cur.students.push({
+            studentId: s.studentId,
+            studentName: s.studentName,
+            classMinutes: s.classMinutes,
+          })
+          cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
+          bySlot.set(s.startTime!, cur)
+        }
+        for (const [startTime, { students, maxMin }] of bySlot) {
+          result.push({
+            start: `${day.eventDate}T${toIsoTime(startTime)}`,
+            end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            editable: false,
+            extendedProps: { kind: 'class', students },
+          })
+        }
       }
     }
     return result
-  }, [data, isTimeGrid])
+  }, [data, isTimeGrid, viewType])
 
   // hover 강조용 background 이벤트를 합쳐서 전달.
   const allEvents = useMemo<EventInput[]>(() => {
@@ -366,6 +388,8 @@ export default function ClassCalendar({
           }}
           height="100%"
           expandRows
+          // 일 보기 개별 블록을 겹치지 않고 나란히 배치(같은 시간대 여러 원생).
+          slotEventOverlap={false}
           slotDuration="01:00:00"
           slotLabelInterval="01:00:00"
           slotLabelContent={(arg) => {
