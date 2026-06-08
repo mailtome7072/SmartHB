@@ -295,12 +295,12 @@ export default function ClassCalendar({
             type="button"
             aria-label="이전"
             onClick={() => api()?.prev()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xl leading-none hover:bg-gray-50"
           >
-            ← 이전
+            ◀
           </button>
           <div className="relative inline-flex items-center justify-center">
-            <span className="px-2 text-2xl font-bold text-[var(--foreground)]">{title}</span>
+            <span className="px-2 text-[18px] font-bold text-[var(--foreground)]">{title}</span>
             <input
               ref={dateInputRef}
               type="date"
@@ -317,9 +317,9 @@ export default function ClassCalendar({
             type="button"
             aria-label="다음"
             onClick={() => api()?.next()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xl leading-none hover:bg-gray-50"
           >
-            다음 →
+            ▶
           </button>
         </div>
         <div className="flex justify-end gap-1">
