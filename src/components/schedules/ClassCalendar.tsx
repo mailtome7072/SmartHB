@@ -356,8 +356,10 @@ export default function ClassCalendar({
           eventDidMount={(arg) => {
             if (arg.event.display === 'background') {
               arg.el.style.backgroundColor = 'transparent'
-              // 샤프하고 진한 강조 — 각진 모서리 + 완전 검정 + 두꺼운 선.
-              arg.el.style.border = '2.5px solid #000'
+              // 월 보기 셀 hover 테두리와 동일한 스타일 (outline 2px #334155, offset -2px).
+              arg.el.style.border = 'none'
+              arg.el.style.outline = '2px solid #334155'
+              arg.el.style.outlineOffset = '-2px'
               arg.el.style.borderRadius = '0'
               arg.el.style.boxSizing = 'border-box'
             }
