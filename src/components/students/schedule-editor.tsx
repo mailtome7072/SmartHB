@@ -75,6 +75,12 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
   const [notice, setNotice] = useState<string | null>(null)
   // 수정 중인 원래 요일 (null = 추가 모드). 요일 변경 시 원래 요일 종료에 사용.
   const [editingDay, setEditingDay] = useState<number | null>(null)
+  // 추가/변경/삭제 확인 다이얼로그 — 변경 내용 요약 후 사용자 확인 시 반영.
+  const [confirm, setConfirm] = useState<
+    | { kind: 'upsert'; row: DraftRow; summary: string }
+    | { kind: 'remove'; dayOfWeek: number; summary: string }
+    | null
+  >(null)
 
   // 선택 가능 요일: 평일(월~금) 중 아직 등록되지 않은 요일 + (수정 중이면 자기 요일).
   // 정규수업은 평일만 — 토(6)/일(7) 제외. 단 기존 토/일 데이터를 수정 중이면 그 요일은 노출.
@@ -195,6 +201,21 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
     setDraft({ ...EMPTY_ROW, day_of_week: availableDays[0] ?? 1, effective_from: today })
   }
 
+  // 추가/변경 확인 다이얼로그용 요약 문구.
+  const buildUpsertSummary = (row: DraftRow): string => {
+    const time = `${row.start_time} ${row.duration_hours}시간`
+    if (editingDay !== null && editingDay !== row.day_of_week) {
+      return `${DAY_LABELS[editingDay]}요일 수업을 ${DAY_LABELS[row.day_of_week]}요일 ${time}(으)로 변경합니다.\n적용 시작일: ${row.effective_from}\n→ ${DAY_LABELS[editingDay]}요일은 종료되고, 변경일 이후 출결이 새 스케줄로 재생성됩니다 (결석·보강 보존).`
+    }
+    if (editingDay !== null) {
+      return `${DAY_LABELS[row.day_of_week]}요일 수업을 ${time}(으)로 변경합니다.\n적용 시작일: ${row.effective_from}\n→ 변경일 이후 출결이 재생성됩니다 (결석·보강 보존).`
+    }
+    return `${DAY_LABELS[row.day_of_week]}요일 ${time} 수업을 추가합니다.\n적용 시작일: ${row.effective_from}`
+  }
+
+  const buildRemoveSummary = (s: StudentSchedule): string =>
+    `${DAY_LABELS[s.day_of_week]}요일 ${s.start_time.slice(0, 5)} ${s.duration_hours}시간 수업을 삭제합니다.\n오늘(${today})부터 종료되며 이후 출결이 정리됩니다 (결석·보강 보존).`
+
   return (
     <section className="mt-8 border-t border-[var(--border)] pt-6">
       <header className="mb-3 flex items-baseline justify-between">
@@ -215,7 +236,11 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          upsert.mutate(draft)
+          if (draft.effective_from === '') {
+            setError('적용 시작일을 선택해주세요.')
+            return
+          }
+          setConfirm({ kind: 'upsert', row: draft, summary: buildUpsertSummary(draft) })
         }}
         className="mb-4 flex flex-wrap items-end gap-2"
         aria-label="스케줄 추가/변경"
@@ -364,7 +389,11 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
                     type="button"
                     onClick={() => {
                       if (remove.isPending) return
-                      remove.mutate(s.day_of_week)
+                      setConfirm({
+                        kind: 'remove',
+                        dayOfWeek: s.day_of_week,
+                        summary: buildRemoveSummary(s),
+                      })
                     }}
                     disabled={remove.isPending}
                     className="h-9 rounded-md border border-[var(--danger)] px-3 text-sm text-[var(--danger)] hover:bg-red-50 disabled:opacity-50"
@@ -378,6 +407,53 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
           ))}
         </tbody>
       </table>
+
+      {confirm !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setConfirm(null)}
+          role="presentation"
+        >
+          <div
+            className="w-[440px] rounded-lg bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="스케줄 변경 확인"
+          >
+            <h2 className="text-xl font-bold">
+              {confirm.kind === 'remove' ? '수업 스케줄 삭제 확인' : '수업 스케줄 변경 확인'}
+            </h2>
+            <p className="mt-3 whitespace-pre-line text-base leading-relaxed text-gray-800">
+              {confirm.summary}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirm(null)}
+                className="min-h-[44px] rounded-lg border-2 border-[var(--border)] px-4 text-base hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm.kind === 'upsert') upsert.mutate(confirm.row)
+                  else remove.mutate(confirm.dayOfWeek)
+                  setConfirm(null)
+                }}
+                className={`min-h-[44px] rounded-lg px-4 text-base font-semibold text-white ${
+                  confirm.kind === 'remove'
+                    ? 'bg-[var(--danger)] hover:opacity-90'
+                    : 'bg-[var(--accent)] hover:bg-[var(--accent-hover)]'
+                }`}
+              >
+                {confirm.kind === 'remove' ? '삭제' : '확인'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
