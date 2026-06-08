@@ -1179,11 +1179,19 @@ async fn move_attendance_impl(
                 .to_string(),
         );
     }
-    // 도착일 OFF/공휴일 차단 (PI-25)
+    // 도착일 주말 차단 — 정규수업은 평일만 (PI-30)
+    let to_dow = to_d.weekday().number_from_monday();
+    if to_dow >= 6 {
+        return Err(format!(
+            "{} 은(는) 주말이라 정규수업을 옮길 수 없습니다.",
+            format_md(to_d)
+        ));
+    }
+    // 도착일 OFF/공휴일/보강데이 차단 — allows_regular_class=0 일자 (PI-25)
     let off = load_off_dates(pool, to_date, to_date).await?;
     if off.contains(to_date) {
         return Err(format!(
-            "{} 은(는) 휴일이거나 정규수업이 없는 날이라 수업을 옮길 수 없습니다.",
+            "{} 은(는) 휴일·보강데이 등 정규수업이 불가능한 날이라 수업을 옮길 수 없습니다.",
             format_md(to_d)
         ));
     }
@@ -2404,6 +2412,21 @@ mod tests {
         assert!(normalize_time("16:75").is_err());
         assert!(normalize_time("abc").is_err());
         assert!(normalize_time("16").is_err());
+    }
+
+    #[tokio::test]
+    async fn move_attendance_blocks_weekend() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let from = first_event_date(&pool, sid).await; // 첫 월요일
+        let from_d = NaiveDate::parse_from_str(&from, "%Y-%m-%d").unwrap();
+        // 같은 주 토요일(월 + 5일) — 동월 범위
+        let sat = from_d.checked_add_days(chrono::Days::new(5)).unwrap();
+        let to = sat.format("%Y-%m-%d").to_string();
+        let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
+        assert!(err.contains("주말"), "주말 이동 차단: {}", err);
     }
 
     #[tokio::test]

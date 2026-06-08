@@ -166,11 +166,10 @@ h6 { font-size: 18px; }
   background-color: transparent !important;
 }
 
-/* 일 보기 수업 블록: 배경 투명 + 모든 변 투명(셀 배경색과 동일 → 외곽선 불가시). */
+/* 일 보기 수업 블록: 원생별 색상(event 의 backgroundColor/borderColor)을 그대로 표시하여
+   같은 시간대 다른 원생을 색으로 구분한다 (주 보기와 동일 정책). */
 .fc-timeGridDay-view .fc-timegrid-event {
-  background-color: transparent !important;
-  border: 1px solid transparent !important;
-  border-radius: 0 !important;
+  border-radius: 4px !important;
   box-shadow: none !important;
 }
 

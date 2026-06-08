@@ -59,6 +59,13 @@ export function MoveAttendanceDialog({
     return s
   }, [daySchedules])
 
+  // 보강데이 등 정규수업 불가 코드일 (allowsMakeup) — 정규수업 이동 차단 (PI-30)
+  const makeupDay = useMemo(() => {
+    const s = new Set<string>()
+    for (const d of daySchedules) if (d.allowsMakeup) s.add(d.eventDate)
+    return s
+  }, [daySchedules])
+
   function dateStr(day: number): string {
     return `${yearMonth}-${String(day).padStart(2, '0')}`
   }
@@ -67,7 +74,11 @@ export function MoveAttendanceDialog({
     const ds = dateStr(day)
     if (ds === fromDate) return '현재 수업일'
     if (occupied.has(ds)) return '이미 수업이 있는 날 (추가 수업은 보강으로 등록)'
-    if (blocked.has(ds)) return '휴일/수업 없는 날'
+    // 정규수업은 평일만 — 주말/공휴일/보강데이로는 이동 불가 (PI-30)
+    const dow = new Date(year, month - 1, day).getDay()
+    if (dow === 0 || dow === 6) return '주말 (정규수업 불가)'
+    if (blocked.has(ds)) return '휴일 (정규수업 불가)'
+    if (makeupDay.has(ds)) return '보강데이 (정규수업 불가)'
     return null
   }
 
