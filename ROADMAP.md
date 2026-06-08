@@ -843,29 +843,33 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
-### Sprint 16: 양 OS 빌드 검증 + DB 폴더 변경 + 실사용 개시 + v1.0 릴리즈 (2주) 🔄 진행 중
+### Sprint 16: 수업일 변경 도메인 + 양 OS 빌드 검증 + DB 폴더 변경 + 실사용 개시 + v1.0 릴리즈 (2주) 🔄 진행 중
 
+> 사용자 이슈(2026-06-08): **수업일 변경 2종(1회성 이동 + 특정일 이후 영구 변경)을 T0 최우선**으로 추가.
 > Sprint 15에서 이연된 T7(양 OS 빌드) · T8(양 PC 동기화) · T9(통합검증 빌드 부분)를 흡수.
 > PI-16 확정(2026-06-08): DB 폴더 변경 + salt.bin 이전 Sprint 16 포함.
 > PI-18 확정(2026-06-08): 격식 2주 UAT 폐기 → 바로 실사용 개시, 피드백은 실사용 중 수집.
+> PI-20~23 확정(2026-06-08): 케이스1=출결행 이동 / 케이스2=미처리만 재생성·처리행 보존 / 청구=현행유지+안내 / 우선순위=T0.
 
 #### 작업 목록
 
-- ⬜ **T0: 회고 액션** — A99(Ctrl+N 방어) + A100(미저장 이탈 경고 공통 훅) + Ctrl+S 저장 단축키
-- ⬜ **T1: CSV 가져오기** (PRD §4.13.1) — 실사용 개시 첫 번째 작업. 원생 데이터 이관
-- ⬜ **T2: DB 폴더 변경 + salt.bin 이전** — copy-then-switch + salt.bin/WAL/backup 동반 이전 + 앱 재시작. ADR 작성. cipher ON + 양 PC 시나리오 검증 필수. R12 salt.bin 이전 최종 해소
-- ⬜ **T3 [Sprint 15 이연] 양 OS 빌드 검증** — macOS `.dmg` + Windows `.msi` 설치/실행/삭제
-- ⬜ **T4 [Sprint 15 이연] 양 PC 동기화 시나리오 테스트** — Win→Mac, Mac→Win, 비정상 종료 강제 점유 3종
-- ⬜ **T5: 실사용 개시 준비** — 양 OS 설치 + 데이터 이관 확인 + 기동 검증
-- ⬜ **T6: 초기 실사용 피드백 대응** — Critical/High 즉시 수정 (버퍼)
-- ⬜ **T7: 접근성 잔여 개선** (SHOULD) — 밀집UI 44px·gray-500·F1 단축키
-- ⬜ **T8: 공지문 I/O 병렬화** (SHOULD) — 50장 일괄 생성 성능
-- ⬜ **T9: v1.0 릴리즈 준비** — CHANGELOG v1.0.0 + 버전 업데이트 + 배포 대기
-- ⬜ **T10: 통합 검증** — cargo test + clippy + cipher check + lint + tsc + build
+- ⬜ **T0: 수업일 변경 도메인** (최우선) — 케이스1(1회성 출결 행 이동, 동월·메모) + 케이스2(특정일 이후 영구 변경: 날짜 인식 generate + 변경일 이후 미처리만 재생성·결석/보강 보존). V306(`note` 컬럼). IPC `move_attendance`/`apply_schedule_change`. 청구 현행 유지+안내
+- ⬜ **T1: 회고 액션** — A99(Ctrl+N 방어) + A100(미저장 이탈 경고 공통 훅) + Ctrl+S 저장 단축키
+- ⬜ **T2: CSV 가져오기** (PRD §4.13.1) — 실사용 개시 첫 번째 작업. 원생 데이터 이관
+- ⬜ **T3: DB 폴더 변경 + salt.bin 이전** — copy-then-switch + salt.bin/WAL/backup 동반 이전 + 앱 재시작. ADR 작성. cipher ON + 양 PC 시나리오 검증 필수. R12 salt.bin 이전 최종 해소
+- ⬜ **T4 [Sprint 15 이연] 양 OS 빌드 검증** — macOS `.dmg` + Windows `.msi` 설치/실행/삭제
+- ⬜ **T5 [Sprint 15 이연] 양 PC 동기화 시나리오 테스트** — Win→Mac, Mac→Win, 비정상 종료 강제 점유 3종
+- ⬜ **T6: 실사용 개시 준비** — 양 OS 설치 + 데이터 이관 확인 + 기동 검증
+- ⬜ **T7: 초기 실사용 피드백 대응** — Critical/High 즉시 수정 (버퍼)
+- ⬜ **T8: 접근성 잔여 개선** (SHOULD · Post-MVP 이연 기본) — 밀집UI 44px·gray-500·F1 단축키
+- ⬜ **T9: 공지문 I/O 병렬화** (SHOULD · Post-MVP 이연 기본) — 50장 일괄 생성 성능
+- ⬜ **T10: v1.0 릴리즈 준비** — CHANGELOG v1.0.0 + 버전 업데이트 + 배포 대기
+- ⬜ **T11: 통합 검증** — cargo test + clippy + cipher check + lint + tsc + build
 - ⬜ **v1.0 태그 + GitHub Release**: `v1.0.0` 태그 push → CI가 인스톨러 빌드/첨부 (**사용자 명시 지시 후**)
 - ⬜ **배포 후 검증**: deploy-prod agent CV 체크리스트
 
 #### 완료 기준 (Definition of Done)
+- ⬜ 수업일 변경 케이스1(1회성 이동) + 케이스2(특정일 이후 변경·미처리 재생성·처리행 보존) 동작 + 날짜 인식 generate + V306 적용
 - ⬜ 양 OS 인스톨러 설치/실행/삭제 정상
 - ⬜ 양 PC 동기화 시나리오 최소 2종 통과 (Win→Mac, Mac→Win)
 - ⬜ DB 폴더 변경 정상 동작 + 양 PC 경로 인식 정합 확인
@@ -875,6 +879,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 - ⬜ 배포 후 CV 체크리스트 통과
 
 #### 기술 고려사항
+- 수업일 변경: `student_schedules` effective_from/to 시계열 활용. `generate` 날짜 인식(effective_to exclusive) 리팩토링. 케이스2는 변경일 이후 present만 DELETE 후 재생성(처리행 보존 → 보강 고아 회피)
 - DB 폴더 변경: copy-then-switch + WAL checkpoint + fsync. salt.bin 손상 감지 적용
 - GitHub Release: `deploy.yml` 워크플로우 자동 실행
 - 배포(deploy-prod): 사용자 명시 지시 전까지 절대 진행하지 않음
