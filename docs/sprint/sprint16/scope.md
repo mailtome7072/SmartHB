@@ -56,15 +56,23 @@ Sprint: 16  |  Date: 2026-06-08  |  Session: #1
   3. `schedule-editor.tsx` — 적용 시작일 date 입력(과거/미래) + setSchedule→applyScheduleChange 연계 + 결과 안내 배너(재생성/보존/청구)
   4. `attendance/page.tsx` — present 우클릭 [수업일 이동/보강 등록] 액션 모달 + MoveAttendanceDialog 연결
 
-## T0 완료 — Self-verify 전수 통과
-- cargo test 383 passed / clippy --all-targets clean / tsc / lint / **build(static export 전 라우트)** 통과
-- 커밋: a8edc6a(백엔드) → ee33e2d(타입·래퍼) → 919b16e(UI)
-- ⬜ **실 앱 시각 검증 대기**: `pnpm tauri:dev`로 출결표 우클릭 이동 + 원생 스케줄 변경일 동작 확인 (사용자)
+## T0 완료 — Self-verify 전수 통과 + 시각 검증 완료(2026-06-08)
+- cargo test 384 passed / clippy --all-targets clean / tsc / lint / build 통과
+- 핵심 커밋: a8edc6a(백엔드) → ee33e2d(타입·래퍼) → 919b16e(UI) + 시각검증 수정 다수(아래)
+- ✅ **실 앱 시각 검증 완료** — `pnpm tauri:dev`로 케이스1 이동/시간입력, 케이스2 스케줄 변경, 캘린더 표시 전수 확인, "이상 없음"(사용자).
 
 ## 발견된 이슈 (시각 검증 Session #1)
 - **I1 (해결)**: 출결표 출석 셀 hover 툴팁 '날짜 ○' → '날짜 (출석)' 표기 변경 요청. `cellTooltip` present 분기 + note(이동 메모) 툴팁 누락 보완. (커밋 예정)
 - **I2 (크래시·즉시 방어 완료)**: 수업일 이동(케이스1) 후 수업 캘린더 **주간 보기 클릭 시 `Cannot read properties of undefined (reading 'padStart')` 크래시**.
   - 원인: `calendar.rs`가 정규 수업 시작시간을 **출결일자 요일의 현행 스케줄 JOIN**으로 가져옴 → 이동 출결(스케줄 없는 요일)은 `start_time` 부재 → `ClassCalendar.toIsoTime`이 빈/null 값에 `padStart` 호출.
   - 방어: `toIsoTime` null/빈값 가드, 주/일 뷰 `if (!startTime || !includes(':')) continue`, 월 뷰 `|| '시간미정'`. → 크래시 제거(이동 수업은 월 뷰 '시간미정', 주/일 뷰 시간슬롯 미표시).
-  - **근본 해결(PI-28)**: 사용자 결정 — 1회성 이동 시 **수업 시작시간 입력**. V307 `regular_attendances.start_time` 추가, `move_attendance(start_time)` 저장, calendar `COALESCE(ra.start_time, ss.start_time)`, MoveAttendanceDialog `type=time` 입력. → 이동 수업도 주/일 뷰에 정상 시간 표시. 단위 테스트(normalize_time, start_time 저장) 추가. cargo 384 / clippy / tsc / lint 통과.
+  - **근본 해결(PI-28)**: 사용자 결정 — 1회성 이동 시 **수업 시작시간 입력**. V307 `regular_attendances.start_time` 추가, `move_attendance(start_time)` 저장, calendar `COALESCE(ra.start_time, ss.start_time)`, MoveAttendanceDialog 시작시간(시 단위) 입력. 단위 테스트(normalize_time, start_time 저장) 추가.
+
+## 시각 검증 중 추가 수정·결정 (2026-06-08, PI-29~30 포함)
+- **PI-29**: 케이스1 같은 날 추가 수업 → 빈 날 전용 이동 유지, 같은 날은 보강 등록. 시작시간 **시(時) 단위만** 선택.
+- **PI-30**: 정규수업 불가일(주말/공휴일/보강데이) 이동 차단. `DaySchedule.regular_blocked`(allows_regular=0) 추가 — `allowsMakeup`(공휴수업일 등 정규 가능) 오판 교정.
+- **출결표**: 출석 셀 hover 툴팁 '(출석)', 이동 메모 표기.
+- **수업 캘린더(ClassCalendar)**: 원생별 색칩 + 수업시간 표기 / 월 헤더 요일 / 주 보기 2열 묶음·일 보기 개별 블록(실제 길이) / 칩 중앙정렬 / 칩 hover 시 수업 시간범위 테두리(월 보기 셀 hover 스타일) / 컨테이너 회색 테두리 제거 / 이전·다음 이모티콘+년월 18px / 토·일 컬럼 폭 절반 / 시간행 14:00 시작 / 주 행높이 5rem(6명 2×3 수용).
+- **스케줄 편집(schedule-editor)**: 수정 시 요일 변경(원래 요일 종료) / 요일 선택 평일·미등록만 / 삭제 시 출결 정리(applyScheduleChange) / 추가·변경·삭제 확인 다이얼로그.
+- 시각검증 수정 커밋: c5b79db ~ ee83b72 (약 20개). 자동검증(cargo test 384 / clippy / tsc / lint) 매 커밋 통과.
 - 추가 마이그레이션: V306(note) + **V307(start_time)** — 둘 다 ALTER ADD COLUMN.
