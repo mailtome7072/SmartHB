@@ -179,25 +179,33 @@ export default function ClassCalendar({
     return map
   }, [data])
 
-  // 주/일 보기 이벤트 — 원생별 수업 블록(같은 시간대 여러 원생은 각자 다른 색으로 나란히 표시).
-  // 학사일정은 dayHeaderContent 안에 표기.
+  // 주/일 보기 이벤트 — 시간대별로 원생을 하나의 블록에 묶고, 내부를 2열 grid(2×N)로 표시.
+  // (원생별 색칩으로 구분. 학사일정은 dayHeaderContent 안에 표기.)
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
     const result: EventInput[] = []
     for (const day of data.days) {
+      const bySlot = new Map<
+        string,
+        { students: { studentId: number; studentName: string }[]; maxMin: number }
+      >()
       for (const s of day.regularSessions) {
         // 시작시간 미상(null/빈값/형식이상)인 정규 수업은 시간 슬롯에 배치 불가 → 주/일 뷰에서 생략.
         // (이동된 출결처럼 스케줄 없는 요일의 수업. 월 뷰에서는 '시간미정'으로 표시됨.)
         if (!s.startTime || !s.startTime.includes(':')) continue
-        const color = colorForStudent(s.studentId)
+        const cur = bySlot.get(s.startTime) ?? { students: [], maxMin: 0 }
+        cur.students.push({ studentId: s.studentId, studentName: s.studentName })
+        cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
+        bySlot.set(s.startTime, cur)
+      }
+      for (const [startTime, { students, maxMin }] of bySlot) {
         result.push({
-          start: `${day.eventDate}T${toIsoTime(s.startTime)}`,
-          end: `${day.eventDate}T${addMinutes(s.startTime, s.classMinutes)}`,
-          backgroundColor: color.bg,
-          borderColor: color.border,
-          textColor: color.text,
+          start: `${day.eventDate}T${toIsoTime(startTime)}`,
+          end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
+          backgroundColor: 'transparent',
+          borderColor: 'transparent',
           editable: false,
-          extendedProps: { kind: 'class', names: [s.studentName] },
+          extendedProps: { kind: 'class', students },
         })
       }
     }
@@ -319,9 +327,6 @@ export default function ClassCalendar({
           events={events}
           height="100%"
           expandRows
-          // 같은 시간대 여러 원생 블록을 겹치지 않고 나란히 균등 배치 (이름 가림 방지).
-          slotEventOverlap={false}
-          eventMaxStack={6}
           slotDuration="01:00:00"
           slotLabelInterval="01:00:00"
           slotLabelContent={(arg) => {
@@ -432,30 +437,38 @@ export default function ClassCalendar({
           // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
           // 일 보기는 폰트 2단계 확대 + 파랑 볼드 (text-xs → text-base text-blue-700 font-bold).
           eventContent={(arg) => {
-            const names = (arg.event.extendedProps.names as string[]) ?? []
-            // 일 보기는 폰트 확대, 색상은 원생별 textColor(event) 사용 — 시간대 구분.
-            const cls =
-              viewType === 'timeGridDay'
-                ? 'text-base font-bold text-center'
-                : 'text-xs'
+            const students =
+              (arg.event.extendedProps.students as {
+                studentId: number
+                studentName: string
+              }[]) ?? []
+            const isDay = viewType === 'timeGridDay'
+            // 한 시간대 원생을 2열 grid(2×N)로 배치. 각 원생은 색칩으로 구분.
             return (
-              <div className={`whitespace-normal break-words px-1 py-0.5 leading-snug ${cls}`}>
-                {names.map((n, i) => (
-                  <span key={`${n}-${i}`}>
+              <div
+                className={`grid h-full grid-cols-2 content-start gap-0.5 overflow-hidden p-0.5 ${
+                  isDay ? 'text-sm' : 'text-xs'
+                }`}
+              >
+                {students.map((st, i) => {
+                  const c = colorForStudent(st.studentId)
+                  return (
                     <span
+                      key={`${st.studentId}-${i}`}
                       role="button"
                       tabIndex={0}
-                      className="cursor-pointer hover:underline"
                       onClick={(ev) => {
                         ev.stopPropagation()
-                        onStudentNameClick(n)
+                        onStudentNameClick(st.studentName)
                       }}
+                      className="cursor-pointer truncate rounded px-1 py-0.5 font-semibold hover:underline"
+                      style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+                      title={st.studentName}
                     >
-                      {n}
+                      {st.studentName}
                     </span>
-                    {i < names.length - 1 ? ', ' : ''}
-                  </span>
-                ))}
+                  )
+                })}
               </div>
             )
           }}
