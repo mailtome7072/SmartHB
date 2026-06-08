@@ -187,7 +187,3 @@ h6 { font-size: 18px; }
   font-size: 12px;
 }
 
-/* 주간 보기 시간 슬롯 높이 확대 — 한 시간대 원생을 2열 grid(2×N)로 배치할 공간 확보. */
-.fc-timeGridWeek-view .fc-timegrid-slot {
-  height: 4.5rem;
-}
