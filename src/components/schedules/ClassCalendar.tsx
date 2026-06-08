@@ -93,6 +93,23 @@ const VIEWS: Array<[string, string]> = [
   ['timeGridDay', '일'],
 ]
 
+/** 원생별 수업 블록 색상 팔레트 — 같은 시간대 다른 원생을 시각적으로 구분 (주/일 뷰). */
+const STUDENT_PALETTE: Array<{ bg: string; border: string; text: string }> = [
+  { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' }, // blue
+  { bg: '#dcfce7', border: '#22c55e', text: '#14532d' }, // green
+  { bg: '#fef9c3', border: '#ca8a04', text: '#713f12' }, // yellow
+  { bg: '#fee2e2', border: '#ef4444', text: '#7f1d1d' }, // red
+  { bg: '#f3e8ff', border: '#a855f7', text: '#581c87' }, // purple
+  { bg: '#ffedd5', border: '#f97316', text: '#7c2d12' }, // orange
+  { bg: '#cffafe', border: '#06b6d4', text: '#164e63' }, // cyan
+  { bg: '#fce7f3', border: '#db2777', text: '#831843' }, // pink
+]
+
+/** 원생 ID → 안정적 색상 매핑 (같은 원생은 항상 같은 색). */
+function colorForStudent(studentId: number): { bg: string; border: string; text: string } {
+  return STUDENT_PALETTE[studentId % STUDENT_PALETTE.length]
+}
+
 export default function ClassCalendar({
   data,
   academicEvents,
@@ -162,37 +179,30 @@ export default function ClassCalendar({
     return map
   }, [data])
 
-  // 주/일 보기 이벤트 — 시간대별 수업 블록만. 학사일정은 dayHeaderContent 안에 표기.
+  // 주/일 보기 이벤트 — 원생별 수업 블록(같은 시간대 여러 원생은 각자 다른 색으로 나란히 표시).
+  // 학사일정은 dayHeaderContent 안에 표기.
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
     const result: EventInput[] = []
     for (const day of data.days) {
-      const bySlot = new Map<string, { names: string[]; maxMin: number }>()
       for (const s of day.regularSessions) {
         // 시작시간 미상(null/빈값/형식이상)인 정규 수업은 시간 슬롯에 배치 불가 → 주/일 뷰에서 생략.
         // (이동된 출결처럼 스케줄 없는 요일의 수업. 월 뷰에서는 '시간미정'으로 표시됨.)
         if (!s.startTime || !s.startTime.includes(':')) continue
-        const cur = bySlot.get(s.startTime) ?? { names: [], maxMin: 0 }
-        cur.names.push(s.studentName)
-        cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
-        bySlot.set(s.startTime, cur)
-      }
-      const isDay = viewType === 'timeGridDay'
-      for (const [startTime, { names, maxMin }] of bySlot) {
+        const color = colorForStudent(s.studentId)
         result.push({
-          start: `${day.eventDate}T${toIsoTime(startTime)}`,
-          end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
-          // 일 보기는 배경/테두리 없음 (사용자 지정). 주 보기는 옅은 블루 유지.
-          backgroundColor: isDay ? 'transparent' : '#dbeafe',
-          borderColor: isDay ? 'transparent' : '#3b82f6',
-          textColor: '#1e3a8a',
+          start: `${day.eventDate}T${toIsoTime(s.startTime)}`,
+          end: `${day.eventDate}T${addMinutes(s.startTime, s.classMinutes)}`,
+          backgroundColor: color.bg,
+          borderColor: color.border,
+          textColor: color.text,
           editable: false,
-          extendedProps: { kind: 'class', names },
+          extendedProps: { kind: 'class', names: [s.studentName] },
         })
       }
     }
     return result
-  }, [data, isTimeGrid, viewType])
+  }, [data, isTimeGrid])
 
   function api() {
     return calendarRef.current?.getApi()
@@ -356,6 +366,17 @@ export default function ClassCalendar({
           }}
           // 주/일 보기 날짜 헤더 — 날짜 / 학사일정 코드(중앙) / 총 N명 수업.
           dayHeaderContent={(arg) => {
+            // 월 보기: 요일(일~토)만 표기. 주말은 색 구분.
+            if (arg.view.type === 'dayGridMonth') {
+              const dow = arg.date.getDay()
+              const color = dow === 0 ? '#dc2626' : dow === 6 ? '#2563eb' : 'inherit'
+              const label = ['일', '월', '화', '수', '목', '금', '토'][dow]
+              return (
+                <span className="text-sm font-semibold" style={{ color }}>
+                  {label}
+                </span>
+              )
+            }
             if (!arg.view.type.startsWith('timeGrid')) return undefined
             const ds = dateStr(arg.date)
             const acts = academicByDate.get(ds) ?? []
@@ -409,9 +430,10 @@ export default function ClassCalendar({
           // 일 보기는 폰트 2단계 확대 + 파랑 볼드 (text-xs → text-base text-blue-700 font-bold).
           eventContent={(arg) => {
             const names = (arg.event.extendedProps.names as string[]) ?? []
+            // 일 보기는 폰트 확대, 색상은 원생별 textColor(event) 사용 — 시간대 구분.
             const cls =
               viewType === 'timeGridDay'
-                ? 'text-base font-bold text-blue-700 text-center'
+                ? 'text-base font-bold text-center'
                 : 'text-xs'
             return (
               <div className={`whitespace-normal break-words px-1 py-0.5 leading-snug ${cls}`}>
