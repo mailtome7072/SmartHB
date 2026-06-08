@@ -14,6 +14,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  applyScheduleChange,
   deleteSchedule,
   getOperatingHours,
   getSchedules,
@@ -30,9 +31,16 @@ interface DraftRow {
   day_of_week: number
   start_time: string
   duration_hours: string
+  /** Sprint 16 T0 케이스2 — 변경 적용 시작일(effective_from). 과거(사후)·미래(사전) 모두 허용. */
+  effective_from: string
 }
 
-const EMPTY_ROW: DraftRow = { day_of_week: 1, start_time: '16:00', duration_hours: '1' }
+const EMPTY_ROW: DraftRow = {
+  day_of_week: 1,
+  start_time: '16:00',
+  duration_hours: '1',
+  effective_from: '',
+}
 /** 1회 수업 시간 — 1시간 단위만 지원 (T11 사용자 요청). */
 const DURATION_OPTIONS = ['1', '2', '3', '4']
 
@@ -61,8 +69,10 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
     queryFn: () => getOperatingHours(),
   })
 
-  const [draft, setDraft] = useState<DraftRow>(EMPTY_ROW)
+  const [draft, setDraft] = useState<DraftRow>({ ...EMPTY_ROW, effective_from: today })
   const [error, setError] = useState<string | null>(null)
+  // Sprint 16 T0 케이스2 — 변경 적용 결과 안내 (재생성/보존/청구 변동).
+  const [notice, setNotice] = useState<string | null>(null)
 
   // 선택된 요일의 운영 시간 → 1시간 단위 시작 옵션 (close 1시간 전까지)
   const startTimeOptions = useMemo(() => {
@@ -87,19 +97,33 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         throw new Error('시작 시간이 올바르지 않습니다.')
       if (Number.isNaN(mm) || mm < 0 || mm > 59)
         throw new Error('시작 시간이 올바르지 않습니다.')
+      if (row.effective_from === '')
+        throw new Error('적용 시작일을 선택해주세요.')
       await setSchedule({
         student_id: studentId,
         day_of_week: row.day_of_week,
         start_time: row.start_time.length === 5 ? `${row.start_time}:00` : row.start_time,
         duration_hours: Number(row.duration_hours),
-        effective_from: today,
+        effective_from: row.effective_from,
       })
+      // Sprint 16 T0 케이스2: 변경일 이후 출결을 신 스케줄로 재생성 (미처리만, 처리행 보존).
+      return applyScheduleChange(studentId, row.effective_from)
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       setError(null)
-      setDraft(EMPTY_ROW)
+      setDraft({ ...EMPTY_ROW, effective_from: today })
+      // 변경일 이후 출결 반영 결과 안내.
+      const parts = [`변경일 이후 출결 ${result.regeneratedCount}건 재생성`]
+      if (result.preservedCount > 0) {
+        parts.push(`결석·보강 ${result.preservedCount}건 보존`)
+      }
+      if (result.weeklyMinutesBefore !== result.weeklyMinutesAfter) {
+        parts.push('주당 수업시간이 바뀌어 이번 달 청구액 재확인이 필요합니다')
+      }
+      setNotice(parts.join(' · '))
       qc.invalidateQueries({ queryKey: ['schedules', studentId] })
       qc.invalidateQueries({ queryKey: ['weekly-hours', studentId] })
+      qc.invalidateQueries({ queryKey: ['attendance-grid'] })
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
@@ -120,6 +144,8 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
       day_of_week: s.day_of_week,
       start_time: s.start_time.slice(0, 5),
       duration_hours: String(s.duration_hours),
+      // 변경 적용일은 사용자가 새로 정한다 (기존 effective_from 이 아님) — 기본 오늘.
+      effective_from: today,
     })
   }
 
@@ -193,6 +219,16 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
             ))}
           </select>
         </label>
+        <label className="flex flex-col gap-1 text-sm">
+          적용 시작일
+          <input
+            type="date"
+            value={draft.effective_from}
+            onChange={(e) => setDraft({ ...draft, effective_from: e.target.value })}
+            className="h-11 rounded-md border border-[var(--border)] px-3"
+            aria-label="변경 적용 시작일 (이 날짜부터 신 스케줄 반영)"
+          />
+        </label>
         <button
           type="submit"
           disabled={upsert.isPending || startTimeOptions.length === 0}
@@ -207,6 +243,23 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         <p role="alert" className="mb-2 text-sm text-[var(--danger)]">
           {error}
         </p>
+      )}
+
+      {notice !== null && (
+        <div
+          role="status"
+          className="mb-2 flex items-start justify-between gap-3 rounded-md border-2 border-amber-400 bg-amber-50 p-2 text-sm text-amber-900"
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="안내 닫기"
+            className="shrink-0 rounded px-1 text-amber-700 hover:bg-amber-100"
+          >
+            ×
+          </button>
+        </div>
       )}
 
       <table className="w-full overflow-hidden rounded-md border border-[var(--border)] bg-white">

@@ -70,9 +70,11 @@ interface Props {
   onMakeupDayCellClick?: (studentId: number, makeup: GridMakeupCell) => void
   /** Sprint 9 T8 — 학생명 클릭 시 호출 (결석 이력 다이얼로그 진입). */
   onStudentNameClick?: (studentId: number) => void
-  /** Sprint 9 Session #12 K3 — 정규 수업 셀(present/makeup_done/makeup_expired) 우클릭 시
+  /** Sprint 9 Session #12 K3 — 정규 수업 셀(makeup_done/makeup_expired) 우클릭 시
    *  보강 등록 진입. 결석(absent) 셀 우클릭은 기존 메모 동작 유지. */
   onClassDayMakeupRegister?: (studentId: number, eventDate: string) => void
+  /** Sprint 16 T0 — present(출석) 셀 우클릭 시 [수업일 이동 / 보강 등록] 액션 선택. */
+  onPresentCellAction?: (studentId: number, cell: AttendanceCell) => void
 }
 
 interface LastToggle {
@@ -115,6 +117,7 @@ export function AttendanceGrid({
   onMakeupDayCellClick,
   onStudentNameClick,
   onClassDayMakeupRegister,
+  onPresentCellAction,
 }: Props) {
   const queryClient = useQueryClient()
   const [lastToggle, setLastToggle] = useState<LastToggle | null>(null)
@@ -341,9 +344,13 @@ export function AttendanceGrid({
                 dayScheduleMap={dayScheduleMap}
                 onCellClick={handleCellClick}
                 onCellContextMenu={(cell, studentId) => {
-                  // Session #12 K3: 결석 셀 = 메모, 그 외(present/makeup_done/makeup_expired) = 보강 등록.
+                  // 결석 셀 = 메모(K3).
+                  // present 셀 = [수업일 이동 / 보강 등록] 액션 선택(Sprint 16 T0).
+                  // makeup_done/makeup_expired = 보강 등록(K3).
                   if (cell.status === 'absent') {
                     setMemoDialogCell(cell)
+                  } else if (cell.status === 'present' && onPresentCellAction !== undefined) {
+                    onPresentCellAction(studentId, cell)
                   } else if (onClassDayMakeupRegister !== undefined) {
                     onClassDayMakeupRegister(studentId, cell.eventDate)
                   }
@@ -358,7 +365,7 @@ export function AttendanceGrid({
       </div>
 
       <p className="mt-3 text-sm text-gray-600">
-        셀 클릭 = 출석↔결석 토글 · 결석 셀 우클릭 = 사유 메모 · 출석/보강완료 셀 우클릭 = 보강 등록 · Ctrl+Z (또는 Cmd+Z) = 마지막 토글 취소
+        셀 클릭 = 출석↔결석 토글 · 결석 셀 우클릭 = 사유 메모 · 출석 셀 우클릭 = 수업일 이동/보강 등록 · 보강완료 셀 우클릭 = 보강 등록 · Ctrl+Z (또는 Cmd+Z) = 마지막 토글 취소
       </p>
 
       {memoDialogCell !== null && (

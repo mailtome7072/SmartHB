@@ -47,5 +47,14 @@ Sprint: 16  |  Date: 2026-06-08  |  Session: #1
 - [ ] 프론트 UI (출결표 이동 다이얼로그 + ScheduleEditor 변경일) — 세션 여유에 따라 분리 가능
 - [ ] Self-verify: cargo test / clippy --all-targets / lint / tsc 통과
 
+## 진행 현황 (Session #1)
+- ✅ **백엔드 완료·커밋(a8edc6a)**: V306(note) + move_attendance + apply_schedule_change + generate 날짜 인식 리팩토링. 단위 테스트 9건, 전체 383 passed, clippy --all-targets clean.
+- ✅ **프론트 타입+래퍼 커밋(ee33e2d)**: AttendanceCell.note, MoveAttendanceResult/ScheduleChangeResult, moveAttendance/applyScheduleChange 래퍼. tsc/lint 통과.
+- ⬜ **UI 통합 잔여**:
+  1. AttendanceGrid present 셀 우클릭 → [수업일 이동 / 보강 등록] 선택 (기존 `onClassDayMakeupRegister` 단일 동작을 메뉴로 확장, PI-26 확정)
+  2. 신규 `MoveAttendanceDialog` — 도착일 월 달력(ThreeMonthCalendar/CalendarCell 패턴 재활용), OFF일/공휴일/충돌/타월 비활성, moveAttendance 호출
+  3. `students/schedule-editor.tsx` — 변경일 날짜 선택 + 재생성 확인 다이얼로그(setSchedule + applyScheduleChange 연계, 보존 N건 안내)
+  4. 부모 `app/attendance/page.tsx` 콜백 연결
+
 ## 발견된 이슈
 (없음 — 발견 시 기록)
