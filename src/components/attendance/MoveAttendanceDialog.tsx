@@ -37,8 +37,8 @@ export function MoveAttendanceDialog({
 }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  // PI-28: 도착일의 수업 시작시간 입력 (캘린더 표시용). 기본 16:00.
-  const [startTime, setStartTime] = useState('16:00')
+  // PI-28/29: 도착일의 수업 시작시간 — 시(時) 단위만 선택(분 없음). 기본 16시.
+  const [startHour, setStartHour] = useState(16)
   const queryClient = useQueryClient()
 
   const [year, month] = yearMonth.split('-').map(Number)
@@ -66,17 +66,14 @@ export function MoveAttendanceDialog({
   function reason(day: number): string | null {
     const ds = dateStr(day)
     if (ds === fromDate) return '현재 수업일'
-    if (occupied.has(ds)) return '이미 수업이 있는 날'
+    if (occupied.has(ds)) return '이미 수업이 있는 날 (추가 수업은 보강으로 등록)'
     if (blocked.has(ds)) return '휴일/수업 없는 날'
     return null
   }
 
   async function handleSelect(day: number) {
     const to = dateStr(day)
-    if (startTime === '') {
-      setError('수업 시작시간을 입력해주세요.')
-      return
-    }
+    const startTime = `${String(startHour).padStart(2, '0')}:00`
     setSubmitting(true)
     setError(null)
     try {
@@ -116,17 +113,22 @@ export function MoveAttendanceDialog({
         </p>
 
         <div className="mt-3 flex items-center gap-2">
-          <label htmlFor="move-start-time" className="text-base text-gray-700">
+          <label htmlFor="move-start-hour" className="text-base text-gray-700">
             수업 시작시간:
           </label>
-          <input
-            id="move-start-time"
-            type="time"
-            value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
+          <select
+            id="move-start-hour"
+            value={startHour}
+            onChange={(e) => setStartHour(Number(e.target.value))}
             className="min-h-[40px] rounded-md border-2 border-[var(--border)] px-3 text-base"
-            aria-label="도착일 수업 시작시간"
-          />
+            aria-label="도착일 수업 시작시간 (시 단위)"
+          >
+            {Array.from({ length: 14 }, (_, i) => i + 9).map((h) => (
+              <option key={h} value={h}>
+                {h}시
+              </option>
+            ))}
+          </select>
           <span className="text-sm text-gray-500">날짜를 클릭하면 이 시간으로 이동</span>
         </div>
 
