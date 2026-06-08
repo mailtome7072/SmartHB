@@ -50,11 +50,16 @@ Sprint: 16  |  Date: 2026-06-08  |  Session: #1
 ## 진행 현황 (Session #1)
 - ✅ **백엔드 완료·커밋(a8edc6a)**: V306(note) + move_attendance + apply_schedule_change + generate 날짜 인식 리팩토링. 단위 테스트 9건, 전체 383 passed, clippy --all-targets clean.
 - ✅ **프론트 타입+래퍼 커밋(ee33e2d)**: AttendanceCell.note, MoveAttendanceResult/ScheduleChangeResult, moveAttendance/applyScheduleChange 래퍼. tsc/lint 통과.
-- ⬜ **UI 통합 잔여**:
-  1. AttendanceGrid present 셀 우클릭 → [수업일 이동 / 보강 등록] 선택 (기존 `onClassDayMakeupRegister` 단일 동작을 메뉴로 확장, PI-26 확정)
-  2. 신규 `MoveAttendanceDialog` — 도착일 월 달력(ThreeMonthCalendar/CalendarCell 패턴 재활용), OFF일/공휴일/충돌/타월 비활성, moveAttendance 호출
-  3. `students/schedule-editor.tsx` — 변경일 날짜 선택 + 재생성 확인 다이얼로그(setSchedule + applyScheduleChange 연계, 보존 N건 안내)
-  4. 부모 `app/attendance/page.tsx` 콜백 연결
+- ✅ **UI 통합 완료·커밋(919b16e)**:
+  1. AttendanceGrid present 셀 우클릭 → `onPresentCellAction` (makeup_done/expired는 기존 보강등록 유지)
+  2. `MoveAttendanceDialog` 신규 — 단일 월 grid-cols-7 달력, 출발일/기존출결일/휴일(isBlock) 비활성, moveAttendance 호출
+  3. `schedule-editor.tsx` — 적용 시작일 date 입력(과거/미래) + setSchedule→applyScheduleChange 연계 + 결과 안내 배너(재생성/보존/청구)
+  4. `attendance/page.tsx` — present 우클릭 [수업일 이동/보강 등록] 액션 모달 + MoveAttendanceDialog 연결
+
+## T0 완료 — Self-verify 전수 통과
+- cargo test 383 passed / clippy --all-targets clean / tsc / lint / **build(static export 전 라우트)** 통과
+- 커밋: a8edc6a(백엔드) → ee33e2d(타입·래퍼) → 919b16e(UI)
+- ⬜ **실 앱 시각 검증 대기**: `pnpm tauri:dev`로 출결표 우클릭 이동 + 원생 스케줄 변경일 동작 확인 (사용자)
 
 ## 발견된 이슈
 (없음 — 발견 시 기록)
