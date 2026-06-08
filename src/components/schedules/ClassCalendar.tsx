@@ -295,7 +295,7 @@ export default function ClassCalendar({
             type="button"
             aria-label="이전"
             onClick={() => api()?.prev()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xl leading-none hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xs leading-none hover:bg-gray-50"
           >
             ◀
           </button>
@@ -317,7 +317,7 @@ export default function ClassCalendar({
             type="button"
             aria-label="다음"
             onClick={() => api()?.next()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xl leading-none hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xs leading-none hover:bg-gray-50"
           >
             ▶
           </button>
