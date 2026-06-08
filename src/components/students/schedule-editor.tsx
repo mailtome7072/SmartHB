@@ -76,10 +76,15 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
   // 수정 중인 원래 요일 (null = 추가 모드). 요일 변경 시 원래 요일 종료에 사용.
   const [editingDay, setEditingDay] = useState<number | null>(null)
 
-  // 선택 가능 요일: 아직 등록되지 않은 요일 + (수정 중이면 자기 요일).
+  // 선택 가능 요일: 평일(월~금) 중 아직 등록되지 않은 요일 + (수정 중이면 자기 요일).
+  // 정규수업은 평일만 — 토(6)/일(7) 제외. 단 기존 토/일 데이터를 수정 중이면 그 요일은 노출.
   const availableDays = useMemo(() => {
     const used = new Set(schedules.map((s) => s.day_of_week))
-    return [1, 2, 3, 4, 5, 6, 7].filter((d) => !used.has(d) || d === editingDay)
+    return [1, 2, 3, 4, 5, 6, 7].filter((d) => {
+      const weekdayOk = d <= 5 || d === editingDay
+      const notUsed = !used.has(d) || d === editingDay
+      return weekdayOk && notUsed
+    })
   }, [schedules, editingDay])
 
   // 추가 모드에서 현재 draft 요일이 더 이상 선택 불가하면 첫 가용 요일로 보정.
