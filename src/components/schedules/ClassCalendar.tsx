@@ -399,7 +399,7 @@ export default function ClassCalendar({
             const h12 = h % 12 === 0 ? 12 : h % 12
             return `${h12}${m > 0 ? `:${String(m).padStart(2, '0')}` : ''}${meridiem}`
           }}
-          slotMinTime="12:00:00"
+          slotMinTime="14:00:00"
           slotMaxTime="23:00:00"
           allDaySlot={false}
           nowIndicator
