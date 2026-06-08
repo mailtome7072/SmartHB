@@ -187,14 +187,21 @@ export default function ClassCalendar({
     for (const day of data.days) {
       const bySlot = new Map<
         string,
-        { students: { studentId: number; studentName: string }[]; maxMin: number }
+        {
+          students: { studentId: number; studentName: string; classMinutes: number }[]
+          maxMin: number
+        }
       >()
       for (const s of day.regularSessions) {
         // 시작시간 미상(null/빈값/형식이상)인 정규 수업은 시간 슬롯에 배치 불가 → 주/일 뷰에서 생략.
         // (이동된 출결처럼 스케줄 없는 요일의 수업. 월 뷰에서는 '시간미정'으로 표시됨.)
         if (!s.startTime || !s.startTime.includes(':')) continue
         const cur = bySlot.get(s.startTime) ?? { students: [], maxMin: 0 }
-        cur.students.push({ studentId: s.studentId, studentName: s.studentName })
+        cur.students.push({
+          studentId: s.studentId,
+          studentName: s.studentName,
+          classMinutes: s.classMinutes,
+        })
         cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
         bySlot.set(s.startTime, cur)
       }
@@ -441,9 +448,14 @@ export default function ClassCalendar({
               (arg.event.extendedProps.students as {
                 studentId: number
                 studentName: string
+                classMinutes: number
               }[]) ?? []
             const isDay = viewType === 'timeGridDay'
-            // 한 시간대 원생을 2열 grid(2×N)로 배치. 각 원생은 색칩으로 구분.
+            const hoursLabel = (min: number): string => {
+              const h = min / 60
+              return Number.isInteger(h) ? `${h}시간` : `${h.toFixed(1)}시간`
+            }
+            // 한 시간대 원생을 2열 grid(2×N)로 배치. 각 원생은 색칩 + 수업 시간으로 구분.
             return (
               <div
                 className={`grid h-full grid-cols-2 content-start gap-0.5 overflow-hidden p-0.5 ${
@@ -461,11 +473,14 @@ export default function ClassCalendar({
                         ev.stopPropagation()
                         onStudentNameClick(st.studentName)
                       }}
-                      className="cursor-pointer truncate rounded px-1 py-0.5 font-semibold hover:underline"
+                      className="flex cursor-pointer items-baseline gap-0.5 truncate rounded px-1 py-0.5 font-semibold hover:underline"
                       style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
-                      title={st.studentName}
+                      title={`${st.studentName} ${hoursLabel(st.classMinutes)}`}
                     >
-                      {st.studentName}
+                      <span className="truncate">{st.studentName}</span>
+                      <span className="shrink-0 font-normal opacity-80">
+                        {hoursLabel(st.classMinutes)}
+                      </span>
                     </span>
                   )
                 })}
