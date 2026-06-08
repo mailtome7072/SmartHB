@@ -457,6 +457,9 @@ pub struct DaySchedule {
     pub allows_makeup: bool,
     /// 보강 불가 코드 명시 (공휴일/방학/휴원일).
     pub is_block: bool,
+    /// 정규수업 불가 — `allows_regular_class=0` 코드 존재 (공휴일/방학/휴원/보강데이 등). Sprint 16 T0.
+    /// 공휴수업일처럼 보강 가능(allows_makeup)이면서 정규도 가능한 코드는 false.
+    pub regular_blocked: bool,
     /// 표시용 코드명 (우선순위: allows_makeup > is_block > 일반).
     pub label: String,
 }
@@ -759,8 +762,8 @@ async fn build_day_schedules(
     .map_err(|e| format!("학사일정 조회 실패: {}", e))?;
 
     use std::collections::BTreeMap;
-    // 일자별 코드 후보 — (allows_makeup, is_block, label) 우선순위로 reduce.
-    let mut by_date: BTreeMap<String, (bool, bool, String)> = BTreeMap::new();
+    // 일자별 코드 후보 — (allows_makeup, is_block, regular_blocked, label) 로 reduce.
+    let mut by_date: BTreeMap<String, (bool, bool, bool, String)> = BTreeMap::new();
     for r in rows {
         let s: String = r.try_get("event_date").map_err(|e| e.to_string())?;
         let e_str: String = r.try_get("end_d").map_err(|e| e.to_string())?;
@@ -775,19 +778,19 @@ async fn build_day_schedules(
         while d <= ed {
             if d >= first && d < next_month_first {
                 let key = d.to_string();
-                let entry = by_date.entry(key).or_insert((false, false, String::new()));
-                // 우선순위: allows_makeup 가 우세 — 한 일자에 보강데이 + 공휴일 동시 등록 시 보강데이로 표시.
+                let entry = by_date
+                    .entry(key)
+                    .or_insert((false, false, false, String::new()));
+                // 라벨 우선순위: allows_makeup 우세(보강데이 + 공휴일 동시 등록 시 보강데이 표시),
+                // 그 외에는 첫 등록 코드명 유지.
                 let new_makeup = allows_mk == 1;
-                let new_block = is_block;
-                if new_makeup && !entry.0 {
-                    *entry = (true, entry.1 || new_block, code_name.clone());
-                } else if !entry.0 && new_block && !entry.1 {
-                    *entry = (false, true, code_name.clone());
-                } else if entry.2.is_empty() {
-                    entry.2 = code_name.clone();
+                if (new_makeup && !entry.0) || entry.3.is_empty() {
+                    entry.3 = code_name.clone();
                 }
                 entry.0 = entry.0 || new_makeup;
-                entry.1 = entry.1 || new_block;
+                entry.1 = entry.1 || is_block;
+                // 정규수업 불가: allows_regular_class=0 코드가 하나라도 있으면 true.
+                entry.2 = entry.2 || allows_reg == 0;
             }
             // Sprint 11 F1: succ_opt() 는 NaiveDate::MAX 도달 시 None 반환 — panic 대신 Result 전파.
             d = d
@@ -798,12 +801,15 @@ async fn build_day_schedules(
 
     Ok(by_date
         .into_iter()
-        .map(|(event_date, (allows_makeup, is_block, label))| DaySchedule {
-            event_date,
-            allows_makeup,
-            is_block,
-            label,
-        })
+        .map(
+            |(event_date, (allows_makeup, is_block, regular_blocked, label))| DaySchedule {
+                event_date,
+                allows_makeup,
+                is_block,
+                regular_blocked,
+                label,
+            },
+        )
         .collect())
 }
 

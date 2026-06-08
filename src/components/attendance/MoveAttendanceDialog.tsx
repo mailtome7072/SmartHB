@@ -59,10 +59,11 @@ export function MoveAttendanceDialog({
     return s
   }, [daySchedules])
 
-  // 보강데이 등 정규수업 불가 코드일 (allowsMakeup) — 정규수업 이동 차단 (PI-30)
-  const makeupDay = useMemo(() => {
+  // 정규수업 불가 코드일 (공휴일/방학/휴원/보강데이 — allows_regular_class=0) — 이동 차단 (PI-30)
+  // 공휴수업일처럼 보강 가능하지만 정규도 가능한 날은 regularBlocked=false 라 차단되지 않는다.
+  const regularBlocked = useMemo(() => {
     const s = new Set<string>()
-    for (const d of daySchedules) if (d.allowsMakeup) s.add(d.eventDate)
+    for (const d of daySchedules) if (d.regularBlocked) s.add(d.eventDate)
     return s
   }, [daySchedules])
 
@@ -78,7 +79,7 @@ export function MoveAttendanceDialog({
     const dow = new Date(year, month - 1, day).getDay()
     if (dow === 0 || dow === 6) return '주말 (정규수업 불가)'
     if (blocked.has(ds)) return '휴일 (정규수업 불가)'
-    if (makeupDay.has(ds)) return '보강데이 (정규수업 불가)'
+    if (regularBlocked.has(ds)) return '정규수업 불가일'
     return null
   }
 

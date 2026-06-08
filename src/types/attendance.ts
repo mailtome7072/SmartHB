@@ -76,6 +76,8 @@ export interface DaySchedule {
   eventDate: string // YYYY-MM-DD
   allowsMakeup: boolean // 보강데이/단원평가/공휴수업일
   isBlock: boolean // 공휴일/방학/휴원일
+  /** Sprint 16 T0 — 정규수업 불가 (allows_regular_class=0 코드 존재). 공휴수업일처럼 정규 가능 코드는 false. */
+  regularBlocked: boolean
   label: string // 표시용 코드명
 }
 
