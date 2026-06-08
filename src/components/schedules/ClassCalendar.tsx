@@ -179,12 +179,11 @@ export default function ClassCalendar({
     return map
   }, [data])
 
-  // 원생 칩 hover 시 그 원생 수업 시간 범위(시작~종료)를 시간 그리드에 음영 강조.
+  // 원생 칩 hover 시 그 원생 수업 시간 범위(시작~종료)를 시간 그리드에 테두리(검정)로 강조.
   const [hovered, setHovered] = useState<{
     date: string
     startTime: string
     classMinutes: number
-    color: string
   } | null>(null)
 
   // 주/일 보기 이벤트 — 시간대별로 원생을 하나의 블록에 묶고, 내부를 2열 grid(2×N)로 표시.
@@ -236,7 +235,6 @@ export default function ClassCalendar({
         start: `${hovered.date}T${toIsoTime(hovered.startTime)}`,
         end: `${hovered.date}T${addMinutes(hovered.startTime, hovered.classMinutes)}`,
         display: 'background',
-        backgroundColor: hovered.color,
       },
     ]
   }, [events, hovered])
@@ -358,7 +356,7 @@ export default function ClassCalendar({
           eventDidMount={(arg) => {
             if (arg.event.display === 'background') {
               arg.el.style.backgroundColor = 'transparent'
-              arg.el.style.border = `2px solid ${arg.event.backgroundColor || '#3b82f6'}`
+              arg.el.style.border = '2px solid #111827'
               arg.el.style.borderRadius = '6px'
               arg.el.style.boxSizing = 'border-box'
             }
@@ -509,7 +507,6 @@ export default function ClassCalendar({
                           date: arg.event.startStr.slice(0, 10),
                           startTime: arg.event.startStr.slice(11, 16),
                           classMinutes: st.classMinutes,
-                          color: c.border,
                         })
                       }
                       onMouseLeave={() => setHovered(null)}
