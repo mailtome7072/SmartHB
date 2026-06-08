@@ -319,6 +319,9 @@ export default function ClassCalendar({
           events={events}
           height="100%"
           expandRows
+          // 같은 시간대 여러 원생 블록을 겹치지 않고 나란히 균등 배치 (이름 가림 방지).
+          slotEventOverlap={false}
+          eventMaxStack={6}
           slotDuration="01:00:00"
           slotLabelInterval="01:00:00"
           slotLabelContent={(arg) => {
