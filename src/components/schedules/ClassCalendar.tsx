@@ -487,11 +487,11 @@ export default function ClassCalendar({
               const h = min / 60
               return Number.isInteger(h) ? `${h}시간` : `${h.toFixed(1)}시간`
             }
-            // 한 시간대 원생을 2열 grid(2×N)로 배치. 각 원생은 색칩 + 수업 시간으로 구분.
+            // 주 보기: 2열 grid(2×N). 일 보기: 한 시간대 원생을 모두 한 행으로 가로 나열(균등 폭).
             return (
               <div
-                className={`grid h-full grid-cols-2 content-start gap-0.5 overflow-hidden p-0.5 ${
-                  isDay ? 'text-sm' : 'text-xs'
+                className={`h-full content-start gap-0.5 overflow-hidden p-0.5 ${
+                  isDay ? 'flex flex-row items-stretch text-sm' : 'grid grid-cols-2 text-xs'
                 }`}
               >
                 {students.map((st, i) => {
@@ -513,7 +513,9 @@ export default function ClassCalendar({
                         })
                       }
                       onMouseLeave={() => setHovered(null)}
-                      className="flex cursor-pointer items-center justify-center gap-0.5 truncate rounded px-1 py-0.5 text-center font-semibold hover:underline"
+                      className={`flex cursor-pointer items-center justify-center gap-0.5 truncate rounded px-1 py-0.5 text-center font-semibold hover:underline ${
+                        isDay ? 'min-w-0 flex-1' : ''
+                      }`}
                       style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
                       title={`${st.studentName} ${hoursLabel(st.classMinutes)}`}
                     >
