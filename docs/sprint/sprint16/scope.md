@@ -1,4 +1,48 @@
 ---
+Sprint: 16  |  Date: 2026-06-09  |  Session: #4 (공지문 이미지 요소 보강)
+---
+
+## 추가 보강 (Session #4 연장, 2026-06-09) — ✅ 시각검증 완료
+시각검증 중 사용자 추가 요청 — 모두 구현·검증·시각검증 완료:
+- 이미지 체크박스 위치를 청구액 아래로 이동
+- 텍스트박스 **배경색** 지정(글자/배경 팔레트, '없음'=투명) — TextboxConfig.background_color
+- 노랑 프리셋 → 밝은 노랑(#FFEC99) 통일
+- 배경서식 글씨 깨짐: 생성 PNG를 **배경 원본 해상도**로 렌더(기존 bgDims 표시추정치→naturalWidth), 미리보기 image-rendering
+- **임의 이미지 추가('이미지 추가' 버튼)**: NoticeLayout.customImages[] 신설(파일 업로드→assets 저장→배치). 로고/바코드(images)와 별개. z-order = 배경 위·다른 컨트롤 아래. 사이드 패널 custom 텍스트박스 아래 버튼+목록.
+
+## 이번 세션 목표 (Session #4) — 공지문 캔버스 이미지 요소 (T3 진입 전 보강)
+공지문 생성 화면에 교습소 로고·2D바코드를 캔버스 요소로 추가. 체크박스로 on/off, 드래그 이동 + **비율 유지 리사이즈**(react-rnd `lockAspectRatio`). 이미지 미등록 시 안내 팝업. 레이아웃에 저장(사용자 결정 2026-06-09).
+
+### 발견(재사용)
+- 에디터 = **react-rnd** 기반 텍스트박스(ratio 좌표, scale 미리보기). `lockAspectRatio` 내장 → 비율 유지 자동.
+- 교습소 이미지 = `getAcademyInfo` + `readNoticeAsset`(settings/info 패턴). NoticeLayout = `app_settings.notice_layout` **JSON** → 필드 추가해도 **마이그레이션 불요**, `#[serde(default)]` 구버전 호환.
+
+### 수정/생성 파일
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/src/commands/notice.rs | [0회] | `NoticeImageConfig{kind,enabled,x/y/w/h_ratio}` + `NoticeLayout.images`(serde default) + default_images |
+| src/types/notice.ts | [0회] | `NoticeImageConfig`/`NoticeImageKind` + `NoticeLayout.images` |
+| src/app/notices/page.tsx | [0회] | 로고/2D바코드 체크박스 + 교습소 이미지 로드 + 이미지 Rnd(lockAspectRatio) 렌더 + 미등록 안내 팝업 + 생성/미리보기 포함 |
+
+### 설계 결정
+- 레이아웃 **저장 O** — NoticeLayout.images. 템플릿 저장/로드 시 이미지 배치 복원.
+- 체크 시 이미지 dataUrl 없으면 안내 팝업("설정 > 교습소 정보 등록 필요") + 체크 취소.
+- 초기 크기는 img naturalWidth/Height 비율로 h_ratio 보정. enabled만 토글(위치 유지).
+- logo/barcode는 모든 원생 공통 — 생성 시 동일 배치.
+
+### 완료 기준
+- ✅ 백엔드 NoticeImageConfig + images (cargo test notice 5건 / clippy --all-targets clean)
+- ✅ 체크박스 2종(교습소로고/2D바코드) + 미등록 안내 팝업
+- ✅ 이미지 Rnd 드래그+비율유지(lockAspectRatio) 리사이즈, onLoad 비율 보정
+- ✅ 미리보기/생성 포함 — notice-generator는 별도 canvas 렌더라 imageUrls 전달 + drawImage 추가
+- ✅ 레이아웃 저장/로드(makeDefaultLayout·normalizeLayout images 보강, 구버전 serde default)
+- ✅ Self-verify: cargo test / clippy / tsc / lint 통과
+- ✅ 실 앱 시각검증 (사용자) 완료 (2026-06-09) — 이미지요소·비율버그·텍스트순서·체크박스위치·배경색·밝은노랑·배경해상도·이미지추가 전부
+
+---
+
+## (Session #3 기록 — 보존·완료) T2
+---
 Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 ---
 

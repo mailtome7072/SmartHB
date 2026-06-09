@@ -58,6 +58,7 @@ fn default_textboxes() -> Vec<TextboxConfig> {
         font_color: "#1A1A1A".to_string(),
         text_align: "center".to_string(),
         char_colors: None,
+        background_color: None,
     };
     vec![
         mk("bill_month", 0.05, true),
@@ -93,14 +94,74 @@ pub struct TextboxConfig {
     /// 데이터 필드(원생명/청구액 등)는 원생마다 텍스트 길이가 달라 인덱스 기준으로 적용한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub char_colors: Option<Vec<Option<String>>>,
+    /// 박스 배경색 — hex. None/누락 시 투명(배경 없음). 구버전 호환: 누락 시 None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_color: Option<String>,
 }
 
-/// 공지문 레이아웃 — 배경서식 + 텍스트박스 3종.
+/// 캔버스 이미지 요소(교습소 로고/2D바코드) — 비율 좌표로 관리. 실제 이미지는 교습소 정보의
+/// `assets/academy_{logo,barcode}.*` 파일을 프론트가 로드해 표시한다(레이아웃에는 배치만 저장).
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoticeImageConfig {
+    pub kind: String, // "logo" | "barcode"
+    /// 체크 시에만 표시·생성. 구버전 호환: 누락 시 false.
+    #[serde(default)]
+    pub enabled: bool,
+    pub x_ratio: f64, // 배경 폭 대비 좌측 (0..1)
+    pub y_ratio: f64, // 배경 높이 대비 상단 (0..1)
+    pub w_ratio: f64, // 배경 폭 대비 너비 (0..1)
+    pub h_ratio: f64, // 배경 높이 대비 높이 (0..1) — 비율 유지 리사이즈로 폭과 연동
+}
+
+/// 이미지 요소 기본값 — 로고(좌상단)·2D바코드(우상단), 모두 기본 비활성.
+/// 초기 h_ratio 는 정사각 가정이며 프론트가 실제 이미지 비율로 보정한다.
+fn default_images() -> Vec<NoticeImageConfig> {
+    vec![
+        NoticeImageConfig {
+            kind: "logo".to_string(),
+            enabled: false,
+            x_ratio: 0.05,
+            y_ratio: 0.05,
+            w_ratio: 0.15,
+            h_ratio: 0.15,
+        },
+        NoticeImageConfig {
+            kind: "barcode".to_string(),
+            enabled: false,
+            x_ratio: 0.80,
+            y_ratio: 0.05,
+            w_ratio: 0.15,
+            h_ratio: 0.15,
+        },
+    ]
+}
+
+/// 사용자가 직접 업로드한 임의 이미지 요소. 실제 이미지는 `assets/{asset_name}` 파일로 저장하고
+/// 레이아웃에는 파일명 + 배치만 둔다(배경서식과 동일 방식). 교습소 로고/바코드와 별개.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoticeCustomImage {
+    pub id: String,
+    pub asset_name: String,
+    pub x_ratio: f64,
+    pub y_ratio: f64,
+    pub w_ratio: f64,
+    pub h_ratio: f64,
+}
+
+/// 공지문 레이아웃 — 배경서식 + 텍스트박스 + 이미지 요소.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct NoticeLayout {
     pub background_asset: Option<String>,
     pub textboxes: Vec<TextboxConfig>,
+    /// 교습소 로고·2D바코드 배치. 구버전 레이아웃 호환: 누락 시 빈 목록(프론트가 기본 항목 보정).
+    #[serde(default)]
+    pub images: Vec<NoticeImageConfig>,
+    /// 사용자 업로드 임의 이미지. 구버전 호환: 누락 시 빈 목록.
+    #[serde(default)]
+    pub custom_images: Vec<NoticeCustomImage>,
 }
 
 impl NoticeLayout {
@@ -110,6 +171,8 @@ impl NoticeLayout {
         NoticeLayout {
             background_asset: None,
             textboxes: default_textboxes(),
+            images: default_images(),
+            custom_images: Vec::new(),
         }
     }
 }

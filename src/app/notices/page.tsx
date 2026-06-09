@@ -23,6 +23,7 @@ import { SplashScreen } from '@/components/splash-screen'
 import { ErrorDialog } from '@/components/ui/error-dialog'
 import {
   checkNoticeOutputExists,
+  getAcademyInfo,
   deleteNoticeAsset,
   deleteNoticeLayoutNamed,
   getNoticeLayoutNamed,
@@ -50,7 +51,14 @@ import {
   renderNoticeDataUrl,
   type NoticeStudentData,
 } from '@/lib/notice-generator'
-import type { NoticeLayout, NoticeFieldType, TextboxConfig } from '@/types/notice'
+import type {
+  NoticeLayout,
+  NoticeCustomImage,
+  NoticeFieldType,
+  NoticeImageConfig,
+  NoticeImageKind,
+  TextboxConfig,
+} from '@/types/notice'
 import type { Bill } from '@/types/billing'
 
 const FIELD_LABEL: Record<NoticeFieldType, string> = {
@@ -111,6 +119,37 @@ function realignCharColors(
   return result
 }
 
+/** 로드된 교습소 이미지 — dataUrl + 원본 가로세로 비율(naturalHeight / naturalWidth). */
+interface AcademyImage {
+  url: string
+  ratio: number
+}
+
+/** 캔버스 이미지 요소 종류·라벨 (교습소 로고 / 2D바코드). */
+const IMAGE_KINDS: NoticeImageKind[] = ['logo', 'barcode']
+const IMAGE_LABEL: Record<NoticeImageKind, string> = {
+  logo: '교습소로고',
+  barcode: '2D바코드',
+}
+
+/** 이미지 요소 기본 배치 — 로고(좌상단)·바코드(우상단), 비활성. h 는 실제 비율로 추후 보정. */
+function defaultImage(kind: NoticeImageKind): NoticeImageConfig {
+  return {
+    kind,
+    enabled: false,
+    xRatio: kind === 'logo' ? 0.05 : 0.8,
+    yRatio: 0.05,
+    wRatio: 0.15,
+    hRatio: 0.15,
+  }
+}
+
+/** 누락된 종류를 기본값으로 보강해 항상 logo·barcode 2종을 보장. */
+function normalizeImages(images: NoticeImageConfig[] | undefined): NoticeImageConfig[] {
+  const list = images ?? []
+  return IMAGE_KINDS.map((kind) => list.find((im) => im.kind === kind) ?? defaultImage(kind))
+}
+
 /** 빈/기본 레이아웃 — 초기화용. (백엔드 default_textboxes 와 동일 배치) */
 function makeDefaultLayout(): NoticeLayout {
   const mk = (f: NoticeFieldType, y: number, enabled: boolean): TextboxConfig => ({
@@ -136,14 +175,18 @@ function makeDefaultLayout(): NoticeLayout {
       mk('student_name', 0.55, true),
       mk('bill_amount', 0.75, true),
     ],
+    images: normalizeImages(undefined),
+    customImages: [],
   }
 }
 
 /** 구버전 레이아웃에 누락된 데이터 필드(교습기간/보강데이 등)를 비활성으로 보강. */
 function normalizeLayout(l: NoticeLayout): NoticeLayout {
+  const images = normalizeImages(l.images)
+  const customImages = l.customImages ?? []
   const existing = new Set(l.textboxes.map((t) => t.fieldType))
   const missing = DATA_FIELD_ORDER.filter((f) => !existing.has(f))
-  if (missing.length === 0) return l
+  if (missing.length === 0) return { ...l, images, customImages }
   const added: TextboxConfig[] = missing.map((f, idx) => ({
     id: f,
     fieldType: f,
@@ -158,7 +201,7 @@ function normalizeLayout(l: NoticeLayout): NoticeLayout {
     fontColor: '#1A1A1A',
     textAlign: 'center',
   }))
-  return { ...l, textboxes: [...l.textboxes, ...added] }
+  return { ...l, textboxes: [...l.textboxes, ...added], images, customImages }
 }
 
 /** 자주 쓰는 글자색 프리셋 — 클릭(값과 무관하게 항상 동작)으로 적용. 네이티브 피커의 동일색 무반응 회피. */
@@ -166,7 +209,7 @@ const COLOR_PRESETS: { hex: string; label: string }[] = [
   { hex: '#000000', label: '검정' },
   { hex: '#E03131', label: '빨강' },
   { hex: '#F08C00', label: '주황' },
-  { hex: '#FFD43B', label: '노랑' },
+  { hex: '#FFEC99', label: '밝은 노랑' },
   { hex: '#2F9E44', label: '초록' },
   { hex: '#1971C2', label: '파랑' },
   { hex: '#FFFFFF', label: '흰색' },
@@ -276,6 +319,73 @@ function NoticesContent() {
 
   const [bgDataUrl, setBgDataUrl] = useState<string | null>(null)
   const [bgDims, setBgDims] = useState<{ w: number; h: number }>({ w: 800, h: 800 })
+
+  // 교습소 로고·2D바코드 이미지(설정 > 교습소 정보) — 표시용 dataUrl + 원본 비율(h/w).
+  // 비율은 체크 시 박스 높이 초기화에 사용(저장된 레이아웃 로드 시엔 저장값을 그대로 쓴다).
+  const [academyImages, setAcademyImages] = useState<Record<NoticeImageKind, AcademyImage | null>>({
+    logo: null,
+    barcode: null,
+  })
+  // 이미지 미등록 안내 팝업 메시지.
+  const [imageNotice, setImageNotice] = useState<string | null>(null)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const info = await getAcademyInfo()
+        const load = async (filename: string | null): Promise<AcademyImage | null> => {
+          if (!filename) return null
+          try {
+            const bytes = await readNoticeAsset(filename)
+            if (bytes.length === 0) return null
+            const mime = /\.jpe?g$/i.test(filename) ? 'image/jpeg' : 'image/png'
+            const url = bytesToDataUrl(bytes, mime)
+            // 원본 가로세로 비율(h/w) 측정 — 실패 시 1(정사각).
+            const ratio = await new Promise<number>((resolve) => {
+              const probe = new Image()
+              probe.onload = () =>
+                resolve(probe.naturalWidth > 0 ? probe.naturalHeight / probe.naturalWidth : 1)
+              probe.onerror = () => resolve(1)
+              probe.src = url
+            })
+            return { url, ratio }
+          } catch {
+            return null
+          }
+        }
+        setAcademyImages({
+          logo: await load(info.logo_filename),
+          barcode: await load(info.barcode_filename),
+        })
+      } catch {
+        /* 교습소 정보 로드 실패 — 이미지 없음으로 처리(체크 시 안내 팝업) */
+      }
+    })()
+  }, [])
+
+  // 사용자 추가 이미지 dataUrl 캐시 (key = assetName). 템플릿 로드 시 assets 에서 비동기 로드.
+  const [customImageUrls, setCustomImageUrls] = useState<Record<string, string>>({})
+  const customFileInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!layout) return
+    const missing = layout.customImages.filter(
+      (ci) => customImageUrls[ci.assetName] === undefined,
+    )
+    if (missing.length === 0) return
+    void (async () => {
+      const loaded: Record<string, string> = {}
+      for (const ci of missing) {
+        try {
+          const bytes = await readNoticeAsset(ci.assetName)
+          if (bytes.length === 0) continue
+          const mime = /\.jpe?g$/i.test(ci.assetName) ? 'image/jpeg' : 'image/png'
+          loaded[ci.assetName] = bytesToDataUrl(bytes, mime)
+        } catch {
+          /* 개별 이미지 로드 실패 — 건너뜀 */
+        }
+      }
+      if (Object.keys(loaded).length > 0) setCustomImageUrls((m) => ({ ...m, ...loaded }))
+    })()
+  }, [layout, customImageUrls])
   const [selectedBoxIdx, setSelectedBoxIdx] = useState(0)
   // 다중 선택 인덱스 (Shift+클릭). primary = selectedBoxIdx(폰트 컨트롤 대상).
   const [selectedBoxIdxs, setSelectedBoxIdxs] = useState<Set<number>>(() => new Set())
@@ -384,6 +494,44 @@ function NoticesContent() {
       ...layout,
       textboxes: layout.textboxes.map((tb, i) => (i === idx ? { ...tb, ...patch } : tb)),
     })
+  }
+
+  const updateImage = (kind: NoticeImageKind, patch: Partial<NoticeImageConfig>) => {
+    if (!layout) return
+    updateLayout({
+      ...layout,
+      images: layout.images.map((im) => (im.kind === kind ? { ...im, ...patch } : im)),
+    })
+  }
+
+  const updateCustomImage = (id: string, patch: Partial<NoticeCustomImage>) => {
+    if (!layout) return
+    updateLayout({
+      ...layout,
+      customImages: layout.customImages.map((ci) => (ci.id === id ? { ...ci, ...patch } : ci)),
+    })
+  }
+
+  // 이미지 체크박스 토글 — 등록된 이미지가 없으면 안내 팝업을 띄우고 체크하지 않는다.
+  // 체크하는 순간(1회) 원본 비율로 박스 높이를 맞춘다. 이후 리사이즈는 lockAspectRatio 가
+  // 비율을 유지하고, 저장된 레이아웃을 다시 불러올 때는 저장된 높이를 그대로 사용한다
+  // (재로드 시 자동 보정으로 비율이 틀어지던 버그 수정).
+  const toggleImage = (kind: NoticeImageKind, checked: boolean) => {
+    const entry = academyImages[kind]
+    if (checked && entry === null) {
+      setImageNotice(
+        `${IMAGE_LABEL[kind]} 이미지가 없습니다.\n설정 > 교습소 정보에서 이미지를 먼저 등록해 주세요.`,
+      )
+      return
+    }
+    if (checked && entry !== null && layout) {
+      const im = layout.images.find((x) => x.kind === kind)
+      const wRatio = im?.wRatio ?? 0.15
+      const hRatio = (wRatio * bgDims.w * entry.ratio) / bgDims.h
+      updateImage(kind, { enabled: true, hRatio })
+      return
+    }
+    updateImage(kind, { enabled: checked })
   }
 
   // 색상 선택 적용 — 편집 중 + 선택 영역(저장된 범위) 있으면 선택 글자만, 아니면 박스 기본색 변경.
@@ -508,6 +656,57 @@ function NoticesContent() {
     }
   }
 
+  // 사용자 임의 이미지 추가 — 파일을 assets 에 저장하고 캔버스 요소로 추가(배경 위·다른 컨트롤 아래).
+  const handleAddImage = async (file: File) => {
+    if (!layout) return
+    try {
+      const isJpg = /\.jpe?g$/i.test(file.name)
+      const ext = isJpg ? 'jpg' : 'png'
+      const stamp = Date.now()
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
+      const saved = await saveNoticeAsset(`notice_custom_${stamp}.${ext}`, bytes)
+      const url = bytesToDataUrl(bytes, isJpg ? 'image/jpeg' : 'image/png')
+      // 원본 비율로 초기 높이 산정(왜곡 방지). 폭은 배경의 25%로 시작.
+      const ratio = await new Promise<number>((resolve) => {
+        const probe = new Image()
+        probe.onload = () =>
+          resolve(probe.naturalWidth > 0 ? probe.naturalHeight / probe.naturalWidth : 1)
+        probe.onerror = () => resolve(1)
+        probe.src = url
+      })
+      const wRatio = 0.25
+      const hRatio = (wRatio * bgDims.w * ratio) / bgDims.h
+      setCustomImageUrls((m) => ({ ...m, [saved]: url }))
+      updateLayout({
+        ...layout,
+        customImages: [
+          ...layout.customImages,
+          { id: `img-${stamp}`, assetName: saved, xRatio: 0.1, yRatio: 0.1, wRatio, hRatio },
+        ],
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '이미지 추가 실패')
+    }
+  }
+
+  const removeCustomImage = async (target: NoticeCustomImage) => {
+    if (!layout) return
+    updateLayout({
+      ...layout,
+      customImages: layout.customImages.filter((ci) => ci.id !== target.id),
+    })
+    setCustomImageUrls((m) => {
+      const next = { ...m }
+      delete next[target.assetName]
+      return next
+    })
+    try {
+      await deleteNoticeAsset(target.assetName)
+    } catch {
+      /* 파일 삭제 실패는 무시 — 레이아웃에서는 이미 제거됨 */
+    }
+  }
+
   // 일괄 생성
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -551,6 +750,13 @@ function NoticesContent() {
         width: bgDims.w,
         height: bgDims.h,
         layout,
+        imageUrls: { logo: academyImages.logo?.url ?? null, barcode: academyImages.barcode?.url ?? null },
+        customImages: layout.customImages.flatMap((ci) => {
+          const url = customImageUrls[ci.assetName]
+          return url
+            ? [{ dataUrl: url, xRatio: ci.xRatio, yRatio: ci.yRatio, wRatio: ci.wRatio, hRatio: ci.hRatio }]
+            : []
+        }),
         students: targets.map((b) => ({
           studentName: b.studentName,
           billYearMonth: yearMonth,
@@ -575,7 +781,19 @@ function NoticesContent() {
     try {
       setPreviewBusy(true)
       const url = await renderNoticeDataUrl(
-        { backgroundDataUrl: bgDataUrl, width: bgDims.w, height: bgDims.h, layout },
+        {
+          backgroundDataUrl: bgDataUrl,
+          width: bgDims.w,
+          height: bgDims.h,
+          layout,
+          imageUrls: { logo: academyImages.logo?.url ?? null, barcode: academyImages.barcode?.url ?? null },
+          customImages: layout.customImages.flatMap((ci) => {
+            const url = customImageUrls[ci.assetName]
+            return url
+              ? [{ dataUrl: url, xRatio: ci.xRatio, yRatio: ci.yRatio, wRatio: ci.wRatio, hRatio: ci.hRatio }]
+              : []
+          }),
+        },
         previewData,
       )
       setPreviewUrl(url)
@@ -710,10 +928,14 @@ function NoticesContent() {
   useEffect(() => {
     if (layout?.backgroundAsset) return
     if (!layout) return
-    if (layout.textboxes.every((tb) => tb.enabled === false)) return
+    const allOff =
+      layout.textboxes.every((tb) => tb.enabled === false) &&
+      layout.images.every((im) => !im.enabled)
+    if (allOff) return
     updateLayout({
       ...layout,
       textboxes: layout.textboxes.map((tb) => ({ ...tb, enabled: false })),
+      images: layout.images.map((im) => ({ ...im, enabled: false })),
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout?.backgroundAsset])
@@ -1091,6 +1313,7 @@ function NoticesContent() {
                     {/* 색 프리셋 — 편집 중 글자 선택 시 선택 부분만, 아니면 박스 전체 기본색 */}
                     {/* flex-1 로 한 줄에 균등 분배 — 프리셋 개수와 무관하게 항상 한 라인 */}
                     <div className="flex items-center gap-1">
+                      <span className="w-8 shrink-0 text-xs text-gray-500">글자</span>
                       {COLOR_PRESETS.map(({ hex, label }) => (
                         <button
                           key={hex}
@@ -1104,6 +1327,32 @@ function NoticesContent() {
                         />
                       ))}
                     </div>
+                    {/* 박스 배경색 — 박스 단위(글자별 아님). '없음'으로 투명 처리 */}
+                    <div className="flex items-center gap-1">
+                      <span className="w-8 shrink-0 text-xs text-gray-500">배경</span>
+                      {COLOR_PRESETS.map(({ hex, label }) => (
+                        <button
+                          key={hex}
+                          type="button"
+                          title={`배경 ${label} (${hex})`}
+                          aria-label={`배경색 ${label}`}
+                          disabled={selDisabled}
+                          onClick={() => updateBox(selectedBoxIdx, { backgroundColor: hex })}
+                          style={{ backgroundColor: hex }}
+                          className="aspect-square min-w-0 flex-1 rounded border border-[var(--border)] disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        title="배경 없음(투명)"
+                        aria-label="배경 없음"
+                        disabled={selDisabled}
+                        onClick={() => updateBox(selectedBoxIdx, { backgroundColor: null })}
+                        className="flex h-7 shrink-0 items-center rounded border border-[var(--border)] px-2 text-xs text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        없음
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1114,6 +1363,28 @@ function NoticesContent() {
                     const i = (layout?.textboxes ?? []).findIndex((t) => t.fieldType === ft)
                     return i >= 0 ? renderBoxRow(layout!.textboxes[i], i) : null
                   })}
+
+                  {/* 교습소 이미지 (로고 / 2D바코드) — 청구액 아래. 설정 > 교습소 정보 등록 이미지 */}
+                  {IMAGE_KINDS.map((kind) => {
+                    const im = (layout?.images ?? []).find((x) => x.kind === kind)
+                    return (
+                      <label
+                        key={kind}
+                        className="flex cursor-pointer items-center gap-1 truncate text-sm text-gray-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={im?.enabled === true}
+                          onChange={(e) => toggleImage(kind, e.target.checked)}
+                          className="h-4 w-4 shrink-0"
+                        />
+                        <span className="truncate" title={IMAGE_LABEL[kind]}>
+                          {IMAGE_LABEL[kind]}
+                        </span>
+                      </label>
+                    )
+                  })}
+
                   <button
                     type="button"
                     onClick={addTextbox}
@@ -1126,6 +1397,45 @@ function NoticesContent() {
                   {(layout?.textboxes ?? []).map((tb, i) =>
                     tb.fieldType === 'custom' ? renderBoxRow(tb, i) : null,
                   )}
+
+                  {/* 이미지 추가 — 임의 파일 업로드(추가된 텍스트 아래). 추가분은 버튼 아래 순차 표시 */}
+                  <input
+                    ref={customFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) void handleAddImage(f)
+                      e.target.value = ''
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => customFileInputRef.current?.click()}
+                    disabled={!layout}
+                    className="mt-1 h-9 rounded-md border border-dashed border-[var(--accent)] text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    + 이미지 추가
+                  </button>
+                  {(layout?.customImages ?? []).map((ci, idx) => (
+                    <div key={ci.id} className="flex items-center gap-1">
+                      <span
+                        className="flex-1 truncate text-sm text-gray-700"
+                        title={ci.assetName}
+                      >
+                        이미지 {idx + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void removeCustomImage(ci)}
+                        aria-label={`이미지 ${idx + 1} 삭제`}
+                        className="rounded px-1 text-xs text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
 
                 {/* 공지문 미리보기 — 공지문 로드 + 캔버스 컨트롤(활성 텍스트박스) 1개 이상일 때 활성 */}
@@ -1174,12 +1484,93 @@ function NoticesContent() {
                     <img
                       src={bgDataUrl}
                       alt="배경서식"
-                      style={{ position: 'absolute', inset: 0, width: bgDims.w, height: bgDims.h }}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: bgDims.w,
+                        height: bgDims.h,
+                        imageRendering: 'auto',
+                      }}
                       onLoad={(e) => {
                         const img = e.currentTarget
                         if (img.naturalWidth > 0) setBgDims({ w: img.naturalWidth, h: img.naturalHeight })
                       }}
                     />
+                    {/* 사용자 추가 이미지 — 배경 바로 위(로고/바코드·텍스트보다 아래 z-order).
+                        비율 유지 리사이즈(lockAspectRatio). */}
+                    {layout.customImages.map((ci) => {
+                      const url = customImageUrls[ci.assetName]
+                      if (url === undefined) return null
+                      return (
+                        <Rnd
+                          key={ci.id}
+                          scale={scale}
+                          bounds="parent"
+                          lockAspectRatio
+                          position={{ x: ci.xRatio * bgDims.w, y: ci.yRatio * bgDims.h }}
+                          size={{ width: ci.wRatio * bgDims.w, height: ci.hRatio * bgDims.h }}
+                          onDragStop={(_e, d) =>
+                            updateCustomImage(ci.id, { xRatio: d.x / bgDims.w, yRatio: d.y / bgDims.h })
+                          }
+                          onResizeStop={(_e, _dir, ref, _delta, pos) =>
+                            updateCustomImage(ci.id, {
+                              wRatio: parseFloat(ref.style.width) / bgDims.w,
+                              hRatio: parseFloat(ref.style.height) / bgDims.h,
+                              xRatio: pos.x / bgDims.w,
+                              yRatio: pos.y / bgDims.h,
+                            })
+                          }
+                          onMouseDown={(e) => e.stopPropagation()}
+                          style={{ outline: '1px dashed #999' }}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt="추가 이미지"
+                            draggable={false}
+                            style={{ width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}
+                          />
+                        </Rnd>
+                      )
+                    })}
+                    {/* 이미지 요소(교습소 로고/2D바코드) — 텍스트박스보다 먼저 렌더해 텍스트가 위에 오도록.
+                        비율 유지 리사이즈(lockAspectRatio). */}
+                    {layout.images.map((im) => {
+                      if (!im.enabled) return null
+                      const entry = academyImages[im.kind]
+                      if (entry === null) return null
+                      return (
+                        <Rnd
+                          key={im.kind}
+                          scale={scale}
+                          bounds="parent"
+                          lockAspectRatio
+                          position={{ x: im.xRatio * bgDims.w, y: im.yRatio * bgDims.h }}
+                          size={{ width: im.wRatio * bgDims.w, height: im.hRatio * bgDims.h }}
+                          onDragStop={(_e, d) =>
+                            updateImage(im.kind, { xRatio: d.x / bgDims.w, yRatio: d.y / bgDims.h })
+                          }
+                          onResizeStop={(_e, _dir, ref, _delta, pos) =>
+                            updateImage(im.kind, {
+                              wRatio: parseFloat(ref.style.width) / bgDims.w,
+                              hRatio: parseFloat(ref.style.height) / bgDims.h,
+                              xRatio: pos.x / bgDims.w,
+                              yRatio: pos.y / bgDims.h,
+                            })
+                          }
+                          onMouseDown={(e) => e.stopPropagation()}
+                          style={{ outline: '1px dashed #999' }}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={entry.url}
+                            alt={IMAGE_LABEL[im.kind]}
+                            draggable={false}
+                            style={{ width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}
+                          />
+                        </Rnd>
+                      )
+                    })}
                     {layout.textboxes.map((tb, i) => {
                       if (tb.enabled === false) return null // 체크 해제 항목은 미표시
                       const boxH = tb.hRatio * bgDims.h
@@ -1326,6 +1717,7 @@ function NoticesContent() {
                                 wordBreak: 'break-word',
                                 overflow: 'hidden',
                                 cursor: 'move',
+                                background: tb.backgroundColor ?? 'transparent',
                               }}
                             >
                               {runs.map((r, k) => (
@@ -1445,6 +1837,24 @@ function NoticesContent() {
                 className="min-h-[44px] flex-1 rounded-md bg-[var(--accent)] px-4 text-base font-semibold text-white hover:opacity-90"
               >
                 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 이미지 미등록 안내 팝업 (교습소 로고/2D바코드 체크 시) */}
+      {imageNotice !== null && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl">
+            <p className="mb-4 whitespace-pre-line text-base text-gray-800">{imageNotice}</p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setImageNotice(null)}
+                className="min-h-[44px] rounded-md bg-[var(--accent)] px-5 text-base font-semibold text-white hover:opacity-90"
+              >
+                확인
               </button>
             </div>
           </div>

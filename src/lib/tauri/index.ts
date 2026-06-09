@@ -1553,7 +1553,7 @@ export async function saveNoticeLayout(layout: NoticeLayout): Promise<void> {
 export async function getNoticeLayout(): Promise<NoticeLayout> {
   const inv = await getInvoke()
   if (!inv) {
-    return { backgroundAsset: null, textboxes: [] }
+    return { backgroundAsset: null, textboxes: [], images: [], customImages: [] }
   }
   return inv('get_notice_layout') as Promise<NoticeLayout>
 }
@@ -1575,7 +1575,7 @@ export async function saveNoticeLayoutNamed(name: string, layout: NoticeLayout):
 /** 이름으로 저장된 템플릿 조회. */
 export async function getNoticeLayoutNamed(name: string): Promise<NoticeLayout> {
   const inv = await getInvoke()
-  if (!inv) return { backgroundAsset: null, textboxes: [] }
+  if (!inv) return { backgroundAsset: null, textboxes: [], images: [], customImages: [] }
   return inv('get_notice_layout_named', { name }) as Promise<NoticeLayout>
 }
 
