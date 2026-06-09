@@ -17,6 +17,7 @@ import { Sidebar } from './sidebar'
 import { TopBar } from './top-bar'
 import { GlobalTooltip } from './GlobalTooltip'
 import { GlobalShortcuts } from './GlobalShortcuts'
+import { UnsavedNavDialog } from './UnsavedNavDialog'
 import { useAppStore } from '@/stores/app-store'
 import { useSessionStore } from '@/stores/session-store'
 import {
@@ -106,6 +107,7 @@ export function AppShell({
     <div className="flex h-screen">
       <GlobalTooltip />
       <GlobalShortcuts />
+      <UnsavedNavDialog />
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar latestBackupAt={latestBackupAt} syncStatus={syncStatus}>

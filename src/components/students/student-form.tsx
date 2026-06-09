@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listCodes } from '@/lib/tauri'
 import { formatPhone } from '@/lib/format'
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes'
 import type { CodeEntry } from '@/types/code'
 import type { Gender, NewStudent, SchoolLevel, Student } from '@/types/student'
 
@@ -133,15 +134,8 @@ export function StudentForm({
     return () => clearInterval(id)
   }, [dirty, storageKey])
 
-  useEffect(() => {
-    if (!dirty) return
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+  // 미저장 이탈 경고 — 공통 훅으로 통일 (Sprint 16 T1 R105)
+  useUnsavedChanges(dirty)
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }))

@@ -23,6 +23,7 @@ import {
   saveNoticeAsset,
 } from '@/lib/tauri'
 import { bytesToDataUrl } from '@/lib/notice-generator'
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes'
 
 type ImageSlot = 'logo' | 'barcode'
 
@@ -50,6 +51,7 @@ export default function AcademyInfoPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [dirty, setDirty] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<ImageSlot | null>(null)
   const inputRefs = {
     logo: useRef<HTMLInputElement>(null),
@@ -81,6 +83,7 @@ export default function AcademyInfoPage() {
   const updateField = (patch: Partial<AcademyInfo>) => {
     setInfo((prev) => (prev ? { ...prev, ...patch } : prev))
     setSavedAt(null)
+    setDirty(true)
   }
 
   const handleUpload = async (slot: ImageSlot, file: File) => {
@@ -127,12 +130,16 @@ export default function AcademyInfoPage() {
     try {
       await saveAcademyInfo(info)
       setSavedAt(new Date().toLocaleTimeString('ko-KR'))
+      setDirty(false)
     } catch (e: unknown) {
       setError(typeof e === 'string' ? e : '저장에 실패했습니다. 잠시 후 다시 시도해주세요.')
     } finally {
       setSaving(false)
     }
   }
+
+  // 미저장 이탈 경고 + Ctrl+S 저장 (Sprint 16 T1)
+  useUnsavedChanges(dirty, () => void handleSave())
 
   if (info === null && error === null) {
     return <SplashScreen message="교습소 정보를 불러오는 중입니다..." />

@@ -1,8 +1,38 @@
 ---
-Sprint: 16  |  Date: 2026-06-08  |  Session: #1
+Sprint: 16  |  Date: 2026-06-09  |  Session: #2 (T1)
 ---
 
-## 이번 세션 목표
+## 이번 세션 목표 (Session #2)
+**T1: 회고 액션 + 코드 리뷰 carry-over (3h, MUST)** — A99(Ctrl+N 입력필드 방어) / A100+R105(미저장 이탈 경고 공통 훅) / Ctrl+S 전역 저장.
+> T0(수업일 변경 도메인)은 Session #1에서 완료·시각검증 통과(아래 기록 보존). develop 미머지 상태로 sprint16 브랜치 누적 진행.
+
+### T1 수정/생성 파일
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src/lib/use-unsaved-changes.ts | [2회] | **신규** — `useUnsavedChanges(dirty, onSave?)`: beforeunload + `app:save`(Ctrl+S) + 메뉴이동 가드(unsavedGuard 등록). 2회차: window.confirm 차단 → unsavedNavTarget 세팅 방식으로 교체 |
+| src/stores/app-store.ts | [1회] | `unsavedNavTarget` + `setUnsavedNavTarget` 추가 (공용 이동 확인 다이얼로그 트리거) |
+| src/components/layout/UnsavedNavDialog.tsx | [0회] | **신규** — 공용 미저장 이동 확인 모달. AppShell 1회 마운트. plain fixed 오버레이(window.confirm 대체) |
+| src/components/layout/app-shell.tsx | [1회] | UnsavedNavDialog 마운트 |
+| src/components/layout/GlobalShortcuts.tsx | [0회] | A99: Ctrl+N 시 e.target tagName INPUT/TEXTAREA/SELECT·contentEditable 억제. Ctrl+S: preventDefault + `window.dispatchEvent(CustomEvent('app:save'))` |
+| src/app/settings/info/page.tsx | [0회] | dirty 상태 추가 + useUnsavedChanges(dirty, handleSave) 적용. updateField/handleUpload/handleRemoveImage 시 dirty=true, 저장 성공 시 dirty=false |
+| src/components/students/student-form.tsx | [0회] | (중복 제거) 인라인 beforeunload → useUnsavedChanges 훅으로 교체. R105 공통화 취지 |
+
+### T1 설계 결정
+- **이탈 가드 범위 = beforeunload + 내부 메뉴 이동 가드** (사용자 결정 2026-06-09, 2차 추가). 계획의 `routeChangeStart`는 App Router 미지원 → 채택 안 함. 대신 **기존 `unsavedGuard`(app-store, Sprint 12 공지문 편집용) 메커니즘 재사용** — 사이드바/글로벌검색이 이동 직전 가드 호출, dirty면 `window.confirm`으로 차단. app-store·sidebar·global-search는 변경 불필요(슬롯 재사용).
+- **Ctrl+S 메커니즘**: GlobalShortcuts(상시 마운트)가 preventDefault + `app:save` CustomEvent dispatch → 활성 폼이 useUnsavedChanges(onSave)로 구독. 전역 click/store 결합 없이 느슨한 결합.
+- 결과: `useUnsavedChanges(dirty, onSave?)` 한 줄로 3종 가드(창닫기·Ctrl+S·메뉴이동) 일괄 획득.
+
+### T1 완료 기준
+- ✅ A99: 입력 필드 포커스 중 Ctrl+N 억제 (Ctrl+F는 검색 이동이므로 유지) — `isEditableTarget` 가드
+- ✅ useUnsavedChanges 훅 신규 + student-form 중복 제거 + settings/info 적용
+- ✅ Ctrl+S: settings/info에서 저장 동작(`app:save` 이벤트), WebView 기본 저장 다이얼로그 억제
+- ✅ 메뉴 이동 가드: dirty 시 사이드바/검색 이동 직전 확인 다이얼로그(`unsavedGuard` 재사용)
+- ✅ Self-verify: tsc / lint 통과 (Rust 무변경 → cargo 생략)
+- ✅ 실 앱 시각검증 (사용자) "이상 없음"(2026-06-09) — window.confirm 차단 발견 → 커스텀 UnsavedNavDialog로 교체 후 재검증 통과
+
+---
+
+## (Session #1 기록 — 보존) T0 목표
 **T0: 수업일 변경 도메인 (케이스1 1회성 이동 + 케이스2 특정일 이후 영구 변경)** — `/sprint-dev 16` 최우선 Task.
 백엔드(마이그레이션 → IPC → 테스트) 먼저 완성 후 프론트엔드 UI.
 
