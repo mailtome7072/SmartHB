@@ -12,6 +12,7 @@ pub mod diagnosis;
 pub mod expiration;
 pub mod export;
 pub mod fees;
+pub mod import;
 pub mod integrity;
 pub mod lock;
 pub mod makeup;

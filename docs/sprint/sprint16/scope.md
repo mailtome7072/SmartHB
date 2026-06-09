@@ -1,7 +1,48 @@
 ---
-Sprint: 16  |  Date: 2026-06-09  |  Session: #2 (T1)
+Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 ---
 
+## 이번 세션 목표 (Session #3)
+**T2: CSV 가져오기 (6h, MUST)** — 원생 실데이터 이관. PRD §4.13.1.
+백엔드(인코딩 디코딩 → CSV 파싱 → preview/import IPC → 테스트) → 프론트(`/settings/import` 미리보기·매핑·결과).
+
+### T2 확정 범위 (단순·안전, 사용자 결정 2026-06-09)
+- **대상 = `students` 한 테이블만**. `school_id`(학교 FK)·`student_schedules`(수업요일)는 CSV로 넣지 않음 → 앱에서 수동. school_id는 NULL로 INSERT.
+- **컬럼**: 이름(필수) / 학년(필수, "초3"·"중2" 형식 → school_level+grade 파싱, grade 1~9 CHECK) / 입교일(필수, 비면 가져오기 실행일) / 성별·생년월일·모연락처·부연락처·학생연락처·일련번호(선택). gender 비면 'male' 기본 + 미리보기 경고(NOT NULL 제약, 사후 수정 가능). serial_no 비면 자동 채번(compute_next_serial 재사용).
+- **중복 = skip만**(overwrite 제외): 일련번호 존재 OR (이름+모연락처) 존재 시 건너뜀.
+- **안전장치**: ① 미리보기 우선(파싱·검증·중복판정만, INSERT 안 함) ② 가져오기 직전 백업 1회 ③ 인코딩 UTF-8/EUC-KR 자동(BOM 처리).
+- **기존 로직 재사용**: `create_student`의 트랜잭션·채번·UNIQUE 매핑 패턴 따름(가능하면 행별 INSERT를 단일 트랜잭션으로).
+
+### T2 수정/생성 파일
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/Cargo.toml | [0회] | 의존성 `csv = "1"`, `encoding_rs = "0.8"` 추가 (chardetng 제외 — UTF-8 실패 시 EUC-KR fallback 휴리스틱) |
+| src-tauri/src/commands/import.rs | [0회] | **신규** — decode(BOM+UTF-8/EUC-KR) / parse_rows / `preview_students_csv(file_path)` / `import_students_csv(file_path)` + 단위 테스트 |
+| src-tauri/src/commands/mod.rs | [0회] | `pub mod import;` 등록 |
+| src-tauri/src/lib.rs | [0회] | invoke_handler에 preview/import 커맨드 등록 |
+| src-tauri/src/commands/audit.rs | [0회] | `StudentsImported` audit variant(건수 details) 추가 가능 |
+| src/types/import.ts | [0회] | **신규** — PreviewRow/PreviewResult/ImportResult 타입 |
+| src/lib/tauri/index.ts | [0회] | `previewStudentsCsv`/`importStudentsCsv` 래퍼 + dev fallback |
+| src/app/settings/import/page.tsx | [0회] | **신규** — 파일 선택(Dialog) → 미리보기 테이블(상태색) → 가져오기 → 결과 요약 |
+| src/app/settings/page.tsx | [0회] | 'CSV 가져오기' 카드 추가 |
+
+### T2 설계 결정
+- **파일 전달**: 프론트는 Tauri Dialog로 **경로만** 얻고, 백엔드 IPC가 `std::fs::read(path)`로 읽음(notice_asset 패턴). bytes 직렬화 전송 회피, fs 권한은 Rust 직접이라 capability 무관.
+- **preview/import 분리**: 둘 다 file_path 받아 동일 parse. preview는 DB 중복조회까지(드라이런), import는 백업+트랜잭션 INSERT.
+- **인코딩**: UTF-8 BOM 제거 → from_utf8 시도 → 실패 시 encoding_rs EUC_KR 디코딩.
+
+### T2 완료 기준
+- ✅ csv/encoding_rs 의존성 추가 + 빌드
+- ✅ decode/parse 단위 테스트 11건 (UTF-8, EUC-KR, BOM, 학년파싱 초/중·범위, 필수누락 거부, gender 기본, 행에러 격리, 입교일 기본, 중복판정)
+- ✅ preview IPC + 중복판정(is_duplicate 순수함수 테스트)
+- ✅ import IPC (백업 1회 → create_student 위임, 같은파일 중복 remember 누적)
+- ✅ 프론트 /settings/import 미리보기·가져오기·결과 요약 + 설정 허브 카드
+- ✅ Self-verify: cargo test(import 11) / clippy --all-targets clean / tsc / lint 통과
+- ✅ 실 앱 시각검증 (사용자) "정상동작 확인, 검수완료"(2026-06-09). 개발모드(cipher off) 백업 stub 실패 메시지("디스크 여유 공간")는 정상 — import은 백업 실패해도 진행, 데이터 INSERT 확인.
+
+---
+
+## (Session #2 기록 — 보존·완료) T1 목표
 ## 이번 세션 목표 (Session #2)
 **T1: 회고 액션 + 코드 리뷰 carry-over (3h, MUST)** — A99(Ctrl+N 입력필드 방어) / A100+R105(미저장 이탈 경고 공통 훅) / Ctrl+S 전역 저장.
 > T0(수업일 변경 도메인)은 Session #1에서 완료·시각검증 통과(아래 기록 보존). develop 미머지 상태로 sprint16 브랜치 누적 진행.

@@ -61,6 +61,8 @@ pub fn run() {
             commands::students::reinstate_student,
             commands::students::list_students,
             commands::students::count_students,
+            commands::import::preview_students_csv,
+            commands::import::import_students_csv,
             commands::schedules::set_schedule,
             commands::schedules::delete_schedule,
             commands::schedules::get_schedules,

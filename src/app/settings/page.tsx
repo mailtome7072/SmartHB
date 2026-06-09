@@ -52,6 +52,11 @@ const CARDS: SettingCard[] = [
     description: '원생·출결·청구 데이터를 엑셀(.xlsx) 파일로 저장. 천단위·정렬·열너비 서식 적용 (전체/월별).',
   },
   {
+    href: '/settings/import',
+    title: '원생 CSV 가져오기',
+    description: 'CSV 파일로 원생 명단을 일괄 등록합니다. 미리보기 확인 후 가져오며, 중복은 건너뜁니다.',
+  },
+  {
     href: '/settings/pin',
     title: 'PIN 번호 변경',
     description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',

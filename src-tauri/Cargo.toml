@@ -69,6 +69,11 @@ tauri-plugin-dialog = "2.7.1"
 tauri-plugin-single-instance = "2.4.2"
 tauri-plugin-window-state = "2.4.1"
 rust_xlsxwriter = "0.95.0"
+# T2 CSV 가져오기 (PRD §4.13.1) — 원생 실데이터 이관.
+# csv: RFC 4180 파싱(따옴표/이스케이프/개행). encoding_rs: EUC-KR(CP949) 디코딩.
+# 인코딩 감지는 별도 crate 없이 UTF-8 시도 → 실패 시 EUC-KR fallback 휴리스틱.
+csv = "1"
+encoding_rs = "0.8"
 
 [profile.release]
 codegen-units = 1

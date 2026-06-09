@@ -40,6 +40,7 @@ import type {
   DiagnosisResult,
 } from '@/types/diagnosis'
 import type { ExportResult } from '@/types/export'
+import type { ImportPreviewResult, ImportResult } from '@/types/import'
 import type {
   AcademyOverview,
   BillingTrendPoint,
@@ -110,6 +111,68 @@ export async function selectFolder(): Promise<string | null> {
   } catch {
     return '[개발 모드] /Users/dev/MYBOX'
   }
+}
+
+/**
+ * CSV 파일 선택 다이얼로그 (Sprint 16 T2). 사용자가 취소하면 null.
+ * 개발 모드(Tauri 미동작)에서는 더미 경로 반환.
+ *
+ * 권한: `capabilities/default.json` 의 `dialog:allow-open` 필요.
+ */
+export async function selectCsvFile(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+    if (selected === null) return null
+    return typeof selected === 'string' ? selected : (selected[0] ?? null)
+  } catch {
+    return '[개발 모드] students.csv'
+  }
+}
+
+/**
+ * CSV 미리보기 — 파싱·검증·중복판정만(INSERT 없음). 백엔드가 file_path 를 읽어 처리.
+ * 개발 모드에서는 샘플 행을 반환한다.
+ */
+export async function previewStudentsCsv(filePath: string): Promise<ImportPreviewResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      rows: [
+        {
+          row_number: 1,
+          name: '홍길동',
+          grade_label: '초3',
+          gender_label: '남',
+          enroll_date: '2026-03-01',
+          serial_no: null,
+          status: 'ok',
+          messages: [],
+        },
+      ],
+      total: 1,
+      importable: 1,
+      duplicate: 0,
+      error: 0,
+    }
+  }
+  return inv('preview_students_csv', { filePath }) as Promise<ImportPreviewResult>
+}
+
+/**
+ * CSV 가져오기 — 백업 1회 후 유효·비중복 행을 INSERT. 결과 집계 반환.
+ */
+export async function importStudentsCsv(filePath: string): Promise<ImportResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { inserted: 1, skipped: 0, errored: 0, errors: [], backup_note: '[개발 모드]' }
+  }
+  return inv('import_students_csv', { filePath }) as Promise<ImportResult>
 }
 
 async function getInvoke() {
