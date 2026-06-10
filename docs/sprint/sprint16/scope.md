@@ -268,3 +268,36 @@ Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 - 원본 락 해제는 생략 — heartbeat가 재생성하고 재시작 후 원본 폴더는 abandoned. (ADR 명시한 best-effort 해제는 무의미하여 미구현)
 - `paths::data_root_for(cloud)` 헬퍼 추가.
 - **dev relaunch 가드**(시각검증 발견): dev 빌드는 화면을 localhost dev서버에서 로드 → `relaunch()` 시 dev서버 동반 종료로 "localhost 연결 거부". 완료 모달에서 `NODE_ENV!=='production'`이면 자동 재시작 대신 **수동 재시작 안내**. 프로덕션은 자동 relaunch 정상. (프로덕션 버그 아님 — dev 한정 한계)
+
+---
+
+## 백업 복원 연결 (Session #7, 2026-06-10) — 자동 복원 + 수동 복원 UI
+백업/복원 로직(ADR-003)은 있으나 사용자 흐름에 미연결이던 공백 해소. 자동(부팅 차단형 손상 대응) 우선 + 수동(정상 운영 중 롤백) 보조. 사용자 결정: **둘 다**.
+
+### 배경(발견)
+- `auto_restore`/`restore_backup` IPC는 구현됐으나 프론트에서 **호출하는 곳이 없었음**. 시작 시 무결성 손상 감지해도 감사 로그만 기록. 백업관리 화면은 목록+리허설만(복원 버튼 없음).
+- daily/weekly 계층은 스케줄러 미연결(이번 범위 외, 별도 backlog).
+
+### 자동 복원 (1순위)
+- `startup.rs::run_startup`: 인증(키 캐시 충전) 후 → DB 초기화 **전에**, quick_check 가 `Failed`면 `integrity::auto_restore_sync()` 실행(최신 정상 exit 백업으로 교체, 현재 손상본 rollback 보존) → `StartupResult.auto_restored: Option<RestoreResult>` 반환 + 감사 로그. **cipher off 개발 빌드는 quick_check stub Ok → 미진입(정상/dev 무영향)**. 복원 실패는 fail-soft.
+- 프론트: `StartupResult.auto_restored` 있으면 루트 페이지에 **"최근 정상 백업으로 자동 복원됨 + 이후 입력 누락 가능 + 손상본 보존" 고지 배너**(session-store `restoreNoticeDismissed`).
+
+### 수동 복원 (2순위)
+- `/settings/backup`: 선택 백업에 **"이 백업으로 복원" 버튼**(danger) + 확인 모달(시점·데이터 손실·rollback 보존 안내) → `restoreBackup(path)` → 완료 모달 → 재시작(dev 가드 동일).
+
+### 수정 파일
+| 파일 | 비고 |
+|------|------|
+| src-tauri/src/commands/integrity.rs | `auto_restore_sync` pub(crate) 노출 |
+| src-tauri/src/startup.rs | run_startup 손상 자동복원 단계 + `StartupResult.auto_restored` |
+| src/types/index.ts | `StartupResult.auto_restored: RestoreResult\|null` |
+| src/stores/session-store.ts | `restoreNoticeDismissed` + `dismissRestoreNotice` |
+| src/app/page.tsx | 자동복원 고지 배너 |
+| src/app/settings/backup/page.tsx | 수동 복원 버튼 + 확인/완료 모달 |
+| src/lib/tauri/index.ts | dev fallback `auto_restored: null` |
+
+### 완료 기준 (Session #7)
+- ✅ 시작 손상 자동복원 연결(StartupResult.auto_restored) + 고지 배너
+- ✅ 수동 복원 UI(버튼+확인+완료/재시작)
+- ✅ Self-verify: cargo test(403) / clippy --all-targets / cargo check --features cipher / lint / tsc 통과
+- ⬜ 실앱 시각검증 — ⚠️ **dev 한계**: 백업/복원/무결성은 cipher 빌드에서만 실동작(dev는 stub·백업 0건). dev에선 페이지 렌더·회귀만 확인 가능. 실동작 검증은 cipher 빌드 + 손상 시뮬레이션 필요.

@@ -72,6 +72,10 @@ pub struct StartupResult {
     /// `transitioned_count > 0` 시 프론트엔드에서 토스트 표시.
     /// ExpirationReport 내부는 camelCase, 본 필드명은 snake_case (기존 StartupResult 패턴 유지).
     pub expiration_report: expiration::ExpirationReport,
+    /// Sprint 16: 시작 시 DB 무결성 quick_check 가 손상을 감지하여 **자동 복원**한 경우의 결과.
+    /// `Some` 이면 프론트엔드가 "최근 정상 백업으로 복원됨 + 이후 입력 누락 가능" 고지.
+    /// 정상(복원 불필요)·개발 빌드(stub)·복원 실패 시 `None`.
+    pub auto_restored: Option<integrity::RestoreResult>,
 }
 
 /// 백그라운드 task 핸들 묶음 — `OnceLock` 으로 1회 spawn 보장.
@@ -168,7 +172,42 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
     }
     let password_verify_ms = verify_start.elapsed().as_millis();
 
-    // 3. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
+    // 3. 손상 자동 복원 — quick_check 가 Failed(손상)면 DB 초기화 **전에** 최신 정상 exit 백업으로
+    //    교체한다 (현재 손상본은 rollback 보존). auth 단계에서 키 캐시가 채워졌으므로 cipher 빌드에서
+    //    키 사용 가능. cipher off 개발 빌드는 quick_check 가 stub Ok → 이 경로 미진입(무영향).
+    //    복원 실패 시 fail-soft 진행(이어지는 db::initialize 가 손상으로 실패할 수 있음).
+    let auto_restored = if matches!(
+        integrity_result,
+        Ok(integrity::IntegrityCheckResult::Failed { .. })
+    ) {
+        match tokio::task::spawn_blocking(integrity::auto_restore_sync).await {
+            Ok(Ok(r)) => {
+                audit::try_record(
+                    audit::AuditEventType::BackupRestored,
+                    Some(&r.restored_from),
+                    Some("startup auto-restore"),
+                )
+                .await;
+                eprintln!(
+                    "[startup] ⚠️ DB 손상 감지 → 자동 복원: {} (rollback: {})",
+                    r.restored_from, r.rollback_path
+                );
+                Some(r)
+            }
+            Ok(Err(e)) => {
+                eprintln!("[startup] 자동 복원 실패 (계속 진행): {}", e);
+                None
+            }
+            Err(e) => {
+                eprintln!("[startup] 자동 복원 task 실패 (계속 진행): {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 4. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
     let db_init_start = Instant::now();
     db::initialize(paths::db_path())
         .await
@@ -229,6 +268,7 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
         integrity_ok,
         audit_cleaned,
         expiration_report,
+        auto_restored,
     })
 }
 
@@ -315,6 +355,7 @@ mod tests {
                 transitioned_count: 0,
                 details: vec![],
             },
+            auto_restored: None,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains(r#""elapsed_ms":1234"#));
@@ -343,6 +384,7 @@ mod tests {
                 transitioned_count: 0,
                 details: vec![],
             },
+            auto_restored: None,
         };
         let sum = r.parallel_phase_ms + r.password_verify_ms + r.db_init_ms + r.audit_cleanup_ms;
         assert!(sum <= r.elapsed_ms, "breakdown 합 ≤ 총 elapsed");

@@ -465,6 +465,7 @@ export async function appStartupSequence(
       integrity_ok: true,
       audit_cleaned: 0,
       expiration_report: { transitionedCount: 0, details: [] },
+      auto_restored: null,
     }
   }
   return inv('app_startup_sequence', {

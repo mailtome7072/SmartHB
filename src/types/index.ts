@@ -171,4 +171,7 @@ export interface StartupResult {
    *  내부는 camelCase, 본 필드는 snake_case 유지 (기존 StartupResult 패턴).
    *  `transitioned_count > 0` 시 메인 페이지에서 토스트 표시 (T9). */
   expiration_report: import('./expiration').ExpirationReport
+  /** Sprint 16: 시작 시 DB 손상이 감지되어 자동 복원된 경우의 결과 (없으면 null).
+   *  null 이 아니면 메인 페이지에서 "최근 정상 백업으로 복원됨" 고지. */
+  auto_restored: RestoreResult | null
 }
