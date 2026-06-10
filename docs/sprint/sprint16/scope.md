@@ -228,3 +228,43 @@ Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 - 빨간 외곽선 규칙 확정: **첫 평일 수업일 ~ 마지막 평일 수업일** 구간을 감싸되, 경계 비수업일(공휴일 등)은 트림·사이의 평일 공휴일은 포함·**토·일요일은 항상 제외**.
 - 셀 기본 테두리 검정(`GRID_LINE=#000000`).
 - 보강데이 라벨: 볼드 + 150%(30px) + top 위치를 단원평가 주간 밴드 라벨과 동일(상수 공유).
+
+---
+
+## T3: DB 폴더 변경 + salt.bin 이전 (Session #6, 2026-06-10) — MUST · PI-16
+클라우드 동기화 경로 재지정 + `smarthb/` 전체(DB·salt·assets·output·backup) 동반 이전. **copy-then-switch + 재시작**. 설계: `docs/arch/adr-009-db-folder-change.md`.
+
+### 사용자 확정 (2026-06-10)
+- 원본(구) 폴더: **유지 + 마커 파일**(MOVED_TO.txt). 자동 삭제 안 함.
+- 대상에 기존 `smarthb/app.db` 존재 시: **차단 + 안내**(덮어쓰기 방지).
+- 재시작: **tauri-plugin-process 추가 + 프론트 relaunch()**.
+
+### 절차 (ADR-009)
+대상검증(기존 DB 차단·동일/포함 차단·쓰기권한) → WAL checkpoint(TRUNCATE) → 재귀복사(app.lock·-wal·-shm 제외, fsync) → 검증(cipher PRAGMA key + integrity_check) → 마커파일(원본) → config.json 갱신(마지막) → 원본 락 해제 → 프론트 relaunch.
+실패 시: config 미변경(앱 기존폴더 유지) + 부분복사 best-effort 제거. 원본 불삭제.
+
+### 수정/생성 파일
+| 파일 | 비고 |
+|------|------|
+| src-tauri/src/commands/setup.rs | `change_data_folder` IPC + impl + 복사/검증/마커 헬퍼 + 단위테스트 (config 헬퍼 재사용) |
+| src-tauri/src/commands/paths.rs | `data_root_for(cloud)` 헬퍼 노출 |
+| src-tauri/Cargo.toml + lib.rs + capabilities/default.json | tauri-plugin-process 추가·등록·권한 + change_data_folder 등록 |
+| package.json | @tauri-apps/plugin-process |
+| src/lib/tauri/index.ts + src/types | `changeDataFolder` 래퍼 + 타입 |
+| src/app/settings/page.tsx | 'DB 폴더 변경' 카드 활성화(disabledHint 제거) |
+| src/app/settings/db-folder/page.tsx (신규) | 폴더 선택(Dialog) + 안내/경고 + 실행 + 완료 후 relaunch |
+
+### 완료 기준 (Session #6)
+- ✅ `change_data_folder` IPC + 단위테스트 8건(empty/same/overlap/기존DB차단/fresh/copy+skip/marker)
+- ✅ WAL checkpoint(TRUNCATE) + 재귀복사(app.lock·-wal·-shm 제외, fsync) + cipher 검증(sqlx integrity_check) + 마커 + config 갱신(마지막)
+- ✅ tauri-plugin-process 추가·등록 + capabilities `process:allow-restart` + 프론트 `relaunchApp`
+- ✅ /settings/db-folder UI + 카드 활성화 + 양PC 재지정 경고 안내 + 확인/완료 모달
+- ✅ Self-verify: cargo test(403) / clippy --all-targets / cargo check --features cipher / lint / tsc 통과
+- ✅ 실앱 시각검증 (사용자) — 실제 데이터로 이전 성공: 새 폴더에 app.db/salt/assets/backup/output 전부 복사 + WAL checkpoint + 검증 + MOVED_TO 마커 + config 갱신 + relaunch 전 과정 정상. 원복 후 원본 폴더 정상 기동·데이터 정상.
+
+### 구현 메모
+- `change_data_folder`(setup.rs): copy-then-switch. 실패 시 config 미변경 → 기존폴더 유지, 부분복사 best-effort 제거. 원본 불삭제(마커만).
+- 검증은 sqlx 기반 `PRAGMA integrity_check`(feature 무관, cipher 시 PRAGMA key 적용).
+- 원본 락 해제는 생략 — heartbeat가 재생성하고 재시작 후 원본 폴더는 abandoned. (ADR 명시한 best-effort 해제는 무의미하여 미구현)
+- `paths::data_root_for(cloud)` 헬퍼 추가.
+- **dev relaunch 가드**(시각검증 발견): dev 빌드는 화면을 localhost dev서버에서 로드 → `relaunch()` 시 dev서버 동반 종료로 "localhost 연결 거부". 완료 모달에서 `NODE_ENV!=='production'`이면 자동 재시작 대신 **수동 재시작 안내**. 프로덕션은 자동 relaunch 정상. (프로덕션 버그 아님 — dev 한정 한계)

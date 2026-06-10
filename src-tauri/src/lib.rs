@@ -17,6 +17,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        // DB 폴더 변경(T3) 완료 후 새 경로로 재초기화하기 위한 앱 재시작(relaunch) 지원.
+        .plugin(tauri_plugin_process::init())
         // V18 (Sprint 7 post-review): 윈도우 크기/위치 자동 저장·복원. 첫 시작은 tauri.conf.json
         // `center: true` 로 모니터 중앙. 이후 사용자 종료 시 마지막 크기/위치를 OS 로컬에 저장.
         .plugin(tauri_plugin_window_state::Builder::default().build())
@@ -116,6 +118,7 @@ pub fn run() {
             commands::setup::get_setup_status,
             commands::setup::get_pin_skip_setting,
             commands::setup::set_pin_skip_setting,
+            commands::setup::change_data_folder,
             commands::settings::get_operating_hours,
             commands::settings::save_operating_hours,
             commands::settings::get_academy_info,

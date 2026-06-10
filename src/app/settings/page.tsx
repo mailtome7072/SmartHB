@@ -64,8 +64,7 @@ const CARDS: SettingCard[] = [
   {
     href: '/settings/db-folder',
     title: 'DB 폴더 변경',
-    description: '데이터가 저장되는 클라우드 동기화 폴더(DB 위치)를 재지정합니다. (Sprint 16 제공 예정)',
-    disabledHint: 'Sprint 16 제공 예정',
+    description: '데이터가 저장되는 클라우드 동기화 폴더(DB 위치)를 재지정합니다. 기존 데이터를 새 폴더로 복사한 뒤 앱을 재시작합니다.',
   },
   {
     href: '/settings/backup',

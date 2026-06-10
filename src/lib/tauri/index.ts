@@ -836,6 +836,26 @@ export async function completeSetup(): Promise<void> {
   await inv('complete_setup')
 }
 
+/**
+ * DB 폴더(클라우드 동기화 경로) 변경 (Sprint 16 T3, ADR-009).
+ *
+ * `{newCloudPath}/smarthb/` 로 기존 데이터(DB·salt·assets·output·backup)를 복사·검증한 뒤
+ * config.json 경로를 갱신한다. 원본은 보존(MOVED_TO 마커). 성공 후 호출측이 `relaunchApp()`
+ * 으로 앱을 재시작해야 새 경로가 적용된다. 실패 시 기존 폴더 유지(무손상).
+ */
+export async function changeDataFolder(newCloudPath: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('change_data_folder', { newPath: newCloudPath })
+}
+
+/** 앱 재시작 — DB 폴더 변경 완료 후 새 경로로 재초기화. (tauri-plugin-process) */
+export async function relaunchApp(): Promise<void> {
+  if (typeof window === 'undefined') return
+  const { relaunch } = await import('@tauri-apps/plugin-process')
+  await relaunch()
+}
+
 // ============================================================================
 // 영구 설정 (Sprint 4 T2, PRD §4.0/§4.12) — 교습소 운영 시간
 // ============================================================================
