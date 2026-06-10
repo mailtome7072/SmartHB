@@ -191,3 +191,40 @@ Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 - **스케줄 편집(schedule-editor)**: 수정 시 요일 변경(원래 요일 종료) / 요일 선택 평일·미등록만 / 삭제 시 출결 정리(applyScheduleChange) / 추가·변경·삭제 확인 다이얼로그.
 - 시각검증 수정 커밋: c5b79db ~ ee83b72 (약 20개). 자동검증(cargo test 384 / clippy / tsc / lint) 매 커밋 통과.
 - 추가 마이그레이션: V306(note) + **V307(start_time)** — 둘 다 ALTER ADD COLUMN.
+
+---
+
+## 추가 보강 (Session #5, 2026-06-10) — 공지문 교습일정 달력 이미지
+공지문 캔버스에 **청구년월 교습일정을 달력 형식 이미지로 합성**. 2D바코드 체크박스 아래 "교습일정" 체크박스 신설. (사용자 요청 2026-06-10, 가능여부 확인 후 착수)
+
+### 설계 결정 (사용자 확정 2026-06-10)
+- 배치: **이동·크기조절 가능 요소** — `NoticeImageKind`에 `'calendar'` 추가 (logo/barcode와 동일 메커니즘, 비율 좌표·체크박스 on/off).
+- 표시 항목: 교습기간 **빨간 외곽선**(교습기간 ∩ 수업일 영역) + 특이일 라벨(공휴일·보강데이) + 기간 하이라이트(단원평가 주간 등) + 전월/익월 회색.
+- 단원평가: 점수 기능 취소됐으나 **학사일정 라벨은 그대로 렌더**(데이터 그대로).
+- 달력 그리드: **일요일 시작**(공지문=대중 공개용, 예시 이미지 기준). 앱 학사캘린더는 월요일 시작이나 공지문은 별도.
+
+### 발견(재사용)
+- 데이터: `getStudyPeriod(yearMonth)`(빨간선 범위) + `listScheduleEvents(from,to)`(라벨/하이라이트) + `getOperatingHours()`(수업일 판정). **신규 IPC/마이그레이션 0**.
+- 빨간 외곽선 = `inStudyPeriod && hasClassOnDate` 셀 영역의 경계 — `ThreeMonthCalendar.hasClassOnDate` 로직 포팅(휴원/공휴일 제외, 공휴수업일 포함).
+- 캔버스 합성: `notice-generator.ts`의 이미지 요소 드로잉 재활용. 달력 PNG dataURL → `imageUrls['calendar']`.
+- z-order: 배경 → customImages → **layout.images 배열순서(logo/barcode/calendar)** → 텍스트. 미리보기 DOM 순서와 1:1(WYSIWYG) — 별도 정렬 안 함(요소 비중첩 전제).
+- 그리드 날짜계산: `buildMonthGrid`(라이브러리 무의존) 패턴 — 단 일요일 시작으로 변형.
+
+### 수정/생성 파일
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src/lib/calendar-image.ts | [신규] | 한 달 데이터 → 캔버스 PNG dataURL 렌더러(그리드·빨간외곽선·라벨·하이라이트·요일색) |
+| src/types/notice.ts | [0회] | `NoticeImageKind`에 `'calendar'` 추가 |
+| src/lib/notice-generator.ts | [0회] | 달력 이미지 합성 포함(z-order: 배경→추가이미지→달력→로고/바코드→텍스트) |
+| src/app/notices/page.tsx | [0회] | "교습일정" 체크박스 + 청구년월 학사데이터 로드 → 달력 dataURL 생성 → 이미지 요소 렌더 |
+
+### 완료 기준 (Session #5)
+- ✅ 달력 이미지 렌더러 — 외곽선·라벨·하이라이트·회색 + 검정 셀선
+- ✅ "교습일정" 체크박스 on/off + 드래그·리사이즈
+- ✅ 생성·미리보기에 달력 합성 반영
+- ✅ Self-verify: lint / tsc 통과 (프론트 전용 — Rust 변경 없음) + 실 앱 시각검증(사용자 검수 완료)
+
+### 시각검증 반영(사용자 요청)
+- 빨간 외곽선 규칙 확정: **첫 평일 수업일 ~ 마지막 평일 수업일** 구간을 감싸되, 경계 비수업일(공휴일 등)은 트림·사이의 평일 공휴일은 포함·**토·일요일은 항상 제외**.
+- 셀 기본 테두리 검정(`GRID_LINE=#000000`).
+- 보강데이 라벨: 볼드 + 150%(30px) + top 위치를 단원평가 주간 밴드 라벨과 동일(상수 공유).

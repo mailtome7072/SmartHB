@@ -28,10 +28,13 @@ import {
   deleteNoticeLayoutNamed,
   getNoticeLayoutNamed,
   getNoticeMonthInfo,
+  getOperatingHours,
+  getStudyPeriod,
   listBilledMonths,
   listBills,
   listNoticeAssets,
   listNoticeLayouts,
+  listScheduleEvents,
   noticePreviewDefaultPath,
   openNoticeOutputDir,
   openNoticePreviewDir,
@@ -42,6 +45,7 @@ import {
   saveNoticePreview,
   showSaveDialog,
 } from '@/lib/tauri'
+import { renderCalendarImageDataUrl } from '@/lib/calendar-image'
 import {
   buildColorRuns,
   bytesToDataUrl,
@@ -125,15 +129,26 @@ interface AcademyImage {
   ratio: number
 }
 
-/** 캔버스 이미지 요소 종류·라벨 (교습소 로고 / 2D바코드). */
-const IMAGE_KINDS: NoticeImageKind[] = ['logo', 'barcode']
+/** 캔버스 이미지 요소 종류·라벨 (교습소 로고 / 2D바코드 / 교습일정 달력). 체크박스 표시 순서. */
+const IMAGE_KINDS: NoticeImageKind[] = ['logo', 'barcode', 'calendar']
 const IMAGE_LABEL: Record<NoticeImageKind, string> = {
   logo: '교습소로고',
   barcode: '2D바코드',
+  calendar: '교습일정',
 }
 
-/** 이미지 요소 기본 배치 — 로고(좌상단)·바코드(우상단), 비활성. h 는 실제 비율로 추후 보정. */
+/** 교습일정 달력 이미지의 원본 가로세로 비율(h/w) — calendar-image.ts 렌더 치수(1400×840)와 정합. */
+const CALENDAR_ASPECT = 840 / 1400
+
+/**
+ * 이미지 요소 기본 배치 — 비활성. h 는 실제 비율로 추후 보정.
+ * - 로고(좌상단)·바코드(우상단): 작은 오버레이
+ * - 달력: 하단 중앙·큰 영역 (가로 폭 넓음)
+ */
 function defaultImage(kind: NoticeImageKind): NoticeImageConfig {
+  if (kind === 'calendar') {
+    return { kind, enabled: false, xRatio: 0.1, yRatio: 0.45, wRatio: 0.8, hRatio: 0.8 * CALENDAR_ASPECT }
+  }
   return {
     kind,
     enabled: false,
@@ -317,12 +332,61 @@ function NoticesContent() {
   })
   const monthInfo = monthInfoQuery.data ?? { teachingPeriodText: null, makeupDayText: null }
 
+  // ── 교습일정 달력 이미지 (Sprint 16) ──
+  // 청구년월 학사일정(교습기간·일정·운영시간) → 달력 PNG dataURL 런타임 생성 → 'calendar' 이미지 요소.
+  // 그리드(일요일 시작 6주)가 전월/익월로 번지므로 이벤트 조회 범위는 전월 1일 ~ 익월 말일.
+  const calEventRange = useMemo(() => {
+    const [y, m] = yearMonth.split('-').map(Number)
+    if (!y || !m) return null
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return { from: fmt(new Date(y, m - 2, 1)), to: fmt(new Date(y, m + 1, 0)) }
+  }, [yearMonth])
+
+  const studyPeriodQuery = useQuery({
+    queryKey: ['notice-study-period', yearMonth],
+    queryFn: () => getStudyPeriod(yearMonth),
+  })
+  const calEventsQuery = useQuery({
+    queryKey: ['notice-cal-events', calEventRange?.from, calEventRange?.to],
+    queryFn: () => (calEventRange ? listScheduleEvents(calEventRange.from, calEventRange.to) : Promise.resolve([])),
+    enabled: calEventRange !== null,
+  })
+  const operatingHoursQuery = useQuery({
+    queryKey: ['operating-hours'],
+    queryFn: getOperatingHours,
+    staleTime: 5 * 60_000,
+  })
+
+  // 달력 PNG dataURL — 데이터 변경 시 재생성. 생성 실패/데이터 미비 시 null.
+  const [calendarUrl, setCalendarUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const url = await renderCalendarImageDataUrl({
+          yearMonth,
+          studyPeriod: studyPeriodQuery.data ?? null,
+          events: calEventsQuery.data ?? [],
+          operatingHours: operatingHoursQuery.data ?? [],
+        })
+        if (!cancelled) setCalendarUrl(url)
+      } catch {
+        if (!cancelled) setCalendarUrl(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [yearMonth, studyPeriodQuery.data, calEventsQuery.data, operatingHoursQuery.data])
+
   const [bgDataUrl, setBgDataUrl] = useState<string | null>(null)
   const [bgDims, setBgDims] = useState<{ w: number; h: number }>({ w: 800, h: 800 })
 
   // 교습소 로고·2D바코드 이미지(설정 > 교습소 정보) — 표시용 dataUrl + 원본 비율(h/w).
   // 비율은 체크 시 박스 높이 초기화에 사용(저장된 레이아웃 로드 시엔 저장값을 그대로 쓴다).
-  const [academyImages, setAcademyImages] = useState<Record<NoticeImageKind, AcademyImage | null>>({
+  // 파일 로드 이미지(로고/2D바코드)만 보관. 교습일정 달력은 런타임 생성(calendarUrl)으로 별도 관리.
+  const [academyImages, setAcademyImages] = useState<Record<'logo' | 'barcode', AcademyImage | null>>({
     logo: null,
     barcode: null,
   })
@@ -517,6 +581,24 @@ function NoticesContent() {
   // 비율을 유지하고, 저장된 레이아웃을 다시 불러올 때는 저장된 높이를 그대로 사용한다
   // (재로드 시 자동 보정으로 비율이 틀어지던 버그 수정).
   const toggleImage = (kind: NoticeImageKind, checked: boolean) => {
+    // 교습일정 달력 — 런타임 생성 이미지. 파일 등록이 아닌 학사데이터 기반.
+    if (kind === 'calendar') {
+      if (checked && !calendarUrl) {
+        setImageNotice(
+          '교습일정 달력을 만들 수 없습니다.\n선택한 청구년월의 교습기간·학사일정을 먼저 등록해 주세요.',
+        )
+        return
+      }
+      if (checked && layout) {
+        const im = layout.images.find((x) => x.kind === 'calendar')
+        const wRatio = im?.wRatio ?? 0.8
+        const hRatio = (wRatio * bgDims.w * CALENDAR_ASPECT) / bgDims.h
+        updateImage('calendar', { enabled: true, hRatio })
+        return
+      }
+      updateImage('calendar', { enabled: checked })
+      return
+    }
     const entry = academyImages[kind]
     if (checked && entry === null) {
       setImageNotice(
@@ -750,7 +832,7 @@ function NoticesContent() {
         width: bgDims.w,
         height: bgDims.h,
         layout,
-        imageUrls: { logo: academyImages.logo?.url ?? null, barcode: academyImages.barcode?.url ?? null },
+        imageUrls: { logo: academyImages.logo?.url ?? null, barcode: academyImages.barcode?.url ?? null, calendar: calendarUrl },
         customImages: layout.customImages.flatMap((ci) => {
           const url = customImageUrls[ci.assetName]
           return url
@@ -786,7 +868,7 @@ function NoticesContent() {
           width: bgDims.w,
           height: bgDims.h,
           layout,
-          imageUrls: { logo: academyImages.logo?.url ?? null, barcode: academyImages.barcode?.url ?? null },
+          imageUrls: { logo: academyImages.logo?.url ?? null, barcode: academyImages.barcode?.url ?? null, calendar: calendarUrl },
           customImages: layout.customImages.flatMap((ci) => {
             const url = customImageUrls[ci.assetName]
             return url
@@ -1537,8 +1619,9 @@ function NoticesContent() {
                         비율 유지 리사이즈(lockAspectRatio). */}
                     {layout.images.map((im) => {
                       if (!im.enabled) return null
-                      const entry = academyImages[im.kind]
-                      if (entry === null) return null
+                      // 달력은 런타임 생성 dataURL, 로고/2D바코드는 교습소 정보 파일.
+                      const url = im.kind === 'calendar' ? calendarUrl : (academyImages[im.kind]?.url ?? null)
+                      if (!url) return null
                       return (
                         <Rnd
                           key={im.kind}
@@ -1563,7 +1646,7 @@ function NoticesContent() {
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={entry.url}
+                            src={url}
                             alt={IMAGE_LABEL[im.kind]}
                             draggable={false}
                             style={{ width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none' }}

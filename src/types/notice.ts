@@ -57,12 +57,17 @@ export interface TextboxConfig {
   backgroundColor?: string | null
 }
 
-/** 캔버스 이미지 요소 종류 — 교습소 로고 / 2D바코드. */
-export type NoticeImageKind = 'logo' | 'barcode'
+/**
+ * 캔버스 이미지 요소 종류 — 교습소 로고 / 2D바코드 / 교습일정 달력.
+ * - logo·barcode: 교습소 정보의 저장 파일에서 로드 (file-backed)
+ * - calendar: 청구년월 학사일정으로 **런타임 생성**되는 달력 이미지 (data-backed, Sprint 16)
+ */
+export type NoticeImageKind = 'logo' | 'barcode' | 'calendar'
 
 /**
- * 캔버스 이미지 요소(교습소 로고/2D바코드) — 비율 좌표로 관리.
- * 실제 이미지는 교습소 정보(`assets/academy_{logo,barcode}.*`)를 로드해 표시하고,
+ * 캔버스 이미지 요소(교습소 로고/2D바코드/교습일정 달력) — 비율 좌표로 관리.
+ * 실제 이미지는 교습소 정보(`assets/academy_{logo,barcode}.*`)를 로드하거나(로고·바코드)
+ * 청구년월 학사일정으로 런타임 생성하여(달력) 표시하고,
  * 레이아웃에는 표시 여부와 배치(위치·크기)만 저장한다.
  */
 export interface NoticeImageConfig {

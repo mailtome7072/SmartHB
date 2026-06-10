@@ -248,8 +248,9 @@ export async function renderNoticeDataUrl(params: RenderParams, data: NoticeStud
     }
   }
 
-  // 이미지 요소(로고/2D바코드) — 텍스트보다 먼저 그려 텍스트가 이미지 위에 오도록 한다
-  // (미리보기 DOM 순서와 일치). 개별 이미지 로드 실패는 건너뛴다(전체 생성 중단 방지).
+  // 이미지 요소(로고/2D바코드/교습일정 달력) — 텍스트보다 먼저 그려 텍스트가 이미지 위에 오도록 한다.
+  // **배열 순서(layout.images)대로** 그려 미리보기 DOM z-order 와 1:1 일치시킨다 (WYSIWYG).
+  // 개별 이미지 로드 실패는 건너뛴다(전체 생성 중단 방지).
   const imageUrls = params.imageUrls
   if (imageUrls) {
     for (const im of params.layout.images ?? []) {
