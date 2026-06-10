@@ -1,45 +1,27 @@
 'use client'
 
 /**
- * 청구 관리 페이지 (Sprint 11 T7, PRD §4.9).
+ * 청구 관리 페이지 (Sprint 11 T7, PRD §4.9 / Sprint 16 메뉴 분리).
  *
+ * '청구/수납 관리' 분리 후 본 페이지는 **청구 목록**만 담당한다 (수납·월별집계는 /payments).
  * 흐름:
- *  1. 월 선택 (디폴트: `getDefaultBillingYearMonth` — 가장 최근 교습기간 월)
- *  2. 청구 데이터 없으면 "청구 데이터 생성" 버튼 표시 → `generateBills`
- *  3. 청구 목록(`BillingGrid`) — draft → confirmed 정렬, mid_month 우선
- *  4. 개별 행 인라인 금액 편집 + 확정 다이얼로그
- *  5. 미확정 일괄 확정
- *
- * 캐싱: TanStack Query `['bills', yearMonth]` + `['billing-summary', yearMonth]`.
+ *  1. 청구년월 선택 (디폴트: 현재 년월, 교습기간 등록 월로 자동 보정)
+ *  2. 청구 데이터 없으면 "청구 데이터 생성" → generateBills
+ *  3. 청구 목록(BillingGrid) — draft→confirmed 정렬 + 인라인 금액 편집/확정
+ *  4. 미확정 일괄 확정
  */
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { SplashScreen } from '@/components/splash-screen'
 import { BillingGrid } from '@/components/billing/BillingGrid'
-import { BillingSummaryView } from '@/components/billing/BillingSummaryView'
-import { PaymentsView } from '@/components/billing/PaymentsView'
+import { BillingSearchBar } from '@/components/billing/BillingSearchBar'
+import { BillingSummaryBar } from '@/components/billing/BillingSummaryBar'
+import { useBillingShared } from '@/components/billing/use-billing-shared'
 import { ErrorDialog } from '@/components/ui/error-dialog'
-import {
-  confirmAllBills,
-  generateBills,
-  getBillingSummary,
-  listBills,
-  listStudyPeriods,
-  searchStudentsForBilling,
-} from '@/lib/tauri'
-import type { BillingSearchResult } from '@/types/billing'
-
-function currentYearMonth(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-/** 일정 관리(교습기간) 조회 범위 — study_periods 테이블은 작아 비용 무시 가능. */
-const STUDY_PERIOD_FROM = '2000-01'
-const STUDY_PERIOD_TO = '2099-12'
+import { confirmAllBills, generateBills, listBills } from '@/lib/tauri'
 
 export default function BillingPage() {
   return (
@@ -49,115 +31,53 @@ export default function BillingPage() {
   )
 }
 
-type Tab = 'bills' | 'payments' | 'summary'
 type BillFilter = 'all' | 'confirmed' | 'draft'
-type PaymentFilter = 'all' | 'paid' | 'unpaid'
 
 function BillingContent() {
   const qc = useQueryClient()
-  const [yearMonth, setYearMonth] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>('bills')
-
-  // 상태 필터 — 탭별 별도
   const [billFilter, setBillFilter] = useState<BillFilter>('all')
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all')
-
-  // 검색 — 청구·수납 통합 (원생 이름 / 연락처 / 입금자 이름 완전 일치)
-  const [searchInput, setSearchInput] = useState('')
-  const [appliedSearch, setAppliedSearch] = useState<string>('')
-  const searchQuery = useQuery({
-    queryKey: ['billing-search', appliedSearch],
-    queryFn: () => searchStudentsForBilling(appliedSearch),
-    enabled: appliedSearch.trim().length > 0,
-  })
-  const matchedStudentIds: Set<number> | null =
-    appliedSearch.trim() === ''
-      ? null
-      : new Set((searchQuery.data ?? []).map((r) => r.studentId))
-  const searchResults: BillingSearchResult[] = searchQuery.data ?? []
-
-  const applySearch = () => setAppliedSearch(searchInput)
-  const clearSearch = () => {
-    setSearchInput('')
-    setAppliedSearch('')
-  }
-
-  // 디폴트 청구년월 — 오늘 날짜 기준 년월 (hotfix post-Sprint 11 정책).
-  // 청구년월 'YYYY-MM' = 해당 연·월 수업 원생의 교습비 청구서.
-  const effectiveYearMonth = yearMonth ?? currentYearMonth()
+  const {
+    effectiveYearMonth,
+    setYearMonth,
+    monthOptions,
+    searchInput,
+    setSearchInput,
+    appliedSearch,
+    applySearch,
+    clearSearch,
+    matchedStudentIds,
+    searchResults,
+    summary,
+  } = useBillingShared()
 
   const billsQuery = useQuery({
     queryKey: ['bills', effectiveYearMonth],
     queryFn: () => listBills(effectiveYearMonth),
   })
-  const summaryQuery = useQuery({
-    queryKey: ['billing-summary', effectiveYearMonth],
-    queryFn: () => getBillingSummary(effectiveYearMonth),
-  })
 
-  // 청구년월 드롭다운 옵션 — 일정 관리(교습기간) 등록된 년월만. 미등록 시 현재 년월 fallback.
-  // 출결관리와 동일 정책: 프로그램 실행뿐 아니라 메뉴 진입(=페이지 mount) 시마다 매번 갱신.
-  const studyPeriodsQuery = useQuery({
-    queryKey: ['study-periods', STUDY_PERIOD_FROM, STUDY_PERIOD_TO],
-    queryFn: () => listStudyPeriods(STUDY_PERIOD_FROM, STUDY_PERIOD_TO),
-    staleTime: 0,
-    refetchOnMount: 'always',
-  })
-
-  // 메뉴가 호출되어 본 페이지가 mount 될 때마다 study-periods 캐시 무효화 → 즉시 재조회.
-  useEffect(() => {
-    void qc.invalidateQueries({ queryKey: ['study-periods'] })
-  }, [qc])
-
-  const monthOptions = useMemo(() => {
-    const periods = studyPeriodsQuery.data
-    if (periods === undefined || periods.length === 0) {
-      return [currentYearMonth()]
-    }
-    return [...new Set(periods.map((p) => p.year_month))].sort((a, b) =>
-      b.localeCompare(a),
-    )
-  }, [studyPeriodsQuery.data])
-
-  // 일정 관리이 로드되었는데 현재 effectiveYearMonth 가 옵션에 없으면 첫 옵션(최신)으로 이동.
-  useEffect(() => {
-    if (studyPeriodsQuery.data === undefined) return
-    if (!monthOptions.includes(effectiveYearMonth)) {
-      setYearMonth(monthOptions[0])
-    }
-  }, [studyPeriodsQuery.data, monthOptions, effectiveYearMonth])
-
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['bills', effectiveYearMonth] })
+    qc.invalidateQueries({ queryKey: ['billing-summary', effectiveYearMonth] })
+  }
   const generateMutation = useMutation({
     mutationFn: () => generateBills(effectiveYearMonth),
     onMutate: () => setError(null),
-    onSuccess: () => {
-      setError(null)
-      qc.invalidateQueries({ queryKey: ['bills', effectiveYearMonth] })
-      qc.invalidateQueries({ queryKey: ['billing-summary', effectiveYearMonth] })
-    },
+    onSuccess: invalidate,
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
-
   const confirmAllMutation = useMutation({
     mutationFn: () => confirmAllBills(effectiveYearMonth),
     onMutate: () => setError(null),
-    onSuccess: () => {
-      setError(null)
-      qc.invalidateQueries({ queryKey: ['bills', effectiveYearMonth] })
-      qc.invalidateQueries({ queryKey: ['billing-summary', effectiveYearMonth] })
-    },
+    onSuccess: invalidate,
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
 
   const bills = billsQuery.data ?? []
-  const summary = summaryQuery.data
   const draftCount = bills.filter((b) => b.status === 'draft').length
   const confirmedCount = bills.filter((b) => b.status === 'confirmed').length
-  // 청구 생성 버튼 표시/라벨 조건 (hotfix post-Sprint 11):
-  // - bills 0건 → "청구 데이터 생성"
-  // - bills>0 & totalBillableStudents>billCount → "추가 청구 데이터 생성"
-  // - bills>0 & 모두 청구 → 버튼 숨김
+  // 청구 생성 버튼 표시/라벨 (hotfix post-Sprint 11):
+  // bills 0건 → "청구 데이터 생성" / 미생성 원생 있으면 "추가 청구 데이터 생성" / 모두 청구 시 숨김.
   const ungeneratedCount = summary
     ? Math.max(0, summary.totalBillableStudents - summary.billCount)
     : 0
@@ -170,144 +90,61 @@ function BillingContent() {
       <div className="mx-auto max-w-6xl">
         <h1 className="mb-4 text-2xl font-bold">청구 관리</h1>
 
-        {/* 탭 */}
-        <div className="mb-3 flex gap-1 border-b border-[var(--border)]">
-          {([
-            ['bills', '청구 목록'],
-            ['payments', '수납 관리'],
-            ['summary', '월별 집계'],
-          ] as const).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setTab(key)}
-              aria-pressed={tab === key}
-              className={`-mb-px min-h-[44px] border-b-2 px-4 text-base font-semibold ${
-                tab === key
-                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                  : 'border-transparent text-gray-600 hover:text-[var(--foreground)]'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* 툴바 — 월 선택 + 액션 버튼 */}
+        {/* 툴바 — 월 선택 + 검색 + 상태 필터 + 액션 버튼 */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          {/* 청구년월 — 월별 집계 탭은 자체 기간(년/월) 선택을 사용하므로 숨김 */}
-          {tab !== 'summary' && (
-            <label className="text-base font-medium">
-              청구년월
-              <select
-                value={effectiveYearMonth}
-                onChange={(e) => setYearMonth(e.target.value)}
-                className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
-              >
-                {monthOptions.includes(effectiveYearMonth) ? null : (
-                  <option value={effectiveYearMonth}>{effectiveYearMonth}</option>
-                )}
-                {monthOptions.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {/* 통합 검색 — 원생 이름 / 연락처(- 제거 후 완전 일치) / 입금자 이름.
-              월별 집계 탭은 자체 기간 선택만 사용하므로 검색 컨트롤 숨김. */}
-          {tab !== 'summary' && (
-            <>
-              <input
-                type="search"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return
-                  if (e.key === 'Enter') applySearch()
-                  else if (e.key === 'Escape') clearSearch()
-                }}
-                placeholder="이름 / 연락처 / 입금자"
-                aria-label="청구·수납 통합 검색"
-                className="h-11 w-56 rounded-md border-2 border-[var(--border)] px-3 text-base"
-              />
-              <button
-                type="button"
-                onClick={applySearch}
-                disabled={searchInput.trim() === ''}
-                className="h-11 rounded-md border border-[var(--accent)] px-3 text-base text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
-              >
-                검색
-              </button>
-              {appliedSearch !== '' && (
-                <button
-                  type="button"
-                  onClick={clearSearch}
-                  className="h-11 rounded-md border border-[var(--border)] px-3 text-base text-gray-700 hover:bg-gray-50"
-                >
-                  초기화 ({searchResults.length}건)
-                </button>
+          <label className="text-base font-medium">
+            청구년월
+            <select
+              value={effectiveYearMonth}
+              onChange={(e) => setYearMonth(e.target.value)}
+              className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
+            >
+              {monthOptions.includes(effectiveYearMonth) ? null : (
+                <option value={effectiveYearMonth}>{effectiveYearMonth}</option>
               )}
-            </>
-          )}
-
-          {/* 탭별 상태 필터 — 검색 input 우측 (옵션별 건수 표기) */}
-          {tab === 'bills' && (
-            <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="청구 상태 필터">
-              {(
-                [
-                  ['all', '전체', bills.length],
-                  ['confirmed', '확정', confirmedCount],
-                  ['draft', '미확정', draftCount],
-                ] as const
-              ).map(([key, label, count]) => (
-                <label
-                  key={key}
-                  className="flex min-h-[44px] cursor-pointer items-center gap-1 text-gray-700"
-                >
-                  <input
-                    type="radio"
-                    name="bill-filter"
-                    value={key}
-                    checked={billFilter === key}
-                    onChange={() => setBillFilter(key)}
-                    className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
-                  />
-                  {label}({count})
-                </label>
+              {monthOptions.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
               ))}
-            </div>
-          )}
-          {tab === 'payments' && (
-            <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="수납 상태 필터">
-              {(
-                [
-                  ['all', '전체', summary?.billCount ?? 0],
-                  ['paid', '수납완료', summary?.paidCount ?? 0],
-                  ['unpaid', '미수납', summary?.unpaidCount ?? 0],
-                ] as const
-              ).map(([key, label, count]) => (
-                <label
-                  key={key}
-                  className="flex min-h-[44px] cursor-pointer items-center gap-1 text-gray-700"
-                >
-                  <input
-                    type="radio"
-                    name="payment-filter"
-                    value={key}
-                    checked={paymentFilter === key}
-                    onChange={() => setPaymentFilter(key)}
-                    className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
-                  />
-                  {label}({count})
-                </label>
-              ))}
-            </div>
-          )}
+            </select>
+          </label>
 
-          {tab === 'bills' && showGenerateButton && (
+          <BillingSearchBar
+            searchInput={searchInput}
+            setSearchInput={setSearchInput}
+            appliedSearch={appliedSearch}
+            applySearch={applySearch}
+            clearSearch={clearSearch}
+            resultCount={searchResults.length}
+          />
+
+          <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="청구 상태 필터">
+            {(
+              [
+                ['all', '전체', bills.length],
+                ['confirmed', '확정', confirmedCount],
+                ['draft', '미확정', draftCount],
+              ] as const
+            ).map(([key, label, count]) => (
+              <label
+                key={key}
+                className="flex min-h-[44px] cursor-pointer items-center gap-1 text-gray-700"
+              >
+                <input
+                  type="radio"
+                  name="bill-filter"
+                  value={key}
+                  checked={billFilter === key}
+                  onChange={() => setBillFilter(key)}
+                  className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
+                />
+                {label}({count})
+              </label>
+            ))}
+          </div>
+
+          {showGenerateButton && (
             <button
               type="button"
               onClick={() => generateMutation.mutate()}
@@ -318,7 +155,7 @@ function BillingContent() {
             </button>
           )}
 
-          {tab === 'bills' && draftCount > 0 && (
+          {draftCount > 0 && (
             <button
               type="button"
               onClick={() => confirmAllMutation.mutate()}
@@ -330,8 +167,8 @@ function BillingContent() {
           )}
         </div>
 
-        {/* 미확정 청구 배너 (AC-4.9-5) — 청구 탭에서만 */}
-        {tab === 'bills' && draftCount > 0 && (
+        {/* 미확정 청구 배너 (AC-4.9-5) */}
+        {draftCount > 0 && (
           <div
             role="status"
             className="mb-3 rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900"
@@ -340,44 +177,18 @@ function BillingContent() {
           </div>
         )}
 
-        {/* 요약 — 월별 집계 탭은 자체 StatCard 가 있어 중복 숨김 */}
-        {tab !== 'summary' && summary && (summary.totalBillableStudents > 0 || summary.billCount > 0) && (
-          <div className="mb-3 grid grid-cols-2 gap-3 rounded-md border border-[var(--border)] bg-gray-50 p-3 text-sm md:grid-cols-3 lg:grid-cols-5">
-            <div>
-              총수업원생: <strong>{summary.totalBillableStudents}명</strong>
-            </div>
-            <div>
-              청구 건수:{' '}
-              <strong>
-                {summary.billCount}건
-                {ungeneratedCount > 0 && (
-                  <span className="ml-1 text-amber-700">/ 미생성 {ungeneratedCount}명</span>
-                )}
-              </strong>
-            </div>
-            <div>
-              청구 총액: <strong>{summary.totalBilled.toLocaleString()}원</strong>
-            </div>
-            <div>
-              입금 완료: <strong>{summary.totalPaid.toLocaleString()}원</strong>
-            </div>
-            <div>
-              미납: <strong className="text-[var(--danger)]">{summary.totalUnpaid.toLocaleString()}원</strong>
-            </div>
-          </div>
-        )}
+        {summary && <BillingSummaryBar summary={summary} />}
 
         {billsQuery.isLoading && <p>불러오는 중...</p>}
 
-        {tab === 'bills' && !billsQuery.isLoading && bills.length === 0 && !showGenerateButton && (
+        {!billsQuery.isLoading && bills.length === 0 && !showGenerateButton && (
           <p className="text-gray-600">청구 데이터가 없습니다.</p>
         )}
 
-        {tab === 'bills' && bills.length > 0 && (
+        {bills.length > 0 && (
           <BillingGrid
             bills={bills.filter((b) => {
-              if (matchedStudentIds !== null && !matchedStudentIds.has(b.studentId))
-                return false
+              if (matchedStudentIds !== null && !matchedStudentIds.has(b.studentId)) return false
               if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
               if (billFilter === 'draft' && b.status !== 'draft') return false
               return true
@@ -386,18 +197,6 @@ function BillingContent() {
             onError={(msg) => setError(msg)}
           />
         )}
-
-        {tab === 'payments' && (
-          <PaymentsView
-            yearMonth={effectiveYearMonth}
-            onError={(msg) => setError(msg)}
-            matchedStudentIds={matchedStudentIds}
-            searchResults={searchResults}
-            paymentFilter={paymentFilter}
-          />
-        )}
-
-        {tab === 'summary' && <BillingSummaryView defaultYearMonth={effectiveYearMonth} />}
       </div>
 
       <ErrorDialog

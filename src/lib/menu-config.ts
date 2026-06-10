@@ -20,7 +20,9 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: '출결 관리', href: '/attendance' },
   { label: '수업 관리', href: '/schedules' },
   // 보강 관리는 Sprint 10 T11 에서 `/schedules` 페이지 내 탭으로 통합 — 별도 메뉴 항목 제거 (Sprint 11 F7).
-  { label: '청구/수납 관리', href: '/billing' },
+  // Sprint 16: '청구/수납 관리' → '청구 관리'(/billing, 청구목록) + '수납 관리'(/payments, 수납+월별집계) 분리 (원장 지시).
+  { label: '청구 관리', href: '/billing' },
+  { label: '수납 관리', href: '/payments' },
   { label: '공지문', href: '/notices' },
   { label: '설정', href: '/settings' },
 ]

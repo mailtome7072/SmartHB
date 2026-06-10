@@ -61,8 +61,9 @@ function targetLink(table: string | null): { href: string; label: string } | nul
     case 'makeup_attendances':
       return { href: '/schedules', label: '수업/보강 관리로 이동' }
     case 'bills':
+      return { href: '/billing', label: '청구 관리로 이동' }
     case 'payments':
-      return { href: '/billing', label: '청구/수납 관리로 이동' }
+      return { href: '/payments', label: '수납 관리로 이동' }
     default:
       return null
   }
