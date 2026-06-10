@@ -6,10 +6,10 @@
  * - 강조: 차분한 남색 (#2563EB) — 주요 버튼, 포커스, 링크
  * - 텍스트: 짙은 검정 (#1A1A1A) — WCAG AA 명도 대비 ≥ 4.5:1 보장
  *
- * 폰트: Pretendard self-host (ADR-006, Sprint 3 T1).
- * - 출처: orioncactus/pretendard v1.3.9 (SIL OFL 1.1), web/static/woff2-subset/
- * - 포함 weight: Regular(400) / SemiBold(600) / Bold(700) — 총 ~806KB
- * - 한글+영문+숫자+기호 subset (R17 ~2MB 한도 만족)
+ * 폰트: Pretendard self-host (ADR-006, Sprint 3 T1 / Sprint 16 full 교체).
+ * - 출처: orioncactus/pretendard v1.3.9 (SIL OFL 1.1), web/static/woff2/ (full)
+ * - 포함 weight: Regular(400) / SemiBold(600) / Bold(700) — 총 ~2.3MB
+ * - **full glyph** — 공지문 등 캔버스 렌더 시 희귀 한자·특수문자 fallback 방지 (subset→full 교체)
  * - 시스템 fallback: 한국어 환경에서 다운로드 실패/미적용 시 Malgun Gothic·Apple SD Gothic Neo
  */
 @font-face {
@@ -17,21 +17,21 @@
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/Pretendard-Regular.subset.woff2') format('woff2');
+  src: url('/fonts/Pretendard-Regular.woff2') format('woff2');
 }
 @font-face {
   font-family: 'Pretendard';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url('/fonts/Pretendard-SemiBold.subset.woff2') format('woff2');
+  src: url('/fonts/Pretendard-SemiBold.woff2') format('woff2');
 }
 @font-face {
   font-family: 'Pretendard';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/Pretendard-Bold.subset.woff2') format('woff2');
+  src: url('/fonts/Pretendard-Bold.woff2') format('woff2');
 }
 
 :root {
