@@ -271,6 +271,43 @@ Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 
 ---
 
+## 전체 코드리뷰 P0+P1 반영 (Session #9, 2026-06-11) — 검토 보고서 기반
+6인 전문팀(아키텍트/DB/디자이너/UX/시니어/매니저) 전체 코드리뷰 결과(`docs/code-review/full-review-2026-06.md`) 중 **사용자 확정: P0 7건 + P1 11건을 sprint16에서 T11 전에 처리**. P2/P3는 v1.0 이후.
+
+### P0 수정 파일 (데이터 안전)
+| 파일 | 수정 횟수 | 항목 |
+|------|---------|------|
+| src-tauri/src/startup.rs | [0회] | P0-1 exit_hook WAL checkpoint(TRUNCATE)+pool close |
+| src-tauri/src/commands/setup.rs | [0회] | P0-2 write_status fsync |
+| src/lib/format.ts | [0회] | P0-3 todayLocalISO() 헬퍼 |
+| src/app/students/edit/page.tsx | [0회] | P0-3 적용 + P1-2 catch + P1-6 빨강 |
+| src/components/students/student-form.tsx | [0회] | P0-3 + P0-5 draft 이어하기 선택지 + P1-9 Ctrl+S |
+| src/components/students/schedule-editor.tsx | [0회] | P0-3 + P0-7 요일 변경 원자화 연동 |
+| src/components/billing/PaymentsView.tsx | [0회] | P0-4 draft 보호(useUnsavedChanges + 선택적 정리) |
+| src/components/attendance/AttendanceGrid.tsx | [0회] | P0-6 Ctrl+Z editable 가드 + P1-4 글씨 |
+| src-tauri/src/commands/schedules.rs (또는 attendance.rs) | [0회] | P0-7 change_schedule_day 원자 커맨드 |
+
+### P1 수정 파일 (저비용·고체감)
+| 파일 | 수정 횟수 | 항목 |
+|------|---------|------|
+| src/components/ui/button.tsx + alert-dialog.tsx | [0회] | P1-1 h-8→h-11/text-base |
+| src/app/notices/page.tsx | [0회] | P1-3 삭제 확인 + P1-7 errMsg + P1-11 구 메뉴명 |
+| src/components/schedules/ClassCalendar.tsx | [0회] | P1-4 글씨 |
+| (전역) text-gray-500 사용 파일 | [0회] | P1-5 → text-muted-foreground |
+| src/app/academic/page.tsx | [0회] | P1-6 삭제 버튼 빨강 |
+| src/lib/tauri/index.ts (또는 신규 errors.ts) | [0회] | P1-7 errMsg 헬퍼 |
+| src-tauri/src/commands/attendance.rs | [0회] | P1-8 from_date[..7] 가드 |
+| src-tauri/src/commands/notice.rs | [0회] | P1-8 &ym[4..5] 가드 |
+| .claude/rules/backend.md + CLAUDE.md | [0회] | P1-10 문서 드리프트(청구 2단계/V307/파일명/query! 규칙 개정) |
+
+### 완료 기준
+- ⬜ P0-1~7 구현 + 관련 단위테스트
+- ⬜ P1-1~11 구현
+- ⬜ Self-verify: cargo test / clippy --all-targets / cargo check --features cipher / tsc / lint / build 통과
+- ⬜ 시각검증 필요 항목(P0-4/5/6, P1-1/4/6) 사용자 검수
+
+---
+
 ## daily/weekly 백업 스케줄러 연결 (Session #8, 2026-06-11) — catch-up 방식
 backlog 해소: daily(30)/weekly(4) 계층은 `backup.rs`에 정의·rotation만 있고 **생성 트리거가 없던** 공백. 실사용 직전 데이터 안전 보강 최우선 (사용자 확정 순서 1번).
 
