@@ -73,6 +73,29 @@ impl BackupLayer {
             Self::Weekly => "weekly",
         }
     }
+
+    /// catch-up 생성 주기 — daily/weekly 만 대상 (exit 은 종료 hook, hourly 는 interval 타이머).
+    ///
+    /// 간헐적 사용 패턴(앱이 24시간 떠 있지 않음)에서는 순수 interval 타이머가 fire 하지
+    /// 못하므로, 시작 시 + hourly tick 마다 최신 백업의 경과 시간을 보고 따라잡는다
+    /// ([`run_catchup_backups`]).
+    pub(crate) fn catchup_interval(self) -> Option<chrono::Duration> {
+        match self {
+            Self::Daily => Some(chrono::Duration::hours(24)),
+            Self::Weekly => Some(chrono::Duration::days(7)),
+            Self::Exit | Self::Hourly => None,
+        }
+    }
+}
+
+/// catch-up 백업 생성 기한 판정 — 순수 함수 (feature 무관 단위테스트 대상).
+///
+/// 백업이 한 건도 없거나(`latest=None`) 최신 백업이 `interval` 이상 경과했으면 due.
+fn is_due(latest: Option<DateTime<Utc>>, now: DateTime<Utc>, interval: chrono::Duration) -> bool {
+    match latest {
+        None => true,
+        Some(latest) => now - latest >= interval,
+    }
 }
 
 /// 백업 메타데이터 — IPC 응답.
@@ -449,6 +472,29 @@ pub(crate) async fn try_create_backup(layer: BackupLayer) {
     }
 }
 
+/// daily/weekly catch-up — 최신 백업이 주기(24h/7d) 이상 경과(또는 0건)한 계층만 백업 생성.
+///
+/// 앱 시작 직후 + hourly tick 마다 호출된다 (startup.rs). 디렉토리 스캔 실패는 fail-soft —
+/// 해당 계층만 건너뛰고 다음 주기에 재시도한다. 실제 백업 생성은 cipher 빌드에서만 동작
+/// (off 빌드는 [`try_create_backup`] 의 stub 안내 경로).
+pub(crate) async fn run_catchup_backups() {
+    for layer in [BackupLayer::Daily, BackupLayer::Weekly] {
+        let Some(interval) = layer.catchup_interval() else {
+            continue;
+        };
+        let latest = match scan_layer(layer) {
+            Ok(entries) => entries.last().map(|m| m.created_at),
+            Err(e) => {
+                eprintln!("[backup] {} catch-up 스캔 실패 (다음 주기 재시도): {}", layer.subdir(), e);
+                continue;
+            }
+        };
+        if is_due(latest, Utc::now(), interval) {
+            try_create_backup(layer).await;
+        }
+    }
+}
+
 /// 백업 파일 목록을 시간 역순으로 반환한다. `layer` 미지정 시 4계층 전체.
 #[tauri::command]
 pub async fn list_backups(layer: Option<BackupLayer>) -> Result<Vec<BackupMetadata>, String> {
@@ -492,6 +538,48 @@ mod tests {
         assert_eq!(BackupLayer::Hourly.max_keep(), 24);
         assert_eq!(BackupLayer::Daily.max_keep(), 30);
         assert_eq!(BackupLayer::Weekly.max_keep(), 4);
+    }
+
+    #[test]
+    fn catchup_interval_targets_daily_and_weekly_only() {
+        assert_eq!(BackupLayer::Daily.catchup_interval(), Some(chrono::Duration::hours(24)));
+        assert_eq!(BackupLayer::Weekly.catchup_interval(), Some(chrono::Duration::days(7)));
+        assert_eq!(BackupLayer::Exit.catchup_interval(), None);
+        assert_eq!(BackupLayer::Hourly.catchup_interval(), None);
+    }
+
+    #[test]
+    fn is_due_when_no_backup_exists() {
+        let now = Utc::now();
+        assert!(is_due(None, now, chrono::Duration::hours(24)));
+    }
+
+    #[test]
+    fn is_due_only_after_interval_elapsed() {
+        let now = Utc::now();
+        let interval = chrono::Duration::hours(24);
+        // 미경과 (23시간 전) → 아직 아님
+        assert!(!is_due(Some(now - chrono::Duration::hours(23)), now, interval));
+        // 정확히 경과 → due (>= 경계 포함)
+        assert!(is_due(Some(now - interval), now, interval));
+        // 초과 경과 (25시간 전) → due
+        assert!(is_due(Some(now - chrono::Duration::hours(25)), now, interval));
+    }
+
+    #[test]
+    fn is_due_weekly_interval() {
+        let now = Utc::now();
+        let interval = chrono::Duration::days(7);
+        assert!(!is_due(Some(now - chrono::Duration::days(6)), now, interval));
+        assert!(is_due(Some(now - chrono::Duration::days(8)), now, interval));
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn run_catchup_backups_is_fail_soft_without_cipher() {
+        // cipher off — due 판정 시 try_create_backup 이 stub 에러를 stderr 로만 출력.
+        // panic 없이 반환해야 한다 (백그라운드 task 안전성).
+        run_catchup_backups().await;
     }
 
     #[test]

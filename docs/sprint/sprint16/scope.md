@@ -271,6 +271,32 @@ Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 
 ---
 
+## daily/weekly 백업 스케줄러 연결 (Session #8, 2026-06-11) — catch-up 방식
+backlog 해소: daily(30)/weekly(4) 계층은 `backup.rs`에 정의·rotation만 있고 **생성 트리거가 없던** 공백. 실사용 직전 데이터 안전 보강 최우선 (사용자 확정 순서 1번).
+
+### 설계 (메모리 권장안 채택)
+- 순수 interval 타이머는 앱이 계속 떠 있어야만 fire → 간헐적 사용 패턴에 부적합.
+- **catch-up 방식**: 앱 시작 시 1회 + hourly tick마다 `scan_layer(Daily/Weekly)` 최신 `created_at` 확인 → **24h/7d 경과 또는 백업 0건**이면 `try_create_backup(layer)` 호출.
+- "is due" 판정은 순수 함수로 분리 — **feature 무관 단위테스트**. 실제 create_backup은 cipher 빌드만 동작(off는 기존 stub 안내, dev 무해).
+
+### 수정 파일
+| 파일 | 수정 횟수 | 비고 |
+|------|---------|------|
+| src-tauri/src/commands/backup.rs | [0회] | `BackupLayer::catchup_interval()`(Daily=24h/Weekly=7d/나머지 None) + `is_due()` 순수 함수 + `run_catchup_backups()` + 단위테스트 |
+| src-tauri/src/startup.rs | [0회] | spawn_background_tasks: 백업 task 시작 직후 catch-up 1회 + hourly tick마다 catch-up. 모듈 doc 갱신 |
+
+### 범위 외 (수정 안 함)
+- 프론트엔드 — 변경 없음 (백업 목록 UI는 기존 list_backups로 daily/weekly 자동 표시)
+- 마이그레이션·신규 의존성 — 없음
+
+### 완료 기준
+- ✅ catchup_interval/is_due 순수 함수 + 단위테스트 5건 (0건→due, 미경과→false, 경계 포함 경과→true, daily/weekly interval, cipher off fail-soft)
+- ✅ run_catchup_backups: scan 실패 fail-soft(스킵), due 시 try_create_backup 위임
+- ✅ startup 연결: 백업 task 시작 직후 1회 + hourly tick마다, OnceLock 중복 spawn 방지 유지
+- ✅ Self-verify: cargo test(408) / clippy --all-targets clean / cargo check --features cipher 통과 (프론트 무변경 → lint/tsc 생략)
+
+---
+
 ## 백업 복원 연결 (Session #7, 2026-06-10) — 자동 복원 + 수동 복원 UI
 백업/복원 로직(ADR-003)은 있으나 사용자 흐름에 미연결이던 공백 해소. 자동(부팅 차단형 손상 대응) 우선 + 수동(정상 운영 중 롤백) 보조. 사용자 결정: **둘 다**.
 

@@ -12,7 +12,7 @@
 //!     ├── 비밀번호 검증 (auth::verify_password)
 //!     ├── db::initialize → PRAGMA key (cipher build) + WAL + cache_size + migrate
 //!     ├── audit::cleanup_older_than(365)  (best-effort)
-//!     ├── 백그라운드 spawn: heartbeat (60초) + hourly 백업 (1시간)
+//!     ├── 백그라운드 spawn: heartbeat (60초) + hourly 백업 (1시간) + daily/weekly catch-up
 //!     └── 측정 종료 → StartupResult 반환
 //! ```
 //!
@@ -272,7 +272,11 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
     })
 }
 
-/// heartbeat + hourly 백업 백그라운드 task 를 1회 spawn 한다.
+/// heartbeat + 백업(hourly + daily/weekly catch-up) 백그라운드 task 를 1회 spawn 한다.
+///
+/// daily/weekly 는 순수 interval 로는 앱이 24시간/7일 연속 떠 있어야만 fire 하므로
+/// **catch-up 방식** 채택 — 시작 직후 1회 + hourly tick 마다 최신 백업 경과 시간을 보고
+/// 기한(24h/7d) 경과 또는 0건이면 생성한다 ([`backup::run_catchup_backups`]).
 fn spawn_background_tasks() {
     BACKGROUND.get_or_init(|| {
         let heartbeat = tokio::spawn(async {
@@ -285,11 +289,14 @@ fn spawn_background_tasks() {
             }
         });
         let hourly_backup = tokio::spawn(async {
+            // 시작 catch-up — 마지막 실행 후 24h/7d 지났으면 즉시 따라잡는다 (간헐적 사용 대응).
+            backup::run_catchup_backups().await;
             let mut ticker = tokio::time::interval(Duration::from_secs(HOURLY_BACKUP_INTERVAL_SECS));
             ticker.tick().await; // 첫 tick 즉시 소비
             loop {
                 ticker.tick().await;
                 backup::try_create_backup(backup::BackupLayer::Hourly).await;
+                backup::run_catchup_backups().await;
             }
         });
         BackgroundHandles {
