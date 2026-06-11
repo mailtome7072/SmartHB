@@ -45,6 +45,7 @@ import {
   saveNoticePreview,
   showSaveDialog,
 } from '@/lib/tauri'
+import { errMsg } from '@/lib/errors'
 import { renderCalendarImageDataUrl } from '@/lib/calendar-image'
 import {
   buildColorRuns,
@@ -508,7 +509,7 @@ function NoticesContent() {
       const mime = name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg'
       setBgDataUrl(bytesToDataUrl(bytes, mime))
     } catch (e) {
-      setError(e instanceof Error ? e.message : '배경서식을 불러올 수 없습니다.')
+      setError(errMsg(e, '배경서식을 불러올 수 없습니다.'))
     }
   }, [])
   useEffect(() => {
@@ -723,7 +724,7 @@ function NoticesContent() {
       await assetsQuery.refetch()
       if (layout) updateLayout({ ...layout, backgroundAsset: saved })
     } catch (e) {
-      setError(e instanceof Error ? e.message : '배경서식 업로드 실패')
+      setError(errMsg(e, '배경서식 업로드 실패'))
     }
   }
   const handleDeleteAsset = async (name: string) => {
@@ -734,7 +735,7 @@ function NoticesContent() {
       await assetsQuery.refetch()
       if (layout?.backgroundAsset === name) updateLayout({ ...layout, backgroundAsset: null })
     } catch (e) {
-      setError(e instanceof Error ? e.message : '배경서식 삭제 실패')
+      setError(errMsg(e, '배경서식 삭제 실패'))
     }
   }
 
@@ -767,7 +768,7 @@ function NoticesContent() {
         ],
       })
     } catch (e) {
-      setError(e instanceof Error ? e.message : '이미지 추가 실패')
+      setError(errMsg(e, '이미지 추가 실패'))
     }
   }
 
@@ -850,7 +851,7 @@ function NoticesContent() {
       })
       setToast(`✅ ${result.saved}건 생성 완료. 저장 위치: output/${noSpace(noticeName)}/${yymm(yearMonth)}/`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '공지문 생성 실패')
+      setError(errMsg(e, '공지문 생성 실패'))
     } finally {
       setGenerating(false)
       setProgress(null)
@@ -880,7 +881,7 @@ function NoticesContent() {
       )
       setPreviewUrl(url)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '미리보기 생성 실패')
+      setError(errMsg(e, '미리보기 생성 실패'))
     } finally {
       setPreviewBusy(false)
     }
@@ -897,7 +898,7 @@ function NoticesContent() {
       setPreviewUrl(null)
       setToast(`✅ 미리보기 저장 완료: ${saved}`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '미리보기 저장 실패')
+      setError(errMsg(e, '미리보기 저장 실패'))
     }
   }
 
@@ -1034,7 +1035,7 @@ function NoticesContent() {
       setToast(`✅ '${name}' 템플릿으로 저장되었습니다.`)
       return true
     } catch (e) {
-      setError(e instanceof Error ? e.message : '저장 실패')
+      setError(errMsg(e, '저장 실패'))
       return false
     }
   }
@@ -1059,7 +1060,7 @@ function NoticesContent() {
       setTemplateName(name)
       setToast(`'${name}' 템플릿을 불러왔습니다.`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '템플릿 불러오기 실패')
+      setError(errMsg(e, '템플릿 불러오기 실패'))
     }
   }
   // 공지문 닫기 — 캔버스 비우고 아무 공지문도 선택되지 않은 상태로.
@@ -1112,7 +1113,7 @@ function NoticesContent() {
         savedSnapshotRef.current = null // 불러온 템플릿 없음
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '템플릿 삭제 실패')
+      setError(errMsg(e, '템플릿 삭제 실패'))
     }
   }
 
@@ -1141,8 +1142,9 @@ function NoticesContent() {
             </label>
 
             {bills.length === 0 ? (
-              <p className="py-6 text-center text-sm text-gray-600">
-                확정된 청구가 없습니다. 청구/수납 관리에서 확정 후 이용하세요.
+              // P1-11: 메뉴 분리(Sprint 16) 반영 — 구 명칭 '청구/수납 관리' 잔존 교정
+              <p className="py-6 text-center text-base text-gray-600">
+                확정된 청구가 없습니다. <strong>청구 관리</strong> 메뉴에서 확정 후 이용하세요.
               </p>
             ) : (
               <>
@@ -1190,11 +1192,11 @@ function NoticesContent() {
                     return
                   }
                   void openNoticeOutputDir(name, yearMonth).catch((e) =>
-                    setError(e instanceof Error ? e.message : '폴더 열기 실패'),
+                    setError(errMsg(e, '폴더 열기 실패')),
                   )
                 }}
                 title="저장 폴더 열기 (없으면 생성)"
-                className="break-all text-left text-xs text-gray-500 underline-offset-2 hover:text-[var(--accent)] hover:underline"
+                className="break-all text-left text-xs text-muted-foreground underline-offset-2 hover:text-[var(--accent)] hover:underline"
               >
                 📂 저장 위치: output/{noSpace(templateName.trim()) || '{공지문이름}'}/{yymm(yearMonth)}/
               </button>
@@ -1217,10 +1219,10 @@ function NoticesContent() {
                     onClick={() => setAssetMenuOpen((o) => !o)}
                     className="flex h-9 min-w-[220px] items-center justify-between gap-2 rounded-md border border-[var(--border)] px-2 text-sm hover:bg-gray-50"
                   >
-                    <span className={`truncate ${layout?.backgroundAsset ? 'font-medium' : 'text-gray-500'}`}>
+                    <span className={`truncate ${layout?.backgroundAsset ? 'font-medium' : 'text-muted-foreground'}`}>
                       {layout?.backgroundAsset ?? '배경서식 선택'}
                     </span>
-                    <span className="text-gray-500">▾</span>
+                    <span className="text-muted-foreground">▾</span>
                   </button>
 
                   {assetMenuOpen && (
@@ -1235,7 +1237,7 @@ function NoticesContent() {
                               if (layout) updateLayout({ ...layout, backgroundAsset: null })
                               setAssetMenuOpen(false)
                             }}
-                            className="w-full px-3 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-50"
+                            className="w-full px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-gray-50"
                           >
                             선택 안 함
                           </button>
@@ -1266,7 +1268,13 @@ function NoticesContent() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleDeleteAsset(a.name)}
+                                // P1-3: 위험 동작(영구 삭제) 확인 다이얼로그 — frontend.md 규칙
+                                onClick={() =>
+                                  setConfirmDialog({
+                                    message: `배경서식 '${a.name}'을(를) 삭제할까요? 되돌릴 수 없습니다.`,
+                                    onConfirm: () => void handleDeleteAsset(a.name),
+                                  })
+                                }
                                 aria-label={`${a.name} 삭제`}
                                 className="rounded px-1.5 text-sm text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
                               >
@@ -1331,7 +1339,7 @@ function NoticesContent() {
                 {/* 선택된 텍스트박스 폰트 컨트롤 (위) — 캔버스에서 박스 클릭 시 대상 변경 */}
                 {layout && selectedBoxIdxs.size > 0 && layout.textboxes[selectedBoxIdx] && (
                   <div className={`flex flex-col gap-2 text-sm ${selDisabled ? 'opacity-50' : ''}`}>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-muted-foreground">
                       편집: {boxLabel(layout.textboxes[selectedBoxIdx])}
                       {selDisabled && ' (체크 해제됨)'}
                     </span>
@@ -1395,7 +1403,7 @@ function NoticesContent() {
                     {/* 색 프리셋 — 편집 중 글자 선택 시 선택 부분만, 아니면 박스 전체 기본색 */}
                     {/* flex-1 로 한 줄에 균등 분배 — 프리셋 개수와 무관하게 항상 한 라인 */}
                     <div className="flex items-center gap-1">
-                      <span className="w-8 shrink-0 text-xs text-gray-500">글자</span>
+                      <span className="w-8 shrink-0 text-xs text-muted-foreground">글자</span>
                       {COLOR_PRESETS.map(({ hex, label }) => (
                         <button
                           key={hex}
@@ -1411,7 +1419,7 @@ function NoticesContent() {
                     </div>
                     {/* 박스 배경색 — 박스 단위(글자별 아님). '없음'으로 투명 처리 */}
                     <div className="flex items-center gap-1">
-                      <span className="w-8 shrink-0 text-xs text-gray-500">배경</span>
+                      <span className="w-8 shrink-0 text-xs text-muted-foreground">배경</span>
                       {COLOR_PRESETS.map(({ hex, label }) => (
                         <button
                           key={hex}
@@ -1539,11 +1547,11 @@ function NoticesContent() {
                     type="button"
                     onClick={() =>
                       void openNoticePreviewDir().catch((e) =>
-                        setError(e instanceof Error ? e.message : '폴더 열기 실패'),
+                        setError(errMsg(e, '폴더 열기 실패')),
                       )
                     }
                     title="저장 폴더 열기 (없으면 생성)"
-                    className="break-all text-left text-xs text-gray-500 underline-offset-2 hover:text-[var(--accent)] hover:underline"
+                    className="break-all text-left text-xs text-muted-foreground underline-offset-2 hover:text-[var(--accent)] hover:underline"
                   >
                     📂 저장 위치: output/공지문/{noSpace(templateName.trim()) || '{공지문이름}'}.png
                   </button>
@@ -1827,7 +1835,7 @@ function NoticesContent() {
             className="order-1 flex shrink-0 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--border)] p-3"
             style={{ width: TEMPLATE_PANEL_WIDTH }}
           >
-            <label className="text-xs text-gray-500">공지문 이름</label>
+            <label className="text-xs text-muted-foreground">공지문 이름</label>
             <input
               type="text"
               value={templateName}
@@ -1855,7 +1863,7 @@ function NoticesContent() {
               </button>
             </div>
 
-            <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs text-gray-500">
+            <div className="mt-1 border-t border-[var(--border)] pt-2 text-xs text-muted-foreground">
               저장된 템플릿
             </div>
             {templates.length === 0 ? (
@@ -1874,9 +1882,15 @@ function NoticesContent() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDeleteTemplate(name)}
+                      // P1-3: 위험 동작(영구 삭제) 확인 다이얼로그 — frontend.md 규칙
+                      onClick={() =>
+                        setConfirmDialog({
+                          message: `공지문 템플릿 '${name}'을(를) 삭제할까요? 되돌릴 수 없습니다.`,
+                          onConfirm: () => void handleDeleteTemplate(name),
+                        })
+                      }
                       aria-label={`${name} 삭제`}
-                      className="rounded px-1 text-xs text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
+                      className="rounded px-1 text-sm text-gray-600 hover:bg-red-50 hover:text-[var(--danger)]"
                     >
                       ✕
                     </button>

@@ -270,7 +270,7 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         <label className="flex flex-col gap-1 text-sm">
           시작
           {startTimeOptions.length === 0 ? (
-            <span className="flex h-11 items-center rounded-md border border-[var(--border)] bg-gray-100 px-3 text-gray-500">
+            <span className="flex h-11 items-center rounded-md border border-[var(--border)] bg-gray-100 px-3 text-muted-foreground">
               미운영 요일
             </span>
           ) : (
@@ -370,7 +370,7 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         <tbody>
           {schedules.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
+              <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
                 등록된 스케줄이 없습니다. 위 폼에서 추가해주세요.
               </td>
             </tr>

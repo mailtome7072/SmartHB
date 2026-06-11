@@ -249,7 +249,7 @@ export function AttendanceGrid({
                 className="sticky left-[140px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 출석
-                <div className="text-xs text-gray-600">(일)</div>
+                <div className="text-sm text-gray-600">(일)</div>
               </th>
               {/* Sprint 9 T7 (A41 흡수): absent_count 는 status='absent' AND makeup_attendance_id IS NULL
                   만 카운트 — 보강완료/소멸 제외. "미처리 결석" 으로 의미 명확화. */}
@@ -260,21 +260,21 @@ export function AttendanceGrid({
               >
                 미처리
                 <div>결석</div>
-                <div className="text-xs text-gray-600">(일)</div>
+                <div className="text-sm text-gray-600">(일)</div>
               </th>
               <th
                 rowSpan={2}
                 className="sticky left-[264px] z-20 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강필요
-                <div className="text-xs text-gray-600">(시간)</div>
+                <div className="text-sm text-gray-600">(시간)</div>
               </th>
               <th
                 rowSpan={2}
                 className="sticky left-[348px] z-20 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강완료
-                <div className="text-xs text-gray-600">(시간)</div>
+                <div className="text-sm text-gray-600">(시간)</div>
               </th>
               {days.map((d) => {
                 const wd = weekdayLabel(grid.yearMonth, d)
@@ -290,7 +290,7 @@ export function AttendanceGrid({
                   <th
                     key={`wd-${d}`}
                     title={isToday ? '오늘' : sched?.label}
-                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-xs ${
+                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-sm ${
                       isToday
                         ? 'bg-[var(--accent)] font-bold text-white'
                         : showSkyBg
@@ -329,7 +329,7 @@ export function AttendanceGrid({
                   >
                     {d}
                     {isMakeupDayLabel && (
-                      <div className="text-[10px] font-normal leading-none text-sky-700">
+                      <div className="text-xs font-semibold leading-none text-sky-700">
                         보강데이
                       </div>
                     )}
@@ -466,7 +466,7 @@ const StudentRow = memo(function StudentRow({
         {onStudentNameClick === undefined ? (
           <>
             <div>{student.name}</div>
-            <div className="text-xs text-gray-500">#{student.serialNo}</div>
+            <div className="text-sm text-muted-foreground">#{student.serialNo}</div>
           </>
         ) : (
           <button
@@ -476,7 +476,7 @@ const StudentRow = memo(function StudentRow({
             title="결석 이력 보기"
           >
             <div>{student.name}</div>
-            <div className="text-xs text-gray-500">#{student.serialNo}</div>
+            <div className="text-sm text-muted-foreground">#{student.serialNo}</div>
           </button>
         )}
       </th>

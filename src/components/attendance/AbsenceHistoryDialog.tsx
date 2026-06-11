@@ -65,7 +65,7 @@ export function AbsenceHistoryDialog({
         </h2>
         <p className="mt-1 text-sm text-gray-600">
           <span className="font-semibold">{studentName}</span>
-          <span className="ml-1 text-gray-500">#{studentSerialNo}</span>
+          <span className="ml-1 text-muted-foreground">#{studentSerialNo}</span>
         </p>
 
         {query.isLoading && (

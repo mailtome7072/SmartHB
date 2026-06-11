@@ -123,7 +123,7 @@ export default function BackupPage() {
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-4xl">
         <div className="mb-4">
-          <Link href="/settings" className="text-sm text-gray-500 hover:text-[var(--accent)]">
+          <Link href="/settings" className="text-sm text-muted-foreground hover:text-[var(--accent)]">
             ← 설정
           </Link>
         </div>
@@ -152,9 +152,9 @@ export default function BackupPage() {
           >
             <h2 className="mb-3 text-lg font-bold">백업 파일</h2>
             {loading ? (
-              <p className="text-sm text-gray-500">불러오는 중...</p>
+              <p className="text-sm text-muted-foreground">불러오는 중...</p>
             ) : backups.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 아직 백업 파일이 없습니다. (개발 빌드에서는 암호화 백업이 생성되지 않습니다)
               </p>
             ) : (
@@ -178,7 +178,7 @@ export default function BackupPage() {
                         <span className="text-sm font-medium text-[var(--foreground)]">
                           {formatDateTime(b.created_at)}
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           {LAYER_LABEL[b.layer]} · {formatBytes(b.size_bytes)}
                         </span>
                       </button>
@@ -195,7 +195,7 @@ export default function BackupPage() {
             className="rounded-lg border border-[var(--border)] bg-white p-5"
           >
             {selected === null ? (
-              <p className="text-base text-gray-500">
+              <p className="text-base text-muted-foreground">
                 왼쪽에서 검증할 백업 파일을 선택하세요.
               </p>
             ) : (
@@ -203,7 +203,7 @@ export default function BackupPage() {
                 <div className="mb-4 flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-lg font-bold">복원 리허설</h2>
-                    <p className="mt-1 truncate text-sm text-gray-500" title={selected.path}>
+                    <p className="mt-1 truncate text-sm text-muted-foreground" title={selected.path}>
                       {formatDateTime(selected.created_at)} · {LAYER_LABEL[selected.layer]}
                     </p>
                   </div>
@@ -228,7 +228,7 @@ export default function BackupPage() {
                 </div>
 
                 {result === null ? (
-                  <p className="text-base text-gray-500">
+                  <p className="text-base text-muted-foreground">
                     “복원 리허설 실행”을 누르면 이 백업의 사본을 만들어 무결성과 데이터 건수를
                     점검합니다.
                   </p>
@@ -337,7 +337,7 @@ function RehearsalReport({ result }: { result: RehearsalResult }) {
       </p>
       <table className="mt-4 w-full text-sm">
         <thead>
-          <tr className="border-b border-[var(--border)] text-left text-gray-500">
+          <tr className="border-b border-[var(--border)] text-left text-muted-foreground">
             <th className="py-2 font-medium">항목</th>
             <th className="py-2 text-right font-medium">건수</th>
           </tr>

@@ -144,7 +144,7 @@ export default function DiagnosisPage() {
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-4xl">
         <div className="mb-4">
-          <Link href="/settings" className="text-sm text-gray-500 hover:text-[var(--accent)]">
+          <Link href="/settings" className="text-sm text-muted-foreground hover:text-[var(--accent)]">
             ← 설정
           </Link>
         </div>
@@ -188,9 +188,9 @@ export default function DiagnosisPage() {
               )}
             </div>
             {loading ? (
-              <p className="text-sm text-gray-500">불러오는 중...</p>
+              <p className="text-sm text-muted-foreground">불러오는 중...</p>
             ) : history.length === 0 ? (
-              <p className="text-sm text-gray-500">아직 진단 기록이 없습니다.</p>
+              <p className="text-sm text-muted-foreground">아직 진단 기록이 없습니다.</p>
             ) : (
               <ul className="space-y-1">
                 {history.map((row) => {
@@ -230,7 +230,7 @@ export default function DiagnosisPage() {
           {/* 선택 결과 상세 */}
           <section aria-label="진단 결과" className="rounded-lg border border-[var(--border)] bg-white p-5">
             {selected === null ? (
-              <p className="text-base text-gray-500">
+              <p className="text-base text-muted-foreground">
                 진단 기록을 선택하거나 “자가 진단 실행”을 눌러 점검을 시작하세요.
               </p>
             ) : (
@@ -281,7 +281,7 @@ function DiagnosisDetail({ row }: { row: DiagnosisHistoryRow }) {
         <h2 className="text-lg font-bold">
           {row.run_date} 진단 결과 ({runTypeLabel(row.run_type)})
         </h2>
-        <span className="text-sm text-gray-500">검사 {row.total_checks}항목</span>
+        <span className="text-sm text-muted-foreground">검사 {row.total_checks}항목</span>
       </div>
 
       {row.issues_found === 0 ? (

@@ -354,7 +354,7 @@ function MemoNoteCard({ index, note, color }: { index: number; note: MemoNote; c
         style={{ height: `${note.height}px`, backgroundColor: color }}
         className="min-h-[80px] w-full resize-y rounded-md border border-black/10 p-3 text-base text-[var(--foreground)] shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
       />
-      <p className="mt-1 h-4 text-xs text-gray-500">{saved ? '저장됨' : ''}</p>
+      <p className="mt-1 h-4 text-xs text-muted-foreground">{saved ? '저장됨' : ''}</p>
     </div>
   )
 }
@@ -388,7 +388,7 @@ function Widget({
 function Stat({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return (
     <div className="rounded-md bg-[var(--background)] p-3">
-      <p className="text-xs text-gray-500">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className={`mt-1 text-lg font-bold ${danger ? 'text-[var(--danger)]' : 'text-[var(--foreground)]'}`}>
         {value}
       </p>
@@ -405,5 +405,5 @@ function ChartSkeleton() {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-gray-500">{children}</p>
+  return <p className="text-sm text-muted-foreground">{children}</p>
 }

@@ -357,10 +357,10 @@ export default function AttendancePage() {
             <p className="text-lg text-gray-700">
               {yearMonth.replace('-', '년 ') + '월'} 출결이 아직 생성되지 않았습니다.
             </p>
-            <p className="mt-2 text-base text-gray-500">
+            <p className="mt-2 text-base text-muted-foreground">
               우측 상단의 &ldquo;출결 데이터 생성&rdquo; 버튼을 눌러 해당 월 재원 원생의 출결을 일괄 생성하세요.
             </p>
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-2 text-sm text-muted-foreground">
               ※ 교습기간이 먼저 확정되어 있어야 합니다 (일정 관리 메뉴).
             </p>
           </div>

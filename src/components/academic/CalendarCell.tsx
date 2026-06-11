@@ -250,7 +250,7 @@ export function CalendarCell({
           />
         ))}
         {events.length > 3 && (
-          <span className="text-xs text-gray-500">+{events.length - 3}</span>
+          <span className="text-xs text-muted-foreground">+{events.length - 3}</span>
         )}
       </span>
     </div>

@@ -235,7 +235,7 @@ export function StudentForm({
             readOnly={isEdit}
             aria-readonly={isEdit}
             className={`h-11 w-full rounded-md border border-[var(--border)] px-3 ${
-              isEdit ? 'cursor-not-allowed bg-gray-100 text-gray-500' : 'bg-white'
+              isEdit ? 'cursor-not-allowed bg-gray-100 text-muted-foreground' : 'bg-white'
             }`}
           />
         </Field>

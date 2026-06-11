@@ -24,7 +24,7 @@ const ClassCalendar = dynamic(
   () => import('@/components/schedules/ClassCalendar'),
   {
     ssr: false,
-    loading: () => <p className="text-base text-gray-500">캘린더 불러오는 중...</p>,
+    loading: () => <p className="text-base text-muted-foreground">캘린더 불러오는 중...</p>,
   },
 )
 

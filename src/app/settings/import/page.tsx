@@ -178,7 +178,7 @@ export default function ImportStudentsPage() {
                     const meta = STATUS_META[row.status]
                     return (
                       <tr key={row.row_number} className="border-b border-gray-100 align-top">
-                        <td className="p-2 text-gray-500">{row.row_number}</td>
+                        <td className="p-2 text-muted-foreground">{row.row_number}</td>
                         <td className="p-2">
                           <span className={`rounded px-2 py-0.5 text-xs font-medium ${meta.cls}`}>
                             {meta.label}

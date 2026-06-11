@@ -101,7 +101,7 @@ export function LockWarning({ initialSecondsAgo, onForceAcquired, onRetry }: Loc
         </header>
 
         <section className="rounded-lg border-2 border-[var(--border)] bg-white p-4 text-center">
-          <p className="text-sm text-gray-500">마지막 활동</p>
+          <p className="text-sm text-muted-foreground">마지막 활동</p>
           <p className="font-mono text-2xl font-semibold">{formatDuration(elapsed)} 전</p>
         </section>
 

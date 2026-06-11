@@ -301,10 +301,11 @@ Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 | .claude/rules/backend.md + CLAUDE.md | [0회] | P1-10 문서 드리프트(청구 2단계/V307/파일명/query! 규칙 개정) |
 
 ### 완료 기준
-- ⬜ P0-1~7 구현 + 관련 단위테스트
-- ⬜ P1-1~11 구현
-- ⬜ Self-verify: cargo test / clippy --all-targets / cargo check --features cipher / tsc / lint / build 통과
+- ✅ P0-1~7 구현 + 단위테스트 (change_schedule_day 3건 등 — cargo test 411)
+- ✅ P1-1~11 구현 (text-gray-500→muted-foreground 29파일 72곳, errMsg 헬퍼 신규 src/lib/errors.ts, backend.md/CLAUDE.md 드리프트 교정 포함)
+- ✅ Self-verify: cargo test(411) / clippy --all-targets / cargo check --features cipher / tsc / lint / build 전수 통과
 - ⬜ 시각검증 필요 항목(P0-4/5/6, P1-1/4/6) 사용자 검수
+- 발견: `release_lock_atomic_is_idempotent_when_no_file` 테스트가 병렬 실행 시 간헐 실패(전역 락 경로 공유 — 기존 잠재 flake, 단독·재실행 통과). T11에서 재현 시 직렬화 검토.
 
 ---
 

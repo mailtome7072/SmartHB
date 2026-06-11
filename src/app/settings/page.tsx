@@ -157,8 +157,8 @@ export default function SettingsHubPage() {
                 title={card.disabledHint}
                 className="cursor-not-allowed rounded-lg border border-[var(--border)] bg-gray-50 p-5 opacity-60"
               >
-                <h2 className="mb-2 text-lg font-bold text-gray-500">{card.title}</h2>
-                <p className="text-sm text-gray-500">{card.description}</p>
+                <h2 className="mb-2 text-lg font-bold text-muted-foreground">{card.title}</h2>
+                <p className="text-sm text-muted-foreground">{card.description}</p>
                 <p className="mt-3 text-xs text-gray-600">{card.disabledHint}</p>
               </div>
             ) : (

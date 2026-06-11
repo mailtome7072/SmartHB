@@ -260,7 +260,7 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
         >
           <ul className="overflow-hidden rounded-md border border-[var(--border)] bg-white">
             {visibleCodes.length === 0 && (
-              <li className="px-3 py-6 text-center text-sm text-gray-500">
+              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
                 {codes.length === 0 ? '등록된 항목이 없습니다.' : '필터 조건에 해당하는 항목이 없습니다.'}
               </li>
             )}
@@ -316,7 +316,7 @@ function SortableCodeRow({
       >
         <span aria-hidden="true">⋮⋮</span>
       </button>
-      <span className="w-32 text-sm text-gray-500">{entry.code}</span>
+      <span className="w-32 text-sm text-muted-foreground">{entry.code}</span>
       <input
         value={label}
         onChange={(e) => setLabel(e.target.value)}
@@ -423,7 +423,7 @@ function FeesPanel() {
 
       <ul className="overflow-hidden rounded-md border border-[var(--border)] bg-white">
         {visibleFees.length === 0 && (
-          <li className="px-3 py-6 text-center text-sm text-gray-500">
+          <li className="px-3 py-6 text-center text-sm text-muted-foreground">
             {fees.length === 0 ? '등록된 표준 교습비가 없습니다.' : '필터 조건에 해당하는 항목이 없습니다.'}
           </li>
         )}
@@ -447,7 +447,7 @@ function FeeRow({
 
   return (
     <li className="flex items-center gap-3 border-t border-[var(--border)] px-3 py-2 first:border-t-0">
-      <span className="w-28 text-sm text-gray-500">주 {fee.weekly_hours}시간</span>
+      <span className="w-28 text-sm text-muted-foreground">주 {fee.weekly_hours}시간</span>
       <input
         type="number"
         value={amount}
@@ -457,7 +457,7 @@ function FeeRow({
         className="h-10 w-40 rounded-md border border-[var(--border)] px-3 text-right"
         aria-label="금액"
       />
-      <span className="w-24 text-sm text-gray-500" title="천단위 콤마 표시 — T5 utils 적용 (사용자 이슈 #13)">
+      <span className="w-24 text-sm text-muted-foreground" title="천단위 콤마 표시 — T5 utils 적용 (사용자 이슈 #13)">
         = {formatCurrency(amount)}원
       </span>
       <label className="flex h-10 items-center gap-2 text-sm">

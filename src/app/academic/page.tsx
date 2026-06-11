@@ -334,12 +334,14 @@ export default function AcademicPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleteMutation.isPending}>취소</AlertDialogCancel>
+              {/* P1-6: 위험 동작(삭제) 확정 버튼은 빨강 — 삭제류 일관 규칙 */}
               <AlertDialogAction
                 onClick={(e) => {
                   e.preventDefault()
                   if (eventToDelete) deleteMutation.mutate(eventToDelete.id)
                 }}
                 disabled={deleteMutation.isPending}
+                className="bg-[var(--danger)] text-white hover:bg-[var(--danger)] hover:opacity-90"
               >
                 {deleteMutation.isPending ? '삭제 중...' : '삭제'}
               </AlertDialogAction>

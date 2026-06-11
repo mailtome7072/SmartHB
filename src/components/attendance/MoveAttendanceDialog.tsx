@@ -120,7 +120,7 @@ export function MoveAttendanceDialog({
         <p className="mt-1 text-base text-gray-700">
           {student.name} · {fromDate.slice(5).replace('-', '/')} 수업을 옮길 날짜를 선택하세요.
         </p>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           같은 달 안에서만 이동할 수 있습니다. 휴일·이미 수업이 있는 날은 선택할 수 없습니다.
         </p>
 
@@ -141,7 +141,7 @@ export function MoveAttendanceDialog({
               </option>
             ))}
           </select>
-          <span className="text-sm text-gray-500">날짜를 클릭하면 이 시간으로 이동</span>
+          <span className="text-sm text-muted-foreground">날짜를 클릭하면 이 시간으로 이동</span>
         </div>
 
         {error !== null && (

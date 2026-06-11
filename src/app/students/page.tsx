@@ -277,7 +277,7 @@ export default function StudentsPage() {
             <tbody>
               {students.length === 0 && !isFetching && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
                     {total === 0 ? '등록된 원생이 없습니다.' : '필터에 맞는 원생이 없습니다.'}
                   </td>
                 </tr>
@@ -292,7 +292,7 @@ export default function StudentsPage() {
                   <td className="px-3 py-3 text-base">
                     {s.name}
                     {s.withdraw_date !== null && (
-                      <span className="ml-2 text-sm text-gray-500">(퇴교)</span>
+                      <span className="ml-2 text-sm text-muted-foreground">(퇴교)</span>
                     )}
                   </td>
                   <td className="px-3 py-3 text-base">{LEVEL_LABEL[s.school_level]}</td>

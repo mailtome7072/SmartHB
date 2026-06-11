@@ -317,7 +317,7 @@ export default function ClassCalendar({
             type="button"
             aria-label="이전"
             onClick={() => api()?.prev()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xs leading-none hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-sm leading-none hover:bg-gray-50"
           >
             ◀
           </button>
@@ -339,7 +339,7 @@ export default function ClassCalendar({
             type="button"
             aria-label="다음"
             onClick={() => api()?.next()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-xs leading-none hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-sm leading-none hover:bg-gray-50"
           >
             ▶
           </button>
@@ -458,14 +458,14 @@ export default function ClassCalendar({
                 {acts.map((a, i) => (
                   <span
                     key={`${a.name}-${i}`}
-                    className="text-xs font-semibold"
+                    className="text-sm font-semibold"
                     style={{ color: a.color }}
                   >
                     {a.name}
                   </span>
                 ))}
                 {info !== undefined && (
-                  <span className="text-xs text-gray-700">총 {info.count}명 수업</span>
+                  <span className="text-sm text-gray-700">총 {info.count}명 수업</span>
                 )}
               </div>
             )
@@ -481,7 +481,7 @@ export default function ClassCalendar({
                   {acts.map((a, i) => (
                     <span
                       key={i}
-                      className="max-w-full truncate text-xs font-semibold"
+                      className="max-w-full truncate text-sm font-semibold"
                       style={{ color: a.color }}
                     >
                       {a.name}
@@ -515,7 +515,7 @@ export default function ClassCalendar({
             return (
               <div
                 className={`h-full content-start gap-0.5 overflow-hidden p-0.5 ${
-                  isDay ? 'flex flex-row items-stretch text-sm' : 'grid grid-cols-2 text-xs'
+                  isDay ? 'flex flex-row items-stretch text-sm' : 'grid grid-cols-2 text-sm'
                 }`}
               >
                 {students.map((st, i) => {
