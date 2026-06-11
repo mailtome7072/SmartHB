@@ -17,18 +17,20 @@ import { useQuery } from '@tanstack/react-query'
 import { listCodes } from '@/lib/tauri'
 import { formatPhone, todayLocalISO } from '@/lib/format'
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes'
+import { ErrorDialog } from '@/components/ui/error-dialog'
 import type { CodeEntry } from '@/types/code'
 import type { Gender, NewStudent, SchoolLevel, Student } from '@/types/student'
 
-const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000
-const STORAGE_PREFIX = 'smarthb:student-draft:'
+/** 원생 폼 임시저장 localStorage 키 prefix — 목록(students/page)에서 draft 존재 표시에 공유. */
+export const STUDENT_DRAFT_PREFIX = 'smarthb:student-draft:'
 
 interface FormState {
   serial_no: string
   name: string
-  gender: Gender
+  // 성별·학년은 신규 등록 시 기본값 없이 '(미지정)' 으로 시작 — 빈 값('') 허용, 저장 시 필수 검증.
+  gender: Gender | ''
   school_level: SchoolLevel
-  grade: number
+  grade: number | ''
   school_id: number | null
   phone_student: string
   phone_mother: string
@@ -41,9 +43,9 @@ function emptyForm(): FormState {
   return {
     serial_no: '',
     name: '',
-    gender: 'male',
+    gender: '',
     school_level: 'elementary',
-    grade: 1,
+    grade: '',
     school_id: null,
     phone_student: '',
     phone_mother: '',
@@ -70,13 +72,14 @@ function studentToForm(s: Student): FormState {
   }
 }
 
+/** 검증 통과(gender·grade 비어있지 않음 보장) 후에만 호출된다. */
 function formToPayload(f: FormState): NewStudent {
   return {
     serial_no: f.serial_no === '' ? null : f.serial_no,
     name: f.name.trim(),
-    gender: f.gender,
+    gender: f.gender as Gender,
     school_level: f.school_level,
-    grade: f.grade,
+    grade: f.grade as number,
     school_id: f.school_id,
     phone_student: f.phone_student.trim() || null,
     phone_mother: f.phone_mother.trim() || null,
@@ -103,7 +106,7 @@ export function StudentForm({
   /** 폼 하단 추가 액션(퇴교 처리 등) */
   extraActions?: React.ReactNode
 }) {
-  const storageKey = `${STORAGE_PREFIX}${draftKey}`
+  const storageKey = `${STUDENT_DRAFT_PREFIX}${draftKey}`
   const isEdit = initial !== undefined
   const { data: schools = [] } = useQuery<CodeEntry[]>({
     queryKey: ['codes', 'schools'],
@@ -145,20 +148,48 @@ export function StudentForm({
     setPendingDraft(null)
   }
 
+  // 입력하는 즉시 임시저장 (2026-06: 3분 interval → 변경 즉시). 기존 interval 은 이탈 시점에
+  // 저장이 안 돼, 입력 후 곧장 떠나면(이동/취소 경고에서 '이동') 복원할 draft 가 없었다.
+  // 이제 변경마다 localStorage 에 저장 → 이탈·창닫기 후 재진입 시 '이어서 작성' 배너로 복원.
   useEffect(() => {
     if (!dirty) return
-    const id = setInterval(() => {
-      localStorage.setItem(storageKey, JSON.stringify(formRef.current))
-    }, AUTOSAVE_INTERVAL_MS)
-    return () => clearInterval(id)
-  }, [dirty, storageKey])
+    localStorage.setItem(storageKey, JSON.stringify(form))
+  }, [form, dirty, storageKey])
 
   const submitForm = async () => {
     if (submitting) return
     setError(null)
-    if (formRef.current.name.trim() === '') {
+    const f = formRef.current
+    // 필수 입력 검증 — 성별·학년은 (미지정) 상태면 저장 차단하고 입력 유도.
+    if (f.name.trim() === '') {
       setError('이름을 입력해주세요.')
       return
+    }
+    if (f.gender === '') {
+      setError('성별을 선택해주세요.')
+      return
+    }
+    if (f.grade === '' || Number.isNaN(f.grade)) {
+      setError('학년을 입력해주세요.')
+      return
+    }
+    if (f.school_id === null) {
+      setError('학교를 선택해주세요.')
+      return
+    }
+    // 학교급 ↔ 학교명 정합성 — 초등인데 '중학교' / 중등인데 '초등학교' 선택 시 확인 유도.
+    {
+      const school = schools.find((s) => s.id === f.school_id)
+      if (school) {
+        if (f.school_level === 'elementary' && school.label.includes('중학교')) {
+          setError(`학교급이 '초등'인데 학교가 '${school.label}'입니다. 학교급 또는 학교를 확인해주세요.`)
+          return
+        }
+        if (f.school_level === 'middle' && school.label.includes('초등학교')) {
+          setError(`학교급이 '중등'인데 학교가 '${school.label}'입니다. 학교급 또는 학교를 확인해주세요.`)
+          return
+        }
+      }
     }
     setSubmitting(true)
     try {
@@ -221,6 +252,12 @@ export function StudentForm({
           </div>
         </div>
       )}
+      {/* 작성 중 자동 임시저장 안내 — 이탈/창닫기 후 다시 와도 이어서 작성 가능함을 사전 인지. */}
+      {dirty && pendingDraft === null && (
+        <p role="status" className="text-sm text-muted-foreground">
+          ✓ 작성 중인 내용은 자동으로 임시저장됩니다. 중간에 나가더라도 다시 들어오면 이어서 작성할 수 있어요.
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field
           label={
@@ -250,12 +287,13 @@ export function StudentForm({
             className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
-        <Field label="성별">
+        <Field label="성별 *">
           <select
             value={form.gender}
-            onChange={(e) => update('gender', e.target.value as Gender)}
+            onChange={(e) => update('gender', e.target.value as Gender | '')}
             className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           >
+            <option value="">(미지정)</option>
             <option value="male">남</option>
             <option value="female">여</option>
           </select>
@@ -270,18 +308,19 @@ export function StudentForm({
             <option value="middle">중등</option>
           </select>
         </Field>
-        <Field label="학년">
-          {/* P2-14: 학교급에 따라 상한 — 초등 1~6 / 중등 1~3 (DB CHECK grade 1~9 와 정합) */}
+        <Field label="학년 *">
+          {/* 신규 시 (미지정) = 빈 값. P2-14: 학교급에 따라 상한 — 초등 1~6 / 중등 1~3 (DB CHECK 1~9). */}
           <input
             type="number"
             value={form.grade}
-            onChange={(e) => update('grade', Number(e.target.value))}
+            onChange={(e) => update('grade', e.target.value === '' ? '' : Number(e.target.value))}
+            placeholder="(미지정)"
             min={1}
             max={form.school_level === 'middle' ? 3 : 6}
             className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>
-        <Field label="학교">
+        <Field label="학교 *">
           <select
             value={form.school_id ?? ''}
             onChange={(e) =>
@@ -342,11 +381,8 @@ export function StudentForm({
         </Field>
       </div>
 
-      {error !== null && (
-        <p role="alert" className="text-sm text-[var(--danger)]">
-          {error}
-        </p>
-      )}
+      {/* 필수 입력·정합성·저장 실패 메시지는 팝업으로 표시 (인라인 대체) */}
+      <ErrorDialog open={error !== null} message={error ?? ''} onClose={() => setError(null)} />
 
       <div className="flex items-center justify-between">
         <div>{extraActions}</div>
