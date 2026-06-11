@@ -654,6 +654,33 @@ export async function setSchedule(payload: ScheduleSet): Promise<StudentSchedule
 }
 
 /**
+ * 요일 변경을 단일 트랜잭션으로 수행한다 (P0-7, 2026-06 코드리뷰).
+ *
+ * 원래 요일(`oldDayOfWeek`) 현행 행 마감 + 새 요일 upsert 를 백엔드가 원자적으로 처리 —
+ * 기존 deleteSchedule→setSchedule 순차 호출의 부분 실패(원래 요일만 종료) 상태를 제거.
+ */
+export async function changeScheduleDay(
+  payload: ScheduleSet,
+  oldDayOfWeek: number,
+): Promise<StudentSchedule> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      student_id: payload.student_id,
+      day_of_week: payload.day_of_week,
+      start_time: payload.start_time,
+      duration_hours: payload.duration_hours,
+      effective_from: payload.effective_from,
+      effective_to: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('change_schedule_day', { payload, oldDayOfWeek }) as Promise<StudentSchedule>
+}
+
+/**
  * 원생의 특정 요일 스케줄을 마감한다 (Sprint 4 T9 / 사용자 이슈 #10).
  *
  * effective_to=today 로 설정 — 다음날부터 해당 요일에 수업 없음.

@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listCodes } from '@/lib/tauri'
-import { formatPhone } from '@/lib/format'
+import { formatPhone, todayLocalISO } from '@/lib/format'
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes'
 import type { CodeEntry } from '@/types/code'
 import type { Gender, NewStudent, SchoolLevel, Student } from '@/types/student'
@@ -49,7 +49,8 @@ function emptyForm(): FormState {
     phone_mother: '',
     phone_father: '',
     birth_date: '',
-    enroll_date: new Date().toISOString().slice(0, 10),
+    // P0-3: 로컬 기준 오늘 — toISOString()은 UTC라 KST 오전 9시 전 어제가 됨
+    enroll_date: todayLocalISO(),
   }
 }
 
@@ -108,23 +109,41 @@ export function StudentForm({
     queryKey: ['codes', 'schools'],
     queryFn: () => listCodes('schools'),
   })
-  const [form, setForm] = useState<FormState>(() => {
-    if (typeof window === 'undefined') return initial ? studentToForm(initial) : emptyForm()
-    const draft = localStorage.getItem(storageKey)
-    if (draft !== null) {
-      try {
-        return JSON.parse(draft) as FormState
-      } catch {
-        // 무시
-      }
-    }
-    return initial ? studentToForm(initial) : emptyForm()
-  })
+  // P0-5 (2026-06 코드리뷰): 임시저장본을 무통보 자동 적용하지 않는다 — 항상 서버/기본값으로
+  // 초기화하고, draft 발견 시 배너로 "이어서 작성 / 새로 시작"을 사용자가 선택한다 (PRD §5.7).
+  // 특히 수정 모드에서 묵은 draft가 DB 최신값을 덮어 보여 데이터가 역행하는 사고를 방지.
+  const [form, setForm] = useState<FormState>(() =>
+    initial ? studentToForm(initial) : emptyForm(),
+  )
+  const [pendingDraft, setPendingDraft] = useState<FormState | null>(null)
   const [dirty, setDirty] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const formRef = useRef(form)
   formRef.current = form
+
+  // mount 시 1회 draft 탐지 — 파싱 실패본은 즉시 폐기.
+  useEffect(() => {
+    const raw = localStorage.getItem(storageKey)
+    if (raw === null) return
+    try {
+      setPendingDraft(JSON.parse(raw) as FormState)
+    } catch {
+      localStorage.removeItem(storageKey)
+    }
+  }, [storageKey])
+
+  const resumeDraft = () => {
+    if (pendingDraft === null) return
+    setForm(pendingDraft)
+    setDirty(true)
+    setPendingDraft(null)
+  }
+
+  const discardDraft = () => {
+    localStorage.removeItem(storageKey)
+    setPendingDraft(null)
+  }
 
   useEffect(() => {
     if (!dirty) return
@@ -134,35 +153,74 @@ export function StudentForm({
     return () => clearInterval(id)
   }, [dirty, storageKey])
 
-  // 미저장 이탈 경고 — 공통 훅으로 통일 (Sprint 16 T1 R105)
-  useUnsavedChanges(dirty)
+  const submitForm = async () => {
+    if (submitting) return
+    setError(null)
+    if (formRef.current.name.trim() === '') {
+      setError('이름을 입력해주세요.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await onSubmit(formToPayload(formRef.current))
+      localStorage.removeItem(storageKey)
+      setDirty(false)
+    } catch (err) {
+      setError(
+        typeof err === 'string'
+          ? err
+          : err instanceof Error
+            ? err.message
+            : '저장 중 오류가 발생했습니다.',
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // 미저장 이탈 경고 + Ctrl+S 저장 — 공통 훅으로 통일 (Sprint 16 T1 R105, P1-9)
+  useUnsavedChanges(dirty, () => void submitForm())
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }))
     setDirty(true)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
-    if (form.name.trim() === '') {
-      setError('이름을 입력해주세요.')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await onSubmit(formToPayload(form))
-      localStorage.removeItem(storageKey)
-      setDirty(false)
-    } catch (err) {
-      setError(typeof err === 'string' ? err : '저장 중 오류가 발생했습니다.')
-    } finally {
-      setSubmitting(false)
-    }
+    void submitForm()
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* P0-5: 임시저장본 발견 — 사용자 선택 (이어서 작성 / 새로 시작) */}
+      {pendingDraft !== null && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border-2 border-amber-400 bg-amber-50 p-3"
+        >
+          <p className="text-base text-amber-900">
+            저장하지 않은 <strong>작성 중이던 내용</strong>이 있습니다. 이어서 작성할까요?
+            {isEdit && ' (새로 시작을 누르면 현재 저장된 최신 정보가 유지됩니다)'}
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={resumeDraft}
+              className="h-11 rounded-md bg-[var(--accent)] px-4 font-bold text-white hover:bg-[var(--accent-hover)]"
+            >
+              이어서 작성
+            </button>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="h-11 rounded-md border border-[var(--border)] bg-white px-4 hover:bg-gray-50"
+            >
+              새로 시작
+            </button>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field
           label={

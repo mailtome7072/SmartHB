@@ -21,7 +21,8 @@ import { useRouter } from 'next/navigation'
 import { APP_SAVE_EVENT } from '@/lib/use-unsaved-changes'
 
 // 입력 중인 요소에서 발동하면 안 되는 단축키 방어용 — 텍스트 입력/편집 컨텍스트 판별.
-function isEditableTarget(target: EventTarget | null): boolean {
+// AttendanceGrid Ctrl+Z 등 국소 단축키 구현도 재사용한다 (P0-6).
+export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName
   return (

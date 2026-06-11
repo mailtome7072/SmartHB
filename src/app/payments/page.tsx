@@ -36,6 +36,21 @@ function PaymentsContent() {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('payments')
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all')
+  // P0-4: 수납 입력 중(미저장 draft 존재) 탭/월 변경 가드 — PaymentsView 가 건수를 통지.
+  const [dirtyCount, setDirtyCount] = useState(0)
+  const [pendingAction, setPendingAction] = useState<
+    | { kind: 'tab'; value: Tab }
+    | { kind: 'month'; value: string }
+    | null
+  >(null)
+
+  const guarded = (action: { kind: 'tab'; value: Tab } | { kind: 'month'; value: string }) => {
+    if (dirtyCount > 0) {
+      setPendingAction(action)
+      return false
+    }
+    return true
+  }
   const {
     effectiveYearMonth,
     setYearMonth,
@@ -64,7 +79,9 @@ function PaymentsContent() {
             <button
               key={key}
               type="button"
-              onClick={() => setTab(key)}
+              onClick={() => {
+                if (guarded({ kind: 'tab', value: key })) setTab(key)
+              }}
               aria-pressed={tab === key}
               className={`-mb-px min-h-[44px] border-b-2 px-4 text-base font-semibold ${
                 tab === key
@@ -84,7 +101,11 @@ function PaymentsContent() {
               청구년월
               <select
                 value={effectiveYearMonth}
-                onChange={(e) => setYearMonth(e.target.value)}
+                onChange={(e) => {
+                  if (guarded({ kind: 'month', value: e.target.value })) {
+                    setYearMonth(e.target.value)
+                  }
+                }}
                 className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
               >
                 {monthOptions.includes(effectiveYearMonth) ? null : (
@@ -143,11 +164,54 @@ function PaymentsContent() {
             matchedStudentIds={matchedStudentIds}
             searchResults={searchResults}
             paymentFilter={paymentFilter}
+            onDirtyChange={setDirtyCount}
           />
         )}
 
         {tab === 'summary' && <BillingSummaryView defaultYearMonth={effectiveYearMonth} />}
       </div>
+
+      {/* P0-4: 미저장 수납 입력 보호 — 탭/월 변경 확인 다이얼로그 (Tauri confirm 차단 → 커스텀 모달) */}
+      {pendingAction !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-md rounded-lg border border-[var(--border)] bg-white p-6 shadow-xl"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="미저장 입력 확인"
+          >
+            <h3 className="mb-2 text-lg font-bold text-[var(--danger)]">
+              저장하지 않은 수납 입력이 있습니다
+            </h3>
+            <p className="mb-4 text-base text-gray-700">
+              입력 중인 수납 정보 <strong>{dirtyCount}건</strong>이 저장되지 않았습니다.
+              {pendingAction.kind === 'tab' ? ' 탭을 이동하면' : ' 청구년월을 바꾸면'} 입력한
+              내용이 사라집니다.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingAction(null)}
+                className="h-11 rounded-md bg-[var(--accent)] px-5 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
+              >
+                계속 입력
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (pendingAction.kind === 'tab') setTab(pendingAction.value)
+                  else setYearMonth(pendingAction.value)
+                  setDirtyCount(0)
+                  setPendingAction(null)
+                }}
+                className="h-11 rounded-md border-2 border-[var(--danger)] px-5 text-base font-bold text-[var(--danger)] hover:bg-red-50"
+              >
+                입력 버리고 이동
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ErrorDialog
         open={error !== null && error !== ''}

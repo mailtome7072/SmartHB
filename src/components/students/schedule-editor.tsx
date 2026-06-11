@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   applyScheduleChange,
+  changeScheduleDay,
   deleteSchedule,
   getOperatingHours,
   getSchedules,
@@ -23,6 +24,7 @@ import {
   setSchedule,
   type DayHours,
 } from '@/lib/tauri'
+import { todayLocalISO } from '@/lib/format'
 import type { StudentSchedule } from '@/types/schedule'
 
 const DAY_LABELS = ['', '월', '화', '수', '목', '금', '토', '일']
@@ -46,7 +48,8 @@ const DURATION_OPTIONS = ['1', '2', '3', '4']
 
 export function ScheduleEditor({ studentId }: { studentId: number }) {
   const qc = useQueryClient()
-  const today = new Date().toISOString().slice(0, 10)
+  // P0-3: 로컬 기준 오늘 — UTC 기준이면 KST 오전 9시 전 "어제"가 스케줄 삭제 기준일이 됨
+  const today = todayLocalISO()
 
   const { data: schedules = [] } = useQuery<StudentSchedule[]>({
     queryKey: ['schedules', studentId],
@@ -129,17 +132,20 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
         throw new Error('시작 시간이 올바르지 않습니다.')
       if (row.effective_from === '')
         throw new Error('적용 시작일을 선택해주세요.')
-      // 수정 모드에서 요일을 바꾸면 원래 요일을 변경일부터 종료한다 (중복 등록 방지).
-      if (editingDay !== null && editingDay !== row.day_of_week) {
-        await deleteSchedule(studentId, editingDay, row.effective_from)
-      }
-      await setSchedule({
+      const payload = {
         student_id: studentId,
         day_of_week: row.day_of_week,
         start_time: row.start_time.length === 5 ? `${row.start_time}:00` : row.start_time,
         duration_hours: Number(row.duration_hours),
         effective_from: row.effective_from,
-      })
+      }
+      // P0-7: 요일 변경은 단일 트랜잭션 커맨드 — 기존 delete→set 순차 호출은 중간 실패 시
+      // "원래 요일만 종료된 반쪽 상태"가 남았음. 실패 시 전체 롤백으로 기존 스케줄 유지.
+      if (editingDay !== null && editingDay !== row.day_of_week) {
+        await changeScheduleDay(payload, editingDay)
+      } else {
+        await setSchedule(payload)
+      }
       // Sprint 16 T0 케이스2: 변경일 이후 출결을 신 스케줄로 재생성 (미처리만, 처리행 보존).
       return applyScheduleChange(studentId, row.effective_from)
     },

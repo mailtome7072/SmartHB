@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { batchUpdatePayments, listCodes, listPaymentView } from '@/lib/tauri'
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes'
 import type {
   BillingSearchResult,
   PaymentInput,
@@ -30,6 +31,8 @@ interface Props {
   searchResults: BillingSearchResult[]
   /** 수납 상태 필터 — 'all' / 'paid' / 'unpaid'. */
   paymentFilter: 'all' | 'paid' | 'unpaid'
+  /** P0-4: 미저장 변경 건수 통지 — 부모가 탭/월 변경 가드에 사용. */
+  onDirtyChange?: (count: number) => void
 }
 
 interface RowDraft {
@@ -66,6 +69,7 @@ export function PaymentsView({
   matchedStudentIds,
   searchResults,
   paymentFilter,
+  onDirtyChange,
 }: Props) {
   const qc = useQueryClient()
   const viewQuery = useQuery({
@@ -84,11 +88,28 @@ export function PaymentsView({
   // billId → 임시 입력 상태 (미수납 행만 편집 가능)
   const [drafts, setDrafts] = useState<Record<number, RowDraft>>({})
 
-  // 데이터 갱신 시 drafts 초기화
+  // P0-4 (2026-06 코드리뷰): 데이터 갱신 시 drafts 를 전체 초기화하지 않는다 — 기존
+  // `setDrafts({})` 는 창 포커스 복귀 등 백그라운드 refetch 만으로 입력 중인 수납 정보를
+  // 통째로 소실시켰다. 현재 데이터와 어긋난 stale draft(사라진 청구·상태가 바뀐 행)만 정리.
   useEffect(() => {
-    if (viewQuery.data) {
-      setDrafts({})
-    }
+    const data = viewQuery.data
+    if (!data) return
+    setDrafts((prev) => {
+      const rowById = new Map(data.map((r) => [r.billId, r]))
+      const next: Record<number, RowDraft> = {}
+      let changed = false
+      for (const [key, d] of Object.entries(prev)) {
+        const row = rowById.get(Number(key))
+        // 사라진 청구(월 변경 등) / 입력 종류와 행 상태가 어긋난 draft 는 폐기:
+        // 미수납용 입력(d.cancel=false)은 미수납 행에만, 수납취소 예정은 수납완료 행에만 유효.
+        if (row === undefined || row.isPaid !== d.cancel) {
+          changed = true
+          continue
+        }
+        next[Number(key)] = d
+      }
+      return changed ? next : prev
+    })
   }, [viewQuery.data])
 
   const allRows: PaymentViewRow[] = viewQuery.data ?? []
@@ -171,6 +192,16 @@ export function PaymentsView({
     [drafts],
   )
 
+  // P0-4: 미저장 입력 보호 — 창 닫기·메뉴 이동 경고(공통 훅) + Ctrl+S 일괄 저장.
+  // 탭/월 변경은 부모(payments/page)가 onDirtyChange 로 받아 가드한다.
+  useUnsavedChanges(dirtyEntries.length > 0, () => handleSave())
+  useEffect(() => {
+    onDirtyChange?.(dirtyEntries.length)
+    // unmount 시 dirty 해제 통지 — 부모 가드 잔존 방지.
+    return () => onDirtyChange?.(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirtyEntries.length])
+
   const batchMutation = useMutation({
     mutationFn: (items: PaymentInput[]) => batchUpdatePayments(items),
     onMutate: () => onError(''),
@@ -184,6 +215,7 @@ export function PaymentsView({
   })
 
   const handleSave = () => {
+    if (dirtyEntries.length === 0 || batchMutation.isPending) return
     // #6: 입금 완료(취소 예정 아님) 인데 결제수단 미선택이면 저장 차단.
     const missingMethod = dirtyEntries.some(
       ([, d]) => !d.cancel && d.isPaid && d.paymentMethodId === null,

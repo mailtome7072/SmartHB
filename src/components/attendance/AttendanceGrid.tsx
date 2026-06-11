@@ -29,6 +29,7 @@ import type {
   GridMakeupCell,
 } from '@/types/attendance'
 import { minutesToHoursText } from '@/lib/time'
+import { isEditableTarget } from '@/components/layout/GlobalShortcuts'
 import { AbsenceMemoDialog } from './AbsenceMemoDialog'
 
 /**
@@ -173,6 +174,9 @@ export function AttendanceGrid({
     function onKey(e: KeyboardEvent) {
       const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'
       if (!isUndo || lastToggle === null) return
+      // P0-6: 텍스트 입력 중(결석 메모 textarea 등)에는 출결 undo 가 아니라 입력 undo 가
+      // 기대 동작 — 가로채면 사용자가 인지 못 한 채 출결이 역토글된다.
+      if (isEditableTarget(e.target)) return
       e.preventDefault()
       toggleMutation.mutate({
         attendanceId: lastToggle.attendanceId,
