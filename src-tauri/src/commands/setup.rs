@@ -118,7 +118,11 @@ fn backup_corrupted(path: &Path) {
     }
 }
 
-/// config.json 을 atomic 하게 갱신한다 (tmp → rename).
+/// config.json 을 atomic 하게 갱신한다 (tmp → fsync → rename).
+///
+/// P0-2 (2026-06 코드리뷰): NTFS power-loss 패턴(상단 read_status 주석의 실측 사고)은
+/// fsync 없는 write+rename 에서 데이터 페이지가 NULL 로 남는 문제 — salt(auth.rs)·
+/// device.id(lock.rs)와 동일하게 rename 전 `sync_all` 로 데이터 페이지 커밋을 보장한다.
 fn write_status(app: &AppHandle, status: &SetupStatus) -> Result<(), AppError> {
     let path = config_path(app)?;
     if let Some(parent) = path.parent() {
@@ -128,7 +132,15 @@ fn write_status(app: &AppHandle, status: &SetupStatus) -> Result<(), AppError> {
     let tmp = path.with_extension("json.tmp");
     let json = serde_json::to_string_pretty(status)
         .map_err(|e| AppError::Config(format!("config.json 직렬화 실패: {}", e)))?;
-    fs::write(&tmp, json).map_err(|e| AppError::Config(format!("config.json 쓰기 실패: {}", e)))?;
+    {
+        use std::io::Write;
+        let mut f = fs::File::create(&tmp)
+            .map_err(|e| AppError::Config(format!("config.json 임시 파일 생성 실패: {}", e)))?;
+        f.write_all(json.as_bytes())
+            .map_err(|e| AppError::Config(format!("config.json 쓰기 실패: {}", e)))?;
+        f.sync_all()
+            .map_err(|e| AppError::Config(format!("config.json fsync 실패: {}", e)))?;
+    }
     fs::rename(&tmp, &path)
         .map_err(|e| AppError::Config(format!("config.json rename 실패: {}", e)))?;
     Ok(())

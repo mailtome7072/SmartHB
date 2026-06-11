@@ -1162,8 +1162,9 @@ async fn move_attendance_impl(
     if from_d == to_d {
         return Err("출발일과 도착일이 같습니다.".to_string());
     }
-    // 동월 한정 — year_month(앞 7글자) 일치
-    if from_date[..7] != to_date[..7] {
+    // 동월 한정 — 파싱된 날짜의 연·월 비교 (P1-8: 문자열 바이트 슬라이싱은 7바이트 미만
+    // 입력에서 panic — parse_date 는 "26-6-1" 같은 축약 표기도 통과시키므로 안전하지 않다)
+    if from_d.format("%Y-%m").to_string() != to_d.format("%Y-%m").to_string() {
         return Err(
             "수업일 이동은 같은 달 안에서만 가능합니다. 다른 달로 옮기려면 보강 기능을 이용하세요."
                 .to_string(),

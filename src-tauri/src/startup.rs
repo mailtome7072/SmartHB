@@ -324,6 +324,18 @@ pub async fn exit_hook() {
         return;
     }
     backup::try_create_backup(backup::BackupLayer::Exit).await;
+    // P0-1 (2026-06 코드리뷰): WAL checkpoint + pool 종료 — 종료 후 app.db-wal/-shm 잔존 방지.
+    // DB 가 클라우드 동기화 폴더에 있어, -wal 미병합 상태로 종료하면 OS 동기화가 db 와 wal 을
+    // 서로 다른 시점에 업로드해 다른 PC 에서 최근 트랜잭션이 조용히 유실될 수 있다 (torn-sync).
+    // 체크포인트로 본체에 병합하고 pool 을 정상 종료해 동기화 대상을 완결된 단일 파일로 만든다.
+    if let Ok(pool) = db::pool() {
+        match sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(pool).await {
+            Ok(_) => eprintln!("[startup] exit WAL checkpoint 완료"),
+            Err(e) => eprintln!("[startup] exit WAL checkpoint 실패 (무시): {}", e),
+        }
+        pool.close().await;
+        eprintln!("[startup] exit DB pool 종료 완료");
+    }
     match tokio::task::spawn_blocking(lock::release_lock_atomic).await {
         Ok(Ok(())) => eprintln!("[startup] exit 락 해제 완료"),
         Ok(Err(e)) => eprintln!("[startup] exit 락 해제 실패 (무시): {}", e),

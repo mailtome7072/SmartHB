@@ -562,11 +562,15 @@ async fn teaching_period_label(
 }
 
 /// 'YYYY-MM' 형식 가벼운 검증.
+///
+/// P1-8: 문자열 슬라이싱(`&ym[4..5]`)은 멀티바이트 문자가 끼면 char boundary panic —
+/// 바이트 배열 검사로 대체 (attendance.rs validate_year_month 와 동일 방식).
 fn validate_year_month_loose(ym: &str) -> Result<(), String> {
-    let ok = ym.len() == 7
-        && &ym[4..5] == "-"
-        && ym[0..4].bytes().all(|b| b.is_ascii_digit())
-        && ym[5..7].bytes().all(|b| b.is_ascii_digit());
+    let b = ym.as_bytes();
+    let ok = b.len() == 7
+        && b[4] == b'-'
+        && b[..4].iter().all(|c| c.is_ascii_digit())
+        && b[5..].iter().all(|c| c.is_ascii_digit());
     if ok {
         Ok(())
     } else {

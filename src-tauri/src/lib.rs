@@ -66,6 +66,7 @@ pub fn run() {
             commands::import::preview_students_csv,
             commands::import::import_students_csv,
             commands::schedules::set_schedule,
+            commands::schedules::change_schedule_day,
             commands::schedules::delete_schedule,
             commands::schedules::get_schedules,
             commands::schedules::get_schedule_history,
