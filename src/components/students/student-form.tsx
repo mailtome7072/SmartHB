@@ -271,12 +271,13 @@ export function StudentForm({
           </select>
         </Field>
         <Field label="학년">
+          {/* P2-14: 학교급에 따라 상한 — 초등 1~6 / 중등 1~3 (DB CHECK grade 1~9 와 정합) */}
           <input
             type="number"
             value={form.grade}
             onChange={(e) => update('grade', Number(e.target.value))}
             min={1}
-            max={6}
+            max={form.school_level === 'middle' ? 3 : 6}
             className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           />
         </Field>

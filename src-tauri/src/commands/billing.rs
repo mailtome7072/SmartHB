@@ -2021,4 +2021,148 @@ mod tests {
         assert_eq!(s.bill_count, 1, "A 만 청구 생성됨");
         // → UI 는 "추가 청구 데이터 생성" 버튼 표시 (2 > 1)
     }
+
+    // ─── P2-10 (2026-06 코드리뷰): 집계/검색 IPC 테스트 보강 ───
+
+    /// list_payment_view_impl — 미수납 행 우선 정렬 + 결제수단 라벨 JOIN 검증.
+    #[tokio::test]
+    async fn payment_view_orders_unpaid_first_and_joins_labels() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "가나다", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "라마바", "2026-01-01", None).await;
+        for s in [a, b] {
+            seed_schedule(&pool, s, 1, 1).await;
+        }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+
+        // A 만 현금 수납 완료 → B(미수납)가 먼저 나와야 한다.
+        let bill_a: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(a)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        batch_update_payments_impl(
+            &pool,
+            &[PaymentInput {
+                bill_id: bill_a,
+                is_paid: true,
+                paid_date: Some("2026-05-10".to_string()),
+                payer_name: Some("가부모".to_string()),
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            }],
+        )
+        .await
+        .expect("pay");
+
+        let rows = list_payment_view_impl(&pool, "2026-05").await.expect("view");
+        assert_eq!(rows.len(), 2);
+        assert!(!rows[0].is_paid, "미수납 행이 먼저");
+        assert_eq!(rows[0].student_id, b);
+        let paid = rows.iter().find(|r| r.is_paid).expect("수납 행");
+        assert_eq!(paid.student_id, a);
+        assert_eq!(paid.payer_name.as_deref(), Some("가부모"));
+        assert!(
+            paid.payment_method_label.is_some(),
+            "결제수단 라벨 JOIN 채워짐"
+        );
+    }
+
+    /// search_students_for_billing_impl — 이름 매칭 + 최근 수납 정보(ROW_NUMBER) 자동 채움.
+    #[tokio::test]
+    async fn search_by_name_fills_latest_payment_info() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "홍길동", "2026-01-01", None).await;
+        seed_schedule(&pool, a, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+        // 두 달치 청구 생성 후 각각 다른 시점에 수납 — 최근(5월) 정보가 채워져야 한다.
+        generate_bills_impl(&pool, "2026-04").await.expect("gen4");
+        generate_bills_impl(&pool, "2026-05").await.expect("gen5");
+        let bill_apr: i64 =
+            sqlx::query_scalar("SELECT id FROM bills WHERE student_id=? AND bill_year_month='2026-04'")
+                .bind(a)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let bill_may: i64 =
+            sqlx::query_scalar("SELECT id FROM bills WHERE student_id=? AND bill_year_month='2026-05'")
+                .bind(a)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        batch_update_payments_impl(
+            &pool,
+            &[
+                PaymentInput {
+                    bill_id: bill_apr,
+                    is_paid: true,
+                    paid_date: Some("2026-04-10".to_string()),
+                    payer_name: Some("구입금자".to_string()),
+                    payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                    card_company_id: None,
+                },
+                PaymentInput {
+                    bill_id: bill_may,
+                    is_paid: true,
+                    paid_date: Some("2026-05-10".to_string()),
+                    payer_name: Some("신입금자".to_string()),
+                    payment_method_id: Some(CARD_PAYMENT_METHOD_ID),
+                    card_company_id: Some(1),
+                },
+            ],
+        )
+        .await
+        .expect("pay");
+
+        let results = search_students_for_billing_impl(&pool, "홍길동")
+            .await
+            .expect("search");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].student_id, a);
+        assert_eq!(
+            results[0].latest_payer_name.as_deref(),
+            Some("신입금자"),
+            "가장 최근(5월) 수납 정보가 채워져야 함 (ROW_NUMBER rn=1)"
+        );
+        assert_eq!(results[0].latest_payment_method_id, Some(CARD_PAYMENT_METHOD_ID));
+    }
+
+    /// search_students_for_billing_impl — 입금자 이름으로 검색 시 그 입금자가 낸 원생 반환.
+    #[tokio::test]
+    async fn search_by_payer_name_returns_payer_students() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        seed_schedule(&pool, a, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bid: i64 = sqlx::query_scalar("SELECT id FROM bills WHERE student_id=?")
+            .bind(a)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        batch_update_payments_impl(
+            &pool,
+            &[PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-10".to_string()),
+                payer_name: Some("김보호자".to_string()),
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            }],
+        )
+        .await
+        .expect("pay");
+
+        let results = search_students_for_billing_impl(&pool, "김보호자")
+            .await
+            .expect("search");
+        assert_eq!(results.len(), 1, "입금자명으로 원생 매칭");
+        assert_eq!(results[0].student_id, a);
+
+        // 빈 쿼리는 빈 결과.
+        let empty = search_students_for_billing_impl(&pool, "  ").await.expect("empty");
+        assert!(empty.is_empty());
+    }
 }

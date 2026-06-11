@@ -18,6 +18,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import koLocale from '@fullcalendar/core/locales/ko'
 import type { DatesSetArg, EventInput } from '@fullcalendar/core'
+import { codeColor } from '@/lib/schedule-code-colors'
 import type { CalendarMonth } from '@/types/calendar'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 
@@ -29,17 +30,6 @@ interface Props {
   onMonthChange: (yearMonth: string) => void
   onStudentNameClick: (studentName: string) => void
 }
-
-/** 학사일정 코드명 → 텍스트 색 (academic CalendarCell 팔레트). */
-const EVENT_TEXT_COLOR: Record<string, string> = {
-  공휴일: '#dc2626',
-  보강데이: '#0d9488',
-  공휴수업일: '#db2777',
-  방학: '#9333ea',
-  휴원일: '#6b7280',
-  '단원평가 응시일': '#2563eb',
-}
-const USER_EVENT_TEXT_COLOR = '#d97706'
 
 /** "HH:MM[:SS]" → "HH:MM:00" (초 포함 입력도 안전하게 정규화). 비정상/빈 값은 "00:00:00". */
 function toIsoTime(t: string | null | undefined): string {
@@ -136,9 +126,8 @@ export default function ClassCalendar({
     const byDate = new Map<string, Array<{ name: string; color: string }>>()
     const flags = new Map<string, { hasMakeupOn: boolean; hasRegularOff: boolean }>()
     for (const e of academicEvents) {
-      const color = e.is_system_reserved
-        ? (EVENT_TEXT_COLOR[e.code_name] ?? USER_EVENT_TEXT_COLOR)
-        : USER_EVENT_TEXT_COLOR
+      // P2-13: 색은 schedule-code-colors.ts SSOT (학사 캘린더·공지문 달력과 일치).
+      const color = codeColor(e.code_name, e.is_system_reserved).hex
       const name = e.display_name ?? e.code_name
       const dates = expandDates(e.event_date, e.period_end_date)
       for (const d of dates) {

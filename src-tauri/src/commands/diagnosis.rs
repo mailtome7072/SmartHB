@@ -160,7 +160,13 @@ async fn check_active_students_missing_attendance(
         .collect())
 }
 
-/// 3. 재원중 원생 당월 청구 미생성 — 재원생 중 당월 bills 0건.
+/// 3. 재원중 원생 당월 청구 미생성 — **청구 대상 재원생** 중 당월 bills 0건.
+///
+/// P2-10 (2026-06 코드리뷰): 청구 생성(`generate_bills_impl`)은 주당 수업시간이 0이거나
+/// 표준 교습비 미매핑 원생을 **의도적으로 skip** 한다. 따라서 스케줄 없는 재원생은 청구가
+/// 영원히 생성되지 않는 것이 정상인데, 과거에는 전체 재원생을 대상으로 해 매월 무의미한
+/// 경고(만성 오탐)를 띄웠다. 검사 2(`missing_attendance`)와 동일하게 현행 스케줄 보유 +
+/// 주당 수업시간 > 0 인 원생만 대상으로 한다 (표준교습비 미매핑은 드문 설정 오류라 경고 유지).
 async fn check_active_students_missing_billing(
     pool: &SqlitePool,
     year_month: &str,
@@ -168,6 +174,9 @@ async fn check_active_students_missing_billing(
     let rows = sqlx::query(
         "SELECT s.id AS student_id, s.name AS name FROM students s \
          WHERE s.withdraw_date IS NULL \
+           AND EXISTS (SELECT 1 FROM student_schedules ss \
+                       WHERE ss.student_id = s.id AND ss.effective_to IS NULL \
+                       GROUP BY ss.student_id HAVING SUM(ss.duration_hours) > 0) \
            AND NOT EXISTS (SELECT 1 FROM bills b \
                            WHERE b.student_id = s.id AND b.bill_year_month = ?)",
     )
@@ -650,6 +659,19 @@ mod tests {
         row.0
     }
 
+    /// 청구 대상 원생(현행 월요일 스케줄 + 2026-06 출결 보유) — P2-10 검사3은 청구 대상만
+    /// missing_billing 으로 잡는다. 출결을 함께 넣어 검사2(출결 미생성)·검사4(요일 불일치)는
+    /// 미발동시켜, 본 헬퍼로 만든 원생의 이상은 missing_billing 1건으로 한정한다 (2026-06 전용).
+    async fn insert_billable_student(pool: &SqlitePool, serial: &str, name: &str) -> i64 {
+        let sid = insert_student(pool, serial, name).await;
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '15:00', 2, '2026-01-01')")
+            .bind(sid).execute(pool).await.unwrap();
+        // 2026-06-01 = 월요일 → 스케줄 요일과 일치(검사4 미발동), present(검사5 미발동).
+        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, class_minutes) VALUES (?, '2026-06-01', '2026-06', 120)")
+            .bind(sid).execute(pool).await.unwrap();
+        sid
+    }
+
     // ── 검사 1: 보강필요시간 음수 ──
     #[tokio::test]
     async fn negative_makeup_detected_when_overmakeup() {
@@ -742,16 +764,30 @@ mod tests {
     #[tokio::test]
     async fn missing_billing_detected() {
         let pool = test_pool_in_memory().await.unwrap();
-        insert_student(&pool, "S1", "김학생").await;
+        let sid = insert_student(&pool, "S1", "김학생").await;
+        // P2-10: 청구 대상(현행 스케줄 + 주당시간>0)이어야 감지.
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '15:00', 2, '2026-01-01')")
+            .bind(sid).execute(&pool).await.unwrap();
         let issues = check_active_students_missing_billing(&pool, "2026-06").await.unwrap();
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].check_id, "missing_billing");
+    }
+
+    /// P2-10: 스케줄 없는 재원생은 청구 skip 대상이므로 만성 오탐을 내지 않는다.
+    #[tokio::test]
+    async fn missing_billing_skips_student_without_schedule() {
+        let pool = test_pool_in_memory().await.unwrap();
+        insert_student(&pool, "S1", "김학생").await; // 스케줄 없음 → 청구 대상 아님 → 제외
+        let issues = check_active_students_missing_billing(&pool, "2026-06").await.unwrap();
+        assert!(issues.is_empty(), "스케줄 없는 재원생은 경고 대상 아님");
     }
 
     #[tokio::test]
     async fn missing_billing_clean_when_billed() {
         let pool = test_pool_in_memory().await.unwrap();
         let sid = insert_student(&pool, "S1", "김학생").await;
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '15:00', 2, '2026-01-01')")
+            .bind(sid).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount) VALUES (?, '2026-06', 4, 200000, 200000)")
             .bind(sid).execute(&pool).await.unwrap();
         let issues = check_active_students_missing_billing(&pool, "2026-06").await.unwrap();
@@ -932,7 +968,7 @@ mod tests {
     async fn run_and_record_skips_duplicate_when_unchanged() {
         let pool = test_pool_in_memory().await.unwrap();
         // 이상 1건(청구 미생성)을 보장 — 완전 0건 정책상 0건이면 기록이 안 남으므로.
-        insert_student(&pool, "S1", "김학생").await;
+        insert_billable_student(&pool, "S1", "김학생").await;
         // 동일 데이터로 자동→수동→수동 3회 실행 (사용자 보고 시나리오 재현).
         run_and_record(&pool, "auto", "2026-06-06", "2026-06").await.unwrap();
         run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
@@ -947,11 +983,11 @@ mod tests {
     async fn run_and_record_appends_when_result_changes() {
         let pool = test_pool_in_memory().await.unwrap();
         // 1차: 원생 A 1명 → 청구 미생성 1건.
-        insert_student(&pool, "A1", "가").await;
+        insert_billable_student(&pool, "A1", "가").await;
         let first = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
         assert_eq!(first.issues_found, 1);
         // 원생 B 추가로 결과가 달라짐(이상 2건) → 새 이력 추가.
-        insert_student(&pool, "B1", "나").await;
+        insert_billable_student(&pool, "B1", "나").await;
         let second = run_and_record(&pool, "manual", "2026-06-07", "2026-06").await.unwrap();
         assert_eq!(second.issues_found, 2);
         // 결과가 바뀌었으므로 새 이력이 추가되어 2건.
@@ -962,9 +998,9 @@ mod tests {
     #[tokio::test]
     async fn run_and_record_prunes_resolved_issue_on_rerun() {
         let pool = test_pool_in_memory().await.unwrap();
-        // 스케줄 없는 원생 2명 → 각각 청구 미생성 1건씩 (missing_billing). 다른 검사는 미해당.
-        let a = insert_student(&pool, "A1", "가").await;
-        let b = insert_student(&pool, "B1", "나").await;
+        // 청구 대상(스케줄 보유) 원생 2명 → 각각 청구 미생성 1건씩 (missing_billing). 다른 검사는 미해당.
+        let a = insert_billable_student(&pool, "A1", "가").await;
+        let b = insert_billable_student(&pool, "B1", "나").await;
         let first = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
         assert_eq!(first.issues_found, 2);
 
@@ -985,7 +1021,7 @@ mod tests {
     #[tokio::test]
     async fn run_and_record_deletes_record_when_all_resolved() {
         let pool = test_pool_in_memory().await.unwrap();
-        let a = insert_student(&pool, "A1", "가").await;
+        let a = insert_billable_student(&pool, "A1", "가").await;
         let first = run_and_record(&pool, "manual", "2026-06-06", "2026-06").await.unwrap();
         assert_eq!(first.issues_found, 1);
 

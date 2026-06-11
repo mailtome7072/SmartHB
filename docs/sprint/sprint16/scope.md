@@ -271,6 +271,20 @@ Sprint: 16  |  Date: 2026-06-09  |  Session: #3 (T2)
 
 ---
 
+## 코드리뷰 P2 선별 7건 반영 (Session #10, 2026-06-11) — 출시 전 안전 범위
+사용자 결정: P2 14건 중 **릴리즈 직전 회귀 위험 없는 7건만** 진행 (나머지 P2는 v1.0 후 개선 스프린트).
+- **P2-10 (백엔드 위생)**:
+  - 자가진단 검사3(missing_billing) — 청구 대상(현행 스케줄+주당시간>0)만 검사하도록 수정. 스케줄 없는 재원생 만성 오탐 제거. 테스트 갱신+신규(skip 케이스).
+  - academic create/update/confirm — 커밋 후 소멸 전이 실패를 fail-soft(`expire_fail_soft` 헬퍼)로 통일. "성공인데 실패로 보고" UX 버그 제거.
+  - billing 집계 IPC 테스트 보강 — list_payment_view_impl(정렬+라벨 JOIN) / search_students_for_billing_impl(이름·입금자 매칭 + ROW_NUMBER 최근정보) 3건 신규(나머지 2종은 기존 커버 확인).
+- **P2-13**: 학사코드 색 SSOT — `src/lib/schedule-code-colors.ts` 신설, ClassCalendar/CalendarCell/calendar-image 3곳 통합. 공지문 달력 색이 앱과 일치하도록 변경(보강데이 crimson→teal·공휴수업일 orange→pink) → **시각검증 필요**.
+- **P2-14**: 학년 input max 학교급별(초6/중3), PaymentsView rows useMemo.
+- **P2-9**: settings/codes update/reorder/updateFee 저장 실패 표시 + 행 입력 props 동기화(실패 시 옛 값 복귀로 화면-DB 불일치 방지).
+> 검증: cargo test 415 / clippy / cipher check / tsc / lint / build 전수 통과.
+> ⏸️ 미진행 P2(v1.0 후): P2-1 출결그리드 반응성, P2-2 에러 한글화 121곳, P2-3 index.ts 분할, P2-4 notices 분리, P2-5 AppShell layout, P2-6 ConfirmDialog 공통화, P2-7 글씨 전면, P2-8 Undo·피드백, P2-11 queryKey 중앙화, P2-12 검색 학교명.
+
+---
+
 ## 전체 코드리뷰 P0+P1 반영 (Session #9, 2026-06-11) — 검토 보고서 기반
 6인 전문팀(아키텍트/DB/디자이너/UX/시니어/매니저) 전체 코드리뷰 결과(`docs/code-review/full-review-2026-06.md`) 중 **사용자 확정: P0 7건 + P1 11건을 sprint16에서 T11 전에 처리**. P2/P3는 v1.0 이후.
 

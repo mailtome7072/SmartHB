@@ -16,6 +16,7 @@
  * 수업일 판정(`hasClassOnDate`)은 `ThreeMonthCalendar` 와 동일 규칙을 포팅한다.
  */
 
+import { codeColor } from '@/lib/schedule-code-colors'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 import type { DayHours } from '@/lib/tauri'
 
@@ -146,18 +147,10 @@ const GRID_LINE = '#000000' // 셀 기본 테두리(검정)
 const PERIOD_FILL = 'rgba(173, 214, 240, 0.40)' // 기간 하이라이트(연한 파랑)
 const PERIOD_LABEL = '#1864AB'
 
-/** 코드명 → 라벨 텍스트 색 (캔버스). 누락 시 사용자코드 색(amber). */
-const LABEL_COLOR: Record<string, string> = {
-  공휴일: '#E03131',
-  보강데이: '#C2255C',
-  공휴수업일: '#E8590C',
-  방학: '#7048E8',
-  휴원일: '#868E96',
-  '단원평가 응시일': '#1971C2',
-}
+/** 코드명 → 라벨 텍스트 색 (캔버스). P2-13: schedule-code-colors.ts SSOT 사용 — 앱 화면과 동일 색.
+ *  (보강데이=teal·공휴수업일=pink 로 통일, 기존 공지문 전용 crimson/orange 팔레트 폐기). */
 function labelColor(e: ScheduleEventListItem): string {
-  if (!e.is_system_reserved) return '#F08C00'
-  return LABEL_COLOR[e.code_name] ?? '#F08C00'
+  return codeColor(e.code_name, e.is_system_reserved).hex
 }
 
 // ─── 렌더 치수 (고해상도 — 공지문에서 축소 배치돼도 선명) ─────────────────────

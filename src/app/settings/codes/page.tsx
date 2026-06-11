@@ -14,7 +14,7 @@
  * fees DnD 는 reorder_fees IPC 미존재로 본 sprint 미포함 — sort_order 직접 입력 유지.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
@@ -245,9 +245,10 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
           추가
         </button>
       </form>
-      {create.isError && (
+      {/* P2-9: 추가/수정/정렬 저장 실패를 모두 표시 — 기존엔 update/reorder 실패가 조용히 사라졌다. */}
+      {(create.isError || update.isError || reorder.isError) && (
         <p role="alert" className="mb-2 text-sm text-[var(--danger)]">
-          {String(create.error)}
+          {String((create.error ?? update.error ?? reorder.error) as unknown)}
         </p>
       )}
 
@@ -294,6 +295,9 @@ function SortableCodeRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: entry.id })
   const [label, setLabel] = useState(entry.label)
+  // P2-9: DB 라벨(entry.label)이 바뀌면 로컬 입력을 동기화 — 저장 실패 후 invalidate 로
+  // 옛 값이 돌아오면 입력도 되돌려, "화면=수정값 / DB=옛값" 영구 불일치를 방지.
+  useEffect(() => setLabel(entry.label), [entry.label])
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -413,9 +417,10 @@ function FeesPanel() {
           추가
         </button>
       </form>
-      {create.isError && (
+      {/* P2-9: 추가/수정 저장 실패 모두 표시. */}
+      {(create.isError || update.isError) && (
         <p role="alert" className="mb-2 text-sm text-[var(--danger)]">
-          {String(create.error)}
+          {String((create.error ?? update.error) as unknown)}
         </p>
       )}
 
@@ -444,6 +449,8 @@ function FeeRow({
   onSave: (next: StandardFee) => void
 }) {
   const [amount, setAmount] = useState(fee.amount)
+  // P2-9: DB 금액 변경 시 로컬 입력 동기화 — 저장 실패 후 옛 값 복귀 시 입력도 되돌림.
+  useEffect(() => setAmount(fee.amount), [fee.amount])
 
   return (
     <li className="flex items-center gap-3 border-t border-[var(--border)] px-3 py-2 first:border-t-0">

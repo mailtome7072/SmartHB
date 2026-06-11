@@ -112,14 +112,18 @@ export function PaymentsView({
     })
   }, [viewQuery.data])
 
-  const allRows: PaymentViewRow[] = viewQuery.data ?? []
-  // 검색 + 수납 상태 필터 동시 적용.
-  const rows: PaymentViewRow[] = allRows.filter((r) => {
-    if (matchedStudentIds !== null && !matchedStudentIds.has(r.studentId)) return false
-    if (paymentFilter === 'paid' && !r.isPaid) return false
-    if (paymentFilter === 'unpaid' && r.isPaid) return false
-    return true
-  })
+  const allRows: PaymentViewRow[] = useMemo(() => viewQuery.data ?? [], [viewQuery.data])
+  // 검색 + 수납 상태 필터 동시 적용. P2-14: 매 렌더 새 배열 생성 방지 (자동 채움 effect 의존성 안정화).
+  const rows: PaymentViewRow[] = useMemo(
+    () =>
+      allRows.filter((r) => {
+        if (matchedStudentIds !== null && !matchedStudentIds.has(r.studentId)) return false
+        if (paymentFilter === 'paid' && !r.isPaid) return false
+        if (paymentFilter === 'unpaid' && r.isPaid) return false
+        return true
+      }),
+    [allRows, matchedStudentIds, paymentFilter],
+  )
   const paymentMethods: CodeEntry[] = (paymentMethodsQuery.data ?? []).filter(
     (c) => c.is_active,
   )
