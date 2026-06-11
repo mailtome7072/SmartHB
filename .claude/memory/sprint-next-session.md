@@ -1,6 +1,6 @@
 ---
 name: sprint-next-session
-description: "Sprint 16 진행 중 — sprint16 브랜치. T0~T3 + 공지문달력 + 백업복원연결 + 청구/수납분리 + 사이드바UX + 폰트full + Win exe전용 완료(origin 동기화됨). **다음 세션 순서: ①daily/weekly 백업스케줄러 ②T11 통합검증 ③T10 릴리즈준비**. T4~T7 제외(T4~6=원장 직접, T7=반응형 피드백). ⚠️배포 금지. 새 세션/새 PC 진입 시 가장 먼저 확인"
+description: "Sprint 16 진행 중 — sprint16 브랜치. T0~T3+공지문달력+백업복원+청구수납분리+사이드바+백업스케줄러(catch-up)+보관축소(35개,PRD v1.5.2)+**전체코드리뷰 P0 7건/P1 11건 반영 완료** (보고서 docs/code-review/full-review-2026-06.md). **다음: ①P0/P1 시각검증 ②T11 통합검증 ③T10 릴리즈준비**. ⚠️배포 금지·로컬 미push. 새 세션 진입 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
@@ -23,15 +23,22 @@ metadata:
 - **T2**(`0478e8f`): 원생 CSV 가져오기(PRD §4.13.1) — `import.rs`(UTF-8/EUC-KR 자동, 학년 "초3" 파싱, 중복 skip, 백업 후 create_student 위임) + `/settings/import`. csv/encoding_rs 의존성.
 - **공지문 보강**(`9e85887`): 캔버스 이미지 요소(교습소 로고/2D바코드 체크박스 + **임의 이미지 추가** customImages) / 텍스트박스 **배경색**(background_color, 밝은노랑 #FFEC99) / 배경서식 글씨 깨짐 해결(생성 PNG를 배경 **원본 해상도** naturalWidth로 렌더). react-rnd lockAspectRatio 비율유지. z-order=배경→추가이미지→로고바코드→텍스트.
 
-## 다음 세션 할 일 (사용자 확정 순서 2026-06-10)
-**T4~T7 제외** — T4(양OS빌드)·T5(양PC동기화)·T6(실사용개시)는 **원장님이 직접** 수행, T7(초기 피드백)은 **반응형**(실사용 중 이슈 들어오면 즉시 대응, 선제 작업 없음). 따라서 코드 작업은 아래 순서:
-1. **daily/weekly 백업 스케줄러 연결** (backlog 발견 — 정책만 있고 미생성). 실사용 직전 데이터 안전 보강이라 최우선.
-   - 현재 `startup.rs::spawn_background_tasks`는 heartbeat(60s)+hourly(3600s)만 spawn. daily(30)/weekly(4)는 `backup.rs`에 계층·max_keep 정의만 있고 **트리거 없음**.
-   - 권장 설계: 순수 interval은 앱이 계속 떠 있어야만 fire → 간헐적 사용엔 부적합. **catch-up 방식**: 시작 시(+hourly tick마다) `backup.rs::scan_layer(Daily/Weekly)` 최신 created_at 확인 → 24h/7d 경과 또는 0건이면 `try_create_backup` 호출. "is due" 판정은 feature 무관 단위테스트, 실제 create_backup은 cipher 빌드만 동작.
-2. **T11 통합 검증**: cargo test/clippy --all-targets/cargo check --features cipher/lint/tsc/build 전수 + develop 반영 점검.
-3. **T10 v1.0 릴리즈 준비**: CHANGELOG 1.0.0 작성 + 버전 0.6.0→1.0.0(package.json/Cargo.toml/tauri.conf.json) + README 갱신 + deploy.yml 확인. **모든 변경 안정화 후 마지막**.
-> 이후 마무리: ROADMAP 업데이트 → sprint-close(develop 머지) → sprint-review(리뷰+회고).
-> ⚠️ **배포 금지**: deploy-prod(v1.0.0 태그 push)는 사용자 명시 지시 전까지 금지. 프로덕션 브랜치 `master`.
+## 2026-06-11 세션 완료
+1. **daily/weekly 백업 스케줄러** (`5630018`): catch-up 방식 — 시작 시+hourly tick마다 scan_layer 최신 created_at 24h/7d 경과(또는 0건) 판정→try_create_backup. is_due 순수함수+테스트 5건.
+2. **백업 보관 축소** (`76b10c1`): exit 5/hourly 12/daily 14/weekly 4 (합계 68→35, 1인 시스템+클라우드 점유). PRD §5.4 v1.5.2+ADR-003 개정노트+rules/ARCHITECTURE 동기화.
+3. **전체 코드리뷰** (6인 전문팀: 아키텍트/DB/디자이너/UX/시니어3분할/매니저): 보고서 `docs/code-review/full-review-2026-06.md` (`e982038`). P2 14건/P3는 v1.0 후.
+4. **P0 7건 반영** (`7775a15`,`7d543d2`): WAL checkpoint+pool close(exit_hook, 양PC torn-sync 차단)/config.json fsync/todayLocalISO(UTC 어제 버그 3곳)/수납 draft 보호(refetch 보존+탭월변경 모달+useUnsavedChanges)/원생폼 임시저장 이어하기 배너/출결 Ctrl+Z editable 가드/change_schedule_day 원자 커맨드(테스트 3건).
+5. **P1 11건 반영** (`8357a40`): 확인버튼 h-11/text-base(button.tsx)/퇴교 catch/notices 삭제확인/핵심화면 12px 제거/gray-500→muted-foreground 72곳/삭제버튼 빨강/errMsg 헬퍼(src/lib/errors.ts)/panic 가드 2곳/폼 Ctrl+S/문서드리프트(backend.md 청구2단계·query!규칙 폐기→런타임+테스트 표준, CLAUDE.md V307·0.6.0)/구메뉴명.
+- 검증: cargo test 411/clippy/cipher check/tsc/lint/build 전수 통과.
+- ⚠️ `release_lock_atomic_is_idempotent_when_no_file` 병렬 실행 간헐 flake(전역 락 경로 공유, 기존 잠재) — T11 재현 시 직렬화 검토.
+
+## 다음 세션 할 일
+**T4~T7 제외** — T4(양OS빌드)·T5(양PC동기화)·T6(실사용개시)는 **원장님 직접**, T7(피드백)은 반응형.
+1. **P0/P1 시각검증** (사용자): 수납 draft 보호(탭/월/포커스복귀), 원생폼 임시저장 배너, 출결 Ctrl+Z, 확인다이얼로그 크기/빨강, 글씨 상향 화면.
+2. **T11 통합 검증**: 검증 스위트 전수 + develop 반영 점검. 코드리뷰 권고 시나리오 추가 — 양 PC 종료→재기동 정합(WAL), 오전 시간대 날짜 입력.
+3. **T10 v1.0 릴리즈 준비**: CHANGELOG 1.0.0 + 버전 0.6.0→1.0.0(package.json/Cargo.toml/tauri.conf.json) + README + deploy.yml 확인. **마지막**.
+> 이후: ROADMAP 업데이트 → sprint-close(develop 직접 머지, PR 생략) → sprint-review.
+> ⚠️ **배포 금지**: deploy-prod(v1.0.0 태그 push)는 사용자 명시 지시 전까지 금지. v1.0 후 개선 스프린트는 보고서 P2(출결그리드 반응성/에러한글화/대형파일분할 등 14건) 참조.
 
 ## 릴레이 절차 (다른 PC에서 이어가기)
 1. (이 PC에서 먼저) `git push origin sprint16`
