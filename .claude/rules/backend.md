@@ -50,7 +50,7 @@ globs: ["src-tauri/**/*.rs", "src-tauri/Cargo.toml", "src-tauri/migrations/**/*.
 
 ### 무결성 검증 (PRD §5.3, §5.4)
 - 앱 시작 시 `PRAGMA integrity_check` 자동 실행 → 손상 감지 시 `backup/exit/` 최신본 자동 복원 + 사용자 알림 + 손상본 격리
-- 백업 4계층: `backup/exit/`(10) + `backup/hourly/`(24) + `backup/daily/`(30) + `backup/weekly/`(4)
+- 백업 4계층: `backup/exit/`(5) + `backup/hourly/`(12) + `backup/daily/`(14) + `backup/weekly/`(4) — PRD §5.4 v1.5.2 (1인 시스템 축소, 합계 35). daily/weekly는 catch-up 방식(최근 백업 후 24h/7d 경과 시, 시작 시 + 매시 확인)
 - 백업 구현: SQLite Online Backup API 사용 — `sqlx` 직접 지원 없음, `rusqlite::backup` 또는 sqlx raw connection 활용 검토
 - 모든 백업 파일은 SQLCipher 암호화 상태 그대로 보관 (백업 시 복호화 금지)
 

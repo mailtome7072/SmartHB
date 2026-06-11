@@ -1,6 +1,7 @@
 //! 4계층 자동 백업 (ADR-003, PRD §5.3/§5.4).
 //!
-//! `exit(10)` / `hourly(24)` / `daily(30)` / `weekly(4)` 순환 정책으로 SQLCipher DB 백업을 관리한다.
+//! `exit(5)` / `hourly(12)` / `daily(14)` / `weekly(4)` 순환 정책으로 SQLCipher DB 백업을 관리한다.
+//! (1인 사용 시스템 — 클라우드 동기화 폴더 점유 절감을 위해 Sprint 16 에서 축소, PRD §5.4 v1.5.2)
 //! SQLite Online Backup API 를 rusqlite 0.32 의 `bundled-sqlcipher-vendored-openssl` 빌드에서
 //! 사용하여 백업 파일이 SQLCipher 암호화 상태 그대로 유지된다.
 //!
@@ -54,12 +55,16 @@ impl BackupLayer {
     /// 전체 백업 조회 시 내부 순회용 — UI 는 `list_backups(None)` IPC 사용.
     pub(crate) const ALL: [BackupLayer; 4] = [Self::Exit, Self::Hourly, Self::Daily, Self::Weekly];
 
-    /// 계층별 최대 보관 개수 (PRD §5.3). 초과 시 가장 오래된 파일 삭제.
+    /// 계층별 최대 보관 개수 (PRD §5.4 v1.5.2). 초과 시 가장 오래된 파일 삭제.
+    ///
+    /// 1인 사용 시스템 + 백업이 클라우드 동기화 폴더에 위치(업로드 트래픽·용량 점유)하므로
+    /// 복구 시나리오(당일 실수=hourly, 손상=exit, 과거 시점=daily/weekly)를 유지하는 선에서
+    /// 최소화 — 합계 최대 35개.
     pub fn max_keep(self) -> usize {
         match self {
-            Self::Exit => 10,
-            Self::Hourly => 24,
-            Self::Daily => 30,
+            Self::Exit => 5,
+            Self::Hourly => 12,
+            Self::Daily => 14,
             Self::Weekly => 4,
         }
     }
@@ -534,9 +539,10 @@ mod tests {
 
     #[test]
     fn max_keep_matches_prd_policy() {
-        assert_eq!(BackupLayer::Exit.max_keep(), 10);
-        assert_eq!(BackupLayer::Hourly.max_keep(), 24);
-        assert_eq!(BackupLayer::Daily.max_keep(), 30);
+        // PRD §5.4 v1.5.2 — 1인 시스템 축소 정책 (합계 35).
+        assert_eq!(BackupLayer::Exit.max_keep(), 5);
+        assert_eq!(BackupLayer::Hourly.max_keep(), 12);
+        assert_eq!(BackupLayer::Daily.max_keep(), 14);
         assert_eq!(BackupLayer::Weekly.max_keep(), 4);
     }
 

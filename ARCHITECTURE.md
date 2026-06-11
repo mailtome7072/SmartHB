@@ -97,7 +97,7 @@ project-root/
 | **암호화** | SQLCipher AES-256, 키는 PBKDF2 유도 후 OS Keychain/Credential Manager 보관 | §5.1, §5.5 |
 | **인증** | 사용자 비밀번호 또는 OS 생체인증(Touch ID/Windows Hello) + 복구 코드 12자리 | §5.5 |
 | **동시성** | `app.lock` 파일 — 60초 heartbeat, 5분 미갱신 시 강제해제 옵션 | §5.3, §8.1 |
-| **백업 4계층** | exit(10) + hourly(24) + daily(30) + weekly(4) — SQLite Online Backup API | §5.4 |
+| **백업 4계층** | exit(5) + hourly(12) + daily(14) + weekly(4) — SQLite Online Backup API, daily/weekly는 catch-up (v1.5.2) | §5.4 |
 | **백업 복원 리허설** | 정기 수행 없음 — 사용자 필요 시 격리 환경에서 1클릭 실행 (KPI 제외) | §5.4 |
 | **무결성** | 앱 시작 시 `PRAGMA integrity_check` → 손상 시 최신 백업 자동 복원 | §5.3, §5.4 |
 | **자가 진단** | 매월 1일 첫 실행 자동 + 수동 — 데이터 정합성 위반 항목 대시보드 안내 | §6.6 |

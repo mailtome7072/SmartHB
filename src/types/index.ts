@@ -36,7 +36,7 @@ export type LockStatus =
  * 백업 계층 — T7 PRD §5.3/§5.4 (ADR-003).
  *
  * `src-tauri/src/commands/backup.rs::BackupLayer` 와 serde rename_all="kebab-case" 정합.
- * 보관 정책: exit(10) / hourly(24) / daily(30) / weekly(4) — 초과 시 가장 오래된 파일 삭제.
+ * 보관 정책: exit(5) / hourly(12) / daily(14) / weekly(4) — 초과 시 가장 오래된 파일 삭제 (PRD §5.4 v1.5.2).
  */
 export type BackupLayer = 'exit' | 'hourly' | 'daily' | 'weekly'
 

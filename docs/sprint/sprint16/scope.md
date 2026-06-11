@@ -295,6 +295,13 @@ backlog 해소: daily(30)/weekly(4) 계층은 `backup.rs`에 정의·rotation만
 - ✅ startup 연결: 백업 task 시작 직후 1회 + hourly tick마다, OnceLock 중복 spawn 방지 유지
 - ✅ Self-verify: cargo test(408) / clippy --all-targets clean / cargo check --features cipher 통과 (프론트 무변경 → lint/tsc 생략)
 
+### 추가 결정 — 보관 개수 축소 (사용자 확정 2026-06-11, PRD v1.5.2)
+1인 사용 시스템 + 백업 위치가 클라우드 동기화 폴더(업로드 트래픽·용량 점유)인 점을 들어 사용자가 축소 결정. 복구 시나리오(당일 실수=hourly, 손상=exit, 과거 시점=daily/weekly)는 유지.
+- **exit 10→5 / hourly 24→12 / daily 30→14 / weekly 4 유지** — 합계 68→35.
+- 갱신: `backup.rs::max_keep`+테스트+모듈doc / `src/types/index.ts` 주석 / **PRD §5.4** 표+Change Log v1.5.2(트리거도 catch-up 방식으로 명확화) / **ADR-003** 개정 노트(본문 보존) / `.claude/rules/backend.md` / `ARCHITECTURE.md`.
+- ROADMAP·CHANGELOG·sprint1.md·phase1 리뷰 등 과거 기록 문서는 당시 수치 그대로 보존(미수정).
+- 기존 백업이 새 상한 초과 시 다음 rotation에서 오래된 것부터 자동 정리(코드 변경 불요).
+
 ---
 
 ## 백업 복원 연결 (Session #7, 2026-06-10) — 자동 복원 + 수동 복원 UI
