@@ -8,7 +8,7 @@
 //! ## 인터페이스 (2 IPC)
 //!
 //! - [`preview_students_csv`] — 파싱·검증·중복판정만 수행(드라이런, INSERT 없음). 미리보기용.
-//! - [`import_students_csv`] — 가져오기 직전 백업 1회 후 유효·비중복 행을 [`create_student`]로 INSERT.
+//! - [`import_students_csv`] — 가져오기 직전 백업 1회 후 유효·비중복 행을 단일 트랜잭션(`insert_student_tx`)으로 INSERT (중간 실패 시 전체 롤백).
 //!
 //! ## 컬럼
 //!
@@ -24,9 +24,10 @@
 //!
 //! UTF-8 BOM 제거 후 UTF-8 디코딩을 시도하고, 실패 시 EUC-KR(CP949)로 디코딩한다(엑셀 한글).
 
+use crate::commands::audit::{self, AuditEventType};
 use crate::commands::backup::{create_backup, BackupLayer};
 use crate::commands::db;
-use crate::commands::students::{create_student, Gender, NewStudent, SchoolLevel};
+use crate::commands::students::{insert_student_tx, Gender, NewStudent, SchoolLevel};
 use crate::error::AppError;
 use serde::Serialize;
 use sqlx::Row;
@@ -516,13 +517,23 @@ pub async fn import_students_csv(file_path: String) -> Result<ImportResult, Stri
     let pool = db::pool().map_err(String::from)?;
     let mut existing = load_existing(pool).await.map_err(String::from)?;
 
+    // 전체 가져오기를 단일 트랜잭션으로 묶는다 — 중간 DB 오류 시 부분 삽입 없이 전부 롤백(코드리뷰 C2).
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
     let (mut inserted, mut skipped, mut errored) = (0usize, 0usize, 0usize);
     let mut errors = Vec::new();
+    // 커밋 성공 후 기록할 audit 대상 — 트랜잭션 외부에서 일괄 기록.
+    let mut inserted_serials = Vec::new();
     for ParsedRow { preview, payload } in parsed {
         let row_number = preview.row_number;
         let payload = match payload {
             Some(p) => p,
             None => {
+                // 파싱·검증 실패 행은 DB 에 닿지 않으므로 롤백 대상이 아니다(미리보기에서 이미 노출).
                 errored += 1;
                 if let Some(m) = preview.messages.first() {
                     errors.push(format!("{}행: {}", row_number, m));
@@ -534,16 +545,29 @@ pub async fn import_students_csv(file_path: String) -> Result<ImportResult, Stri
             skipped += 1;
             continue;
         }
-        match create_student(payload).await {
+        match insert_student_tx(&mut tx, &payload).await {
             Ok(s) => {
                 inserted += 1;
                 remember(&mut existing, &s.serial_no, &s.name, s.phone_mother.as_deref());
+                inserted_serials.push(s.serial_no);
             }
             Err(e) => {
-                errored += 1;
-                errors.push(format!("{}행: {}", row_number, e));
+                // 원자성: DB 오류가 한 건이라도 발생하면 전체 롤백 후 중단(부분 삽입 방지).
+                tx.rollback().await.ok();
+                return Err(format!(
+                    "{}행에서 오류가 발생하여 가져오기를 취소했습니다(삽입된 행 없음): {}",
+                    row_number,
+                    String::from(e)
+                ));
             }
         }
+    }
+
+    tx.commit().await.map_err(AppError::Db).map_err(String::from)?;
+
+    // R13 PII 마스킹: serial_no 만 기록. 트랜잭션 커밋 후 일괄 기록.
+    for serial in &inserted_serials {
+        audit::try_record(AuditEventType::StudentCreated, Some(serial), None).await;
     }
 
     Ok(ImportResult {
