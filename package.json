@@ -1,6 +1,6 @@
 {
   "name": "smarthb",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--no-experimental-webstorage next dev -p 1420",

@@ -9,13 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 앱 개요
 
 **스마트해법수학 서현효자점** — 수학 교습소 단독 운영자(50대 원장 1인)용 데스크톱 관리 앱.
-- 원생 관리, 수업 스케줄, 출결·보강, 단원평가, 교습비 청구·수납, 카카오톡 공지문 이미지 생성, 대시보드를 통합 제공한다.
+- 원생 관리, 수업 스케줄, 출결·보강, 교습비 청구·수납, 카카오톡 공지문 이미지 생성, 대시보드를 통합 제공한다. (단원평가/학습보고서는 개발 취소)
 - Windows 10/11(교습소) + macOS 12+(자택) 동시 지원. 로컬 SQLite + OS 클라우드 동기화 폴더로 인터넷 없이도 작동.
 - UI 접근성 기준: Pretendard 본문 18pt 권장, WCAG AA 명도 대비 이상.
 
 ## 현재 상태
 
-- **버전**: 0.6.0 (`package.json`, `src-tauri/Cargo.toml`)
+- **버전**: 1.0.0 (`package.json`, `src-tauri/Cargo.toml`) — 정식 출시(Sprint 16)
 - **다음 작업**: `.claude/memory/sprint-next-session.md` 참조 (다음 스프린트 진입점)
 - **마이그레이션 현황** (`src-tauri/migrations/`): V001~V008(코드 테이블·감사 로그·앱 설정), V101~V111(원생/스케줄/출결/청구 도메인), V200~V201(시드), V301~V307(schedule_codes 보정·공휴일·schedule_events 확장·자가진단 이력·퇴교생 미보강 결석 소멸 백필·원생 생년월일·출결 note·출결 start_time) — 최신 V307
 - **진행/회고 SSOT**: `ROADMAP.md` (전체 로드맵), `docs/sprint/`, `docs/sprint-retrospectives/`, `CHANGELOG.md`

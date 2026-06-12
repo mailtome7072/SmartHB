@@ -1,6 +1,6 @@
 [package]
 name = "smarthb"
-version = "0.6.0"
+version = "1.0.0"
 description = "정쌤의 스마트해법수학"
 authors = []
 edition = "2021"

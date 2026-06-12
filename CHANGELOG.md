@@ -35,9 +35,22 @@
 
 ---
 
-## [Unreleased]
+## [1.0.0] - 2026-06-12
+
+> **정식 출시 (v1.0)** — Sprint 15~16 작업을 포함한 첫 정식 릴리즈. v0.6.0 단독 배포를 폐기하고 v1.0으로 직행. 단원평가/학습보고서(Phase 5)는 개발 취소됨.
 
 ### Added
+- Sprint 16: **수업일 변경 도메인** — ① 케이스1 1회성 이동(출결 행 `event_date` 이동 + 시작시간 시(時) 단위 입력 + 이동 메모, 동월·평일·미충돌·present만 허용) ② 케이스2 특정일 이후 영구 변경(`effective_from` 시계열 스케줄 + 미처리 출결만 재생성, 결석·보강·메모 행 보존). `move_attendance`/`apply_schedule_change` IPC, `generate` 날짜 인식 리팩토링, 출결표 이동 다이얼로그 + ScheduleEditor 변경일 선택. DB 마이그레이션 V306(`regular_attendances.note`)·V307(`regular_attendances.start_time`)
+- Sprint 16: **수업 캘린더 개선** — 주/일/월 보기 원생별 색칩 + 수업 시간 표기(길이 구분), 주 보기 2열(2×N) 묶음·일 보기 원생별 개별 블록(실제 길이), 칩 hover 시 수업 시간 범위 테두리 강조, 월 헤더 요일 표기
+- Sprint 16: **원생 CSV 가져오기** (`/settings/import`, T2) — `students` 테이블 일괄 등록. UTF-8/EUC-KR 자동 인코딩(BOM 처리), 학년("초3"·"중2") 파싱, 미리보기 드라이런(파싱·검증·중복판정) → 가져오기 전 자동 백업 1회 → 단일 트랜잭션 INSERT. 중복(일련번호 또는 이름+모연락처) skip. `csv`·`encoding_rs` 신규 의존성
+- Sprint 16: **공지문 캔버스 요소 보강** — 교습소 로고·2D바코드 이미지 요소(체크박스 on/off, 드래그 + 비율 유지 리사이즈) + 임의 이미지 추가(`customImages`) + 텍스트박스 배경색 지정. 미등록 이미지 체크 시 안내 팝업
+- Sprint 16: **공지문 교습일정 달력 이미지** — 청구년월 학사일정을 일요일 시작 달력 PNG로 렌더해 공지문 캔버스에 합성. 교습기간 빨간 외곽선(첫 평일 수업일~마지막 평일 수업일, 토·일 제외), 특이일 라벨(공휴일·보강데이), 기간 하이라이트. 신규 의존성·마이그레이션 없음(`src/lib/calendar-image.ts`)
+- Sprint 16: **DB 폴더 변경** (`/settings/db-folder`, T3, ADR-009) — 클라우드 동기화 경로 재지정 + `smarthb/` 전체(DB·salt.bin·assets·output·backup) 동반 이전. copy-then-switch + 재시작 방식(WAL checkpoint → 재귀 복사·fsync → cipher 무결성 검증 → 원본 MOVED_TO 마커 → config.json 갱신). 실패 시 기존 폴더 유지. `tauri-plugin-process` 신규
+- Sprint 16: **백업 복원 연결** — ① 시작 시 무결성 손상(`quick_check` Failed) 감지 시 최신 정상 exit 백업으로 자동 복원 + 손상본 보존 + 고지 배너 ② `/settings/backup`에 "이 백업으로 복원" 수동 버튼(확인 모달 + 재시작)
+- Sprint 16: **daily/weekly 백업 스케줄러** — catch-up 방식(앱 시작 + hourly tick마다 최신 백업 24h/7d 경과 또는 0건 판정 시 생성). `is_due` 순수 함수 + 단위 테스트
+- Sprint 16: **청구/수납 메뉴 분리** — '청구/수납 관리' → '청구 관리'(`/billing`) + '수납 관리'(`/payments` 신설, 수납 + 월별 집계 탭). 공통 로직 `useBillingShared` 훅 + `BillingSummaryBar`/`BillingSearchBar` 추출
+- Sprint 16: **미저장 이탈 경고 공통 훅** `useUnsavedChanges` (T1) — 창 닫기(beforeunload) + Ctrl+S 저장 + 메뉴 이동 가드를 한 줄로 일괄 획득. 입력 필드 포커스 중 Ctrl+N 억제(A99)
+- Sprint 16: **원생 폼 UX 개선** — 임시저장 입력 즉시 저장(이탈 손실 방지) + 재진입 시 '이어서 작성' 복원, 원생 목록·신규 버튼 임시저장 배지, 성별·학년·학교 필수 입력 검증(미지정 차단), 학교급↔학교명 정합성 검증
 - Sprint 15: 교습소 정보 화면 신설 (`/settings/info`) — 교습소명·대표자·연락처·주소·사업자등록번호·최대 인원·면적·운영 시간 등 9필드 CRUD + 로고/2D바코드 이미지 2종 업로드·미리보기·삭제. `app_settings` JSON 저장(마이그레이션 없음), 기존 `notice_asset` IPC 재사용
 - Sprint 15: 자가 진단 이력 수동 삭제 — `/settings/diagnosis` 이력 목록에 행 단위 삭제 버튼 + 전체 비우기 버튼 추가. `delete_diagnosis_history(id)` / `clear_diagnosis_history()` IPC 2종, 확인 다이얼로그(PRD §5.7), 단위 테스트 3건
 - Sprint 15: 전역 `GlobalShortcuts` 컴포넌트 신설 — Ctrl+F(글로벌 검색 포커스), Ctrl+N(신규 원생) 단축키 전역 등록
@@ -45,13 +58,30 @@
 - Sprint 15: 원생 상세 화면에 '원생 관리 메인으로' 버튼 추가
 
 ### Changed
+- Sprint 16: 사이드바 UX 개선 — 활성 메뉴 강조(좌측 보더 + 배경 + 볼드, `aria-current`) + 메뉴 그룹 여백·구분선 + 너비 20% 축소
+- Sprint 16: 확인/취소 버튼 높이 `h-8`→`h-11`(44px) + 본문 `text-base` 상향 (50대 사용자 접근성, P1)
+- Sprint 16: 본문 보조 텍스트 `text-gray-500` → `text-muted-foreground` 72곳 일괄 교체 (WCAG AA 명도 대비, P1)
+- Sprint 16: 백업 보관 개수 축소 — exit 10→5 / hourly 24→12 / daily 30→14 / weekly 4 유지 (합계 68→35, 1인 시스템 + 클라우드 동기화 폴더 점유 고려, PRD §5.4 v1.5.2)
+- Sprint 16: Pretendard 폰트 subset → full woff2 교체 (공지문 캔버스 렌더 시 희귀 한자·특수문자 fallback 방지)
+- Sprint 16: 자가진단 검사3(청구 미생성) 청구 대상(현행 스케줄 + 주당시간>0)만 검사 — 스케줄 없는 재원생 만성 오탐 제거 (P2)
+- Sprint 16: 학사코드 색상 SSOT 통합 (`src/lib/schedule-code-colors.ts`) — 공지문 달력 색을 앱과 일치(보강데이 teal·공휴수업일 pink, P2)
 - Sprint 15: 설정 허브 카드 순서 재배치 (PIN 카드 위치 조정) + '마법사 재실행' 카드 → 'DB 폴더 변경(예정)' 안내 카드 전환(disabled, Sprint 16 예정)
 - Sprint 15: `dashboard.rs` `monthly_summary` GROUP BY 서브쿼리 패턴으로 리팩토링 (R99 해소 — 부분 수납 확장 대비)
 - Sprint 15: 대시보드 위젯 타이틀 inline `fontSize` → Tailwind `text-2xl` 통일 (A97)
 - Sprint 15: 청구 생성 `standard_fees` 조회 N+1 쿼리 → IN 쿼리 단일 배치로 전환
 
 ### Fixed
+- Sprint 16 (코드리뷰 P0, 데이터 안전): 앱 종료 시 WAL checkpoint(TRUNCATE) + connection pool close — 양 PC 클라우드 동기화 간 torn-sync(미반영 WAL) 차단
+- Sprint 16 (코드리뷰 P0): `config.json` 저장 시 fsync 적용 (전원 손실 시 손상 방지)
+- Sprint 16 (코드리뷰 P0): `todayLocalISO()` 로컬 날짜 헬퍼 — 오전 시간대(UTC 변환 시 어제로 밀림) 날짜 입력 버그 3곳 수정
+- Sprint 16 (코드리뷰 P0): 수납 입력 draft 보호(refetch 시 미저장분 보존 + 탭/월 변경 확인 모달), 출결 그리드 Ctrl+Z editable 가드, 요일 변경 원자 커맨드(`change_schedule_day`)
+- Sprint 16: 수업일 이동(케이스1) 후 주간 캘린더 클릭 시 `padStart` 크래시 수정 — 이동 출결의 `start_time` 부재를 `COALESCE`(V307) + null 가드로 해소
+- Sprint 16: 정규수업 가능 판정을 `allowsMakeup` → `regular_blocked`(allows_regular=0)로 교정 — 주말·보강데이 이동 차단 오판 수정
+- Sprint 16 (코드리뷰 P2): academic create/update/confirm 커밋 후 소멸 전이 실패를 fail-soft로 통일("성공인데 실패 보고" UX 버그 제거), `/settings/codes` 저장 실패 표시 + 행 입력 props 동기화
 - Sprint 15: WCAG AA 명도 대비 미달 `text-gray-400` → `text-gray-600` 17건 수정 (전체 화면)
+
+### Build
+- Sprint 16: Windows 설치 패키지를 `.exe`(NSIS) 전용으로 제한 (msi 제외, macOS는 dmg) — 파일명 `SmartHB_{ver}_x64-setup.exe`
 
 ## [0.6.0] - 2026-06-06
 
