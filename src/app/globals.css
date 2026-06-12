@@ -6,10 +6,10 @@
  * - 강조: 차분한 남색 (#2563EB) — 주요 버튼, 포커스, 링크
  * - 텍스트: 짙은 검정 (#1A1A1A) — WCAG AA 명도 대비 ≥ 4.5:1 보장
  *
- * 폰트: Pretendard self-host (ADR-006, Sprint 3 T1).
- * - 출처: orioncactus/pretendard v1.3.9 (SIL OFL 1.1), web/static/woff2-subset/
- * - 포함 weight: Regular(400) / SemiBold(600) / Bold(700) — 총 ~806KB
- * - 한글+영문+숫자+기호 subset (R17 ~2MB 한도 만족)
+ * 폰트: Pretendard self-host (ADR-006, Sprint 3 T1 / Sprint 16 full 교체).
+ * - 출처: orioncactus/pretendard v1.3.9 (SIL OFL 1.1), web/static/woff2/ (full)
+ * - 포함 weight: Regular(400) / SemiBold(600) / Bold(700) — 총 ~2.3MB
+ * - **full glyph** — 공지문 등 캔버스 렌더 시 희귀 한자·특수문자 fallback 방지 (subset→full 교체)
  * - 시스템 fallback: 한국어 환경에서 다운로드 실패/미적용 시 Malgun Gothic·Apple SD Gothic Neo
  */
 @font-face {
@@ -17,21 +17,21 @@
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/Pretendard-Regular.subset.woff2') format('woff2');
+  src: url('/fonts/Pretendard-Regular.woff2') format('woff2');
 }
 @font-face {
   font-family: 'Pretendard';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url('/fonts/Pretendard-SemiBold.subset.woff2') format('woff2');
+  src: url('/fonts/Pretendard-SemiBold.woff2') format('woff2');
 }
 @font-face {
   font-family: 'Pretendard';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/Pretendard-Bold.subset.woff2') format('woff2');
+  src: url('/fonts/Pretendard-Bold.woff2') format('woff2');
 }
 
 :root {
@@ -141,13 +141,6 @@ h6 { font-size: 18px; }
   z-index: 1;
 }
 
-/* 주·일 보기 원생 이름 박스(이벤트) hover — 진한 테두리 강조. */
-.fc-timegrid-event:hover {
-  outline: 2px solid #334155 !important;
-  outline-offset: -2px;
-  z-index: 10;
-}
-
 /* 오늘 셀 — 연한 민트 (사용자 지정 톤). 결합 선택자로 amber/gray 보다 우선. */
 .fc .shb-has-class.fc-day-today,
 .fc .shb-no-class.fc-day-today,
@@ -166,12 +159,26 @@ h6 { font-size: 18px; }
   background-color: transparent !important;
 }
 
-/* 일 보기 수업 블록: 배경 투명 + 모든 변 투명(셀 배경색과 동일 → 외곽선 불가시). */
-.fc-timeGridDay-view .fc-timegrid-event {
-  background-color: transparent !important;
-  border: 1px solid transparent !important;
-  border-radius: 0 !important;
+/* 주/일 보기 수업 블록 컨테이너 — FC 기본 테두리/그림자/배경 제거.
+   수업 내용은 내부 색칩(원생별)으로 표현하므로 컨테이너 장식은 불필요(회색 테두리 제거). */
+.fc-timegrid-event,
+.fc-timegrid-event .fc-event-main {
+  border: none !important;
   box-shadow: none !important;
+  background-color: transparent !important;
+}
+/* 단, hover 강조 background 이벤트는 eventDidMount 에서 검정 테두리를 직접 지정한다. */
+.fc-timegrid-bg-harness .fc-bg-event {
+  background-color: transparent !important;
+}
+
+/* 주 보기 토/일 컬럼 너비를 평일의 절반으로 (header + body 동시 적용).
+   평일 5칸(각 2단위) + 주말 2칸(각 1단위) = 12단위 → 주말 ≈ 8.3%, 평일 자동 분배. */
+.fc-timeGridWeek-view th.fc-day-sat,
+.fc-timeGridWeek-view th.fc-day-sun,
+.fc-timeGridWeek-view td.fc-day-sat,
+.fc-timeGridWeek-view td.fc-day-sun {
+  width: 8.3% !important;
 }
 
 /* 주말·공휴일: 배경은 위 규칙 유지, 날짜 숫자 색만 (일·공휴일 빨강 / 토 파랑). 볼드 미적용. */
@@ -188,3 +195,9 @@ h6 { font-size: 18px; }
 .fc .fc-timegrid-axis-cushion {
   font-size: 12px;
 }
+
+/* 주 보기 시간 슬롯 높이 — 한 셀에 최대 6명(2열×3행)이 표기되도록 확보. */
+.fc-timeGridWeek-view .fc-timegrid-slot {
+  height: 5rem;
+}
+

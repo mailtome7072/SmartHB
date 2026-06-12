@@ -157,11 +157,11 @@ export function MakeupRegisterDialog({
         </h2>
         <p className="mt-1 text-sm text-gray-600">
           <span className="font-semibold">{studentName}</span>
-          <span className="ml-1 text-gray-500">#{studentSerialNo}</span>
+          <span className="ml-1 text-muted-foreground">#{studentSerialNo}</span>
           <span className="mx-2">·</span>
           <span>{eventDate}</span>
           {eligibleEntry !== undefined && (
-            <span className="ml-1 text-gray-500">({eligibleEntry.scheduleCodeName})</span>
+            <span className="ml-1 text-muted-foreground">({eligibleEntry.scheduleCodeName})</span>
           )}
         </p>
 
@@ -231,7 +231,7 @@ export function MakeupRegisterDialog({
                 onChange={(e) => setClassHours(Number(e.target.value) || 0)}
                 className="min-h-[44px] w-28 rounded-md border-2 border-[var(--border)] px-3 text-base"
               />
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-muted-foreground">
                 현재 {formatHours(classHours)}시간 ({hoursToMinutes(classHours)}분)
               </span>
             </div>
@@ -303,7 +303,7 @@ function AbsenceRow({ absence, checked, onToggle }: AbsenceRowProps) {
           </span>
         )}
         {absence.absenceMemo !== null && (
-          <div className="text-sm text-gray-500">메모: {absence.absenceMemo}</div>
+          <div className="text-sm text-muted-foreground">메모: {absence.absenceMemo}</div>
         )}
       </button>
     </li>

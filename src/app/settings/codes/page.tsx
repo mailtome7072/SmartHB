@@ -14,7 +14,7 @@
  * fees DnD 는 reorder_fees IPC 미존재로 본 sprint 미포함 — sort_order 직접 입력 유지.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
@@ -245,9 +245,10 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
           추가
         </button>
       </form>
-      {create.isError && (
+      {/* P2-9: 추가/수정/정렬 저장 실패를 모두 표시 — 기존엔 update/reorder 실패가 조용히 사라졌다. */}
+      {(create.isError || update.isError || reorder.isError) && (
         <p role="alert" className="mb-2 text-sm text-[var(--danger)]">
-          {String(create.error)}
+          {String((create.error ?? update.error ?? reorder.error) as unknown)}
         </p>
       )}
 
@@ -260,7 +261,7 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
         >
           <ul className="overflow-hidden rounded-md border border-[var(--border)] bg-white">
             {visibleCodes.length === 0 && (
-              <li className="px-3 py-6 text-center text-sm text-gray-500">
+              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
                 {codes.length === 0 ? '등록된 항목이 없습니다.' : '필터 조건에 해당하는 항목이 없습니다.'}
               </li>
             )}
@@ -294,6 +295,9 @@ function SortableCodeRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: entry.id })
   const [label, setLabel] = useState(entry.label)
+  // P2-9: DB 라벨(entry.label)이 바뀌면 로컬 입력을 동기화 — 저장 실패 후 invalidate 로
+  // 옛 값이 돌아오면 입력도 되돌려, "화면=수정값 / DB=옛값" 영구 불일치를 방지.
+  useEffect(() => setLabel(entry.label), [entry.label])
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -310,20 +314,20 @@ function SortableCodeRow({
       <button
         type="button"
         aria-label="순서 변경 드래그 핸들"
-        className="flex h-10 w-8 cursor-grab items-center justify-center text-gray-400 hover:text-gray-700 active:cursor-grabbing"
+        className="flex h-10 w-8 cursor-grab items-center justify-center text-gray-600 hover:text-gray-700 active:cursor-grabbing"
         {...attributes}
         {...listeners}
       >
         <span aria-hidden="true">⋮⋮</span>
       </button>
-      <span className="w-32 text-sm text-gray-500">{entry.code}</span>
+      <span className="w-32 text-sm text-muted-foreground">{entry.code}</span>
       <input
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         onBlur={() => label !== entry.label && onSave({ ...entry, label })}
         className="h-10 flex-1 rounded-md border border-[var(--border)] px-3"
       />
-      <span className="w-12 text-right text-sm text-gray-400" title="정렬순서">
+      <span className="w-12 text-right text-sm text-gray-600" title="정렬순서">
         {entry.sort_order}
       </span>
       <label className="flex h-10 items-center gap-2 text-sm">
@@ -413,9 +417,10 @@ function FeesPanel() {
           추가
         </button>
       </form>
-      {create.isError && (
+      {/* P2-9: 추가/수정 저장 실패 모두 표시. */}
+      {(create.isError || update.isError) && (
         <p role="alert" className="mb-2 text-sm text-[var(--danger)]">
-          {String(create.error)}
+          {String((create.error ?? update.error) as unknown)}
         </p>
       )}
 
@@ -423,7 +428,7 @@ function FeesPanel() {
 
       <ul className="overflow-hidden rounded-md border border-[var(--border)] bg-white">
         {visibleFees.length === 0 && (
-          <li className="px-3 py-6 text-center text-sm text-gray-500">
+          <li className="px-3 py-6 text-center text-sm text-muted-foreground">
             {fees.length === 0 ? '등록된 표준 교습비가 없습니다.' : '필터 조건에 해당하는 항목이 없습니다.'}
           </li>
         )}
@@ -444,10 +449,12 @@ function FeeRow({
   onSave: (next: StandardFee) => void
 }) {
   const [amount, setAmount] = useState(fee.amount)
+  // P2-9: DB 금액 변경 시 로컬 입력 동기화 — 저장 실패 후 옛 값 복귀 시 입력도 되돌림.
+  useEffect(() => setAmount(fee.amount), [fee.amount])
 
   return (
     <li className="flex items-center gap-3 border-t border-[var(--border)] px-3 py-2 first:border-t-0">
-      <span className="w-28 text-sm text-gray-500">주 {fee.weekly_hours}시간</span>
+      <span className="w-28 text-sm text-muted-foreground">주 {fee.weekly_hours}시간</span>
       <input
         type="number"
         value={amount}
@@ -457,7 +464,7 @@ function FeeRow({
         className="h-10 w-40 rounded-md border border-[var(--border)] px-3 text-right"
         aria-label="금액"
       />
-      <span className="w-24 text-sm text-gray-500" title="천단위 콤마 표시 — T5 utils 적용 (사용자 이슈 #13)">
+      <span className="w-24 text-sm text-muted-foreground" title="천단위 콤마 표시 — T5 utils 적용 (사용자 이슈 #13)">
         = {formatCurrency(amount)}원
       </span>
       <label className="flex h-10 items-center gap-2 text-sm">

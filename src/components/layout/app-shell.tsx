@@ -15,12 +15,25 @@
 import { useEffect, useState } from 'react'
 import { Sidebar } from './sidebar'
 import { TopBar } from './top-bar'
+import { GlobalTooltip } from './GlobalTooltip'
+import { GlobalShortcuts } from './GlobalShortcuts'
+import { UnsavedNavDialog } from './UnsavedNavDialog'
 import { useAppStore } from '@/stores/app-store'
 import { useSessionStore } from '@/stores/session-store'
-import { checkLockStatus, checkSyncStatus, listBackups } from '@/lib/tauri'
+import {
+  checkAutoDiagnosisNeeded,
+  checkLockStatus,
+  checkSyncStatus,
+  listBackups,
+  runDiagnosis,
+} from '@/lib/tauri'
 import type { SyncStatus } from '@/types'
 
 const POLLING_INTERVAL_MS = 60_000
+
+// 자가 진단 자동 실행은 앱 세션당 1회만 시도 (매월 1일 첫 실행 판단은 백엔드가 수행).
+// 모듈 레벨 플래그 — 화면 전환으로 AppShell 이 remount 돼도 중복 실행 방지.
+let autoDiagnosisAttempted = false
 
 export function AppShell({
   children,
@@ -74,8 +87,27 @@ export function AppShell({
     }
   }, [unlocked, setLockStatus])
 
+  // 자가 진단 자동 실행 (AC-6.6-1) — unlock 후 세션 1회. 백그라운드 spawn 으로
+  // 시작 시퀀스/화면 진입을 차단하지 않는다 (R97). 당월 'auto' 기록 존재 시 백엔드가 skip.
+  useEffect(() => {
+    if (!unlocked || autoDiagnosisAttempted) return
+    autoDiagnosisAttempted = true
+    void (async () => {
+      try {
+        if (await checkAutoDiagnosisNeeded()) {
+          await runDiagnosis('auto')
+        }
+      } catch {
+        /* 백그라운드 자동 진단 실패는 무시 — 사용자 수동 실행으로 대체 가능 */
+      }
+    })()
+  }, [unlocked])
+
   return (
     <div className="flex h-screen">
+      <GlobalTooltip />
+      <GlobalShortcuts />
+      <UnsavedNavDialog />
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar latestBackupAt={latestBackupAt} syncStatus={syncStatus}>

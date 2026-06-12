@@ -1,4 +1,4 @@
-//! 학사 스케줄 도메인 IPC (Sprint 6 T5+T6, PRD §4.4·§6.2).
+//! 일정 관리 도메인 IPC (Sprint 6 T5+T6, PRD §4.4·§6.2).
 //!
 //! ## 인터페이스
 //!
@@ -118,6 +118,25 @@ async fn is_operating_day_for(dow: i64) -> bool {
     }
 }
 
+/// 교습기간 등록/수정/확정 직후 소멸 자동 전이를 **fail-soft** 로 수행한다 (P2-10, 2026-06 코드리뷰).
+///
+/// 본 작업(INSERT/UPDATE)은 이미 커밋된 상태이므로, 후속 소멸 전이 실패가 `?` 로 전파되면
+/// 사용자는 "등록 실패"로 오인하고 재시도 시 UNIQUE 충돌로 2차 혼란이 생긴다. attendance.rs
+/// generate / startup 트리거와 동일하게 실패는 warn 로그만 남기고 빈 리포트를 반환한다 —
+/// 다음 트리거(다음 달 출결 생성 / 앱 재시작)에서 재시도된다.
+async fn expire_fail_soft(pool: &sqlx::SqlitePool) -> crate::commands::expiration::ExpirationReport {
+    match crate::commands::expiration::expire_overdue_absences_impl(pool, None).await {
+        Ok(report) => report,
+        Err(e) => {
+            eprintln!("[academic] 소멸 자동 전이 실패 (교습기간 작업은 성공): {}", e);
+            crate::commands::expiration::ExpirationReport {
+                transitioned_count: 0,
+                details: Vec::new(),
+            }
+        }
+    }
+}
+
 /// 교습기간 생성 (PRD §4.4.2). 일자 중첩 시 한국어 에러 반환 (AC-T5-1).
 ///
 /// 중첩 판정: 두 구간 `[a.start, a.end]` 와 `[b.start, b.end]` 가 겹친다 ⇔
@@ -160,9 +179,8 @@ pub async fn create_study_period(
     .map_err(String::from)?;
 
     let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
-    // Sprint 10 T4 (PI-05): 교습기간 등록 직후 소멸 자동 전이.
-    let expiration_report =
-        crate::commands::expiration::expire_overdue_absences_impl(pool, None).await?;
+    // Sprint 10 T4 (PI-05): 교습기간 등록 직후 소멸 자동 전이 (fail-soft, P2-10).
+    let expiration_report = expire_fail_soft(pool).await;
     Ok(StudyPeriodResult {
         study_period,
         expiration_report,
@@ -232,8 +250,7 @@ pub async fn update_study_period(
     .map_err(String::from)?;
 
     let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
-    let expiration_report =
-        crate::commands::expiration::expire_overdue_absences_impl(pool, None).await?;
+    let expiration_report = expire_fail_soft(pool).await;
     Ok(StudyPeriodResult {
         study_period,
         expiration_report,
@@ -305,8 +322,7 @@ pub async fn confirm_study_period(id: i64) -> Result<StudyPeriodResult, String> 
     .map_err(String::from)?
     .ok_or_else(|| "해당 교습기간을 찾을 수 없습니다.".to_string())?;
     let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
-    let expiration_report =
-        crate::commands::expiration::expire_overdue_absences_impl(pool, None).await?;
+    let expiration_report = expire_fail_soft(pool).await;
     Ok(StudyPeriodResult {
         study_period,
         expiration_report,

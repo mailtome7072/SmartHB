@@ -1,0 +1,108 @@
+/**
+ * 공지문(교습비 안내 이미지) 도메인 타입 (Sprint 12, PRD §4.10).
+ *
+ * 백엔드 `src-tauri/src/commands/notice.rs` 의 serde camelCase 직렬화와 1:1 정합.
+ * 이미지 바이너리는 IPC에서 `number[]`(Rust `Vec<u8>`)로 주고받는다 (base64 미사용).
+ */
+
+/** 배경서식 파일 메타데이터. */
+export interface NoticeAsset {
+  name: string
+  size: number
+  /** 수정 시각 (epoch millis). */
+  modifiedMs: number
+}
+
+export type NoticeFieldType =
+  | 'bill_month'
+  | 'teaching_period'
+  | 'makeup_day'
+  | 'student_name'
+  | 'bill_amount'
+  | 'custom'
+
+/** 청구년월의 교습기간·보강데이 표기 텍스트. */
+export interface NoticeMonthInfo {
+  teachingPeriodText: string | null
+  makeupDayText: string | null
+}
+
+/**
+ * 텍스트박스 1종 설정 — 배경 원본 해상도 대비 비율(0..1)로 관리.
+ * 미리보기 표시 배율/생성 원본 해상도와 무관하게 동일 레이아웃 유지.
+ */
+export interface TextboxConfig {
+  /** 고유 키 (구버전 호환: 빈 값이면 fieldType 으로 대체). */
+  id: string
+  fieldType: NoticeFieldType
+  /** 사용자 정의 박스(custom)의 표시 텍스트. 데이터 필드는 null. */
+  text?: string | null
+  /** 체크 시에만 배경 위에 표시·생성. */
+  enabled: boolean
+  xRatio: number // 배경 폭 대비 좌측 (0..1)
+  yRatio: number // 배경 높이 대비 상단 (0..1)
+  wRatio: number // 배경 폭 대비 너비 (0..1)
+  hRatio: number // 배경 높이 대비 높이 (0..1)
+  fontRatio: number // 박스 높이 대비 글자 크기 (0..1) — 박스 리사이즈 시 폰트 자동 연동
+  fontWeight: 'normal' | 'bold'
+  /** 박스 기본 글자색 — charColors 로 색이 지정되지 않은 글자에 적용. */
+  fontColor: string
+  textAlign: 'left' | 'center' | 'right'
+  /**
+   * 글자별 폰트색 — 글자 인덱스별 hex(null/누락은 fontColor 사용).
+   * 데이터 필드는 원생마다 텍스트 길이가 달라 인덱스 기준으로 적용한다(초과분은 무시).
+   */
+  charColors?: (string | null)[] | null
+  /** 박스 배경색 — hex. null/누락 시 투명(배경 없음). */
+  backgroundColor?: string | null
+}
+
+/**
+ * 캔버스 이미지 요소 종류 — 교습소 로고 / 2D바코드 / 교습일정 달력.
+ * - logo·barcode: 교습소 정보의 저장 파일에서 로드 (file-backed)
+ * - calendar: 청구년월 학사일정으로 **런타임 생성**되는 달력 이미지 (data-backed, Sprint 16)
+ */
+export type NoticeImageKind = 'logo' | 'barcode' | 'calendar'
+
+/**
+ * 캔버스 이미지 요소(교습소 로고/2D바코드/교습일정 달력) — 비율 좌표로 관리.
+ * 실제 이미지는 교습소 정보(`assets/academy_{logo,barcode}.*`)를 로드하거나(로고·바코드)
+ * 청구년월 학사일정으로 런타임 생성하여(달력) 표시하고,
+ * 레이아웃에는 표시 여부와 배치(위치·크기)만 저장한다.
+ */
+export interface NoticeImageConfig {
+  kind: NoticeImageKind
+  /** 체크 시에만 배경 위에 표시·생성. */
+  enabled: boolean
+  xRatio: number // 배경 폭 대비 좌측 (0..1)
+  yRatio: number // 배경 높이 대비 상단 (0..1)
+  wRatio: number // 배경 폭 대비 너비 (0..1)
+  hRatio: number // 배경 높이 대비 높이 (0..1) — 비율 유지 리사이즈로 폭과 연동
+}
+
+/**
+ * 사용자 업로드 임의 이미지 요소 — 실제 이미지는 `assets/{assetName}` 파일로 저장하고
+ * 레이아웃에는 파일명 + 배치만 둔다. 교습소 로고/2D바코드(NoticeImageConfig)와 별개.
+ */
+export interface NoticeCustomImage {
+  id: string
+  assetName: string
+  xRatio: number
+  yRatio: number
+  wRatio: number
+  hRatio: number
+}
+
+/** 공지문 레이아웃 — 배경서식 + 텍스트박스 + 이미지 요소 (AC-4.10-3 보존 대상). */
+export interface NoticeLayout {
+  backgroundAsset: string | null
+  textboxes: TextboxConfig[]
+  images: NoticeImageConfig[]
+  customImages: NoticeCustomImage[]
+}
+
+/** 일괄 저장 입력 1건. image 는 PNG 바이트 배열. */
+export interface NoticeImageItem {
+  studentName: string
+  image: number[]
+}

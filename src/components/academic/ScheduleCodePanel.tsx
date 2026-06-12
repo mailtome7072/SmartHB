@@ -65,7 +65,7 @@ function AttributeRow({ label, value }: { label: string; value: boolean }) {
     <span
       className={[
         'inline-block rounded px-1.5 py-0.5 text-xs',
-        value ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500',
+        value ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-muted-foreground',
       ].join(' ')}
       title={`${label}: ${value ? 'ON' : 'OFF'}`}
     >
@@ -216,7 +216,7 @@ export function ScheduleCodePanel({ selectedCodeId, onSelect }: ScheduleCodePane
         </button>
       </div>
 
-      {codesQuery.isLoading && <p className="text-sm text-gray-500">코드 목록 불러오는 중...</p>}
+      {codesQuery.isLoading && <p className="text-sm text-muted-foreground">코드 목록 불러오는 중...</p>}
       {codesQuery.isError && (
         <p role="alert" className="text-sm text-red-700">
           코드 목록을 불러오지 못했습니다.
@@ -226,7 +226,7 @@ export function ScheduleCodePanel({ selectedCodeId, onSelect }: ScheduleCodePane
       <ul className="flex flex-col gap-1">
         {systemCodes.map(renderCodeRow)}
         {userCodes.length > 0 && (
-          <li className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-gray-500">
+          <li className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-muted-foreground">
             사용자 추가 코드
           </li>
         )}

@@ -11,6 +11,7 @@ import type {
   IntegrityCheckResult,
   IntegrityMode,
   LockStatus,
+  RehearsalResult,
   RestoreResult,
   StartupResult,
   SyncStatus,
@@ -30,8 +31,25 @@ import type {
   AttendanceGrid,
   AttendanceSummary,
   GenerateResult,
+  MoveAttendanceResult,
+  ScheduleChangeResult,
   ToggleResult,
 } from '@/types/attendance'
+import type {
+  DiagnosisHistoryRow,
+  DiagnosisResult,
+} from '@/types/diagnosis'
+import type { ExportResult } from '@/types/export'
+import type { ImportPreviewResult, ImportResult } from '@/types/import'
+import type {
+  AcademyOverview,
+  BillingTrendPoint,
+  BirthdayEntry,
+  DashboardAlert,
+  MemoNote,
+  MonthlySummary,
+  TodaySchedule,
+} from '@/types/dashboard'
 import type {
   AbsenceHistoryItem,
   CreateMakeupPayload,
@@ -93,6 +111,68 @@ export async function selectFolder(): Promise<string | null> {
   } catch {
     return '[개발 모드] /Users/dev/MYBOX'
   }
+}
+
+/**
+ * CSV 파일 선택 다이얼로그 (Sprint 16 T2). 사용자가 취소하면 null.
+ * 개발 모드(Tauri 미동작)에서는 더미 경로 반환.
+ *
+ * 권한: `capabilities/default.json` 의 `dialog:allow-open` 필요.
+ */
+export async function selectCsvFile(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+    if (selected === null) return null
+    return typeof selected === 'string' ? selected : (selected[0] ?? null)
+  } catch {
+    return '[개발 모드] students.csv'
+  }
+}
+
+/**
+ * CSV 미리보기 — 파싱·검증·중복판정만(INSERT 없음). 백엔드가 file_path 를 읽어 처리.
+ * 개발 모드에서는 샘플 행을 반환한다.
+ */
+export async function previewStudentsCsv(filePath: string): Promise<ImportPreviewResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      rows: [
+        {
+          row_number: 1,
+          name: '홍길동',
+          grade_label: '초3',
+          gender_label: '남',
+          enroll_date: '2026-03-01',
+          serial_no: null,
+          status: 'ok',
+          messages: [],
+        },
+      ],
+      total: 1,
+      importable: 1,
+      duplicate: 0,
+      error: 0,
+    }
+  }
+  return inv('preview_students_csv', { filePath }) as Promise<ImportPreviewResult>
+}
+
+/**
+ * CSV 가져오기 — 백업 1회 후 유효·비중복 행을 INSERT. 결과 집계 반환.
+ */
+export async function importStudentsCsv(filePath: string): Promise<ImportResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { inserted: 1, skipped: 0, errored: 0, errors: [], backup_note: '[개발 모드]' }
+  }
+  return inv('import_students_csv', { filePath }) as Promise<ImportResult>
 }
 
 async function getInvoke() {
@@ -169,40 +249,14 @@ export async function unlockDb(password: string): Promise<void> {
 }
 
 /**
- * 12자리 복구 코드를 발급한다 (PI-07 PRD v1.5.1).
+ * 현재 PIN 을 확인한 뒤 새 PIN 으로 변경한다 (잠금 해제 상태에서 설정 메뉴를 통해 호출).
  *
- * 평문 코드는 호출 직후 화면에 1회 표시하고 즉시 폐기해야 한다 — React state 보유는 표시
- * 중에만, 사용자가 "확인" 클릭 시 빈 문자열로 덮어쓰기 권장.
- *
- * 이미 발급된 코드가 있으면 무효화하고 새 코드를 반환 (재발급 정책).
+ * 현 PIN 불일치 / 새 PIN 형식 오류 시 throw — 호출자가 catch 하여 사용자 메시지 표시.
  */
-export async function generateRecoveryCode(): Promise<string> {
-  const inv = await getInvoke()
-  if (!inv) return 'DEVM-ODEX-TEST'
-  return inv('generate_recovery_code') as Promise<string>
-}
-
-/**
- * 사용자가 입력한 복구 코드를 검증한다 (constant-time).
- *
- * 공백·하이픈은 백엔드에서 자동 제거되며 대문자로 통일된다.
- */
-export async function verifyRecoveryCode(code: string): Promise<boolean> {
-  const inv = await getInvoke()
-  if (!inv) return code.replace(/[-\s]/g, '').toUpperCase() === 'DEVMODEXTEST'
-  return inv('verify_recovery_code', { code }) as Promise<boolean>
-}
-
-/**
- * 복구 코드로 비밀번호를 재설정한다.
- *
- * 코드 검증 실패 시 throw. 성공 시 keyring 의 salt + key 가 새 비밀번호로 갱신된다.
- * SQLCipher DB rekey 는 T9 통합 시점에 추가된다.
- */
-export async function resetPasswordWithCode(code: string, newPassword: string): Promise<void> {
+export async function changePin(currentPin: string, newPin: string): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
-  await inv('reset_password_with_code', { code, newPassword })
+  await inv('change_pin', { currentPin, newPin })
 }
 
 /**
@@ -285,6 +339,37 @@ export async function restoreBackup(path: string): Promise<RestoreResult> {
     }
   }
   return inv('restore_backup', { path }) as Promise<RestoreResult>
+}
+
+/**
+ * 백업 파일이 복원 가능한지 격리된 사본으로 검증한다 (PRD §5.4 복원 리허설).
+ *
+ * 운영 DB 에는 영향이 없다 — 백업을 임시 디렉토리에 복사해 `PRAGMA integrity_check` 와
+ * 주요 테이블 행 수를 확인한 뒤 사본을 폐기한다. cipher off 개발 빌드는 평문 백업만
+ * 리허설 대상이다 (R98).
+ *
+ * 브라우저 개발 모드에서는 더미 성공 결과를 반환하여 UI 흐름만 검증 가능.
+ */
+export async function runBackupRehearsal(backupPath: string): Promise<RehearsalResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      backup_path: `[개발 모드] ${backupPath}`,
+      size_bytes: 0,
+      success: true,
+      integrity_detail: null,
+      table_counts: [
+        { table: 'students', count: 0 },
+        { table: 'student_schedules', count: 0 },
+        { table: 'regular_attendances', count: 0 },
+        { table: 'makeup_attendances', count: 0 },
+        { table: 'bills', count: 0 },
+        { table: 'payments', count: 0 },
+      ],
+      total_rows: 0,
+    }
+  }
+  return inv('run_backup_rehearsal', { backupPath }) as Promise<RehearsalResult>
 }
 
 /**
@@ -380,12 +465,37 @@ export async function appStartupSequence(
       integrity_ok: true,
       audit_cleaned: 0,
       expiration_report: { transitionedCount: 0, details: [] },
+      auto_restored: null,
     }
   }
   return inv('app_startup_sequence', {
     password,
     forceLock,
   }) as Promise<StartupResult>
+}
+
+/** 실행 시 PIN 인증 스킵 설정 조회 (ADR-008). 기본 false(인증 ON). 개발 모드는 false. */
+export async function getPinSkipSetting(): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('get_pin_skip_setting') as Promise<boolean>
+}
+
+/** 실행 시 PIN 인증 스킵 설정 저장 (ADR-008). PC별 로컬(config.json). */
+export async function setPinSkipSetting(skip: boolean): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('set_pin_skip_setting', { skip })
+}
+
+/**
+ * 키체인 자동 잠금해제 (ADR-008). PIN 입력 없이 키체인 키로 진입.
+ * 키체인에 키가 없으면 reject → 호출자가 LockScreen 폴백. 개발 모드는 미지원(reject).
+ */
+export async function autoUnlockWithKeychain(forceLock = false): Promise<StartupResult> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] 자동 잠금해제 미지원')
+  return inv('auto_unlock_with_keychain', { forceLock }) as Promise<StartupResult>
 }
 
 // ----------------------------------------------------------------------------
@@ -413,6 +523,7 @@ export async function createStudent(payload: NewStudent): Promise<Student> {
       phone_student: payload.phone_student ?? null,
       phone_mother: payload.phone_mother ?? null,
       phone_father: payload.phone_father ?? null,
+      birth_date: payload.birth_date ?? null,
       enroll_date: payload.enroll_date,
       withdraw_date: null,
       created_at: new Date().toISOString(),
@@ -540,6 +651,33 @@ export async function setSchedule(payload: ScheduleSet): Promise<StudentSchedule
     }
   }
   return inv('set_schedule', { payload }) as Promise<StudentSchedule>
+}
+
+/**
+ * 요일 변경을 단일 트랜잭션으로 수행한다 (P0-7, 2026-06 코드리뷰).
+ *
+ * 원래 요일(`oldDayOfWeek`) 현행 행 마감 + 새 요일 upsert 를 백엔드가 원자적으로 처리 —
+ * 기존 deleteSchedule→setSchedule 순차 호출의 부분 실패(원래 요일만 종료) 상태를 제거.
+ */
+export async function changeScheduleDay(
+  payload: ScheduleSet,
+  oldDayOfWeek: number,
+): Promise<StudentSchedule> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      student_id: payload.student_id,
+      day_of_week: payload.day_of_week,
+      start_time: payload.start_time,
+      duration_hours: payload.duration_hours,
+      effective_from: payload.effective_from,
+      effective_to: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('change_schedule_day', { payload, oldDayOfWeek }) as Promise<StudentSchedule>
 }
 
 /**
@@ -726,6 +864,26 @@ export async function completeSetup(): Promise<void> {
   await inv('complete_setup')
 }
 
+/**
+ * DB 폴더(클라우드 동기화 경로) 변경 (Sprint 16 T3, ADR-009).
+ *
+ * `{newCloudPath}/smarthb/` 로 기존 데이터(DB·salt·assets·output·backup)를 복사·검증한 뒤
+ * config.json 경로를 갱신한다. 원본은 보존(MOVED_TO 마커). 성공 후 호출측이 `relaunchApp()`
+ * 으로 앱을 재시작해야 새 경로가 적용된다. 실패 시 기존 폴더 유지(무손상).
+ */
+export async function changeDataFolder(newCloudPath: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('change_data_folder', { newPath: newCloudPath })
+}
+
+/** 앱 재시작 — DB 폴더 변경 완료 후 새 경로로 재초기화. (tauri-plugin-process) */
+export async function relaunchApp(): Promise<void> {
+  if (typeof window === 'undefined') return
+  const { relaunch } = await import('@tauri-apps/plugin-process')
+  await relaunch()
+}
+
 // ============================================================================
 // 영구 설정 (Sprint 4 T2, PRD §4.0/§4.12) — 교습소 운영 시간
 // ============================================================================
@@ -764,8 +922,55 @@ export async function saveOperatingHours(hours: DayHours[]): Promise<void> {
   await inv('save_operating_hours', { hours })
 }
 
+/**
+ * 교습소 기본 정보 (PRD §4.12). 텍스트 필드 + 로고/2D바코드 이미지 파일명.
+ *
+ * `src-tauri/src/commands/settings.rs::AcademyInfo` 와 정합.
+ * 이미지 본체는 `assets/` 에 파일로 저장(saveNoticeAsset 재사용)하고 파일명만 보관.
+ */
+export interface AcademyInfo {
+  academy_name: string
+  representative: string
+  phone: string
+  address: string
+  business_number: string | null
+  max_capacity: number | null
+  area_sqm: number | null
+  logo_filename: string | null
+  barcode_filename: string | null
+}
+
+/** 빈 교습소 정보 (dev fallback / 미저장 초기값). */
+function emptyAcademyInfo(): AcademyInfo {
+  return {
+    academy_name: '',
+    representative: '',
+    phone: '',
+    address: '',
+    business_number: null,
+    max_capacity: null,
+    area_sqm: null,
+    logo_filename: null,
+    barcode_filename: null,
+  }
+}
+
+/** 교습소 정보 조회 — 저장값 없으면 빈 정보. */
+export async function getAcademyInfo(): Promise<AcademyInfo> {
+  const inv = await getInvoke()
+  if (!inv) return emptyAcademyInfo()
+  return inv('get_academy_info') as Promise<AcademyInfo>
+}
+
+/** 교습소 정보 저장 — 교습소명 필수, 백엔드가 검증. */
+export async function saveAcademyInfo(info: AcademyInfo): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_academy_info', { info })
+}
+
 // ============================================================================
-// Sprint 6 — 학사 스케줄 도메인 (T8, PRD §4.4)
+// Sprint 6 — 일정 관리 도메인 (T8, PRD §4.4)
 // ============================================================================
 // 백엔드: src-tauri/src/commands/academic.rs (T5/T6/T7).
 // Tauri invoke args 는 자동 camelCase ↔ snake_case 변환 (예: Rust from_month ↔ TS fromMonth).
@@ -1033,6 +1238,12 @@ export async function checkAttendanceExists(yearMonth: string): Promise<boolean>
 }
 
 /** 해당 월 재원 원생 × 수업 요일 일자에 정규 출결 일괄 생성 (AC-4.5-1). */
+export async function countUngeneratedAttendanceStudents(yearMonth: string): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('count_ungenerated_attendance_students', { yearMonth }) as Promise<number>
+}
+
 export async function generateAttendances(yearMonth: string): Promise<GenerateResult> {
   const inv = await getInvoke()
   if (!inv) {
@@ -1132,6 +1343,45 @@ export async function getAttendanceSummary(
   return inv('get_attendance_summary', { studentId, yearMonth }) as Promise<AttendanceSummary>
 }
 
+// ──────────────────── 수업일 변경 (Sprint 16 T0) ────────────────────
+
+/**
+ * 케이스1 — 특정일 1회성 수업일 이동. present 출결 1건의 날짜를 옮기고 메모를 남긴다.
+ * 동월 한정, 도착일 OFF/공휴일·충돌 차단.
+ */
+export async function moveAttendance(
+  studentId: number,
+  fromDate: string,
+  toDate: string,
+  startTime: string,
+): Promise<MoveAttendanceResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('move_attendance', {
+    studentId,
+    fromDate,
+    toDate,
+    startTime,
+  }) as Promise<MoveAttendanceResult>
+}
+
+/**
+ * 케이스2 — 변경일 이후 스케줄 변경을 출결에 반영. 선행: setSchedule(effectiveFrom=effectiveDate).
+ * 변경일 이후 present 출결만 재생성, 결석/보강/메모 행은 보존. 사전(미래)·사후(과거) 양방향.
+ */
+export async function applyScheduleChange(
+  studentId: number,
+  effectiveDate: string,
+): Promise<ScheduleChangeResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('apply_schedule_change', { studentId, effectiveDate }) as Promise<ScheduleChangeResult>
+}
+
 // ──────────────────── 보강 도메인 (Sprint 9 T2~T4) ────────────────────
 
 /** 원생의 미처리 결석 목록 — 소멸기한 임박순 (NULL 마지막). PRD §4.5.4 다이얼로그 소스. */
@@ -1176,4 +1426,491 @@ export async function getAbsenceHistory(
   const inv = await getInvoke()
   if (!inv) return []
   return inv('get_absence_history', { studentId }) as Promise<AbsenceHistoryItem[]>
+}
+
+// ─────────────────────── Sprint 11 청구·수납 도메인 ───────────────────────
+
+import type {
+  Bill,
+  BillingPeriodStats,
+  BillingSearchResult,
+  BillingSummary,
+  GenerateBillsResult,
+  Payment,
+  PaymentInput,
+  PaymentViewRow,
+  UnpaidBill,
+} from '@/types/billing'
+
+export async function generateBills(yearMonth: string): Promise<GenerateBillsResult> {
+  const inv = await getInvoke()
+  if (!inv) return { yearMonth, generatedCount: 0, skippedCount: 0 }
+  return inv('generate_bills', { yearMonth }) as Promise<GenerateBillsResult>
+}
+
+export async function listBills(yearMonth: string): Promise<Bill[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_bills', { yearMonth }) as Promise<Bill[]>
+}
+
+export async function getBill(id: number): Promise<Bill> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] getBill 호출 불가')
+  return inv('get_bill', { id }) as Promise<Bill>
+}
+
+export async function updateBill(id: number, adjustedAmount: number): Promise<Bill> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] updateBill 호출 불가')
+  return inv('update_bill', { id, adjustedAmount }) as Promise<Bill>
+}
+
+export async function confirmBill(id: number): Promise<Bill> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] confirmBill 호출 불가')
+  return inv('confirm_bill', { id }) as Promise<Bill>
+}
+
+export async function confirmAllBills(yearMonth: string): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('confirm_all_bills', { yearMonth }) as Promise<number>
+}
+
+export async function createPayment(input: PaymentInput): Promise<Payment> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] createPayment 호출 불가')
+  return inv('create_payment', { input }) as Promise<Payment>
+}
+
+export async function updatePayment(id: number, input: PaymentInput): Promise<Payment> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] updatePayment 호출 불가')
+  return inv('update_payment', { id, input }) as Promise<Payment>
+}
+
+export async function listUnpaidBills(yearMonth: string): Promise<UnpaidBill[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_unpaid_bills', { yearMonth }) as Promise<UnpaidBill[]>
+}
+
+export async function batchUpdatePayments(items: PaymentInput[]): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('batch_update_payments', { items }) as Promise<number>
+}
+
+export async function getBillingSummary(yearMonth: string): Promise<BillingSummary> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      yearMonth,
+      totalBillableStudents: 0,
+      billCount: 0,
+      totalBilled: 0,
+      totalPaid: 0,
+      totalUnpaid: 0,
+      paidCount: 0,
+      unpaidCount: 0,
+    }
+  }
+  return inv('get_billing_summary', { yearMonth }) as Promise<BillingSummary>
+}
+
+export async function listPaymentView(yearMonth: string): Promise<PaymentViewRow[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_payment_view', { yearMonth }) as Promise<PaymentViewRow[]>
+}
+
+export async function listBilledMonths(): Promise<string[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_billed_months') as Promise<string[]>
+}
+
+export async function getBillingPeriodStats(period: string): Promise<BillingPeriodStats> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      period,
+      billCount: 0,
+      totalBilled: 0,
+      paidCount: 0,
+      totalPaid: 0,
+      totalUnpaid: 0,
+      unpaidCount: 0,
+      byMethod: [],
+    }
+  }
+  return inv('get_billing_period_stats', { period }) as Promise<BillingPeriodStats>
+}
+
+export async function searchStudentsForBilling(
+  query: string,
+): Promise<BillingSearchResult[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('search_students_for_billing', { query }) as Promise<BillingSearchResult[]>
+}
+
+export async function getDefaultBillingYearMonth(): Promise<string | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_default_billing_year_month') as Promise<string | null>
+}
+
+// ─────────────────────── Sprint 12 공지문(이미지) 도메인 ───────────────────────
+
+import type { NoticeAsset, NoticeImageItem, NoticeLayout, NoticeMonthInfo } from '@/types/notice'
+
+export async function listNoticeAssets(): Promise<NoticeAsset[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_notice_assets') as Promise<NoticeAsset[]>
+}
+
+/** 배경서식 바이트 읽기 (미리보기/생성용). number[] 반환. */
+export async function readNoticeAsset(filename: string): Promise<number[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('read_notice_asset', { filename }) as Promise<number[]>
+}
+
+/** 배경서식 저장. data 는 이미지 바이트 배열(number[]). 저장된 파일명 반환. */
+export async function saveNoticeAsset(filename: string, data: number[]): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticeAsset 호출 불가')
+  return inv('save_notice_asset', { filename, data }) as Promise<string>
+}
+
+export async function deleteNoticeAsset(filename: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('delete_notice_asset', { filename }) as Promise<void>
+}
+
+export async function saveNoticeLayout(layout: NoticeLayout): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('save_notice_layout', { layout }) as Promise<void>
+}
+
+export async function getNoticeLayout(): Promise<NoticeLayout> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { backgroundAsset: null, textboxes: [], images: [], customImages: [] }
+  }
+  return inv('get_notice_layout') as Promise<NoticeLayout>
+}
+
+/** 저장된 공지문 템플릿 이름 목록. */
+export async function listNoticeLayouts(): Promise<string[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_notice_layouts') as Promise<string[]>
+}
+
+/** 현재 레이아웃을 이름 붙여 템플릿으로 저장. */
+export async function saveNoticeLayoutNamed(name: string, layout: NoticeLayout): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('save_notice_layout_named', { name, layout }) as Promise<void>
+}
+
+/** 이름으로 저장된 템플릿 조회. */
+export async function getNoticeLayoutNamed(name: string): Promise<NoticeLayout> {
+  const inv = await getInvoke()
+  if (!inv) return { backgroundAsset: null, textboxes: [], images: [], customImages: [] }
+  return inv('get_notice_layout_named', { name }) as Promise<NoticeLayout>
+}
+
+/** 이름 템플릿 삭제. */
+export async function deleteNoticeLayoutNamed(name: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  return inv('delete_notice_layout_named', { name }) as Promise<void>
+}
+
+/** 청구년월의 교습기간·보강데이 표기 텍스트. */
+export async function getNoticeMonthInfo(yearMonth: string): Promise<NoticeMonthInfo> {
+  const inv = await getInvoke()
+  if (!inv) return { teachingPeriodText: null, makeupDayText: null }
+  return inv('get_notice_month_info', { yearMonth }) as Promise<NoticeMonthInfo>
+}
+
+/**
+ * 한글 파일명/경로를 NFC(완성형)로 정규화한다.
+ * macOS 저장 다이얼로그·일부 입력은 NFD(자모 분리형)를 돌려줄 수 있어, 파일시스템에 쓰기 전
+ * NFC 로 통일한다. (APFS 는 작성 시 전달한 형태 그대로 저장 — NFC 로 전달하면 NFC 로 저장)
+ */
+const nfc = (s: string): string => s.normalize('NFC')
+
+/** 단건 공지문 PNG 저장 — output/{공지문이름}/{청구년월}/{공지문이름}_{청구년월}_{원생명}.png. 저장 경로 반환. */
+export async function saveNoticeImage(
+  noticeName: string,
+  yearMonth: string,
+  studentName: string,
+  image: number[],
+): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticeImage 호출 불가')
+  return inv('save_notice_image', {
+    noticeName: nfc(noticeName),
+    yearMonth,
+    studentName: nfc(studentName),
+    image,
+  }) as Promise<string>
+}
+
+/** 다건 공지문 PNG 일괄 저장. 저장 완료 건수 반환. */
+export async function saveNoticeImagesBatch(
+  noticeName: string,
+  yearMonth: string,
+  items: NoticeImageItem[],
+): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  const normalized = items.map((it) => ({ ...it, studentName: nfc(it.studentName) }))
+  return inv('save_notice_images_batch', {
+    noticeName: nfc(noticeName),
+    yearMonth,
+    items: normalized,
+  }) as Promise<number>
+}
+
+/** 해당 공지문/청구년월 출력 폴더에 이미 PNG가 있는지 (덮어쓰기 확인용). */
+export async function checkNoticeOutputExists(noticeName: string, yearMonth: string): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('check_notice_output_exists', { noticeName: nfc(noticeName), yearMonth }) as Promise<boolean>
+}
+
+/** 미리보기 저장 다이얼로그 기본 경로 — output/공지문/{공지문이름}.png (폴더 미리 생성). */
+export async function noticePreviewDefaultPath(noticeName: string): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) return `output/공지문/${noticeName}.png`
+  return inv('notice_preview_default_path', { noticeName: nfc(noticeName) }) as Promise<string>
+}
+
+/** 미리보기 PNG를 지정 경로에 저장. 저장된 경로 반환. (경로는 NFC 로 정규화하여 저장) */
+export async function saveNoticePreview(path: string, image: number[]): Promise<string> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] saveNoticePreview 호출 불가')
+  return inv('save_notice_preview', { path: nfc(path), image }) as Promise<string>
+}
+
+/** 생성 출력 폴더(output/{공지문이름}/{YYMM}/)를 생성 후 OS 탐색기로 연다. 이름 비면 output 루트. */
+export async function openNoticeOutputDir(noticeName: string, yearMonth: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('open_notice_output_dir', { noticeName: nfc(noticeName), yearMonth })
+}
+
+/** 미리보기 저장 폴더(output/공지문/)를 생성 후 OS 탐색기로 연다. */
+export async function openNoticePreviewDir(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('open_notice_preview_dir')
+}
+
+/** 파일 저장 다이얼로그 — 사용자가 선택한 경로 반환(취소 시 null). */
+export async function showSaveDialog(defaultPath: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const selected = await save({ defaultPath, filters: [{ name: 'PNG 이미지', extensions: ['png'] }] })
+    return selected ?? null
+  } catch {
+    return null
+  }
+}
+
+// ============================================================================
+// Sprint 14 — 데이터 자가 진단 (T1/T2, PRD §6.6)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/diagnosis.rs (검사 7종 + 이력).
+
+/** 자가 진단 실행 (수동/자동). 7종 검사 + 이력 저장 + 12개월 초과 정리. */
+export async function runDiagnosis(runType: 'auto' | 'manual'): Promise<DiagnosisResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    // dev fallback — 이상 0건
+    return { run_date: '', run_type: runType, total_checks: 7, issues_found: 0, issues: [] }
+  }
+  return inv('run_diagnosis', { runType }) as Promise<DiagnosisResult>
+}
+
+/** 진단 이력 조회 (최신순 limit 건). */
+export async function getDiagnosisHistory(limit: number): Promise<DiagnosisHistoryRow[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_diagnosis_history', { limit }) as Promise<DiagnosisHistoryRow[]>
+}
+
+/** 진단 이력 1건 삭제 (행 단위). 존재하지 않는 id 는 무시(멱등). */
+export async function deleteDiagnosisHistory(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('delete_diagnosis_history', { id })
+}
+
+/** 진단 이력 전체 삭제 ("이력 비우기"). */
+export async function clearDiagnosisHistory(): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('clear_diagnosis_history')
+}
+
+/** 대시보드 알림용 최신 진단 결과 1건 (없으면 null). */
+export async function getLatestDiagnosis(): Promise<DiagnosisHistoryRow | null> {
+  const inv = await getInvoke()
+  if (!inv) return null
+  return inv('get_latest_diagnosis') as Promise<DiagnosisHistoryRow | null>
+}
+
+/** 당월 자동 진단 필요 여부 (매월 1일 첫 실행 판단, AC-6.6-1). */
+export async function checkAutoDiagnosisNeeded(): Promise<boolean> {
+  const inv = await getInvoke()
+  if (!inv) return false
+  return inv('check_auto_diagnosis_needed') as Promise<boolean>
+}
+
+// ============================================================================
+// Sprint 14 — 데이터 내보내기 (T5/T6, PRD §4.13.2)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/export.rs (엑셀 .xlsx — 정렬/천단위/너비 서식).
+
+/** 엑셀(.xlsx) 저장 다이얼로그 — 시스템 다운로드 폴더를 기본 위치로 제시. 취소 시 null. */
+export async function showXlsxSaveDialog(defaultName: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    // 기본 폴더 = 시스템 다운로드 폴더(권한/플랫폼 미지원 시 파일명만 → 다이얼로그 기본 폴더).
+    let defaultPath = defaultName
+    try {
+      const { downloadDir, join } = await import('@tauri-apps/api/path')
+      defaultPath = await join(await downloadDir(), defaultName)
+    } catch {
+      /* path API 불가 — 파일명만 사용 */
+    }
+    const selected = await save({
+      defaultPath,
+      filters: [{ name: '엑셀 파일', extensions: ['xlsx'] }],
+    })
+    return selected ?? null
+  } catch {
+    return null
+  }
+}
+
+/** dev 모드(브라우저) fallback 결과 — 실제 저장 없이 0건. */
+const EXPORT_DEV_FALLBACK: ExportResult = { file_path: '', row_count: 0, byte_size: 0 }
+
+/** 원생 명단을 CSV 로 내보낸다. */
+export async function exportStudents(filePath: string): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_students', { filePath }) as Promise<ExportResult>
+}
+
+/** 출결 데이터를 CSV 로 내보낸다. `yearMonth` 가 null 이면 전체 기간. */
+export async function exportAttendances(
+  yearMonth: string | null,
+  filePath: string,
+): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_attendances', { yearMonth, filePath }) as Promise<ExportResult>
+}
+
+/** 청구-수납 데이터를 CSV 로 내보낸다. `yearMonth` 가 null 이면 전체 기간. */
+export async function exportBilling(
+  yearMonth: string | null,
+  filePath: string,
+): Promise<ExportResult> {
+  const inv = await getInvoke()
+  if (!inv) return EXPORT_DEV_FALLBACK
+  return inv('export_billing', { yearMonth, filePath }) as Promise<ExportResult>
+}
+
+// ============================================================================
+// Sprint 14 — 대시보드 (T3/T4, PRD §4.11)
+// ============================================================================
+// 백엔드: src-tauri/src/commands/dashboard.rs.
+
+/** 4.11.1 교습소 현황 (재원/성별/학년/학교 분포 + 분기별 입퇴교). */
+export async function getAcademyOverview(): Promise<AcademyOverview> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { total_active: 0, by_gender: [], by_grade: [], by_school: [], quarterly: [] }
+  }
+  return inv('get_academy_overview') as Promise<AcademyOverview>
+}
+
+/** 4.11.2 당일 수업 — 시간대별 명단. */
+export async function getTodaySchedule(): Promise<TodaySchedule> {
+  const inv = await getInvoke()
+  if (!inv) return { weekday: 1, slots: [] }
+  return inv('get_today_schedule') as Promise<TodaySchedule>
+}
+
+/** 4.11.3 월 핵심 요약 (청구/입금/미납 + 당월 입퇴교 + 출결 기록일수). */
+export async function getMonthlySummary(yearMonth: string): Promise<MonthlySummary> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      year_month: yearMonth,
+      bill_total: 0,
+      paid_total: 0,
+      unpaid_total: 0,
+      bill_count: 0,
+      paid_count: 0,
+      enrolled_this_month: 0,
+      withdrawn_this_month: 0,
+      attendance_recorded_days: 0,
+    }
+  }
+  return inv('get_monthly_summary', { yearMonth }) as Promise<MonthlySummary>
+}
+
+/** 4.11.4 알림 (조건 충족분만 반환). */
+export async function getDashboardAlerts(): Promise<DashboardAlert[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_dashboard_alerts') as Promise<DashboardAlert[]>
+}
+
+/** 교습소 월별 청구총액 추이 (마지막 청구월 기준 최근 12개월, 빈 달 0). */
+export async function getBillingTrend(): Promise<BillingTrendPoint[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_billing_trend') as Promise<BillingTrendPoint[]>
+}
+
+/** 이달의 생일 원생 (재원생, 생일 일자 빠른 순). */
+export async function getBirthdaysThisMonth(): Promise<BirthdayEntry[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('get_birthdays_this_month') as Promise<BirthdayEntry[]>
+}
+
+/** 4.11.6 메모 포스트잇 3장 조회 (내용 + 높이). */
+export async function getDashboardMemos(): Promise<MemoNote[]> {
+  const inv = await getInvoke()
+  if (!inv) return [] // dev fallback — 컴포넌트가 기본 3장으로 보정
+  return inv('get_dashboard_memos') as Promise<MemoNote[]>
+}
+
+/** 4.11.6 메모 1장 저장 (내용 + 높이, 디바운스 자동 저장). */
+export async function saveDashboardMemo(
+  index: number,
+  content: string,
+  height: number,
+): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('save_dashboard_memo', { index, content, height })
 }

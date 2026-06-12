@@ -20,6 +20,7 @@ import { useSessionStore } from '@/stores/session-store'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { SplashScreen } from '@/components/splash-screen'
+import { DashboardView } from '@/components/dashboard/DashboardView'
 
 export default function Home() {
   const router = useRouter()
@@ -38,6 +39,11 @@ export default function Home() {
     lastStartup?.expiration_report.transitionedCount ?? 0
   const showExpirationNotice =
     ready && expirationCount > 0 && !expirationNoticeDismissed
+  // Sprint 16 — 시작 시 DB 손상 자동복원 고지.
+  const restoreNoticeDismissed = useSessionStore((s) => s.restoreNoticeDismissed)
+  const dismissRestoreNotice = useSessionStore((s) => s.dismissRestoreNotice)
+  const autoRestored = lastStartup?.auto_restored ?? null
+  const showRestoreNotice = ready && autoRestored !== null && !restoreNoticeDismissed
 
   useEffect(() => {
     if (unlocked) {
@@ -85,6 +91,26 @@ export default function Home() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
+      {showRestoreNotice && (
+        <div
+          role="alert"
+          className="mx-6 mt-4 flex items-start justify-between gap-3 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-base text-[var(--danger)]"
+        >
+          <span>
+            데이터 파일 손상이 감지되어 <b>최근 정상 백업으로 자동 복원</b>했습니다. 복원 직후
+            일부 최근 입력이 누락됐을 수 있으니 원생·출결·청구 데이터를 확인해 주세요. (손상된
+            파일은 보존되어 있습니다)
+          </span>
+          <button
+            type="button"
+            onClick={dismissRestoreNotice}
+            aria-label="알림 닫기"
+            className="ml-1 min-h-[32px] min-w-[32px] shrink-0 rounded text-[var(--danger)] hover:bg-red-100"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {showExpirationNotice && (
         <div
           role="status"
@@ -104,11 +130,7 @@ export default function Home() {
           </button>
         </div>
       )}
-      <div className="flex flex-col items-center justify-center pt-12">
-        <h1 className="mb-4 text-4xl font-bold">스마트해법수학</h1>
-        <p className="mb-8 text-lg text-gray-600">정쌤의 교습소 관리 시스템</p>
-        <p className="mt-8 text-sm text-gray-500">대시보드는 Phase 6 에서 구축됩니다. 사이드바의 ‘원생 관리’ 또는 ‘설정’으로 이동. 시작 시간/점유/백업/동기화 상태는 상단바를 참조.</p>
-      </div>
+      <DashboardView />
     </AppShell>
   )
 }

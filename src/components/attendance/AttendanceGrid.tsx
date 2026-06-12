@@ -17,7 +17,7 @@
  * - 비수업일 (셀 없음): `bg-gray-50` placeholder
  */
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toggleAttendance, updateAbsenceMemo } from '@/lib/tauri'
 import type {
@@ -29,6 +29,7 @@ import type {
   GridMakeupCell,
 } from '@/types/attendance'
 import { minutesToHoursText } from '@/lib/time'
+import { isEditableTarget } from '@/components/layout/GlobalShortcuts'
 import { AbsenceMemoDialog } from './AbsenceMemoDialog'
 
 /**
@@ -70,9 +71,11 @@ interface Props {
   onMakeupDayCellClick?: (studentId: number, makeup: GridMakeupCell) => void
   /** Sprint 9 T8 — 학생명 클릭 시 호출 (결석 이력 다이얼로그 진입). */
   onStudentNameClick?: (studentId: number) => void
-  /** Sprint 9 Session #12 K3 — 정규 수업 셀(present/makeup_done/makeup_expired) 우클릭 시
+  /** Sprint 9 Session #12 K3 — 정규 수업 셀(makeup_done/makeup_expired) 우클릭 시
    *  보강 등록 진입. 결석(absent) 셀 우클릭은 기존 메모 동작 유지. */
   onClassDayMakeupRegister?: (studentId: number, eventDate: string) => void
+  /** Sprint 16 T0 — present(출석) 셀 우클릭 시 [수업일 이동 / 보강 등록] 액션 선택. */
+  onPresentCellAction?: (studentId: number, cell: AttendanceCell) => void
 }
 
 interface LastToggle {
@@ -115,6 +118,7 @@ export function AttendanceGrid({
   onMakeupDayCellClick,
   onStudentNameClick,
   onClassDayMakeupRegister,
+  onPresentCellAction,
 }: Props) {
   const queryClient = useQueryClient()
   const [lastToggle, setLastToggle] = useState<LastToggle | null>(null)
@@ -170,6 +174,9 @@ export function AttendanceGrid({
     function onKey(e: KeyboardEvent) {
       const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'
       if (!isUndo || lastToggle === null) return
+      // P0-6: 텍스트 입력 중(결석 메모 textarea 등)에는 출결 undo 가 아니라 입력 undo 가
+      // 기대 동작 — 가로채면 사용자가 인지 못 한 채 출결이 역토글된다.
+      if (isEditableTarget(e.target)) return
       e.preventDefault()
       toggleMutation.mutate({
         attendanceId: lastToggle.attendanceId,
@@ -180,6 +187,29 @@ export function AttendanceGrid({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [lastToggle, toggleMutation])
+
+  // 진입/월 변경 시 오늘 날짜 열을 가로 스크롤로 노출 — 오늘 출결을 바로 입력하도록.
+  // 조회월이 현재월일 때만 해당 일(day), 아니면 null.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const todayRef = useRef<HTMLTableCellElement>(null)
+  const todayDay = useMemo(() => {
+    const now = new Date()
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    return ym === grid.yearMonth ? now.getDate() : null
+  }, [grid.yearMonth])
+
+  useEffect(() => {
+    if (todayDay === null) return
+    const raf = requestAnimationFrame(() => {
+      const cell = todayRef.current
+      const container = scrollRef.current
+      if (cell === null || container === null) return
+      // 좌측 고정 컬럼 너머에 오늘 열이 보이도록 컨테이너 중앙 정렬.
+      const target = cell.offsetLeft - container.clientWidth / 2 + cell.clientWidth / 2
+      container.scrollTo({ left: Math.max(0, target), behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [grid.yearMonth, todayDay])
 
   if (grid.students.length === 0) {
     return (
@@ -200,7 +230,7 @@ export function AttendanceGrid({
         </div>
       )}
 
-      <div className="overflow-auto rounded-lg border border-[var(--border)]">
+      <div ref={scrollRef} className="overflow-auto rounded-lg border border-[var(--border)]">
         <table className="border-collapse text-base">
           <thead className="sticky top-0 z-10 bg-gray-100">
             {/* Sprint 8 T9 follow-up: 원생 + 요약 4컬럼 모두 sticky left 누적.
@@ -219,7 +249,7 @@ export function AttendanceGrid({
                 className="sticky left-[140px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 출석
-                <div className="text-xs text-gray-600">(일)</div>
+                <div className="text-sm text-gray-600">(일)</div>
               </th>
               {/* Sprint 9 T7 (A41 흡수): absent_count 는 status='absent' AND makeup_attendance_id IS NULL
                   만 카운트 — 보강완료/소멸 제외. "미처리 결석" 으로 의미 명확화. */}
@@ -230,21 +260,21 @@ export function AttendanceGrid({
               >
                 미처리
                 <div>결석</div>
-                <div className="text-xs text-gray-600">(일)</div>
+                <div className="text-sm text-gray-600">(일)</div>
               </th>
               <th
                 rowSpan={2}
                 className="sticky left-[264px] z-20 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강필요
-                <div className="text-xs text-gray-600">(시간)</div>
+                <div className="text-sm text-gray-600">(시간)</div>
               </th>
               <th
                 rowSpan={2}
                 className="sticky left-[348px] z-20 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 보강완료
-                <div className="text-xs text-gray-600">(시간)</div>
+                <div className="text-sm text-gray-600">(시간)</div>
               </th>
               {days.map((d) => {
                 const wd = weekdayLabel(grid.yearMonth, d)
@@ -255,16 +285,19 @@ export function AttendanceGrid({
                 // 보강데이/공휴수업일 등 그 외 allowsMakeup=true 일자만 sky 배경 유지.
                 const isAssessment = sched?.label === '단원평가 응시일'
                 const showSkyBg = sched?.allowsMakeup === true && !isAssessment
+                const isToday = d === todayDay
                 return (
                   <th
                     key={`wd-${d}`}
-                    title={sched?.label}
-                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-xs ${
-                      showSkyBg
-                        ? 'bg-sky-100 text-sky-800 font-semibold'
-                        : isWeekend
-                          ? 'text-red-600'
-                          : 'text-gray-600'
+                    title={isToday ? '오늘' : sched?.label}
+                    className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-sm ${
+                      isToday
+                        ? 'bg-[var(--accent)] font-bold text-white'
+                        : showSkyBg
+                          ? 'bg-sky-100 text-sky-800 font-semibold'
+                          : isWeekend
+                            ? 'text-red-600'
+                            : 'text-gray-600'
                     }`}
                   >
                     {wd}
@@ -280,17 +313,23 @@ export function AttendanceGrid({
                 const showSkyBg = sched?.allowsMakeup === true && !isAssessment
                 // K4: 보강데이는 날짜 밑에 작은 폰트 라벨 — 셀 너비 변경 없도록 absolute 또는 leading-none.
                 const isMakeupDayLabel = sched?.label === '보강데이'
+                const isToday = d === todayDay
                 return (
                   <th
                     key={`d-${d}`}
-                    title={sched?.label}
+                    ref={isToday ? todayRef : undefined}
+                    title={isToday ? '오늘' : sched?.label}
                     className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-2 text-center text-sm leading-tight ${
-                      showSkyBg ? 'bg-sky-100 text-sky-800 font-semibold' : ''
+                      isToday
+                        ? 'bg-[var(--accent)] font-bold text-white'
+                        : showSkyBg
+                          ? 'bg-sky-100 text-sky-800 font-semibold'
+                          : ''
                     }`}
                   >
                     {d}
                     {isMakeupDayLabel && (
-                      <div className="text-[10px] font-normal leading-none text-sky-700">
+                      <div className="text-xs font-semibold leading-none text-sky-700">
                         보강데이
                       </div>
                     )}
@@ -309,9 +348,13 @@ export function AttendanceGrid({
                 dayScheduleMap={dayScheduleMap}
                 onCellClick={handleCellClick}
                 onCellContextMenu={(cell, studentId) => {
-                  // Session #12 K3: 결석 셀 = 메모, 그 외(present/makeup_done/makeup_expired) = 보강 등록.
+                  // 결석 셀 = 메모(K3).
+                  // present 셀 = [수업일 이동 / 보강 등록] 액션 선택(Sprint 16 T0).
+                  // makeup_done/makeup_expired = 보강 등록(K3).
                   if (cell.status === 'absent') {
                     setMemoDialogCell(cell)
+                  } else if (cell.status === 'present' && onPresentCellAction !== undefined) {
+                    onPresentCellAction(studentId, cell)
                   } else if (onClassDayMakeupRegister !== undefined) {
                     onClassDayMakeupRegister(studentId, cell.eventDate)
                   }
@@ -326,7 +369,7 @@ export function AttendanceGrid({
       </div>
 
       <p className="mt-3 text-sm text-gray-600">
-        셀 클릭 = 출석↔결석 토글 · 결석 셀 우클릭 = 사유 메모 · 출석/보강완료 셀 우클릭 = 보강 등록 · Ctrl+Z (또는 Cmd+Z) = 마지막 토글 취소
+        셀 클릭 = 출석↔결석 토글 · 결석 셀 우클릭 = 사유 메모 · 출석 셀 우클릭 = 수업일 이동/보강 등록 · 보강완료 셀 우클릭 = 보강 등록 · Ctrl+Z (또는 Cmd+Z) = 마지막 토글 취소
       </p>
 
       {memoDialogCell !== null && (
@@ -423,7 +466,7 @@ const StudentRow = memo(function StudentRow({
         {onStudentNameClick === undefined ? (
           <>
             <div>{student.name}</div>
-            <div className="text-xs text-gray-500">#{student.serialNo}</div>
+            <div className="text-sm text-muted-foreground">#{student.serialNo}</div>
           </>
         ) : (
           <button
@@ -433,7 +476,7 @@ const StudentRow = memo(function StudentRow({
             title="결석 이력 보기"
           >
             <div>{student.name}</div>
-            <div className="text-xs text-gray-500">#{student.serialNo}</div>
+            <div className="text-sm text-muted-foreground">#{student.serialNo}</div>
           </button>
         )}
       </th>
@@ -443,12 +486,32 @@ const StudentRow = memo(function StudentRow({
       <td className="sticky left-[202px] z-10 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
         {student.summary.absentCount}
       </td>
-      <td className="sticky left-[264px] z-10 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
-        {minutesToHoursText(student.summary.makeupNeededMinutes)}
-      </td>
-      <td className="sticky left-[348px] z-10 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center">
-        {minutesToHoursText(student.summary.makeupCompletedMinutes)}
-      </td>
+      {(() => {
+        const pending = pendingTooltip(student)
+        return (
+          <td
+            title={pending}
+            className={`sticky left-[264px] z-10 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-50 px-2 py-2 text-center ${
+              pending !== undefined ? 'cursor-help' : ''
+            }`}
+          >
+            {minutesToHoursText(student.summary.makeupNeededMinutes)}
+          </td>
+        )
+      })()}
+      {(() => {
+        const completed = completedTooltip(student)
+        return (
+          <td
+            title={completed}
+            className={`sticky left-[348px] z-10 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-50 px-2 py-2 text-center ${
+              completed !== undefined ? 'cursor-help' : ''
+            }`}
+          >
+            {minutesToHoursText(student.summary.makeupCompletedMinutes)}
+          </td>
+        )
+      })()}
       {days.map((day) => {
         const dayKey = String(day).padStart(2, '0')
         const cell = byDay.get(dayKey)
@@ -591,7 +654,7 @@ function CellView({
         <button
           type="button"
           aria-label="보강 등록"
-          className="block h-[44px] w-full min-w-[44px] text-base text-gray-400 hover:text-amber-700"
+          className="block h-[44px] w-full min-w-[44px] text-base text-gray-600 hover:text-amber-700"
         >
           +
         </button>
@@ -645,6 +708,28 @@ function statusCellClass(status: AttendanceStatus): {
   }
 }
 
+/** 보강필요 셀 hover 내역 — 이월 누적 결석 목록 (결석/보강 셀 힌트와 동일한 title 방식). */
+function pendingTooltip(student: AttendanceGridStudent): string | undefined {
+  if (student.pendingAbsences.length === 0) return undefined
+  const lines = [`보강필요 ${minutesToHoursText(student.summary.makeupNeededMinutes)}시간`]
+  for (const p of student.pendingAbsences) {
+    const dl = p.makeupDeadline !== null ? `, 소멸 ${p.makeupDeadline}` : ''
+    lines.push(`${p.eventDate} (${minutesToHoursText(p.classMinutes)}시간${dl})`)
+  }
+  return lines.join('\n')
+}
+
+/** 보강완료 셀 hover 내역 — 이번 달 보강 출결 목록. */
+function completedTooltip(student: AttendanceGridStudent): string | undefined {
+  const done = student.makeups.filter((m) => m.status === 'makeup_attended')
+  if (done.length === 0) return undefined
+  const lines = [`보강완료 ${minutesToHoursText(student.summary.makeupCompletedMinutes)}시간`]
+  for (const m of done) {
+    lines.push(`${m.eventDate} (${minutesToHoursText(m.classMinutes)}시간)`)
+  }
+  return lines.join('\n')
+}
+
 function cellTooltip(cell: AttendanceCell, makeupHintDate?: string): string {
   // Session #10 J5/J8 — makeup_done 셀은 "결석" 표시 + hover 시 매칭 보강일자 노출.
   // Session #10 J9 — 줄바꿈으로 가독성 향상.
@@ -655,9 +740,14 @@ function cellTooltip(cell: AttendanceCell, makeupHintDate?: string): string {
         ? `결석 (보강일: ${makeupHintDate})`
         : '결석 (보강 매칭됨)',
     )
+  } else if (cell.status === 'present') {
+    // 출석 셀 hover 시 기호('○') 대신 의미를 명확히 표기.
+    parts.push('(출석)')
   } else {
     parts.push(statusCellClass(cell.status).label)
   }
+  // Sprint 16 T0 케이스1 — 1회성 수업일 이동 메모 (예: "6/8(월)→6/10(수) 이동").
+  if (cell.note !== null) parts.push(cell.note)
   if (cell.absenceMemo !== null) parts.push(`메모: ${cell.absenceMemo}`)
   if (cell.makeupDeadline !== null) parts.push(`소멸기한: ${cell.makeupDeadline}`)
   return parts.join('\n')

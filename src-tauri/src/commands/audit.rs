@@ -3,7 +3,6 @@
 //! ## 기록 대상 (우선순위)
 //!
 //! - 비밀번호 변경 (`PasswordChange`)
-//! - 복구 코드 발급 (`RecoveryCodeIssued`)
 //! - 백업 생성·복원 (`BackupCreated`, `BackupRestored`)
 //! - 락 강제 점유 (`LockForced`)
 //! - 무결성 검증 실패 (`IntegrityCheckFailed`)
@@ -11,13 +10,13 @@
 //!
 //! ## 보안 원칙
 //!
-//! - 민감 데이터(비밀번호, 복구 코드 평문/해시, hex key, SQLCipher salt)는 절대 미기록
+//! - 민감 데이터(비밀번호, hex key, SQLCipher salt)는 절대 미기록
 //! - 호출자가 `details` 직렬화 시점에 사전 마스킹 — 본 모듈은 입력을 그대로 저장한다
 //! - 1년 롤링 보관 — `cleanup_old` 가 T10 시작 시퀀스에서 호출됨
 //!
 //! ## T10 통합 예정
 //!
-//! 본 sprint(T9) 에서는 인프라(테이블·헬퍼·IPC)만 제공. backup/lock/auth/recovery 모듈이
+//! 본 sprint(T9) 에서는 인프라(테이블·헬퍼·IPC)만 제공. backup/lock/auth 모듈이
 //! 실제로 [`record`] 를 호출하는 통합은 T10 (시작 시퀀스 + 모듈 lifecycle 결정) 으로 미룬다.
 
 use crate::commands::db;
@@ -34,7 +33,6 @@ use serde::{Deserialize, Serialize};
 pub enum AuditEventType {
     // Sprint 1 — 보안 이벤트
     PasswordChange,
-    RecoveryCodeIssued,
     BackupCreated,
     BackupRestored,
     LockForced,
@@ -54,6 +52,13 @@ pub enum AuditEventType {
     MakeupCancelled,
     // Sprint 10 T3 — 보강 소멸 자동 전이 (PRD §4.5.7)
     MakeupExpired,
+    // Sprint 11 T3 — 청구 상태 머신 (PRD §4.9.3). 마감(month-closed/closed-modified)은 V111 폐기.
+    BillConfirmed,
+    // Sprint 16 T0 — 수업일 변경 (사용자 이슈 2026-06-08)
+    // 케이스1: 특정일 1회성 수업일 이동 (출결 행 event_date 변경)
+    AttendanceRescheduled,
+    // 케이스2: 특정일 이후 영구 스케줄 변경 + 변경일 이후 출결 재생성
+    ScheduleChangedWithRegen,
 }
 
 impl AuditEventType {
@@ -61,7 +66,6 @@ impl AuditEventType {
     fn as_code(self) -> &'static str {
         match self {
             Self::PasswordChange => "password-change",
-            Self::RecoveryCodeIssued => "recovery-code-issued",
             Self::BackupCreated => "backup-created",
             Self::BackupRestored => "backup-restored",
             Self::LockForced => "lock-forced",
@@ -75,6 +79,9 @@ impl AuditEventType {
             Self::MakeupCreated => "makeup-created",
             Self::MakeupCancelled => "makeup-cancelled",
             Self::MakeupExpired => "makeup-expired",
+            Self::BillConfirmed => "bill-confirmed",
+            Self::AttendanceRescheduled => "attendance-rescheduled",
+            Self::ScheduleChangedWithRegen => "schedule-changed-with-regen",
         }
     }
 }
@@ -94,7 +101,7 @@ type AuditLogRow = (i64, String, String, Option<String>, Option<String>);
 
 /// 감사 이벤트 1건을 기록한다. `details` 는 JSON 문자열 권장 (마스킹된 상태).
 ///
-/// T10 호출자 (auth/recovery/lock/backup/integrity) 는 [`try_record`] 를 통해 호출하여
+/// T10 호출자 (auth/lock/backup/integrity) 는 [`try_record`] 를 통해 호출하여
 /// pool 미초기화 (unlock 전) 상태에서도 startup 흐름을 차단하지 않는다.
 pub(crate) async fn record(
     event_type: AuditEventType,
@@ -215,7 +222,6 @@ mod tests {
     fn audit_event_type_serde_round_trip() {
         let types = [
             AuditEventType::PasswordChange,
-            AuditEventType::RecoveryCodeIssued,
             AuditEventType::BackupCreated,
             AuditEventType::BackupRestored,
             AuditEventType::LockForced,

@@ -36,7 +36,7 @@ export type LockStatus =
  * 백업 계층 — T7 PRD §5.3/§5.4 (ADR-003).
  *
  * `src-tauri/src/commands/backup.rs::BackupLayer` 와 serde rename_all="kebab-case" 정합.
- * 보관 정책: exit(10) / hourly(24) / daily(30) / weekly(4) — 초과 시 가장 오래된 파일 삭제.
+ * 보관 정책: exit(5) / hourly(12) / daily(14) / weekly(4) — 초과 시 가장 오래된 파일 삭제 (PRD §5.4 v1.5.2).
  */
 export type BackupLayer = 'exit' | 'hourly' | 'daily' | 'weekly'
 
@@ -83,6 +83,33 @@ export interface RestoreResult {
 }
 
 /**
+ * 복원 리허설로 검증한 테이블 행 수 — `backup.rs::TableCount` 와 정합.
+ */
+export interface TableCount {
+  table: string
+  count: number
+}
+
+/**
+ * 복원 리허설 결과 — `src-tauri/src/commands/backup.rs::RehearsalResult` 와 정합 (PRD §5.4).
+ *
+ * 백업 파일을 격리된 임시 사본으로 복사해 `PRAGMA integrity_check` + 주요 테이블 행 수를
+ * 검증한 결과다. **운영 DB 에는 영향이 없다.**
+ *
+ * - `success`: 무결성 통과 + 주요 테이블 열람 성공 시 true.
+ * - `integrity_detail`: 실패 시 사유(손상 메시지 또는 열기/복호화 실패). 성공 시 null.
+ * - `table_counts`: 검증된 주요 테이블 행 수. 성공 시에만 채워진다.
+ */
+export interface RehearsalResult {
+  backup_path: string
+  size_bytes: number
+  success: boolean
+  integrity_detail: string | null
+  table_counts: TableCount[]
+  total_rows: number
+}
+
+/**
  * 클라우드 동기화 대기 상태 — T9 PRD §5.3.
  *
  * `src-tauri/src/commands/sync.rs::SyncStatus` 와 serde `tag = "kind"` + `kebab-case` 정합.
@@ -100,7 +127,6 @@ export type SyncStatus =
  */
 export type AuditEventType =
   | 'password-change'
-  | 'recovery-code-issued'
   | 'backup-created'
   | 'backup-restored'
   | 'lock-forced'
@@ -145,4 +171,7 @@ export interface StartupResult {
    *  내부는 camelCase, 본 필드는 snake_case 유지 (기존 StartupResult 패턴).
    *  `transitioned_count > 0` 시 메인 페이지에서 토스트 표시 (T9). */
   expiration_report: import('./expiration').ExpirationReport
+  /** Sprint 16: 시작 시 DB 손상이 감지되어 자동 복원된 경우의 결과 (없으면 null).
+   *  null 이 아니면 메인 페이지에서 "최근 정상 백업으로 복원됨" 고지. */
+  auto_restored: RestoreResult | null
 }

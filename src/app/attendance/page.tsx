@@ -20,6 +20,8 @@ import {
   checkAttendanceExists,
   generateAttendances,
   getAttendanceGrid,
+  countUngeneratedAttendanceStudents,
+  listStudyPeriods,
 } from '@/lib/tauri'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -28,23 +30,17 @@ import { AbsenceHistoryDialog } from '@/components/attendance/AbsenceHistoryDial
 import { AttendanceGrid } from '@/components/attendance/AttendanceGrid'
 import { MakeupManageDialog } from '@/components/attendance/MakeupManageDialog'
 import { MakeupRegisterDialog } from '@/components/attendance/MakeupRegisterDialog'
+import { MoveAttendanceDialog } from '@/components/attendance/MoveAttendanceDialog'
+import type { AttendanceCell, AttendanceGridStudent } from '@/types/attendance'
 
 function currentYearMonth(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-function previousYearMonths(count: number, from: string): string[] {
-  const [y, m] = from.split('-').map(Number)
-  const result: string[] = []
-  for (let i = 0; i < count; i++) {
-    const date = new Date(y, m - 1 - i, 1)
-    result.push(
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-    )
-  }
-  return result
-}
+/** 일정 관리(교습기간) 조회 범위 — 과거/미래 어디까지 검색해도 study_periods 테이블은 작아 비용 무시 가능. */
+const STUDY_PERIOD_FROM = '2000-01'
+const STUDY_PERIOD_TO = '2099-12'
 
 interface MakeupDialogTarget {
   studentId: number
@@ -86,6 +82,16 @@ export default function AttendancePage() {
     studentName: string
     studentSerialNo: string
   } | null>(null)
+  // Sprint 16 T0: present 셀 우클릭 → [수업일 이동 / 보강 등록] 액션 선택.
+  const [actionTarget, setActionTarget] = useState<{
+    studentId: number
+    cell: AttendanceCell
+  } | null>(null)
+  // Sprint 16 T0: 수업일 이동 다이얼로그(케이스1) 대상.
+  const [moveTarget, setMoveTarget] = useState<{
+    student: AttendanceGridStudent
+    fromDate: string
+  } | null>(null)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -119,6 +125,29 @@ export default function AttendancePage() {
     enabled: existsQuery.data === true,
   })
 
+  // 미생성 원생 수 — hotfix post-Sprint 11. "추가 출결 데이터 생성" UX 트리거.
+  const ungeneratedQuery = useQuery({
+    queryKey: ['attendance-ungenerated', yearMonth],
+    queryFn: () => countUngeneratedAttendanceStudents(yearMonth),
+  })
+
+  // 일정 관리(교습기간) 등록된 년월 — 대상월 드롭다운 옵션 산출 기준.
+  // 사용자 요구: 프로그램 실행뿐 아니라 메뉴 진입(=페이지 mount) 시마다 매번 갱신.
+  // 전역 default 의 refetchOnMount:'always' 위에 명시적 staleTime/refetch 설정을 두고,
+  // 추가로 mount 시점에 invalidate 를 호출하여 stale 캐시 노출 가능성을 제거한다.
+  const studyPeriodsQuery = useQuery({
+    queryKey: ['study-periods', STUDY_PERIOD_FROM, STUDY_PERIOD_TO],
+    queryFn: () => listStudyPeriods(STUDY_PERIOD_FROM, STUDY_PERIOD_TO),
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
+  // 메뉴가 호출되어 본 페이지가 mount 될 때마다 study-periods 캐시를 무효화 → 즉시 재조회.
+  // 다른 화면(일정 관리)에서 교습기간을 추가/수정/삭제했을 가능성을 항상 반영한다.
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ['study-periods'] })
+  }, [queryClient])
+
   // 출결 일괄 생성
   const generateMutation = useMutation({
     mutationFn: () => generateAttendances(yearMonth),
@@ -126,6 +155,7 @@ export default function AttendancePage() {
       setError(null)
       void queryClient.invalidateQueries({ queryKey: ['attendance-exists', yearMonth] })
       void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+      void queryClient.invalidateQueries({ queryKey: ['attendance-ungenerated', yearMonth] })
       // Sprint 10 T4 (PI-09): 출결 생성 직후 소멸 자동 전이 결과 알림.
       const count = result.expirationReport.transitionedCount
       setExpirationNotice(
@@ -137,10 +167,35 @@ export default function AttendancePage() {
     },
   })
 
-  // 월 선택 옵션 — 현재 월 + 과거 11개월
-  const monthOptions = previousYearMonths(12, currentYearMonth())
+  // 월 선택 옵션 — 일정 관리(교습기간) 등록된 년월만. 미등록 시 현재 년월 fallback.
+  // 최신 월이 위에 오도록 내림차순 정렬.
+  const monthOptions = useMemo(() => {
+    const periods = studyPeriodsQuery.data
+    if (periods === undefined || periods.length === 0) {
+      return [currentYearMonth()]
+    }
+    return [...new Set(periods.map((p) => p.year_month))].sort((a, b) =>
+      b.localeCompare(a),
+    )
+  }, [studyPeriodsQuery.data])
 
-  const showGenerateButton = existsQuery.data === false
+  // 일정 관리이 로드되었는데 현재 선택된 yearMonth 가 옵션에 없으면 첫 옵션(최신)으로 이동.
+  // currentYearMonth 가 등록된 교습기간에 포함되면 그대로 유지 — 디폴트로 자연스럽게 현재월 노출.
+  useEffect(() => {
+    if (studyPeriodsQuery.data === undefined) return
+    if (!monthOptions.includes(yearMonth)) {
+      setYearMonth(monthOptions[0])
+    }
+  }, [studyPeriodsQuery.data, monthOptions, yearMonth])
+
+  // hotfix post-Sprint 11: 청구 패턴과 동일 — 출결 0건 → "생성", 추가 등록 원생 있으면 "추가 생성".
+  const ungeneratedCount = ungeneratedQuery.data ?? 0
+  const showGenerateButton =
+    existsQuery.data === false || ungeneratedCount > 0
+  const generateButtonLabel =
+    existsQuery.data === false
+      ? '출결 데이터 생성'
+      : `추가 출결 데이터 생성 (${ungeneratedCount}명)`
   const showGrid = existsQuery.data === true && gridQuery.data !== undefined
 
   // 검색어 + 재원중 + 보강대상 필터 — 새 grid 객체를 만들어 AttendanceGrid 에 전달.
@@ -220,6 +275,16 @@ export default function AttendancePage() {
               aria-label="원생 이름 검색"
               className="min-h-[44px] w-48 rounded-md border-2 border-[var(--border)] px-3 text-base"
             />
+            {showGenerateButton && (
+              <button
+                type="button"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+                className="min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
+              >
+                {generateMutation.isPending ? '생성 중...' : generateButtonLabel}
+              </button>
+            )}
             <label className="ml-2 flex min-h-[44px] cursor-pointer items-center gap-2 text-base text-gray-700">
               <input
                 type="checkbox"
@@ -243,14 +308,15 @@ export default function AttendancePage() {
           </div>
         )}
 
-        {showGenerateButton && (
+        {/* 출결 0건 — 그리드 없는 빈 상태에서는 헤더 우측에 표시 */}
+        {showGenerateButton && !showGrid && (
           <button
             type="button"
             onClick={() => generateMutation.mutate()}
             disabled={generateMutation.isPending}
             className="ml-auto min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
           >
-            {generateMutation.isPending ? '생성 중...' : '출결 생성'}
+            {generateMutation.isPending ? '생성 중...' : generateButtonLabel}
           </button>
         )}
       </header>
@@ -286,16 +352,16 @@ export default function AttendancePage() {
           <p className="text-gray-600">출결 상태 확인 중...</p>
         )}
 
-        {showGenerateButton && (
+        {existsQuery.data === false && (
           <div className="rounded-lg border border-[var(--border)] bg-white p-8 text-center">
             <p className="text-lg text-gray-700">
               {yearMonth.replace('-', '년 ') + '월'} 출결이 아직 생성되지 않았습니다.
             </p>
-            <p className="mt-2 text-base text-gray-500">
-              우측 상단의 &ldquo;출결 생성&rdquo; 버튼을 눌러 해당 월 재원 원생의 출결을 일괄 생성하세요.
+            <p className="mt-2 text-base text-muted-foreground">
+              우측 상단의 &ldquo;출결 데이터 생성&rdquo; 버튼을 눌러 해당 월 재원 원생의 출결을 일괄 생성하세요.
             </p>
-            <p className="mt-2 text-sm text-gray-500">
-              ※ 교습기간이 먼저 확정되어 있어야 합니다 (학사 스케줄 메뉴).
+            <p className="mt-2 text-sm text-muted-foreground">
+              ※ 교습기간이 먼저 확정되어 있어야 합니다 (일정 관리 메뉴).
             </p>
           </div>
         )}
@@ -354,6 +420,10 @@ export default function AttendancePage() {
                   studentSerialNo: student.serialNo,
                 })
               }}
+              onPresentCellAction={(studentId, cell) => {
+                // Sprint 16 T0: present 셀 우클릭 → 액션 선택 모달.
+                setActionTarget({ studentId, cell })
+              }}
             />
             {debouncedSearch !== '' && matchedCount === 0 && (
               <p className="mt-4 text-center text-base text-gray-600">
@@ -411,6 +481,85 @@ export default function AttendancePage() {
           studentName={historyTarget.studentName}
           studentSerialNo={historyTarget.studentSerialNo}
           onClose={() => setHistoryTarget(null)}
+        />
+      )}
+
+      {/* Sprint 16 T0: present 셀 우클릭 → 액션 선택 [수업일 이동 / 보강 등록] */}
+      {actionTarget !== null &&
+        (() => {
+          const student = filteredGrid?.students.find(
+            (s) => s.studentId === actionTarget.studentId,
+          )
+          if (student === undefined) return null
+          const md = actionTarget.cell.eventDate.slice(5).replace('-', '/')
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+              onClick={() => setActionTarget(null)}
+              role="presentation"
+            >
+              <div
+                className="w-[360px] rounded-lg bg-white p-6 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label="수업 액션 선택"
+              >
+                <h2 className="text-xl font-bold">
+                  {student.name} · {md} 수업
+                </h2>
+                <p className="mt-1 text-base text-gray-700">이 수업을 어떻게 할까요?</p>
+                <div className="mt-5 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    className="min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)]"
+                    onClick={() => {
+                      setMoveTarget({ student, fromDate: actionTarget.cell.eventDate })
+                      setActionTarget(null)
+                    }}
+                  >
+                    수업일 이동
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-[44px] rounded-lg border-2 border-[var(--border)] px-4 text-base hover:bg-gray-50"
+                    onClick={() => {
+                      setMakeupTarget({
+                        studentId: student.studentId,
+                        studentName: student.name,
+                        studentSerialNo: student.serialNo,
+                        eventDate: actionTarget.cell.eventDate,
+                      })
+                      setActionTarget(null)
+                    }}
+                  >
+                    보강 등록
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-[44px] rounded-lg px-4 text-base text-gray-600 hover:bg-gray-50"
+                    onClick={() => setActionTarget(null)}
+                  >
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
+      {/* Sprint 16 T0 케이스1: 수업일 이동 다이얼로그 */}
+      {moveTarget !== null && (
+        <MoveAttendanceDialog
+          student={moveTarget.student}
+          yearMonth={yearMonth}
+          fromDate={moveTarget.fromDate}
+          daySchedules={filteredGrid?.daySchedules ?? []}
+          onClose={() => setMoveTarget(null)}
+          onSuccess={() => {
+            setMoveTarget(null)
+            void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+          }}
         />
       )}
       </main>

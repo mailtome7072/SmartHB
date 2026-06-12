@@ -8,8 +8,10 @@
  */
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { getPinSkipSetting, setPinSkipSetting } from '@/lib/tauri'
 
 interface SettingCard {
   href: string
@@ -19,6 +21,11 @@ interface SettingCard {
 }
 
 const CARDS: SettingCard[] = [
+  {
+    href: '/settings/info',
+    title: '교습소 정보',
+    description: '교습소명 / 대표자 / 연락처 / 주소 / 사업자등록번호 / 최대인원 / 면적 + 로고·2D바코드 이미지',
+  },
   {
     href: '/settings/hours',
     title: '교습소 운영 시간',
@@ -35,18 +42,100 @@ const CARDS: SettingCard[] = [
     description: '공휴일·보강데이 등 시스템 코드 + 사용자 추가 코드의 활성 토글 및 CRUD',
   },
   {
-    href: '/settings/info',
-    title: '교습소 정보',
-    description: '교습소명 / 주소 / 대표자 / 연락처 등 사업자 정보 (예정)',
-    disabledHint: '후속 sprint 에서 제공',
+    href: '/settings/diagnosis',
+    title: '데이터 자가 진단',
+    description: '원생·출결·청구 데이터 정합성 7종 점검. 매월 1일 자동 + 수동 실행, 최근 12개월 이력.',
   },
   {
-    href: '/setup',
-    title: '초기 설정 마법사 재실행',
-    description: '클라우드 폴더 변경 등 마법사를 다시 진행합니다. (예정)',
-    disabledHint: '재실행 흐름 정비 후 활성화',
+    href: '/settings/data',
+    title: '데이터 내보내기',
+    description: '원생·출결·청구 데이터를 엑셀(.xlsx) 파일로 저장. 천단위·정렬·열너비 서식 적용 (전체/월별).',
+  },
+  {
+    href: '/settings/import',
+    title: '원생 CSV 가져오기',
+    description: 'CSV 파일로 원생 명단을 일괄 등록합니다. 미리보기 확인 후 가져오며, 중복은 건너뜁니다.',
+  },
+  {
+    href: '/settings/pin',
+    title: 'PIN 번호 변경',
+    description: '현재 6자리 PIN 확인 후 새 PIN 으로 변경합니다. (변경 즉시 적용)',
+  },
+  {
+    href: '/settings/db-folder',
+    title: 'DB 폴더 변경',
+    description: '데이터가 저장되는 클라우드 동기화 폴더(DB 위치)를 재지정합니다. 기존 데이터를 새 폴더로 복사한 뒤 앱을 재시작합니다.',
+  },
+  {
+    href: '/settings/backup',
+    title: '백업 관리',
+    description: '자동 백업 목록 확인 + 복원 리허설. 백업이 실제로 복원 가능한지 운영 데이터 영향 없이 검증.',
   },
 ]
+
+/** 실행 시 PIN 인증 사용 토글 (ADR-008). 끄면 이 PC에서 앱 실행 시 PIN 입력을 건너뛴다. */
+function PinAuthToggle() {
+  // skipPin = config 의 skip_pin_on_launch (true = 스킵). 스위치는 'PIN 인증 사용' = !skipPin 으로 표시.
+  const [skipPin, setSkipPin] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    getPinSkipSetting()
+      .then(setSkipPin)
+      .catch(() => setSkipPin(false))
+  }, [])
+
+  const usePin = skipPin === false
+  const handleToggle = async () => {
+    if (skipPin === null || saving) return
+    const nextSkip = !skipPin
+    setSaving(true)
+    try {
+      await setPinSkipSetting(nextSkip)
+      setSkipPin(nextSkip)
+    } catch {
+      /* 저장 실패 — 상태 유지 */
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="mb-6 rounded-lg border border-[var(--border)] bg-white p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-[var(--foreground)]">실행 시 PIN 인증 사용</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            끄면 이 PC에서 앱을 실행할 때 PIN 입력을 건너뜁니다. (이 PC에만 적용)
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={usePin}
+          aria-label="실행 시 PIN 인증 사용"
+          onClick={handleToggle}
+          disabled={skipPin === null || saving}
+          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+            usePin ? 'bg-[var(--accent)]' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+              usePin ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
+      {skipPin === true && (
+        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          ⚠️ 이 PC에서 PIN 입력을 건너뜁니다. 데이터 보호는 OS 계정 로그인에 의존합니다. PIN을
+          잊으면 앱 데이터를 초기화해야 합니다.
+        </p>
+      )}
+    </section>
+  )
+}
 
 export default function SettingsHubPage() {
   return (
@@ -57,6 +146,8 @@ export default function SettingsHubPage() {
           교습소 운영 환경을 설정합니다. 변경 즉시 저장되며 마법사 재실행 없이 반영됩니다.
         </p>
 
+        <PinAuthToggle />
+
         <div className="grid gap-4 sm:grid-cols-2">
           {CARDS.map((card) =>
             card.disabledHint !== undefined ? (
@@ -66,9 +157,9 @@ export default function SettingsHubPage() {
                 title={card.disabledHint}
                 className="cursor-not-allowed rounded-lg border border-[var(--border)] bg-gray-50 p-5 opacity-60"
               >
-                <h2 className="mb-2 text-lg font-bold text-gray-500">{card.title}</h2>
-                <p className="text-sm text-gray-500">{card.description}</p>
-                <p className="mt-3 text-xs text-gray-400">{card.disabledHint}</p>
+                <h2 className="mb-2 text-lg font-bold text-muted-foreground">{card.title}</h2>
+                <p className="text-sm text-muted-foreground">{card.description}</p>
+                <p className="mt-3 text-xs text-gray-600">{card.disabledHint}</p>
               </div>
             ) : (
               <Link

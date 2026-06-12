@@ -24,6 +24,8 @@ export interface AttendanceCell {
   absenceMemo: string | null
   makeupDeadline: string | null // YYYY-MM
   makeupAttendanceId: number | null
+  /** Sprint 16 T0 케이스1 — 1회성 수업일 이동 메모 (예: "6/8(월)→6/10(수) 이동"). */
+  note: string | null
 }
 
 /** 원생 월간 요약. */
@@ -44,6 +46,13 @@ export interface GridMakeupCell {
   classMinutes: number
 }
 
+/** 보강필요 내역 1건 — "보강필요" 셀 hover 힌트용 (Sprint 14). */
+export interface PendingMakeupDetail {
+  eventDate: string // YYYY-MM-DD
+  classMinutes: number
+  makeupDeadline: string | null // YYYY-MM
+}
+
 /** 그리드 한 원생 행. */
 export interface AttendanceGridStudent {
   studentId: number
@@ -58,6 +67,8 @@ export interface AttendanceGridStudent {
   /** Sprint 9 Session #12 K1' — 만기 미도래 미보강 결석 중 가장 이른 일자.
    *  비수업일 "+" 표시 사전 판단에 사용. 이전 월 결석 포함. null 이면 보강 필요 없음. */
   earliestPendingAbsenceDate: string | null
+  /** Sprint 14 — "보강필요" 셀 hover 내역 (이월 누적, 소멸기한 ≥ 조회월, 퇴교생 제외). */
+  pendingAbsences: PendingMakeupDetail[]
 }
 
 /** 일자별 학사일정 매핑 — Sprint 9 Session #10 I7/I8. */
@@ -65,6 +76,8 @@ export interface DaySchedule {
   eventDate: string // YYYY-MM-DD
   allowsMakeup: boolean // 보강데이/단원평가/공휴수업일
   isBlock: boolean // 공휴일/방학/휴원일
+  /** Sprint 16 T0 — 정규수업 불가 (allows_regular_class=0 코드 존재). 공휴수업일처럼 정규 가능 코드는 false. */
+  regularBlocked: boolean
   label: string // 표시용 코드명
 }
 
@@ -81,6 +94,24 @@ export interface ToggleResult {
   newStatus: AttendanceStatus
   newMakeupDeadline: string | null
   updatedSummary: AttendanceSummary
+}
+
+/** Sprint 16 T0 케이스1 — 1회성 수업일 이동 결과. */
+export interface MoveAttendanceResult {
+  attendanceId: number
+  fromDate: string // YYYY-MM-DD
+  toDate: string // YYYY-MM-DD
+  note: string
+}
+
+/** Sprint 16 T0 케이스2 — 특정일 이후 스케줄 변경 + 출결 재생성 결과. */
+export interface ScheduleChangeResult {
+  /** 변경일 이후 신 스케줄로 새로 생성된 출결 수. */
+  regeneratedCount: number
+  /** 변경일 이후 보존된 처리행(결석/보강/메모) 수. */
+  preservedCount: number
+  weeklyMinutesBefore: number
+  weeklyMinutesAfter: number
 }
 
 /** 출결 일괄 생성 결과. */

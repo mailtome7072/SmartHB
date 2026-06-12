@@ -8,6 +8,8 @@
     "core:default",
     "shell:allow-open",
     "dialog:allow-open",
-    "window-state:default"
+    "dialog:allow-save",
+    "window-state:default",
+    "process:allow-restart"
   ]
 }

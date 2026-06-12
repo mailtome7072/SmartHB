@@ -135,7 +135,7 @@ export default function OperatingHoursPage() {
                           value={h.open_time ?? ''}
                           onChange={(e) => updateDay(idx, { open_time: e.target.value })}
                           disabled={closed}
-                          className="h-11 min-w-[110px] rounded-md border border-[var(--border)] px-2 disabled:bg-gray-100 disabled:text-gray-400"
+                          className="h-11 min-w-[110px] rounded-md border border-[var(--border)] px-2 disabled:bg-gray-100 disabled:text-gray-600"
                         >
                           {HOUR_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>
@@ -149,7 +149,7 @@ export default function OperatingHoursPage() {
                           value={h.close_time ?? ''}
                           onChange={(e) => updateDay(idx, { close_time: e.target.value })}
                           disabled={closed}
-                          className="h-11 min-w-[110px] rounded-md border border-[var(--border)] px-2 disabled:bg-gray-100 disabled:text-gray-400"
+                          className="h-11 min-w-[110px] rounded-md border border-[var(--border)] px-2 disabled:bg-gray-100 disabled:text-gray-600"
                         >
                           {HOUR_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>

@@ -65,7 +65,7 @@ export function AbsenceHistoryDialog({
         </h2>
         <p className="mt-1 text-sm text-gray-600">
           <span className="font-semibold">{studentName}</span>
-          <span className="ml-1 text-gray-500">#{studentSerialNo}</span>
+          <span className="ml-1 text-muted-foreground">#{studentSerialNo}</span>
         </p>
 
         {query.isLoading && (
@@ -149,11 +149,11 @@ function HistoryRow({ item }: HistoryRowProps) {
         ) : item.status === 'absent' && item.makeupDeadline !== null ? (
           <span className="text-amber-700">소멸기한 {item.makeupDeadline}</span>
         ) : (
-          <span className="text-gray-400">—</span>
+          <span className="text-gray-600">—</span>
         )}
       </td>
       <td className="border-b border-[var(--border)] px-3 py-2 text-sm text-gray-700">
-        {item.absenceMemo ?? <span className="text-gray-400">—</span>}
+        {item.absenceMemo ?? <span className="text-gray-600">—</span>}
       </td>
     </tr>
   )

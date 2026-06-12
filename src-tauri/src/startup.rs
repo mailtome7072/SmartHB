@@ -12,7 +12,7 @@
 //!     ├── 비밀번호 검증 (auth::verify_password)
 //!     ├── db::initialize → PRAGMA key (cipher build) + WAL + cache_size + migrate
 //!     ├── audit::cleanup_older_than(365)  (best-effort)
-//!     ├── 백그라운드 spawn: heartbeat (60초) + hourly 백업 (1시간)
+//!     ├── 백그라운드 spawn: heartbeat (60초) + hourly 백업 (1시간) + daily/weekly catch-up
 //!     └── 측정 종료 → StartupResult 반환
 //! ```
 //!
@@ -72,6 +72,10 @@ pub struct StartupResult {
     /// `transitioned_count > 0` 시 프론트엔드에서 토스트 표시.
     /// ExpirationReport 내부는 camelCase, 본 필드명은 snake_case (기존 StartupResult 패턴 유지).
     pub expiration_report: expiration::ExpirationReport,
+    /// Sprint 16: 시작 시 DB 무결성 quick_check 가 손상을 감지하여 **자동 복원**한 경우의 결과.
+    /// `Some` 이면 프론트엔드가 "최근 정상 백업으로 복원됨 + 이후 입력 누락 가능" 고지.
+    /// 정상(복원 불필요)·개발 빌드(stub)·복원 실패 시 `None`.
+    pub auto_restored: Option<integrity::RestoreResult>,
 }
 
 /// 백그라운드 task 핸들 묶음 — `OnceLock` 으로 1회 spawn 보장.
@@ -87,12 +91,33 @@ static BACKGROUND: OnceLock<BackgroundHandles> = OnceLock::new();
 /// 사용자 비밀번호는 IPC 호출 직후 `Zeroizing<String>` 으로 감싸 메모리 폐기를 보장한다.
 /// force_lock=true 는 사용자가 이전 화면에서 stale 락 강제 점유를 결정한 후에만 호출된다 —
 /// IPC 자체는 사전 확인을 강제하지 않으므로 UI 가 사용자 동의를 받았다고 가정한다.
+/// 인증 방식 — PIN 검증 또는 키체인 자동 로드(스킵, ADR-008).
+enum AuthStep {
+    Pin(Zeroizing<String>),
+    Keychain,
+}
+
+/// PIN 입력 잠금 해제 (기존 동작 유지).
 #[tauri::command]
 pub async fn app_startup_sequence(
     password: String,
     force_lock: bool,
 ) -> Result<StartupResult, String> {
-    let password = Zeroizing::new(password);
+    run_startup(force_lock, AuthStep::Pin(Zeroizing::new(password))).await
+}
+
+/// 키체인 자동 잠금 해제 (ADR-008, skip_pin_on_launch=true).
+///
+/// PIN 비교 없이 OS Keychain 의 기존 유도키를 로드하여 진입한다. 키체인에 키가 없으면
+/// (이 PC 에서 한 번도 PIN 인증 안 함 = 새 PC) Err 를 반환 → 프론트가 LockScreen 으로 폴백.
+#[tauri::command]
+pub async fn auto_unlock_with_keychain(force_lock: bool) -> Result<StartupResult, String> {
+    run_startup(force_lock, AuthStep::Keychain).await
+}
+
+/// startup 공통 시퀀스 — 인증 단계(AuthStep)만 분기하고, 이후 락/무결성/DB/audit/소멸/백그라운드는
+/// 양 경로가 공유한다 (R91: PIN 경로 로직 불변 유지).
+async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, String> {
     let started = Instant::now();
 
     // 1. 락 + 무결성 quick_check 병렬 — PRD §5.6 시작 < 3초 예산을 위해 join!
@@ -127,12 +152,62 @@ pub async fn app_startup_sequence(
         .await;
     }
 
-    // 2. 비밀번호 검증 — keyring salt + key 비교. PBKDF2 600K iter 가 보통 가장 큰 비중.
+    // 2. 인증 — PIN: keyring salt+key 비교 / Keychain: 비교 없이 키 로드(스킵, ADR-008).
+    //    PBKDF2 600K iter(PIN 경로) 가 보통 가장 큰 비중.
     let verify_start = Instant::now();
-    auth::verify_password(&password).await.map_err(String::from)?;
+    match auth {
+        AuthStep::Pin(password) => auth::verify_password(&password).await.map_err(String::from)?,
+        AuthStep::Keychain => {
+            // 키체인의 기존 유도키 로드 — 비교 단계 생략. 키 부재(새 PC) 시 에러 → LockScreen 폴백.
+            //
+            // cipher on/off 공통 동작 (A91, ADR-008 정합):
+            // - cipher on: 로드한 키가 이후 db::initialize 의 PRAGMA key 에 사용됨.
+            // - cipher off: db 는 평문이라 키를 PRAGMA 에 쓰지 않지만, get_cached_or_load_key 는
+            //   salt(파일)+key(keyring) 로드를 동일하게 수행한다. 즉 "stub/즉시성공"이 아니라
+            //   양 빌드 모두 키체인 접근이 일어나며, 키 존재 여부가 곧 "이 PC 인증 키 보유" 판정이 된다.
+            //   (개발 모드(Tauri 미동작)에서는 프론트 래퍼가 먼저 reject 하여 이 경로에 도달하지 않음)
+            auth::get_cached_or_load_key()
+                .map_err(|_| "KeyNotFound: 이 PC에 저장된 인증 키가 없습니다.".to_string())?;
+        }
+    }
     let password_verify_ms = verify_start.elapsed().as_millis();
 
-    // 3. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
+    // 3. 손상 자동 복원 — quick_check 가 Failed(손상)면 DB 초기화 **전에** 최신 정상 exit 백업으로
+    //    교체한다 (현재 손상본은 rollback 보존). auth 단계에서 키 캐시가 채워졌으므로 cipher 빌드에서
+    //    키 사용 가능. cipher off 개발 빌드는 quick_check 가 stub Ok → 이 경로 미진입(무영향).
+    //    복원 실패 시 fail-soft 진행(이어지는 db::initialize 가 손상으로 실패할 수 있음).
+    let auto_restored = if matches!(
+        integrity_result,
+        Ok(integrity::IntegrityCheckResult::Failed { .. })
+    ) {
+        match tokio::task::spawn_blocking(integrity::auto_restore_sync).await {
+            Ok(Ok(r)) => {
+                audit::try_record(
+                    audit::AuditEventType::BackupRestored,
+                    Some(&r.restored_from),
+                    Some("startup auto-restore"),
+                )
+                .await;
+                eprintln!(
+                    "[startup] ⚠️ DB 손상 감지 → 자동 복원: {} (rollback: {})",
+                    r.restored_from, r.rollback_path
+                );
+                Some(r)
+            }
+            Ok(Err(e)) => {
+                eprintln!("[startup] 자동 복원 실패 (계속 진행): {}", e);
+                None
+            }
+            Err(e) => {
+                eprintln!("[startup] 자동 복원 task 실패 (계속 진행): {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 4. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
     let db_init_start = Instant::now();
     db::initialize(paths::db_path())
         .await
@@ -193,10 +268,15 @@ pub async fn app_startup_sequence(
         integrity_ok,
         audit_cleaned,
         expiration_report,
+        auto_restored,
     })
 }
 
-/// heartbeat + hourly 백업 백그라운드 task 를 1회 spawn 한다.
+/// heartbeat + 백업(hourly + daily/weekly catch-up) 백그라운드 task 를 1회 spawn 한다.
+///
+/// daily/weekly 는 순수 interval 로는 앱이 24시간/7일 연속 떠 있어야만 fire 하므로
+/// **catch-up 방식** 채택 — 시작 직후 1회 + hourly tick 마다 최신 백업 경과 시간을 보고
+/// 기한(24h/7d) 경과 또는 0건이면 생성한다 ([`backup::run_catchup_backups`]).
 fn spawn_background_tasks() {
     BACKGROUND.get_or_init(|| {
         let heartbeat = tokio::spawn(async {
@@ -209,11 +289,14 @@ fn spawn_background_tasks() {
             }
         });
         let hourly_backup = tokio::spawn(async {
+            // 시작 catch-up — 마지막 실행 후 24h/7d 지났으면 즉시 따라잡는다 (간헐적 사용 대응).
+            backup::run_catchup_backups().await;
             let mut ticker = tokio::time::interval(Duration::from_secs(HOURLY_BACKUP_INTERVAL_SECS));
             ticker.tick().await; // 첫 tick 즉시 소비
             loop {
                 ticker.tick().await;
                 backup::try_create_backup(backup::BackupLayer::Hourly).await;
+                backup::run_catchup_backups().await;
             }
         });
         BackgroundHandles {
@@ -241,6 +324,18 @@ pub async fn exit_hook() {
         return;
     }
     backup::try_create_backup(backup::BackupLayer::Exit).await;
+    // P0-1 (2026-06 코드리뷰): WAL checkpoint + pool 종료 — 종료 후 app.db-wal/-shm 잔존 방지.
+    // DB 가 클라우드 동기화 폴더에 있어, -wal 미병합 상태로 종료하면 OS 동기화가 db 와 wal 을
+    // 서로 다른 시점에 업로드해 다른 PC 에서 최근 트랜잭션이 조용히 유실될 수 있다 (torn-sync).
+    // 체크포인트로 본체에 병합하고 pool 을 정상 종료해 동기화 대상을 완결된 단일 파일로 만든다.
+    if let Ok(pool) = db::pool() {
+        match sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(pool).await {
+            Ok(_) => eprintln!("[startup] exit WAL checkpoint 완료"),
+            Err(e) => eprintln!("[startup] exit WAL checkpoint 실패 (무시): {}", e),
+        }
+        pool.close().await;
+        eprintln!("[startup] exit DB pool 종료 완료");
+    }
     match tokio::task::spawn_blocking(lock::release_lock_atomic).await {
         Ok(Ok(())) => eprintln!("[startup] exit 락 해제 완료"),
         Ok(Err(e)) => eprintln!("[startup] exit 락 해제 실패 (무시): {}", e),
@@ -279,6 +374,7 @@ mod tests {
                 transitioned_count: 0,
                 details: vec![],
             },
+            auto_restored: None,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains(r#""elapsed_ms":1234"#));
@@ -307,6 +403,7 @@ mod tests {
                 transitioned_count: 0,
                 details: vec![],
             },
+            auto_restored: None,
         };
         let sum = r.parallel_phase_ms + r.password_verify_ms + r.db_init_ms + r.audit_cleanup_ms;
         assert!(sum <= r.elapsed_ms, "breakdown 합 ≤ 총 elapsed");

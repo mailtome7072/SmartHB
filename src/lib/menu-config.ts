@@ -12,17 +12,18 @@ export interface MenuItem {
 }
 
 // V19 (Sprint 7 post-review): 모든 메뉴 단축키 제거 — 50대 사용자 친화 UX 단순화.
+// Sprint 13: Phase 5(단원 평가/학습 보고서) 전면 취소 — 두 메뉴 항목 제거 (원장 지시).
 export const MENU_ITEMS: MenuItem[] = [
-  { label: '대시보드', href: '/', disabledHint: 'Phase 6 에서 제공' },
+  { label: '대시보드', href: '/' },
   { label: '원생 관리', href: '/students' },
-  { label: '학사 스케줄', href: '/academic' },
-  { label: '수업 관리', href: '/schedules' },
+  { label: '일정 관리', href: '/academic' },
   { label: '출결 관리', href: '/attendance' },
-  { label: '보강 관리', href: '/makeups', disabledHint: 'Phase 3 에서 제공' },
-  { label: '단원 평가', href: '/exams', disabledHint: 'Phase 5 에서 제공' },
-  { label: '청구 관리', href: '/billing', disabledHint: 'Phase 4 에서 제공' },
-  { label: '공지문', href: '/notices', disabledHint: 'Phase 4 에서 제공' },
-  { label: '학습 보고서', href: '/reports', disabledHint: 'Phase 5 에서 제공' },
+  { label: '수업 관리', href: '/schedules' },
+  // 보강 관리는 Sprint 10 T11 에서 `/schedules` 페이지 내 탭으로 통합 — 별도 메뉴 항목 제거 (Sprint 11 F7).
+  // Sprint 16: '청구/수납 관리' → '청구 관리'(/billing, 청구목록) + '수납 관리'(/payments, 수납+월별집계) 분리 (원장 지시).
+  { label: '청구 관리', href: '/billing' },
+  { label: '수납 관리', href: '/payments' },
+  { label: '공지문', href: '/notices' },
   { label: '설정', href: '/settings' },
 ]
 

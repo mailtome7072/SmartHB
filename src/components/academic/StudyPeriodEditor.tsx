@@ -212,7 +212,7 @@ export function StudyPeriodEditor({
       </div>
 
       {periodQuery.isLoading && (
-        <p className="text-xs text-gray-500">교습기간 정보 불러오는 중...</p>
+        <p className="text-xs text-muted-foreground">교습기간 정보 불러오는 중...</p>
       )}
 
       {confirmedPeriod !== null && (
@@ -229,7 +229,7 @@ export function StudyPeriodEditor({
       )}
 
       {isUnconfirmed && eventPlaceMode && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           일정 배치 모드 중에는 교습기간을 선택할 수 없습니다. 코드 선택을 해제하세요.
         </p>
       )}

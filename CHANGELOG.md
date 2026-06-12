@@ -39,6 +39,153 @@
 
 ---
 
+## [1.0.0] - 2026-06-12
+
+> **정식 출시 (v1.0)** — Sprint 15~16 작업을 포함한 첫 정식 릴리즈. v0.6.0 단독 배포를 폐기하고 v1.0으로 직행. 단원평가/학습보고서(Phase 5)는 개발 취소됨.
+
+### Added
+- Sprint 16: **수업일 변경 도메인** — ① 케이스1 1회성 이동(출결 행 `event_date` 이동 + 시작시간 시(時) 단위 입력 + 이동 메모, 동월·평일·미충돌·present만 허용) ② 케이스2 특정일 이후 영구 변경(`effective_from` 시계열 스케줄 + 미처리 출결만 재생성, 결석·보강·메모 행 보존). `move_attendance`/`apply_schedule_change` IPC, `generate` 날짜 인식 리팩토링, 출결표 이동 다이얼로그 + ScheduleEditor 변경일 선택. DB 마이그레이션 V306(`regular_attendances.note`)·V307(`regular_attendances.start_time`)
+- Sprint 16: **수업 캘린더 개선** — 주/일/월 보기 원생별 색칩 + 수업 시간 표기(길이 구분), 주 보기 2열(2×N) 묶음·일 보기 원생별 개별 블록(실제 길이), 칩 hover 시 수업 시간 범위 테두리 강조, 월 헤더 요일 표기
+- Sprint 16: **원생 CSV 가져오기** (`/settings/import`, T2) — `students` 테이블 일괄 등록. UTF-8/EUC-KR 자동 인코딩(BOM 처리), 학년("초3"·"중2") 파싱, 미리보기 드라이런(파싱·검증·중복판정) → 가져오기 전 자동 백업 1회 → 단일 트랜잭션 INSERT. 중복(일련번호 또는 이름+모연락처) skip. `csv`·`encoding_rs` 신규 의존성
+- Sprint 16: **공지문 캔버스 요소 보강** — 교습소 로고·2D바코드 이미지 요소(체크박스 on/off, 드래그 + 비율 유지 리사이즈) + 임의 이미지 추가(`customImages`) + 텍스트박스 배경색 지정. 미등록 이미지 체크 시 안내 팝업
+- Sprint 16: **공지문 교습일정 달력 이미지** — 청구년월 학사일정을 일요일 시작 달력 PNG로 렌더해 공지문 캔버스에 합성. 교습기간 빨간 외곽선(첫 평일 수업일~마지막 평일 수업일, 토·일 제외), 특이일 라벨(공휴일·보강데이), 기간 하이라이트. 신규 의존성·마이그레이션 없음(`src/lib/calendar-image.ts`)
+- Sprint 16: **DB 폴더 변경** (`/settings/db-folder`, T3, ADR-009) — 클라우드 동기화 경로 재지정 + `smarthb/` 전체(DB·salt.bin·assets·output·backup) 동반 이전. copy-then-switch + 재시작 방식(WAL checkpoint → 재귀 복사·fsync → cipher 무결성 검증 → 원본 MOVED_TO 마커 → config.json 갱신). 실패 시 기존 폴더 유지. `tauri-plugin-process` 신규
+- Sprint 16: **백업 복원 연결** — ① 시작 시 무결성 손상(`quick_check` Failed) 감지 시 최신 정상 exit 백업으로 자동 복원 + 손상본 보존 + 고지 배너 ② `/settings/backup`에 "이 백업으로 복원" 수동 버튼(확인 모달 + 재시작)
+- Sprint 16: **daily/weekly 백업 스케줄러** — catch-up 방식(앱 시작 + hourly tick마다 최신 백업 24h/7d 경과 또는 0건 판정 시 생성). `is_due` 순수 함수 + 단위 테스트
+- Sprint 16: **청구/수납 메뉴 분리** — '청구/수납 관리' → '청구 관리'(`/billing`) + '수납 관리'(`/payments` 신설, 수납 + 월별 집계 탭). 공통 로직 `useBillingShared` 훅 + `BillingSummaryBar`/`BillingSearchBar` 추출
+- Sprint 16: **미저장 이탈 경고 공통 훅** `useUnsavedChanges` (T1) — 창 닫기(beforeunload) + Ctrl+S 저장 + 메뉴 이동 가드를 한 줄로 일괄 획득. 입력 필드 포커스 중 Ctrl+N 억제(A99)
+- Sprint 16: **원생 폼 UX 개선** — 임시저장 입력 즉시 저장(이탈 손실 방지) + 재진입 시 '이어서 작성' 복원, 원생 목록·신규 버튼 임시저장 배지, 성별·학년·학교 필수 입력 검증(미지정 차단), 학교급↔학교명 정합성 검증
+- Sprint 15: 교습소 정보 화면 신설 (`/settings/info`) — 교습소명·대표자·연락처·주소·사업자등록번호·최대 인원·면적·운영 시간 등 9필드 CRUD + 로고/2D바코드 이미지 2종 업로드·미리보기·삭제. `app_settings` JSON 저장(마이그레이션 없음), 기존 `notice_asset` IPC 재사용
+- Sprint 15: 자가 진단 이력 수동 삭제 — `/settings/diagnosis` 이력 목록에 행 단위 삭제 버튼 + 전체 비우기 버튼 추가. `delete_diagnosis_history(id)` / `clear_diagnosis_history()` IPC 2종, 확인 다이얼로그(PRD §5.7), 단위 테스트 3건
+- Sprint 15: 전역 `GlobalShortcuts` 컴포넌트 신설 — Ctrl+F(글로벌 검색 포커스), Ctrl+N(신규 원생) 단축키 전역 등록
+- Sprint 15: 전역 `GlobalTooltip` 컴포넌트 신설 — 브라우저 기본 `title` 툴팁을 20px 커스텀 팝업으로 통일
+- Sprint 15: 원생 상세 화면에 '원생 관리 메인으로' 버튼 추가
+
+### Changed
+- Sprint 16: 사이드바 UX 개선 — 활성 메뉴 강조(좌측 보더 + 배경 + 볼드, `aria-current`) + 메뉴 그룹 여백·구분선 + 너비 20% 축소
+- Sprint 16: 확인/취소 버튼 높이 `h-8`→`h-11`(44px) + 본문 `text-base` 상향 (50대 사용자 접근성, P1)
+- Sprint 16: 본문 보조 텍스트 `text-gray-500` → `text-muted-foreground` 72곳 일괄 교체 (WCAG AA 명도 대비, P1)
+- Sprint 16: 백업 보관 개수 축소 — exit 10→5 / hourly 24→12 / daily 30→14 / weekly 4 유지 (합계 68→35, 1인 시스템 + 클라우드 동기화 폴더 점유 고려, PRD §5.4 v1.5.2)
+- Sprint 16: Pretendard 폰트 subset → full woff2 교체 (공지문 캔버스 렌더 시 희귀 한자·특수문자 fallback 방지)
+- Sprint 16: 자가진단 검사3(청구 미생성) 청구 대상(현행 스케줄 + 주당시간>0)만 검사 — 스케줄 없는 재원생 만성 오탐 제거 (P2)
+- Sprint 16: 학사코드 색상 SSOT 통합 (`src/lib/schedule-code-colors.ts`) — 공지문 달력 색을 앱과 일치(보강데이 teal·공휴수업일 pink, P2)
+- Sprint 15: 설정 허브 카드 순서 재배치 (PIN 카드 위치 조정) + '마법사 재실행' 카드 → 'DB 폴더 변경(예정)' 안내 카드 전환(disabled, Sprint 16 예정)
+- Sprint 15: `dashboard.rs` `monthly_summary` GROUP BY 서브쿼리 패턴으로 리팩토링 (R99 해소 — 부분 수납 확장 대비)
+- Sprint 15: 대시보드 위젯 타이틀 inline `fontSize` → Tailwind `text-2xl` 통일 (A97)
+- Sprint 15: 청구 생성 `standard_fees` 조회 N+1 쿼리 → IN 쿼리 단일 배치로 전환
+
+### Fixed
+- Sprint 16 (코드리뷰 P0, 데이터 안전): 앱 종료 시 WAL checkpoint(TRUNCATE) + connection pool close — 양 PC 클라우드 동기화 간 torn-sync(미반영 WAL) 차단
+- Sprint 16 (코드리뷰 P0): `config.json` 저장 시 fsync 적용 (전원 손실 시 손상 방지)
+- Sprint 16 (코드리뷰 P0): `todayLocalISO()` 로컬 날짜 헬퍼 — 오전 시간대(UTC 변환 시 어제로 밀림) 날짜 입력 버그 3곳 수정
+- Sprint 16 (코드리뷰 P0): 수납 입력 draft 보호(refetch 시 미저장분 보존 + 탭/월 변경 확인 모달), 출결 그리드 Ctrl+Z editable 가드, 요일 변경 원자 커맨드(`change_schedule_day`)
+- Sprint 16: 수업일 이동(케이스1) 후 주간 캘린더 클릭 시 `padStart` 크래시 수정 — 이동 출결의 `start_time` 부재를 `COALESCE`(V307) + null 가드로 해소
+- Sprint 16: 정규수업 가능 판정을 `allowsMakeup` → `regular_blocked`(allows_regular=0)로 교정 — 주말·보강데이 이동 차단 오판 수정
+- Sprint 16 (코드리뷰 P2): academic create/update/confirm 커밋 후 소멸 전이 실패를 fail-soft로 통일("성공인데 실패 보고" UX 버그 제거), `/settings/codes` 저장 실패 표시 + 행 입력 props 동기화
+- Sprint 15: WCAG AA 명도 대비 미달 `text-gray-400` → `text-gray-600` 17건 수정 (전체 화면)
+
+### Build
+- Sprint 16: Windows 설치 패키지를 `.exe`(NSIS) 전용으로 제한 (msi 제외, macOS는 dmg) — 파일명 `SmartHB_{ver}_x64-setup.exe`
+
+## [0.6.0] - 2026-06-06
+
+### Added
+- Sprint 14: 대시보드 (`/`) — 교습소 현황 위젯(재원 총원·학년별/성별/학교별 비율·분기별 입퇴교 추이), 당일 수업 위젯(12시간제 am/pm·시간대별 인원/명단), 월 요약 위젯(이전/다음 월 전환·청구/입금/미납/당월 입퇴교), 교습소 월별 청구총액 추이 그래프(최근 12개월), 이달의 생일 위젯, 메모 3슬롯(포스트잇·드래그 리사이즈·1초 디바운스 자동저장), 알림 4종(보강 소멸 임박·미확정 청구·학사 미수립·자가 진단 이상)
+- Sprint 14: 데이터 자가 진단 (`/settings/diagnosis`) — 검사 7종(보강필요시간 음수·재원중 출결 미생성·재원중 청구 미생성·스케줄-출결 불일치·결석 소멸기한 미설정·고아 보강 데이터·수납 정합성), 수동 실행 + 매월 1일 자동 실행(app_settings last_auto_diagnosis 분리), 12개월 이력 보관, 해결 항목 자동 재검증·정리
+- Sprint 14: 데이터 내보내기 (`/settings/data`) — 원생 명단·출결·청구-수납 엑셀(.xlsx) 내보내기(rust_xlsxwriter 0.95, 단월/전체 기간 선택, OS 저장 다이얼로그, 금전 천단위 콤마+우측정렬, autofit 컬럼너비)
+- Sprint 14: 복원 리허설 (`/settings/backup`) — 백업 파일 목록 표시 + "복원 리허설" 버튼(임시 복사→integrity_check→주요 6종 행수→사본 폐기, 운영 데이터 무영향)
+- Sprint 14: 원생 생년월일 필드 추가 — 원생 등록/수정 폼, 원생 목록 컬럼, 엑셀 내보내기 컬럼 포함(선택 입력, V305 마이그레이션)
+- Sprint 14: DB 마이그레이션 V303(`diagnosis_history` 테이블), V304(퇴교생 미보강 결석 일괄 소멸 백필), V305(`students.birth_date` 컬럼)
+- Sprint 14: recharts 3.8.1 신규 의존성 (대시보드 차트, dynamic import ssr:false)
+- Sprint 14: rust_xlsxwriter 0.95 신규 의존성 (엑셀 내보내기, 순수 Rust, Win/Mac 안전)
+- Sprint 13: 실행 시 PIN 인증 옵션화 (ADR-008: 기기별 선택적 PIN 게이트) — `/settings` 화면에 '실행 시 PIN 인증 사용' 토글(Switch) 추가. OFF 설정 시 앱 재시작 시 키체인 자동 잠금해제 → PIN 입력 없이 메인 진입. 키체인 키 부재 시 안전 폴백(PIN 입력 요구)
+- Sprint 13: `auto_unlock_with_keychain` IPC 신규 (`startup.rs`) — 키체인 유도키 직접 로드, `run_startup` 공통 시퀀스 추출 (락+무결성+DB초기화+heartbeat/backup+소멸전이 공통화)
+- Sprint 13: `skip_pin_on_launch` config.json 플래그 get/set IPC — `get_pin_skip_setting` / `set_pin_skip_setting` (DB 밖, app_config_dir, PC별 독립, unlock 전 호출 가능)
+- Sprint 13: TypeScript IPC 래퍼 3종 추가 — `getPinSkipSetting`, `setPinSkipSetting`, `autoUnlockWithKeychain`
+- Sprint 13: ADR-008 신규 작성 (`docs/arch/adr-008-optional-pin-gate.md`) — PRD §5.5 인증 의무 완화 결정, 데이터 보호를 OS 계정+키체인 ACL로 위임하는 트레이드오프 명시
+
+### Changed
+- Sprint 14: 대시보드가 기본 진입 화면(`/`)으로 활성화 — 기존 리다이렉트 placeholder에서 실제 대시보드 컴포넌트로 교체
+- Sprint 14: 내보내기 형식 CSV→엑셀(.xlsx) 전환 — 정렬·서식(천단위 콤마·우측정렬·autofit) 지원, BOM 불필요
+- Sprint 14: `compute_summary` 보강필요시간 이월 누적으로 변경 — 소멸기한이 조회월 이상인 이월 결석 포함(퇴교생 제외), `earliest_pending`과 정합
+- Sprint 14: `next.config.ts` dev 전용 webpack 캐시 비활성화 — Node 25 V8 webpack 캐시 직렬화 abort 크래시 회피(production 빌드 무영향)
+- Sprint 13: `/lock` 진입 흐름 분기 — `skip_pin_on_launch=true` 시 `autoUnlockWithKeychain` → 성공 시 메인 진입, 실패 시 기존 LockScreen 폴백. 자동 잠금해제 중 로딩 스피너 표시
+
+### Fixed
+- Sprint 14: 자가진단 검사 1(보강필요시간 음수) 오탐 수정 — 결석 대상을 `absent`+`makeup_done`으로 변경(소멸 `makeup_expired` 면제)
+- Sprint 14: 대시보드 출결 진행률 공휴일 오탐 수정 — `allows_regular_class=0` 학사일정 기간을 비수업일에서 제외하도록 보정
+- Sprint 14: 보강 소멸 임박 알림 퇴교생 제외 — 퇴교한 원생의 미보강 결석이 알림에 노출되던 버그 수정
+- Sprint 14: `update_student`·`withdraw_student` 경로 퇴교 시 미보강 결석 미처리 버그 — V304 마이그레이션으로 기존 데이터 백필 + 알림 쿼리 퇴교 필터 추가
+- Sprint 13: 글로벌 검색 원생 클릭 404 수정 — `/students/{id}` 라우트 미존재로 404 발생하던 버그를 `/students/edit?id=` 경로로 교정
+- Sprint 13: 글로벌 검색 드롭다운 방향키 탐색 + 한글 IME 처리 — `ArrowUp`/`ArrowDown`/`Enter`/`Escape` 키 바인딩 추가, 한글 조합 중(`isComposing`) 방향키 오작동 방지
+- Sprint 13: `save_notice_preview` 경로 경계 검증 (R88) — 절대경로 + `.png` 확장자 검사 + path traversal 차단, `data_root()` 밖 폴더 자동생성 금지
+
+### Removed
+- Sprint 13: Phase 5 (단원평가/학습보고서) 메뉴 항목 완전 제거 — `menu-config.ts`에서 '단원 평가'(`/exams`) + '학습 보고서'(`/reports`) 항목 삭제. PRD §4.7/§4.8/§6.1 [CANCELLED] 표기
+
+### Added
+- Sprint 12: 공지문 편집 화면 (`/notices` 라우트) — 좌측 원생 리스트(체크박스 다중 선택/전체선택), 우측 배경서식 + 텍스트박스 3종(청구월/원생이름/청구액) 오버레이, react-rnd 드래그+리사이즈, 다중 선택(Shift+클릭), 방향키 미세 이동(1/10px), 빈 영역 클릭 선택 해제, 사이드바 "공지문" 메뉴 활성화
+- Sprint 12: 공지문 이미지 일괄 생성 엔진 (`src/lib/notice-generator.ts`) — Canvas 2D 직접 렌더 (macOS WKWebView foreignObject+img 결함 회피), 원생별 PNG 일괄 생성, 청구액 천단위 콤마(AC-4.10-1), 재생성 덮어쓰기 확인(AC-4.10-2), 진행률 표시, 미리보기 팝업 + 파일 저장 다이얼로그
+- Sprint 12: 공지문 백엔드 IPC (`src-tauri/src/commands/notice.rs` 신규) — `list_notice_assets`, `save_notice_asset`, `delete_notice_asset`, `save_notice_layout`, `get_notice_layout`, `save_notice_image`, `save_notice_images_batch`, `check_notice_output_exists`, `open_notice_output_folder` 9종 + 단위 테스트
+- Sprint 12: 공지문 저장 경로 규칙 — `{data_root}/output/{공지문이름}/{YYMM}/{이름}_{YYMM}_{원생}.png` (공백 제거, 한글 NFC 정규화, 클라우드 동기화 폴더 공유)
+- Sprint 12: 공지문 레이아웃 저장/로드 (AC-4.10-3) — 텍스트박스 위치/크기/폰트/글자별 색상(`TextboxConfig.charColors`)을 `app_settings` JSON으로 유지, 진입 시 자동 로드
+- Sprint 12: 저장 위치 클릭 시 폴더 열기 — 출력 폴더가 없으면 자동 생성 후 OS 파일 탐색기로 오픈
+- Sprint 12: 청구월 컨트롤 년도 없이 월만 표시 (UI 간결화)
+- Sprint 12: `components/ui/pin-field.tsx` 6박스(OTP) PIN 공용 컴포넌트 신규 — LockScreen + 설정 PIN 변경 화면(`/settings/pin`) 동일 UI로 통일
+- Sprint 12: `/settings/pin` 라우트 신설 — 현 PIN 검증 후 새 PIN 설정 흐름 + `change_pin` IPC 백엔드
+- Sprint 12: 공지문 TypeScript IPC 래퍼 8종 + `src/types/notice.ts` 도메인 타입 (`NoticeAsset`, `NoticeLayout`, `TextboxConfig`, `SaveNoticeResult`)
+- post-Sprint 11 (develop 보완): 앱 잠금 인증을 6자리 숫자 PIN 으로 전환 — `LockScreen` / `RecoveryCodeInput` 입력 전환, 백엔드 `validate_pin` (길이 6 + ascii digit) 진입점 재검증, dev autologin + `.env.example` 6자리 PIN 대응 (ADR-007: `docs/arch/adr-007-pin-authentication.md`)
+- post-Sprint 11 (develop 보완): ADR-007 신규 작성 — 6자리 숫자 PIN 보안 트레이드오프 명시 수용, 복구코드 12자리 유지 결정
+- post-Sprint 11 (develop 보완): 청구 관리 '월별 집계' 탭 — 년/월 토글(연도 `YYYY-%` 집계 / 월 집계), 요약 박스 + 결제수단별 수납총액(열 배치). 백엔드 `get_billing_period_stats(period)` IPC + `BillingPeriodStats`/`PaymentMethodSummary` 타입. 단위 테스트: `billing_period_stats_groups_by_method`
+- post-Sprint 11 (develop 보완): 월별 집계 기간 선택을 실제 청구 생성된 년월로 한정 — `list_billed_months` IPC (`bills` distinct `bill_year_month` DESC), 집계 탭 드롭다운이 생성된 청구 없는 년월은 표시하지 않음. 단위 테스트: `list_billed_months_returns_distinct_desc`
+
+### Changed
+- Sprint 12: 사이드바 메뉴 순서 변경 — 출결관리/학사 순서 swap + '학사 스케줄' → '학사 관리' → '일정 관리' 표기 일괄 변경 (`src/lib/menu-config.ts`, sidebar, global-search)
+- Sprint 12: 배경서식 미선택 시 텍스트박스 입력/체크박스 동작 정비 — 배경 없이도 텍스트 미리보기 가능
+- post-Sprint 11 (develop 보완): 청구 탭 상태 필터에 '마감' 추가 + 옵션별 건수 표기(전체/확정/미확정/마감), '마감 완료' 배지를 상태 필터 앞쪽으로 이동
+- post-Sprint 11 (develop 보완): 수납 탭 필터 건수 표기(전체/수납완료/미수납) 추가
+- post-Sprint 11 (develop 보완): 마감 후 수정 사유 게이트 완화(10자 이상 → 비어있지 않음)
+- post-Sprint 11 (develop 보완): 입금일 선택 시 달력 닫고 입금자 칸으로 포커스 이동 UX
+- post-Sprint 11 (develop 보완): 월별 집계 탭 — 청구 데이터 0건 시 현재 년월을 디폴트로 표시하여 빈 화면 대신 "0건" 상태 노출
+
+### Fixed
+- Sprint 12: 빈 이미지 생성 버그 수정 — html-to-image toPng() 가 macOS WKWebView에서 foreignObject+img 렌더링 실패로 빈 PNG 반환하는 결함을 Canvas 2D 직접 렌더 방식으로 전환하여 해소
+- Sprint 12: 공지문 화면 좌우 패널 위치 swap — 원생 리스트(우→좌), 미리보기(좌→우) 배치 변경 (사용자 UX 요청)
+- Sprint 12 (`fix(schedules)`): 월보기 캘린더 일자별 인원수 초기 렌더링 누락 수정
+- post-Sprint 11 (develop 보완): 확정 버튼 비활성 버그 수정 — 마감 후 수정 사유 게이트 10자 조건으로 인한 오작동 해소
+- post-Sprint 11 (develop 보완): 수납완료 행 수납 취소 기능 추가 (`batch_update_payments` 재사용, 신규 IPC 없음) — 잘못 입력된 수납 정정 가능
+- post-Sprint 11 (develop 보완): 입금 완료 시 결제수단 필수 검증 — 백엔드 `validate_payment_input` 2곳 + 프론트 가드/빨간 테두리. 신규 단위 테스트: `create_payment_rejects_paid_without_method`, `batch_cancel_payment_resets_is_paid`
+- post-Sprint 11 (develop 보완): 수납완료된 청구는 수정 불가 — `update_bill_impl` 가 `is_paid` 기준으로 거부 + 프론트 금액 편집 비활성. 신규 단위 테스트: `update_bill_paid_rejected`
+
+### Removed
+- Sprint 12: **복구 코드 시스템 전면 제거** (사용자 결정 — cipher OFF 환경에서 불필요). 제거 항목: `src-tauri/src/commands/recovery.rs`, `RecoveryCodeInput.tsx`, `RecoveryCodeDisplay.tsx`, `src/lib/recovery-code.ts`, `argon2` Cargo 의존성, audit `RecoveryCodeIssued` variant, TypeScript `AuditEventType` 의 `'recovery-code-issued'`
+- post-Sprint 11 (develop 보완): **청구 '마감(closed)' 개념 전면 폐기** (원장 결정, 2026-05-30). 청구 상태는 미확정→확정 2단계로 축소. 제거 항목: `close_billing_month` IPC, `CloseMonthDialog`/`CloseReasonDialog` 컴포넌트, "당월 청구 마감" 버튼·"마감 완료" 배지·'마감' 상태 필터, audit `BillMonthClosed`/`BillClosedModified`, `update_bill` 의 `close_reason` 파라미터. DB 마이그레이션 **V111** — `bills` 재구성으로 `status` CHECK(draft/confirmed) + `close_reason`/`closed_at` 컬럼 제거(기존 closed → confirmed 흡수). PRD §4.9.7 갱신, AC-4.9-7/8 폐기, AC-4.9-9 신설(수납완료 청구 수정 불가)
+
+### Added
+- Sprint 11: DB 마이그레이션 V109 — `bills` + `payments` 테이블 신규 (청구 3단계 상태 머신 draft/confirmed/closed, 수납 1:1 별도 테이블 PI-12 확정, UNIQUE: `(student_id, bill_year_month)` + `bill_id`, FK: `students(id)` / `bills(id)` / `payment_methods(id)` / `card_companies(id)`)
+- Sprint 11: 청구 IPC 4종 (`src-tauri/src/commands/billing.rs` 신규) — `generate_bills` (재원 원생 일괄, 표준 교습비 매핑, 월중입퇴교 플래그 자동), `list_bills` (미확정+월중입퇴교 상단 우선), `get_bill`, `update_bill` (상태별 수정 제약), `get_default_bill_year_month` — 단위 테스트 17건
+- Sprint 11: 청구 상태 머신 IPC 3종 — `confirm_bill` (단건), `confirm_all_bills` (일괄), `close_billing_month` (전체 confirmed 전제 조건 강제 AC-4.9-7), `update_closed_bill` (close_reason 필수 AC-4.9-8) — 단위 테스트 9건
+- Sprint 11: 수납 IPC 5종 — `create_payment`, `update_payment` (카드 계열 card_company_id 필수 검증 AC-4.9-4), `list_unpaid_bills`, `batch_update_payments` (BEGIN IMMEDIATE 트랜잭션), `get_billing_summary` (총청구액/입금완료액/미납액) — 단위 테스트 9건
+- Sprint 11: audit variants 3종 추가 — `BillConfirmed`, `BillMonthClosed`, `BillClosedModified`
+- Sprint 11: 청구 마감 UX 다이얼로그 3종 — `CloseReasonDialog` (사유 입력 textarea ≥10자, shadcn/ui Dialog), `ConfirmBillUpdateDialog` (확정 후 수정 확인 AC-4.9-3), `CloseMonthDialog` (마감 확인 + 경고 문구)
+- Sprint 11: TypeScript IPC 래퍼 13종 + `src/types/billing.ts` 도메인 타입 — `Bill`, `BillStatus`, `Payment`, `BillingSummary`, `BillListFilter` 등
+- Sprint 11: `/billing` 라우트 신설 + `BillingGrid` 컴포넌트 — 년월 선택, 청구 생성/확정/마감 버튼, 미확정 상단 배너(AC-4.9-5), 월중입퇴교 amber-50 행 구분(AC-4.9-2), TanStack Query 캐싱. 사이드 메뉴 "청구 관리" 활성화
+- Sprint 11: `PaymentsView` 컴포넌트 — [청구|수납] 2탭 통합, 입금 일괄 처리 모드 (max-h-[800px] overflow + sticky thead 최소 20행 AC-4.9-6), 월별 요약(총청구/입금/미납), 카드사 드롭다운 카드 계열 시에만 노출
+
+### Changed
+- Sprint 11: `payment_methods.is_card_type` 컬럼 추가 (V109 ALTER TABLE) — 카드 계열 결제수단 판별 (기존 시드 `code='card'` 1건 마킹)
+- Sprint 11 (T0/F7): 사이드 메뉴 '보강 관리' (`/makeups`) `disabledHint` 제거 — Sprint 10 T11에서 `/schedules` 캘린더 뷰로 통합 완료 (`src/lib/menu-config.ts`)
+- Sprint 11 (T0/F5): `ClassCalendar` viewType 비동기 상태 한 프레임 불일치 해소 (`src/components/schedules/ClassCalendar.tsx`)
+
+### Fixed
+- Sprint 11 (T0/F1): `build_day_schedules` `d.succ_opt().expect()` panic 가능성 해소 — `.ok_or_else()` 안전 전환 (`attendance.rs`)
+- Sprint 11 (T0/F2): `generate_impl` expire 호출 실패 시 fail-soft 전환 — expire 실패해도 출결 생성 성공 반환, expire 에러는 warn 로그만 (`attendance.rs`)
+- Sprint 11 (T0/F3): `calendar.rs` `_year_month` 미사용 파라미터 정리
+- Sprint 11 (T0/F4): 보강관리 N+1 쿼리 → IN batch 1쿼리 (`calendar.rs` 한정) — 루프 내 개별 쿼리를 JOIN/IN 절로 batch 처리
+- Sprint 11 (T0/F6): flaky 테스트 `auth::ensure_cache_loaded_fast_path_is_concurrent_safe` `#[ignore]` 마킹 (동시성 설계 재검토 별도 backlog)
+
+---
+
 ## [0.5.0] - 2026-05-28
 
 ### Added

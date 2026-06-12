@@ -88,12 +88,13 @@ pub(crate) async fn get_calendar_data_impl(
     //    학생 스케줄에서 start_time 추출 (effective_to IS NULL — 현행).
     //    status 무관 — 출결 그리드에 모든 상태 표시.
     let regular_rows = sqlx::query(
+        // Sprint 16 T0(PI-28): 이동 출결은 ra.start_time(입력값) 우선, 일반 출결은 요일 스케줄 시간.
         "SELECT \
             ra.event_date, \
             ra.class_minutes, \
             ra.student_id, \
             s.name AS student_name, \
-            ss.start_time \
+            COALESCE(ra.start_time, ss.start_time) AS start_time \
          FROM regular_attendances ra \
          JOIN students s ON s.id = ra.student_id \
          LEFT JOIN student_schedules ss \
@@ -101,7 +102,7 @@ pub(crate) async fn get_calendar_data_impl(
           AND ss.effective_to IS NULL \
           AND ss.day_of_week = ((CAST(strftime('%w', ra.event_date) AS INTEGER) + 6) % 7) + 1 \
          WHERE ra.year_month = ? \
-         ORDER BY ra.event_date, ss.start_time, s.name",
+         ORDER BY ra.event_date, COALESCE(ra.start_time, ss.start_time), s.name",
     )
     .bind(year_month)
     .fetch_all(pool)
@@ -180,12 +181,14 @@ pub async fn get_makeup_management_data(
 ) -> Result<Vec<MakeupManagementStudent>, String> {
     validate_year_month(&year_month)?;
     let pool = db::pool().map_err(String::from)?;
-    get_makeup_management_data_impl(pool, &year_month, None).await
+    get_makeup_management_data_impl(pool, None).await
 }
 
+/// 보강 필요 원생 목록은 미보강 결석(`status='absent' AND makeup_attendance_id IS NULL`) 전체를
+/// 학생 단위로 집계하므로 year_month 파라미터를 받지 않는다. IPC 레이어는 호출 형식 검증을 위해
+/// year_month 를 받지만 _impl 은 월 무관 전체 데이터를 반환한다 (Sprint 11 F3 정리).
 pub(crate) async fn get_makeup_management_data_impl(
     pool: &SqlitePool,
-    _year_month: &str,
     as_of: Option<NaiveDate>,
 ) -> Result<Vec<MakeupManagementStudent>, String> {
     let today = as_of.unwrap_or_else(|| chrono::Local::now().date_naive());
@@ -211,23 +214,46 @@ pub(crate) async fn get_makeup_management_data_impl(
     .await
     .map_err(|e| format!("보강 관리 데이터 조회 실패: {}", e))?;
 
+    // Sprint 11 F4: 루프 안 개별 study_periods 조회(N+1) → 사전 IN 절 batch 1쿼리로 전환.
+    use std::collections::{HashMap, HashSet};
+    let mut deadline_months: HashSet<String> = HashSet::new();
+    for r in &rows {
+        let d: Option<String> = r.try_get("earliest_deadline").map_err(|e| e.to_string())?;
+        if let Some(m) = d {
+            deadline_months.insert(m);
+        }
+    }
+    let mut period_end_map: HashMap<String, String> = HashMap::new();
+    if !deadline_months.is_empty() {
+        let placeholders = deadline_months.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT year_month, end_date FROM study_periods WHERE year_month IN ({})",
+            placeholders
+        );
+        let mut q = sqlx::query(&sql);
+        for m in &deadline_months {
+            q = q.bind(m);
+        }
+        let period_rows = q
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("교습기간 일괄 조회 실패: {}", e))?;
+        for pr in period_rows {
+            let ym: String = pr.try_get("year_month").map_err(|e| e.to_string())?;
+            let end_date: String = pr.try_get("end_date").map_err(|e| e.to_string())?;
+            period_end_map.insert(ym, end_date);
+        }
+    }
+
     let mut result: Vec<MakeupManagementStudent> = Vec::with_capacity(rows.len());
     for r in rows {
         let earliest_deadline: Option<String> =
             r.try_get("earliest_deadline").map_err(|e| e.to_string())?;
         // 소멸 임박 판정 — deadline 월의 study_periods.end_date 가 (today + 7일) 이내인지.
         let is_imminent = if let Some(ref ym) = earliest_deadline {
-            let period_end: Option<String> = sqlx::query_scalar(
-                "SELECT end_date FROM study_periods WHERE year_month = ?",
-            )
-            .bind(ym)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("교습기간 조회 실패: {}", e))?
-            .flatten();
-            match period_end {
+            match period_end_map.get(ym) {
                 Some(end_str) => {
-                    let end = NaiveDate::parse_from_str(&end_str, "%Y-%m-%d")
+                    let end = NaiveDate::parse_from_str(end_str, "%Y-%m-%d")
                         .map_err(|e| format!("교습기간 종료일 파싱 실패: {}", e))?;
                     end >= today && end <= imminent_threshold
                 }
@@ -411,7 +437,7 @@ mod tests {
         // s3: 결석 0건 (목록 제외)
         let _ = s3;
 
-        let result = get_makeup_management_data_impl(&pool, "2026-06", None).await.expect("ok");
+        let result = get_makeup_management_data_impl(&pool, None).await.expect("ok");
         assert_eq!(result.len(), 2);
         // earliest_deadline ASC 정렬 — 2026-07 먼저, 2026-08 다음.
         assert_eq!(result[0].student_id, s1);
@@ -436,7 +462,7 @@ mod tests {
         seed_period(&pool, "2026-08", "2026-08-01", "2026-08-31").await;
 
         let as_of = NaiveDate::from_ymd_opt(2026, 7, 26);
-        let result = get_makeup_management_data_impl(&pool, "2026-07", as_of).await.expect("ok");
+        let result = get_makeup_management_data_impl(&pool, as_of).await.expect("ok");
         assert_eq!(result.len(), 2);
         assert!(result[0].is_imminent, "s1: 7/31 - 7/26 = 5일 → 임박");
         assert!(!result[1].is_imminent, "s2: 8/31 - 7/26 = 36일 → 임박 아님");
@@ -451,7 +477,7 @@ mod tests {
         // 7월 교습기간 시드 없음.
 
         let as_of = NaiveDate::from_ymd_opt(2026, 7, 1);
-        let result = get_makeup_management_data_impl(&pool, "2026-07", as_of).await.expect("ok");
+        let result = get_makeup_management_data_impl(&pool, as_of).await.expect("ok");
         assert_eq!(result.len(), 1);
         assert!(!result[0].is_imminent, "교습기간 미등록 → 임박 false");
     }
@@ -474,7 +500,7 @@ mod tests {
         .await
         .expect("seed resolved");
 
-        let result = get_makeup_management_data_impl(&pool, "2026-06", None).await.expect("ok");
+        let result = get_makeup_management_data_impl(&pool, None).await.expect("ok");
         assert!(result.is_empty(), "미보강 결석 없음 → 목록 빈 결과");
     }
 }

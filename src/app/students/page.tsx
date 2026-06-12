@@ -12,7 +12,7 @@
  * - 44×44px 행, 본문 18pt, WCAG AA — PRD §5.7.
  */
 
-import { useDeferredValue, useState } from 'react'
+import { useDeferredValue, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
@@ -20,6 +20,7 @@ import { countStudents, listCodes, listStudents } from '@/lib/tauri'
 import type { CodeEntry } from '@/types/code'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { STUDENT_DRAFT_PREFIX } from '@/components/students/student-form'
 import type {
   Gender,
   SchoolLevel,
@@ -115,6 +116,27 @@ export default function StudentsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  // 수정 중 임시저장(localStorage draft)이 있는 원생 id 집합 — 그리드에 배지 표시.
+  // localStorage 는 리액티브하지 않으므로 목록(students)이 갱신될 때 + 창 포커스 복귀 시 재계산
+  // (다른 화면에서 수정하다 이탈 후 목록으로 돌아온 경우 반영). static export 대응 window 가드.
+  const [draftIds, setDraftIds] = useState<Set<number>>(new Set())
+  // 신규 등록(draftKey='new') 작성 중 임시저장 존재 여부 — '신규 등록' 버튼에 표시.
+  const [hasNewDraft, setHasNewDraft] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const recompute = () => {
+      const ids = new Set<number>()
+      for (const s of students) {
+        if (localStorage.getItem(`${STUDENT_DRAFT_PREFIX}${s.id}`) !== null) ids.add(s.id)
+      }
+      setDraftIds(ids)
+      setHasNewDraft(localStorage.getItem(`${STUDENT_DRAFT_PREFIX}new`) !== null)
+    }
+    recompute()
+    window.addEventListener('focus', recompute)
+    return () => window.removeEventListener('focus', recompute)
+  }, [students])
+
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-5xl">
@@ -122,9 +144,15 @@ export default function StudentsPage() {
           <h1 className="text-2xl font-bold">원생 관리</h1>
           <Link
             href="/students/new"
-            className="inline-flex h-11 items-center rounded-md bg-[var(--accent)] px-4 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
+            title={hasNewDraft ? '작성하다 만 신규 원생이 있습니다 — 이어서 작성할 수 있어요.' : undefined}
+            className="relative inline-flex h-11 items-center rounded-md bg-[var(--accent)] px-4 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
           >
             신규 등록
+            {hasNewDraft && (
+              <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-800">
+                ✎ 작성 중
+              </span>
+            )}
           </Link>
         </header>
 
@@ -271,12 +299,13 @@ export default function StudentsPage() {
                     입교일{sortIndicator(sort, 'enroll')}
                   </button>
                 </th>
+                <th className="px-3 py-3 text-sm font-bold">생년월일</th>
               </tr>
             </thead>
             <tbody>
               {students.length === 0 && !isFetching && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
                     {total === 0 ? '등록된 원생이 없습니다.' : '필터에 맞는 원생이 없습니다.'}
                   </td>
                 </tr>
@@ -291,7 +320,15 @@ export default function StudentsPage() {
                   <td className="px-3 py-3 text-base">
                     {s.name}
                     {s.withdraw_date !== null && (
-                      <span className="ml-2 text-sm text-gray-500">(퇴교)</span>
+                      <span className="ml-2 text-sm text-muted-foreground">(퇴교)</span>
+                    )}
+                    {draftIds.has(s.id) && (
+                      <span
+                        title="저장하지 않은 수정 중 내용이 있습니다 — 클릭하면 이어서 작성할 수 있어요."
+                        className="ml-2 inline-flex items-center rounded-full border border-amber-400 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-800"
+                      >
+                        ✎ 임시저장
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-3 text-base">{LEVEL_LABEL[s.school_level]}</td>
@@ -303,6 +340,7 @@ export default function StudentsPage() {
                       : '-'}
                   </td>
                   <td className="px-3 py-3 text-base">{s.enroll_date}</td>
+                  <td className="px-3 py-3 text-base text-gray-700">{s.birth_date ?? '-'}</td>
                 </tr>
               ))}
             </tbody>
