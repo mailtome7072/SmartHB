@@ -157,7 +157,7 @@ export function WithdrawalMakeupDialog({
                 className="mt-1 w-full rounded-md border-2 border-[var(--border)] px-3 py-2 text-base"
               />
             </label>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               본 메모는 모든 미보강 결석 사유로 일괄 저장됩니다. 결석 이력 메뉴에서 확인 가능합니다.
             </p>
             <div className="flex gap-2">

@@ -8,7 +8,19 @@
  */
 
 import { saveNoticeImage } from '@/lib/tauri'
-import type { NoticeLayout, NoticeFieldType, TextboxConfig } from '@/types/notice'
+import type { NoticeLayout, NoticeFieldType, NoticeImageKind, TextboxConfig } from '@/types/notice'
+
+/** 캔버스에 그릴 이미지 요소의 실제 dataUrl 맵 (종류별). 레이아웃 배치 + 이 맵으로 렌더. */
+export type NoticeImageUrls = Partial<Record<NoticeImageKind, string | null>>
+
+/** 사용자 추가 이미지 1개의 그리기 정보 — dataUrl + 비율 배치. */
+export interface NoticeCustomImageDraw {
+  dataUrl: string
+  xRatio: number
+  yRatio: number
+  wRatio: number
+  hRatio: number
+}
 
 /** 한 원생의 공지문 데이터 소스. */
 export interface NoticeStudentData {
@@ -33,6 +45,10 @@ export interface GenerateOptions {
   width: number
   height: number
   layout: NoticeLayout
+  /** 이미지 요소(로고/2D바코드) 실제 dataUrl — 레이아웃 배치(layout.images)와 함께 그려진다. */
+  imageUrls?: NoticeImageUrls
+  /** 사용자 추가 이미지 — 배경 바로 위(다른 컨트롤 아래)에 그려진다. */
+  customImages?: NoticeCustomImageDraw[]
   students: NoticeStudentData[]
   /** 진행률 콜백 (완료 건수, 총 건수). */
   onProgress?: (done: number, total: number) => void
@@ -121,12 +137,17 @@ function drawTextbox(
   bgW: number,
   bgH: number,
 ): void {
-  const text = noticeFieldText(tb, data)
-  if (text === '') return
   const boxX = tb.xRatio * bgW
   const boxY = tb.yRatio * bgH
   const boxW = tb.wRatio * bgW
   const boxH = tb.hRatio * bgH
+  // 배경색(지정 시) — 텍스트 유무와 무관하게 박스 영역을 채운다(미리보기 박스와 일치).
+  if (tb.backgroundColor) {
+    ctx.fillStyle = tb.backgroundColor
+    ctx.fillRect(boxX, boxY, boxW, boxH)
+  }
+  const text = noticeFieldText(tb, data)
+  if (text === '') return
   const fontSize = tb.fontRatio * boxH
   const weight = tb.fontWeight === 'bold' ? '700' : '400'
   ctx.font = `${weight} ${fontSize}px Pretendard, sans-serif`
@@ -177,6 +198,8 @@ export interface RenderParams {
   width: number
   height: number
   layout: NoticeLayout
+  imageUrls?: NoticeImageUrls
+  customImages?: NoticeCustomImageDraw[]
 }
 
 /**
@@ -197,21 +220,58 @@ export async function renderNoticeDataUrl(params: RenderParams, data: NoticeStud
   }
 
   const canvas = document.createElement('canvas')
-  canvas.width = params.width
-  canvas.height = params.height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('캔버스를 초기화할 수 없습니다.')
 
-  // 배경서식
+  // 배경서식 — 캔버스를 배경 "원본 해상도"로 잡아 글씨 깨짐을 막는다. params.width/height 는
+  // 미리보기용 표시 추정치라 원본보다 작을 수 있어, 그대로 쓰면 축소 생성되어 글씨가 깨진다.
   const bg = new Image()
   bg.src = params.backgroundDataUrl
   await waitImageLoaded(bg)
-  ctx.drawImage(bg, 0, 0, params.width, params.height)
+  const w = bg.naturalWidth || params.width
+  const h = bg.naturalHeight || params.height
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('캔버스를 초기화할 수 없습니다.')
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(bg, 0, 0, w, h)
 
-  // 텍스트박스 (체크 해제 항목 제외)
+  // 사용자 추가 이미지 — 배경 바로 위(로고/바코드·텍스트보다 아래). 개별 로드 실패는 건너뛴다.
+  for (const ci of params.customImages ?? []) {
+    try {
+      const elem = new Image()
+      elem.src = ci.dataUrl
+      await waitImageLoaded(elem)
+      ctx.drawImage(elem, ci.xRatio * w, ci.yRatio * h, ci.wRatio * w, ci.hRatio * h)
+    } catch {
+      /* 추가 이미지 로드 실패 — 해당 이미지만 생략 */
+    }
+  }
+
+  // 이미지 요소(로고/2D바코드/교습일정 달력) — 텍스트보다 먼저 그려 텍스트가 이미지 위에 오도록 한다.
+  // **배열 순서(layout.images)대로** 그려 미리보기 DOM z-order 와 1:1 일치시킨다 (WYSIWYG).
+  // 개별 이미지 로드 실패는 건너뛴다(전체 생성 중단 방지).
+  const imageUrls = params.imageUrls
+  if (imageUrls) {
+    for (const im of params.layout.images ?? []) {
+      if (!im.enabled) continue
+      const url = imageUrls[im.kind]
+      if (!url) continue
+      try {
+        const elem = new Image()
+        elem.src = url
+        await waitImageLoaded(elem)
+        ctx.drawImage(elem, im.xRatio * w, im.yRatio * h, im.wRatio * w, im.hRatio * h)
+      } catch {
+        /* 이미지 요소 로드 실패 — 해당 이미지만 생략 */
+      }
+    }
+  }
+
+  // 텍스트박스 (체크 해제 항목 제외) — 이미지 위에 그린다.
   for (const tb of params.layout.textboxes) {
     if (tb.enabled === false) continue
-    drawTextbox(ctx, tb, data, params.width, params.height)
+    drawTextbox(ctx, tb, data, w, h)
   }
 
   return canvas.toDataURL('image/png') // 1x
@@ -219,7 +279,14 @@ export async function renderNoticeDataUrl(params: RenderParams, data: NoticeStud
 
 async function renderNoticePng(opts: GenerateOptions, data: NoticeStudentData): Promise<number[]> {
   const dataUrl = await renderNoticeDataUrl(
-    { backgroundDataUrl: opts.backgroundDataUrl, width: opts.width, height: opts.height, layout: opts.layout },
+    {
+      backgroundDataUrl: opts.backgroundDataUrl,
+      width: opts.width,
+      height: opts.height,
+      layout: opts.layout,
+      imageUrls: opts.imageUrls,
+      customImages: opts.customImages,
+    },
     data,
   )
   return dataUrlToBytes(dataUrl)

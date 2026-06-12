@@ -53,12 +53,52 @@ export interface TextboxConfig {
    * 데이터 필드는 원생마다 텍스트 길이가 달라 인덱스 기준으로 적용한다(초과분은 무시).
    */
   charColors?: (string | null)[] | null
+  /** 박스 배경색 — hex. null/누락 시 투명(배경 없음). */
+  backgroundColor?: string | null
 }
 
-/** 공지문 레이아웃 — 배경서식 + 텍스트박스 3종 (AC-4.10-3 보존 대상). */
+/**
+ * 캔버스 이미지 요소 종류 — 교습소 로고 / 2D바코드 / 교습일정 달력.
+ * - logo·barcode: 교습소 정보의 저장 파일에서 로드 (file-backed)
+ * - calendar: 청구년월 학사일정으로 **런타임 생성**되는 달력 이미지 (data-backed, Sprint 16)
+ */
+export type NoticeImageKind = 'logo' | 'barcode' | 'calendar'
+
+/**
+ * 캔버스 이미지 요소(교습소 로고/2D바코드/교습일정 달력) — 비율 좌표로 관리.
+ * 실제 이미지는 교습소 정보(`assets/academy_{logo,barcode}.*`)를 로드하거나(로고·바코드)
+ * 청구년월 학사일정으로 런타임 생성하여(달력) 표시하고,
+ * 레이아웃에는 표시 여부와 배치(위치·크기)만 저장한다.
+ */
+export interface NoticeImageConfig {
+  kind: NoticeImageKind
+  /** 체크 시에만 배경 위에 표시·생성. */
+  enabled: boolean
+  xRatio: number // 배경 폭 대비 좌측 (0..1)
+  yRatio: number // 배경 높이 대비 상단 (0..1)
+  wRatio: number // 배경 폭 대비 너비 (0..1)
+  hRatio: number // 배경 높이 대비 높이 (0..1) — 비율 유지 리사이즈로 폭과 연동
+}
+
+/**
+ * 사용자 업로드 임의 이미지 요소 — 실제 이미지는 `assets/{assetName}` 파일로 저장하고
+ * 레이아웃에는 파일명 + 배치만 둔다. 교습소 로고/2D바코드(NoticeImageConfig)와 별개.
+ */
+export interface NoticeCustomImage {
+  id: string
+  assetName: string
+  xRatio: number
+  yRatio: number
+  wRatio: number
+  hRatio: number
+}
+
+/** 공지문 레이아웃 — 배경서식 + 텍스트박스 + 이미지 요소 (AC-4.10-3 보존 대상). */
 export interface NoticeLayout {
   backgroundAsset: string | null
   textboxes: TextboxConfig[]
+  images: NoticeImageConfig[]
+  customImages: NoticeCustomImage[]
 }
 
 /** 일괄 저장 입력 1건. image 는 PNG 바이트 배열. */

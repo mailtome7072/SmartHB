@@ -235,7 +235,9 @@ fn restore_from_path_sync(backup_path: &Path) -> Result<RestoreResult, AppError>
     })
 }
 
-fn auto_restore_sync() -> Result<RestoreResult, AppError> {
+/// exit 계층 최신 정상 백업으로 자동 복원 (현재 DB 는 rollback 보존).
+/// startup 손상 자동복원(`startup::run_startup`) 과 `auto_restore` IPC 가 공유.
+pub(crate) fn auto_restore_sync() -> Result<RestoreResult, AppError> {
     let healthy = select_healthy_backup(BackupLayer::Exit)?;
     let backup_meta = healthy.ok_or_else(|| {
         AppError::Integrity(

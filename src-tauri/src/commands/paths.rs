@@ -103,6 +103,12 @@ pub(crate) fn output_root() -> PathBuf {
     data_root().join(OUTPUT_SUBDIR)
 }
 
+/// 클라우드 폴더 경로로부터 데이터 루트(`{cloud}/smarthb`)를 구성한다.
+/// `init_data_root_from_config` 와 동일한 규칙을 공유 — DB 폴더 변경(T3)이 대상 루트를 계산할 때 사용.
+pub(crate) fn data_root_for(cloud_folder: &std::path::Path) -> PathBuf {
+    cloud_folder.join(SMARTHB_SUBDIR)
+}
+
 /// 데이터 루트를 런타임 중 갱신한다. 마법사가 폴더를 새로 지정할 때 호출.
 ///
 /// SQLite pool 이 이미 초기화된 후에 호출하면 pool 은 옛 경로를 계속 사용한다 — 마법사

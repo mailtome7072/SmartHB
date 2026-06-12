@@ -36,12 +36,21 @@ interface AppState {
    */
   unsavedGuard: ((href: string) => boolean) | null
 
+  /**
+   * 공용 미저장 이동 확인 다이얼로그의 이동 대상 경로 (Sprint 16 T1).
+   * `useUnsavedChanges` 훅이 가드 차단 시 여기에 href 를 세팅하면, AppShell 의
+   * `UnsavedNavDialog` 가 확인 다이얼로그를 띄운다. Tauri WebView 가 `window.confirm`/
+   * `alert` 을 차단(dialog 권한)하므로 자체 다이얼로그로 대체.
+   */
+  unsavedNavTarget: string | null
+
   setLockStatus: (status: LockStatus | null) => void
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
   setSelectedPeriodMonth: (month: string | null) => void
   setAttendanceSearchPreset: (name: string | null) => void
   setUnsavedGuard: (guard: ((href: string) => boolean) | null) => void
+  setUnsavedNavTarget: (href: string | null) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -50,6 +59,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedPeriodMonth: null,
   attendanceSearchPreset: null,
   unsavedGuard: null,
+  unsavedNavTarget: null,
 
   setLockStatus: (lockStatus) => set({ lockStatus }),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -57,6 +67,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSelectedPeriodMonth: (selectedPeriodMonth) => set({ selectedPeriodMonth }),
   setAttendanceSearchPreset: (attendanceSearchPreset) => set({ attendanceSearchPreset }),
   setUnsavedGuard: (unsavedGuard) => set({ unsavedGuard }),
+  setUnsavedNavTarget: (unsavedNavTarget) => set({ unsavedNavTarget }),
 }))
 
 /**

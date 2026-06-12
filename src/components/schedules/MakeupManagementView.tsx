@@ -55,7 +55,7 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
         &ldquo;출결관리 이동&rdquo; 버튼으로 이동해 진행하세요.
       </p>
 
-      {query.isLoading && <p className="text-base text-gray-500">불러오는 중...</p>}
+      {query.isLoading && <p className="text-base text-muted-foreground">불러오는 중...</p>}
 
       {!query.isLoading && students.length === 0 && (
         <div className="rounded-lg border border-[var(--border)] bg-white p-8 text-center">
@@ -89,7 +89,7 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
                   <td className="px-4 py-3 font-medium">
                     {s.studentName}
                     {s.withdrawDate !== null && (
-                      <span className="ml-1 text-xs text-gray-500">(퇴교)</span>
+                      <span className="ml-1 text-xs text-muted-foreground">(퇴교)</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-600">{s.serialNo}</td>
@@ -101,7 +101,7 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
                         ⚠ 소멸 임박
                       </span>
                     ) : (
-                      <span className="text-sm text-gray-500">—</span>
+                      <span className="text-sm text-muted-foreground">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3">

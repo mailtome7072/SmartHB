@@ -20,6 +20,7 @@
 use crate::commands::paths;
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -117,7 +118,11 @@ fn backup_corrupted(path: &Path) {
     }
 }
 
-/// config.json 을 atomic 하게 갱신한다 (tmp → rename).
+/// config.json 을 atomic 하게 갱신한다 (tmp → fsync → rename).
+///
+/// P0-2 (2026-06 코드리뷰): NTFS power-loss 패턴(상단 read_status 주석의 실측 사고)은
+/// fsync 없는 write+rename 에서 데이터 페이지가 NULL 로 남는 문제 — salt(auth.rs)·
+/// device.id(lock.rs)와 동일하게 rename 전 `sync_all` 로 데이터 페이지 커밋을 보장한다.
 fn write_status(app: &AppHandle, status: &SetupStatus) -> Result<(), AppError> {
     let path = config_path(app)?;
     if let Some(parent) = path.parent() {
@@ -127,7 +132,15 @@ fn write_status(app: &AppHandle, status: &SetupStatus) -> Result<(), AppError> {
     let tmp = path.with_extension("json.tmp");
     let json = serde_json::to_string_pretty(status)
         .map_err(|e| AppError::Config(format!("config.json 직렬화 실패: {}", e)))?;
-    fs::write(&tmp, json).map_err(|e| AppError::Config(format!("config.json 쓰기 실패: {}", e)))?;
+    {
+        use std::io::Write;
+        let mut f = fs::File::create(&tmp)
+            .map_err(|e| AppError::Config(format!("config.json 임시 파일 생성 실패: {}", e)))?;
+        f.write_all(json.as_bytes())
+            .map_err(|e| AppError::Config(format!("config.json 쓰기 실패: {}", e)))?;
+        f.sync_all()
+            .map_err(|e| AppError::Config(format!("config.json fsync 실패: {}", e)))?;
+    }
     fs::rename(&tmp, &path)
         .map_err(|e| AppError::Config(format!("config.json rename 실패: {}", e)))?;
     Ok(())
@@ -197,6 +210,173 @@ pub async fn set_pin_skip_setting(app: AppHandle, skip: bool) -> Result<(), Stri
     let mut status = read_status(&app).map_err(String::from)?;
     status.skip_pin_on_launch = skip;
     write_status(&app, &status).map_err(String::from)
+}
+
+// ----------------------------------------------------------------------------
+// DB 폴더 변경 (Sprint 16 T3, ADR-009) — copy-then-switch + 재시작
+// ----------------------------------------------------------------------------
+
+/// 복사 시 제외 파일 — 락(재시작 시 신규 생성) + WAL/SHM(체크포인트로 본체 반영 → stale 방지).
+const COPY_SKIP: &[&str] = &["app.lock", "app.db-wal", "app.db-shm"];
+
+/// DB 폴더(클라우드 동기화 경로)를 재지정한다 — ADR-009 copy-then-switch.
+///
+/// `{new}/smarthb/` 로 기존 데이터(DB·salt·assets·output·backup)를 복사·검증한 뒤 **마지막에**
+/// config.json 의 cloud_folder_path 를 갱신한다. 원본은 보존(MOVED_TO 마커). 성공 후 호출측
+/// (프론트)이 앱을 재시작하면 새 프로세스가 새 경로로 초기화된다. 실패 시 config 미변경 →
+/// 앱은 기존 폴더로 계속 동작(무손상).
+#[tauri::command]
+pub async fn change_data_folder(app: AppHandle, new_path: String) -> Result<(), String> {
+    change_data_folder_impl(&app, &new_path)
+        .await
+        .map_err(String::from)
+}
+
+async fn change_data_folder_impl(app: &AppHandle, new_path: &str) -> Result<(), AppError> {
+    let new_cloud = PathBuf::from(new_path.trim());
+    let old_root = paths::data_root();
+    let new_root = validate_change_target(&old_root, &new_cloud)?;
+
+    // 새 루트가 기존에 없었다면(우리가 생성) 실패 시 정리 대상.
+    let new_root_preexisted = new_root.exists();
+
+    // 1. WAL 체크포인트 — 현재 DB 의 WAL 내용을 본체로 반영(복사본 정합). 풀 미초기화면 skip.
+    if let Ok(pool) = crate::commands::db::pool() {
+        let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(pool)
+            .await;
+    }
+
+    // 2. 재귀 복사 → 3. 검증. 실패 시 우리가 만든 새 루트를 정리하고 즉시 반환(원본 무손상).
+    let outcome = match copy_dir_recursive(&old_root, &new_root, COPY_SKIP) {
+        Ok(()) => verify_db_openable(&new_root.join("app.db")).await,
+        Err(e) => Err(AppError::UserFacing(format!("데이터 복사 실패: {}", e))),
+    };
+    if let Err(e) = outcome {
+        if !new_root_preexisted {
+            let _ = fs::remove_dir_all(&new_root);
+        }
+        return Err(e);
+    }
+
+    // 4. 원본에 이전 마커 — best-effort.
+    write_move_marker(&old_root, &new_cloud);
+
+    // 5. config.json 갱신 (마지막 mutation — 이 전까지 실패는 기존 폴더 유지).
+    let mut status = read_status(app)?;
+    status.cloud_folder_path = new_cloud.to_string_lossy().to_string();
+    write_status(app, &status)?;
+
+    Ok(())
+}
+
+/// 대상 폴더 검증 — 새 데이터 루트(`{new}/smarthb`)를 반환하거나 사용자 친화 에러.
+fn validate_change_target(old_root: &Path, new_cloud: &Path) -> Result<PathBuf, AppError> {
+    if new_cloud.as_os_str().is_empty() {
+        return Err(AppError::UserFacing("폴더 경로가 비어 있습니다.".to_string()));
+    }
+    let new_root = paths::data_root_for(new_cloud);
+    if new_root == *old_root {
+        return Err(AppError::UserFacing(
+            "현재 사용 중인 폴더와 동일합니다.".to_string(),
+        ));
+    }
+    // 포함 관계(재귀 복사) 차단 — 새 폴더가 기존 안에 있거나 그 반대.
+    if new_root.starts_with(old_root) || old_root.starts_with(&new_root) {
+        return Err(AppError::UserFacing(
+            "기존 폴더와 겹치는 경로는 선택할 수 없습니다.".to_string(),
+        ));
+    }
+    // 대상에 이미 데이터가 있으면 차단(덮어쓰기 방지).
+    if new_root.join("app.db").exists() {
+        return Err(AppError::UserFacing(
+            "선택한 폴더에 이미 SmartHB 데이터(app.db)가 있습니다. 다른 폴더를 선택해 주세요."
+                .to_string(),
+        ));
+    }
+    Ok(new_root)
+}
+
+/// `src` 디렉토리를 `dst` 로 재귀 복사한다. `skip` 의 파일명은 제외. 파일마다 fsync(전원 손실 대비).
+fn copy_dir_recursive(src: &Path, dst: &Path, skip: &[&str]) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if skip.iter().any(|s| std::ffi::OsStr::new(s) == name) {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&from, &to, skip)?;
+        } else {
+            fs::copy(&from, &to)?;
+            // 복사본을 디스크에 강제 flush — NTFS power-loss 패턴 대비(best-effort).
+            if let Ok(f) = fs::File::open(&to) {
+                let _ = f.sync_all();
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 복사된 DB 가 정상 열림(+cipher 복호화) + `PRAGMA integrity_check` 통과하는지 검증.
+/// sqlx 기반 — cipher feature 무관(켜져 있으면 PRAGMA key 적용).
+async fn verify_db_openable(db_path: &Path) -> Result<(), AppError> {
+    if !db_path.exists() {
+        return Err(AppError::UserFacing(
+            "복사된 DB 파일을 찾을 수 없습니다.".to_string(),
+        ));
+    }
+    let options = SqliteConnectOptions::new()
+        .filename(db_path)
+        .create_if_missing(false);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await
+        .map_err(|e| AppError::UserFacing(format!("복사된 DB 를 열 수 없습니다: {}", e)))?;
+
+    #[cfg(feature = "cipher")]
+    {
+        let key = crate::commands::auth::get_cached_or_load_key()?;
+        if let Err(e) = sqlx::query(&paths::pragma_key_sql(key.to_hex().as_str()))
+            .execute(&pool)
+            .await
+        {
+            pool.close().await;
+            return Err(AppError::UserFacing(format!(
+                "복사된 DB 복호화에 실패했습니다: {}",
+                e
+            )));
+        }
+    }
+
+    let result: Result<Vec<String>, sqlx::Error> = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_all(&pool)
+        .await;
+    pool.close().await;
+    let rows = result.map_err(|e| AppError::UserFacing(format!("복사된 DB 무결성 검사 실패: {}", e)))?;
+    if rows.len() == 1 && rows[0] == "ok" {
+        Ok(())
+    } else {
+        Err(AppError::UserFacing(format!(
+            "복사된 DB 무결성 검사에서 손상이 발견되었습니다: {}",
+            rows.join("; ")
+        )))
+    }
+}
+
+/// 원본 폴더에 이전 마커(`MOVED_TO.txt`)를 남긴다 — 역방향 참조용. best-effort.
+fn write_move_marker(old_root: &Path, new_cloud: &Path) {
+    let marker = old_root.join("MOVED_TO.txt");
+    let content = format!(
+        "이 폴더의 SmartHB 데이터는 다음 위치로 이전되었습니다.\n이전 시각(UTC): {}\n새 폴더: {}\n",
+        chrono::Utc::now().to_rfc3339(),
+        new_cloud.display(),
+    );
+    let _ = fs::write(&marker, content);
 }
 
 #[cfg(test)]
@@ -358,5 +538,90 @@ mod tests {
             !is_corrupted(b"\0valid"),
             "선두 NULL 만 있으면 손상 아님 (파싱 단계에 위임)"
         );
+    }
+
+    // ------------------------------------------------------------------------
+    // DB 폴더 변경 (T3, ADR-009) — 순수 헬퍼 검증 (pool/AppHandle 불요).
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn validate_change_target_rejects_empty() {
+        let old = PathBuf::from("/old/smarthb");
+        assert!(validate_change_target(&old, Path::new("")).is_err());
+    }
+
+    #[test]
+    fn validate_change_target_rejects_same_root() {
+        // new_cloud/smarthb == old_root → 거부.
+        let old = PathBuf::from("/cloud/smarthb");
+        assert!(validate_change_target(&old, Path::new("/cloud")).is_err());
+    }
+
+    #[test]
+    fn validate_change_target_rejects_overlapping_paths() {
+        let old = PathBuf::from("/cloud/smarthb");
+        // 새 폴더가 기존 안에 포함.
+        assert!(validate_change_target(&old, Path::new("/cloud/smarthb/inner")).is_err());
+        // 기존이 새 폴더 안에 포함 (new_root = /cloud/smarthb 의 부모를 가리키는 경우는 same 처리되므로
+        // 더 상위를 줘서 old_root 가 new_root 하위가 되도록).
+        let old_deep = PathBuf::from("/cloud/a/smarthb");
+        assert!(validate_change_target(&old_deep, Path::new("/cloud/a")).is_err());
+    }
+
+    #[test]
+    fn validate_change_target_rejects_existing_db() {
+        let dir = unique_tmp_dir("target-existing-db");
+        // dir 가 new_cloud, dir/smarthb/app.db 존재 → 차단.
+        let smarthb = dir.join("smarthb");
+        fs::create_dir_all(&smarthb).unwrap();
+        fs::write(smarthb.join("app.db"), b"x").unwrap();
+        let old = PathBuf::from("/some/other/smarthb");
+        assert!(validate_change_target(&old, &dir).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn validate_change_target_accepts_fresh_target() {
+        let dir = unique_tmp_dir("target-fresh");
+        let old = PathBuf::from("/some/other/smarthb");
+        let new_root = validate_change_target(&old, &dir).unwrap();
+        assert_eq!(new_root, dir.join("smarthb"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_dir_recursive_copies_and_skips() {
+        let base = unique_tmp_dir("copy");
+        let src = base.join("src");
+        let dst = base.join("dst");
+        // 원본 구성: app.db, salt.bin, 제외대상(app.lock, app.db-wal, app.db-shm), backup/exit/b.db
+        fs::create_dir_all(src.join("backup/exit")).unwrap();
+        fs::write(src.join("app.db"), b"DB").unwrap();
+        fs::write(src.join("salt.bin"), [7u8; 32]).unwrap();
+        fs::write(src.join("app.lock"), b"lock").unwrap();
+        fs::write(src.join("app.db-wal"), b"wal").unwrap();
+        fs::write(src.join("app.db-shm"), b"shm").unwrap();
+        fs::write(src.join("backup/exit/b.db"), b"BK").unwrap();
+
+        copy_dir_recursive(&src, &dst, COPY_SKIP).unwrap();
+
+        assert_eq!(fs::read(dst.join("app.db")).unwrap(), b"DB");
+        assert_eq!(fs::read(dst.join("salt.bin")).unwrap(), [7u8; 32]);
+        assert_eq!(fs::read(dst.join("backup/exit/b.db")).unwrap(), b"BK");
+        assert!(!dst.join("app.lock").exists(), "app.lock 은 복사 제외");
+        assert!(!dst.join("app.db-wal").exists(), "WAL 은 복사 제외");
+        assert!(!dst.join("app.db-shm").exists(), "SHM 은 복사 제외");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn write_move_marker_creates_marker() {
+        let dir = unique_tmp_dir("marker");
+        write_move_marker(&dir, Path::new("/new/cloud"));
+        let marker = dir.join("MOVED_TO.txt");
+        assert!(marker.exists());
+        let content = fs::read_to_string(&marker).unwrap();
+        assert!(content.contains("/new/cloud"));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

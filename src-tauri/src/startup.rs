@@ -12,7 +12,7 @@
 //!     ├── 비밀번호 검증 (auth::verify_password)
 //!     ├── db::initialize → PRAGMA key (cipher build) + WAL + cache_size + migrate
 //!     ├── audit::cleanup_older_than(365)  (best-effort)
-//!     ├── 백그라운드 spawn: heartbeat (60초) + hourly 백업 (1시간)
+//!     ├── 백그라운드 spawn: heartbeat (60초) + hourly 백업 (1시간) + daily/weekly catch-up
 //!     └── 측정 종료 → StartupResult 반환
 //! ```
 //!
@@ -72,6 +72,10 @@ pub struct StartupResult {
     /// `transitioned_count > 0` 시 프론트엔드에서 토스트 표시.
     /// ExpirationReport 내부는 camelCase, 본 필드명은 snake_case (기존 StartupResult 패턴 유지).
     pub expiration_report: expiration::ExpirationReport,
+    /// Sprint 16: 시작 시 DB 무결성 quick_check 가 손상을 감지하여 **자동 복원**한 경우의 결과.
+    /// `Some` 이면 프론트엔드가 "최근 정상 백업으로 복원됨 + 이후 입력 누락 가능" 고지.
+    /// 정상(복원 불필요)·개발 빌드(stub)·복원 실패 시 `None`.
+    pub auto_restored: Option<integrity::RestoreResult>,
 }
 
 /// 백그라운드 task 핸들 묶음 — `OnceLock` 으로 1회 spawn 보장.
@@ -168,7 +172,42 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
     }
     let password_verify_ms = verify_start.elapsed().as_millis();
 
-    // 3. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
+    // 3. 손상 자동 복원 — quick_check 가 Failed(손상)면 DB 초기화 **전에** 최신 정상 exit 백업으로
+    //    교체한다 (현재 손상본은 rollback 보존). auth 단계에서 키 캐시가 채워졌으므로 cipher 빌드에서
+    //    키 사용 가능. cipher off 개발 빌드는 quick_check 가 stub Ok → 이 경로 미진입(무영향).
+    //    복원 실패 시 fail-soft 진행(이어지는 db::initialize 가 손상으로 실패할 수 있음).
+    let auto_restored = if matches!(
+        integrity_result,
+        Ok(integrity::IntegrityCheckResult::Failed { .. })
+    ) {
+        match tokio::task::spawn_blocking(integrity::auto_restore_sync).await {
+            Ok(Ok(r)) => {
+                audit::try_record(
+                    audit::AuditEventType::BackupRestored,
+                    Some(&r.restored_from),
+                    Some("startup auto-restore"),
+                )
+                .await;
+                eprintln!(
+                    "[startup] ⚠️ DB 손상 감지 → 자동 복원: {} (rollback: {})",
+                    r.restored_from, r.rollback_path
+                );
+                Some(r)
+            }
+            Ok(Err(e)) => {
+                eprintln!("[startup] 자동 복원 실패 (계속 진행): {}", e);
+                None
+            }
+            Err(e) => {
+                eprintln!("[startup] 자동 복원 task 실패 (계속 진행): {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 4. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
     let db_init_start = Instant::now();
     db::initialize(paths::db_path())
         .await
@@ -229,10 +268,15 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
         integrity_ok,
         audit_cleaned,
         expiration_report,
+        auto_restored,
     })
 }
 
-/// heartbeat + hourly 백업 백그라운드 task 를 1회 spawn 한다.
+/// heartbeat + 백업(hourly + daily/weekly catch-up) 백그라운드 task 를 1회 spawn 한다.
+///
+/// daily/weekly 는 순수 interval 로는 앱이 24시간/7일 연속 떠 있어야만 fire 하므로
+/// **catch-up 방식** 채택 — 시작 직후 1회 + hourly tick 마다 최신 백업 경과 시간을 보고
+/// 기한(24h/7d) 경과 또는 0건이면 생성한다 ([`backup::run_catchup_backups`]).
 fn spawn_background_tasks() {
     BACKGROUND.get_or_init(|| {
         let heartbeat = tokio::spawn(async {
@@ -245,11 +289,14 @@ fn spawn_background_tasks() {
             }
         });
         let hourly_backup = tokio::spawn(async {
+            // 시작 catch-up — 마지막 실행 후 24h/7d 지났으면 즉시 따라잡는다 (간헐적 사용 대응).
+            backup::run_catchup_backups().await;
             let mut ticker = tokio::time::interval(Duration::from_secs(HOURLY_BACKUP_INTERVAL_SECS));
             ticker.tick().await; // 첫 tick 즉시 소비
             loop {
                 ticker.tick().await;
                 backup::try_create_backup(backup::BackupLayer::Hourly).await;
+                backup::run_catchup_backups().await;
             }
         });
         BackgroundHandles {
@@ -277,6 +324,18 @@ pub async fn exit_hook() {
         return;
     }
     backup::try_create_backup(backup::BackupLayer::Exit).await;
+    // P0-1 (2026-06 코드리뷰): WAL checkpoint + pool 종료 — 종료 후 app.db-wal/-shm 잔존 방지.
+    // DB 가 클라우드 동기화 폴더에 있어, -wal 미병합 상태로 종료하면 OS 동기화가 db 와 wal 을
+    // 서로 다른 시점에 업로드해 다른 PC 에서 최근 트랜잭션이 조용히 유실될 수 있다 (torn-sync).
+    // 체크포인트로 본체에 병합하고 pool 을 정상 종료해 동기화 대상을 완결된 단일 파일로 만든다.
+    if let Ok(pool) = db::pool() {
+        match sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(pool).await {
+            Ok(_) => eprintln!("[startup] exit WAL checkpoint 완료"),
+            Err(e) => eprintln!("[startup] exit WAL checkpoint 실패 (무시): {}", e),
+        }
+        pool.close().await;
+        eprintln!("[startup] exit DB pool 종료 완료");
+    }
     match tokio::task::spawn_blocking(lock::release_lock_atomic).await {
         Ok(Ok(())) => eprintln!("[startup] exit 락 해제 완료"),
         Ok(Err(e)) => eprintln!("[startup] exit 락 해제 실패 (무시): {}", e),
@@ -315,6 +374,7 @@ mod tests {
                 transitioned_count: 0,
                 details: vec![],
             },
+            auto_restored: None,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains(r#""elapsed_ms":1234"#));
@@ -343,6 +403,7 @@ mod tests {
                 transitioned_count: 0,
                 details: vec![],
             },
+            auto_restored: None,
         };
         let sum = r.parallel_phase_ms + r.password_verify_ms + r.db_init_ms + r.audit_cleanup_ms;
         assert!(sum <= r.elapsed_ms, "breakdown 합 ≤ 총 elapsed");

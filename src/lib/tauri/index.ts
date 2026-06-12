@@ -31,6 +31,8 @@ import type {
   AttendanceGrid,
   AttendanceSummary,
   GenerateResult,
+  MoveAttendanceResult,
+  ScheduleChangeResult,
   ToggleResult,
 } from '@/types/attendance'
 import type {
@@ -38,6 +40,7 @@ import type {
   DiagnosisResult,
 } from '@/types/diagnosis'
 import type { ExportResult } from '@/types/export'
+import type { ImportPreviewResult, ImportResult } from '@/types/import'
 import type {
   AcademyOverview,
   BillingTrendPoint,
@@ -108,6 +111,68 @@ export async function selectFolder(): Promise<string | null> {
   } catch {
     return '[개발 모드] /Users/dev/MYBOX'
   }
+}
+
+/**
+ * CSV 파일 선택 다이얼로그 (Sprint 16 T2). 사용자가 취소하면 null.
+ * 개발 모드(Tauri 미동작)에서는 더미 경로 반환.
+ *
+ * 권한: `capabilities/default.json` 의 `dialog:allow-open` 필요.
+ */
+export async function selectCsvFile(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+    if (selected === null) return null
+    return typeof selected === 'string' ? selected : (selected[0] ?? null)
+  } catch {
+    return '[개발 모드] students.csv'
+  }
+}
+
+/**
+ * CSV 미리보기 — 파싱·검증·중복판정만(INSERT 없음). 백엔드가 file_path 를 읽어 처리.
+ * 개발 모드에서는 샘플 행을 반환한다.
+ */
+export async function previewStudentsCsv(filePath: string): Promise<ImportPreviewResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      rows: [
+        {
+          row_number: 1,
+          name: '홍길동',
+          grade_label: '초3',
+          gender_label: '남',
+          enroll_date: '2026-03-01',
+          serial_no: null,
+          status: 'ok',
+          messages: [],
+        },
+      ],
+      total: 1,
+      importable: 1,
+      duplicate: 0,
+      error: 0,
+    }
+  }
+  return inv('preview_students_csv', { filePath }) as Promise<ImportPreviewResult>
+}
+
+/**
+ * CSV 가져오기 — 백업 1회 후 유효·비중복 행을 INSERT. 결과 집계 반환.
+ */
+export async function importStudentsCsv(filePath: string): Promise<ImportResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return { inserted: 1, skipped: 0, errored: 0, errors: [], backup_note: '[개발 모드]' }
+  }
+  return inv('import_students_csv', { filePath }) as Promise<ImportResult>
 }
 
 async function getInvoke() {
@@ -400,6 +465,7 @@ export async function appStartupSequence(
       integrity_ok: true,
       audit_cleaned: 0,
       expiration_report: { transitionedCount: 0, details: [] },
+      auto_restored: null,
     }
   }
   return inv('app_startup_sequence', {
@@ -588,6 +654,33 @@ export async function setSchedule(payload: ScheduleSet): Promise<StudentSchedule
 }
 
 /**
+ * 요일 변경을 단일 트랜잭션으로 수행한다 (P0-7, 2026-06 코드리뷰).
+ *
+ * 원래 요일(`oldDayOfWeek`) 현행 행 마감 + 새 요일 upsert 를 백엔드가 원자적으로 처리 —
+ * 기존 deleteSchedule→setSchedule 순차 호출의 부분 실패(원래 요일만 종료) 상태를 제거.
+ */
+export async function changeScheduleDay(
+  payload: ScheduleSet,
+  oldDayOfWeek: number,
+): Promise<StudentSchedule> {
+  const inv = await getInvoke()
+  if (!inv) {
+    return {
+      id: 0,
+      student_id: payload.student_id,
+      day_of_week: payload.day_of_week,
+      start_time: payload.start_time,
+      duration_hours: payload.duration_hours,
+      effective_from: payload.effective_from,
+      effective_to: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  }
+  return inv('change_schedule_day', { payload, oldDayOfWeek }) as Promise<StudentSchedule>
+}
+
+/**
  * 원생의 특정 요일 스케줄을 마감한다 (Sprint 4 T9 / 사용자 이슈 #10).
  *
  * effective_to=today 로 설정 — 다음날부터 해당 요일에 수업 없음.
@@ -769,6 +862,26 @@ export async function completeSetup(): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('complete_setup')
+}
+
+/**
+ * DB 폴더(클라우드 동기화 경로) 변경 (Sprint 16 T3, ADR-009).
+ *
+ * `{newCloudPath}/smarthb/` 로 기존 데이터(DB·salt·assets·output·backup)를 복사·검증한 뒤
+ * config.json 경로를 갱신한다. 원본은 보존(MOVED_TO 마커). 성공 후 호출측이 `relaunchApp()`
+ * 으로 앱을 재시작해야 새 경로가 적용된다. 실패 시 기존 폴더 유지(무손상).
+ */
+export async function changeDataFolder(newCloudPath: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) return
+  await inv('change_data_folder', { newPath: newCloudPath })
+}
+
+/** 앱 재시작 — DB 폴더 변경 완료 후 새 경로로 재초기화. (tauri-plugin-process) */
+export async function relaunchApp(): Promise<void> {
+  if (typeof window === 'undefined') return
+  const { relaunch } = await import('@tauri-apps/plugin-process')
+  await relaunch()
 }
 
 // ============================================================================
@@ -1230,6 +1343,45 @@ export async function getAttendanceSummary(
   return inv('get_attendance_summary', { studentId, yearMonth }) as Promise<AttendanceSummary>
 }
 
+// ──────────────────── 수업일 변경 (Sprint 16 T0) ────────────────────
+
+/**
+ * 케이스1 — 특정일 1회성 수업일 이동. present 출결 1건의 날짜를 옮기고 메모를 남긴다.
+ * 동월 한정, 도착일 OFF/공휴일·충돌 차단.
+ */
+export async function moveAttendance(
+  studentId: number,
+  fromDate: string,
+  toDate: string,
+  startTime: string,
+): Promise<MoveAttendanceResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('move_attendance', {
+    studentId,
+    fromDate,
+    toDate,
+    startTime,
+  }) as Promise<MoveAttendanceResult>
+}
+
+/**
+ * 케이스2 — 변경일 이후 스케줄 변경을 출결에 반영. 선행: setSchedule(effectiveFrom=effectiveDate).
+ * 변경일 이후 present 출결만 재생성, 결석/보강/메모 행은 보존. 사전(미래)·사후(과거) 양방향.
+ */
+export async function applyScheduleChange(
+  studentId: number,
+  effectiveDate: string,
+): Promise<ScheduleChangeResult> {
+  const inv = await getInvoke()
+  if (!inv) {
+    throw new Error('Tauri 환경에서만 사용 가능')
+  }
+  return inv('apply_schedule_change', { studentId, effectiveDate }) as Promise<ScheduleChangeResult>
+}
+
 // ──────────────────── 보강 도메인 (Sprint 9 T2~T4) ────────────────────
 
 /** 원생의 미처리 결석 목록 — 소멸기한 임박순 (NULL 마지막). PRD §4.5.4 다이얼로그 소스. */
@@ -1449,7 +1601,7 @@ export async function saveNoticeLayout(layout: NoticeLayout): Promise<void> {
 export async function getNoticeLayout(): Promise<NoticeLayout> {
   const inv = await getInvoke()
   if (!inv) {
-    return { backgroundAsset: null, textboxes: [] }
+    return { backgroundAsset: null, textboxes: [], images: [], customImages: [] }
   }
   return inv('get_notice_layout') as Promise<NoticeLayout>
 }
@@ -1471,7 +1623,7 @@ export async function saveNoticeLayoutNamed(name: string, layout: NoticeLayout):
 /** 이름으로 저장된 템플릿 조회. */
 export async function getNoticeLayoutNamed(name: string): Promise<NoticeLayout> {
   const inv = await getInvoke()
-  if (!inv) return { backgroundAsset: null, textboxes: [] }
+  if (!inv) return { backgroundAsset: null, textboxes: [], images: [], customImages: [] }
   return inv('get_notice_layout_named', { name }) as Promise<NoticeLayout>
 }
 

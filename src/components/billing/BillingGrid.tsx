@@ -159,7 +159,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                     ) : b.isPaid ? (
                       // 수납완료된 청구는 수정 불가 (금액 편집 비활성).
                       <span
-                        className="font-semibold text-gray-500"
+                        className="font-semibold text-muted-foreground"
                         title="수납완료된 청구는 수정할 수 없습니다."
                       >
                         {b.adjustedAmount.toLocaleString()}

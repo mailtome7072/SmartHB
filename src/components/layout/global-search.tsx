@@ -182,7 +182,7 @@ export function GlobalSearch() {
           className="absolute left-0 right-0 top-12 z-10 max-h-80 overflow-y-auto rounded-md border border-[var(--border)] bg-white shadow-lg"
         >
           {hits.length === 0 ? (
-            <li className="px-3 py-3 text-sm text-gray-500">검색 결과가 없습니다.</li>
+            <li className="px-3 py-3 text-sm text-muted-foreground">검색 결과가 없습니다.</li>
           ) : (
             hits.map((hit, i) => (
               <li key={`${hit.label}-${hit.href}`}>
@@ -200,7 +200,7 @@ export function GlobalSearch() {
                 >
                   <span>{hit.label}</span>
                   {hit.sublabel !== undefined && (
-                    <span className="text-sm text-gray-500">{hit.sublabel}</span>
+                    <span className="text-sm text-muted-foreground">{hit.sublabel}</span>
                   )}
                 </button>
               </li>

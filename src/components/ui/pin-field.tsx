@@ -118,7 +118,7 @@ export function PinField({ id, label, value, onChange, autoFocus, hasError = fal
           />
         ))}
       </div>
-      <p className="text-center text-xs text-gray-500">숫자 {PIN_LENGTH}자리를 한 칸씩 입력하세요.</p>
+      <p className="text-center text-xs text-muted-foreground">숫자 {PIN_LENGTH}자리를 한 칸씩 입력하세요.</p>
     </div>
   )
 }

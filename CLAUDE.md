@@ -9,15 +9,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 앱 개요
 
 **스마트해법수학 서현효자점** — 수학 교습소 단독 운영자(50대 원장 1인)용 데스크톱 관리 앱.
-- 원생 관리, 수업 스케줄, 출결·보강, 단원평가, 교습비 청구·수납, 카카오톡 공지문 이미지 생성, 대시보드를 통합 제공한다.
+- 원생 관리, 수업 스케줄, 출결·보강, 교습비 청구·수납, 카카오톡 공지문 이미지 생성, 대시보드를 통합 제공한다. (단원평가/학습보고서는 개발 취소)
 - Windows 10/11(교습소) + macOS 12+(자택) 동시 지원. 로컬 SQLite + OS 클라우드 동기화 폴더로 인터넷 없이도 작동.
 - UI 접근성 기준: Pretendard 본문 18pt 권장, WCAG AA 명도 대비 이상.
 
 ## 현재 상태
 
-- **버전**: 0.2.1 (`package.json`, `src-tauri/Cargo.toml`)
+- **버전**: 1.0.0 (`package.json`, `src-tauri/Cargo.toml`) — 정식 출시(Sprint 16)
 - **다음 작업**: `.claude/memory/sprint-next-session.md` 참조 (다음 스프린트 진입점)
-- **마이그레이션 현황** (`src-tauri/migrations/`): V001~V008(코드 테이블·감사 로그·앱 설정), V101~V111(원생/스케줄/출결/청구 도메인), V200~V201(시드), V301~V305(schedule_codes 보정·공휴일·schedule_events 확장·자가진단 이력·퇴교생 미보강 결석 소멸 백필·원생 생년월일) — 최신 V305
+- **마이그레이션 현황** (`src-tauri/migrations/`): V001~V008(코드 테이블·감사 로그·앱 설정), V101~V111(원생/스케줄/출결/청구 도메인), V200~V201(시드), V301~V307(schedule_codes 보정·공휴일·schedule_events 확장·자가진단 이력·퇴교생 미보강 결석 소멸 백필·원생 생년월일·출결 note·출결 start_time) — 최신 V307
 - **진행/회고 SSOT**: `ROADMAP.md` (전체 로드맵), `docs/sprint/`, `docs/sprint-retrospectives/`, `CHANGELOG.md`
 
 ## 아키텍처 개요
@@ -142,8 +142,9 @@ pnpm tauri build -- --features cipher
 sqlx migrate run                 # 마이그레이션 적용
 sqlx migrate add {설명}          # 새 마이그레이션 파일 생성 (src-tauri/migrations/)
 sqlx migrate revert              # 마지막 마이그레이션 롤백
-sqlx prepare --manifest-path src-tauri/Cargo.toml  # .sqlx/ 오프라인 캐시 갱신 (CI용, 커밋 필수)
 ```
+
+> 쿼리 방식: 본 프로젝트는 **런타임 `sqlx::query()` + bind** 표준 — `query!` 매크로·`.sqlx/` 오프라인 캐시는 사용하지 않는다 (2026-06 코드리뷰 결정, `.claude/rules/backend.md` SQLx 쿼리 섹션 참조). 스키마-쿼리 정합은 인메모리 단위 테스트로 보장.
 
 ### 프로덕션 빌드 (인스톨러 생성)
 
@@ -187,7 +188,7 @@ pnpm tauri:build     # Windows .msi/.exe, macOS .dmg 생성
 | `setup.rs` | 초기 설정 마법사 (클라우드 폴더 지정, 첫 실행 흐름) |
 | `db.rs`, `paths.rs`, `sync.rs` | DB 경로 해석, 클라우드 동기화 폴더 탐지/검증 |
 | `lock.rs` | `app.lock` 동시성 제어 (ADR-002) |
-| `backup.rs`, `integrity.rs`, `recovery.rs` | 4계층 백업 + 무결성 체크 + 복구 (ADR-003) |
+| `backup.rs`, `integrity.rs` | 4계층 백업 + 무결성 체크 + 자동 복원 (ADR-003 — 복구 로직은 `integrity.rs::auto_restore`) |
 | `students.rs`, `schedules.rs`, `fees.rs` | 핵심 도메인 — 원생 / 수업 스케줄 / 청구 |
 | `codes.rs`, `settings.rs` | 코드 테이블 / 앱 설정 |
 | `audit.rs`, `runtime.rs`, `pagination.rs` | 감사 로그 / 런타임 정보 / 페이징 헬퍼 |

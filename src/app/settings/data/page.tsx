@@ -93,7 +93,7 @@ export default function DataExportPage() {
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-2xl">
         <div className="mb-4">
-          <Link href="/settings" className="text-sm text-gray-500 hover:text-[var(--accent)]">
+          <Link href="/settings" className="text-sm text-muted-foreground hover:text-[var(--accent)]">
             ← 설정
           </Link>
         </div>

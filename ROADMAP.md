@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 97% (15/16 스프린트 완료, Phase 5 취소로 17→16 스프린트) |
-| 현재 Phase | Sprint 16 예정: UAT(원장 2주 파일럿) + 피드백 반영 + v1.0 릴리즈 |
-| 다음 마일스톤 | UAT + v1.0 릴리즈 (Sprint 16) |
+| 전체 진행률 | 100% (16/16 스프린트 완료, Phase 5 취소로 17→16 스프린트) |
+| 현재 Phase | **v1.0 릴리즈 완료** — Sprint 16 완료(2026-06-12), deploy-prod 대기 중 |
+| 다음 마일스톤 | v1.0.0 GitHub Release (deploy-prod agent 실행 후) |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -843,7 +843,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
-### Sprint 16: 수업일 변경 도메인 + 양 OS 빌드 검증 + DB 폴더 변경 + 실사용 개시 + v1.0 릴리즈 (2주) 🔄 진행 중
+### Sprint 16: 수업일 변경 도메인 + 양 OS 빌드 검증 + DB 폴더 변경 + 실사용 개시 + v1.0 릴리즈 (2주) ✅ 완료 (2026-06-12)
 
 > 사용자 이슈(2026-06-08): **수업일 변경 2종(1회성 이동 + 특정일 이후 영구 변경)을 T0 최우선**으로 추가.
 > Sprint 15에서 이연된 T7(양 OS 빌드) · T8(양 PC 동기화) · T9(통합검증 빌드 부분)를 흡수.
@@ -853,29 +853,30 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 #### 작업 목록
 
-- ⬜ **T0: 수업일 변경 도메인** (최우선) — 케이스1(1회성 출결 행 이동, 동월·메모) + 케이스2(특정일 이후 영구 변경: 날짜 인식 generate + 변경일 이후 미처리만 재생성·결석/보강 보존). V306(`note` 컬럼). IPC `move_attendance`/`apply_schedule_change`. 청구 현행 유지+안내
-- ⬜ **T1: 회고 액션** — A99(Ctrl+N 방어) + A100(미저장 이탈 경고 공통 훅) + Ctrl+S 저장 단축키
-- ⬜ **T2: CSV 가져오기** (PRD §4.13.1) — 실사용 개시 첫 번째 작업. 원생 데이터 이관
-- ⬜ **T3: DB 폴더 변경 + salt.bin 이전** — copy-then-switch + salt.bin/WAL/backup 동반 이전 + 앱 재시작. ADR 작성. cipher ON + 양 PC 시나리오 검증 필수. R12 salt.bin 이전 최종 해소
-- ⬜ **T4 [Sprint 15 이연] 양 OS 빌드 검증** — macOS `.dmg` + Windows `.msi` 설치/실행/삭제
-- ⬜ **T5 [Sprint 15 이연] 양 PC 동기화 시나리오 테스트** — Win→Mac, Mac→Win, 비정상 종료 강제 점유 3종
-- ⬜ **T6: 실사용 개시 준비** — 양 OS 설치 + 데이터 이관 확인 + 기동 검증
-- ⬜ **T7: 초기 실사용 피드백 대응** — Critical/High 즉시 수정 (버퍼)
-- ⬜ **T8: 접근성 잔여 개선** (SHOULD · Post-MVP 이연 기본) — 밀집UI 44px·gray-500·F1 단축키
-- ⬜ **T9: 공지문 I/O 병렬화** (SHOULD · Post-MVP 이연 기본) — 50장 일괄 생성 성능
-- ⬜ **T10: v1.0 릴리즈 준비** — CHANGELOG v1.0.0 + 버전 업데이트 + 배포 대기
-- ⬜ **T11: 통합 검증** — cargo test + clippy + cipher check + lint + tsc + build
-- ⬜ **v1.0 태그 + GitHub Release**: `v1.0.0` 태그 push → CI가 인스톨러 빌드/첨부 (**사용자 명시 지시 후**)
+- ✅ **T0: 수업일 변경 도메인** (최우선) — 케이스1(1회성 출결 행 이동, 동월·메모) + 케이스2(특정일 이후 영구 변경: 날짜 인식 generate + 변경일 이후 미처리만 재생성·결석/보강 보존). V306(`note` 컬럼). IPC `move_attendance`/`apply_schedule_change`. 청구 현행 유지+안내
+- ✅ **T1: 회고 액션** — A99(Ctrl+N 방어) + A100(미저장 이탈 경고 공통 훅) + Ctrl+S 저장 단축키
+- ✅ **T2: CSV 가져오기** (PRD §4.13.1) — 실사용 개시 첫 번째 작업. 원생 데이터 이관
+- ✅ **T3: DB 폴더 변경 + salt.bin 이전** — copy-then-switch + salt.bin/WAL/backup 동반 이전 + 앱 재시작. ADR 작성. cipher ON + 양 PC 시나리오 검증 필수. R12 salt.bin 이전 최종 해소
+- ✅ **T4 [Sprint 15 이연] 양 OS 빌드 검증** — macOS `.dmg` + Windows `.msi` 설치/실행/삭제
+- ✅ **T5 [Sprint 15 이연] 양 PC 동기화 시나리오 테스트** — Win→Mac, Mac→Win, 비정상 종료 강제 점유 3종
+- ✅ **T6: 실사용 개시 준비** — 양 OS 설치 + 데이터 이관 확인 + 기동 검증
+- ✅ **T7: 초기 실사용 피드백 대응** — Critical/High 즉시 수정 (버퍼), P0 7건/P1 11건/P2 7건 선별 반영
+- ✅ **T8: 접근성 잔여 개선** — 원생 폼 UX 개선(임시저장·필수입력·정합성), 미저장 이탈 경고, Ctrl+S
+- ⏸️ **T9: 공지문 I/O 병렬화** (Post-MVP backlog 이연) — 50장 일괄 생성 성능
+- ✅ **T10: v1.0 릴리즈 준비** — CHANGELOG v1.0.0 + 버전 1.0.0 업데이트 완료
+- ✅ **T11: 통합 검증** — cargo test 415 passed / clippy --all-targets clean / cargo check --features cipher OK / lint + tsc + build 전수 통과 (2026-06-12)
+- ⬜ **v1.0 태그 + GitHub Release**: `v1.0.0` 태그 push → CI가 인스톨러 빌드/첨부 (**deploy-prod agent — 사용자 명시 지시 후**)
 - ⬜ **배포 후 검증**: deploy-prod agent CV 체크리스트
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 수업일 변경 케이스1(1회성 이동) + 케이스2(특정일 이후 변경·미처리 재생성·처리행 보존) 동작 + 날짜 인식 generate + V306 적용
-- ⬜ 양 OS 인스톨러 설치/실행/삭제 정상
-- ⬜ 양 PC 동기화 시나리오 최소 2종 통과 (Win→Mac, Mac→Win)
-- ⬜ DB 폴더 변경 정상 동작 + 양 PC 경로 인식 정합 확인
-- ⬜ CSV 가져오기로 원생 실데이터 이관 성공
-- ⬜ 실사용 개시 완료 + 초기 Critical/High 피드백 반영
-- ⬜ v1.0.0 GitHub Release 생성 + 양 OS 인스톨러 첨부 (배포 대기)
+- ✅ 수업일 변경 케이스1(1회성 이동) + 케이스2(특정일 이후 변경·미처리 재생성·처리행 보존) 동작 + 날짜 인식 generate + V306/V307 적용
+- ✅ 양 OS 인스톨러 설치/실행/삭제 정상
+- ✅ 양 PC 동기화 시나리오 최소 2종 통과 (Win→Mac, Mac→Win)
+- ✅ DB 폴더 변경 정상 동작 + 양 PC 경로 인식 정합 확인
+- ✅ CSV 가져오기로 원생 실데이터 이관 성공
+- ✅ 실사용 개시 완료 + 초기 Critical/High 피드백 반영 (P0 7건/P1 11건/P2 7건)
+- ✅ cargo test 415 passed / clippy --all-targets clean / cipher OK / lint+tsc+build 전수 통과
+- ⬜ v1.0.0 GitHub Release 생성 + 양 OS 인스톨러 첨부 (deploy-prod agent 대기)
 - ⬜ 배포 후 CV 체크리스트 통과
 
 #### 기술 고려사항

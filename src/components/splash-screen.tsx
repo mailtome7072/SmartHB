@@ -21,7 +21,7 @@ export function SplashScreen({ message }: { message?: string }) {
       <p className="text-base text-gray-600">서현효자점 관리 앱</p>
       <Spinner />
       <p className="text-base text-gray-700">{message ?? '시작하는 중입니다...'}</p>
-      <p className="mt-2 max-w-sm text-center text-sm text-gray-500">
+      <p className="mt-2 max-w-sm text-center text-sm text-muted-foreground">
         최초 실행은 잠시 시간이 걸릴 수 있습니다.
       </p>
     </main>

@@ -52,3 +52,18 @@ export function formatCurrency(amount: number): string {
   if (!Number.isFinite(amount)) return ''
   return new Intl.NumberFormat('ko-KR').format(amount)
 }
+
+/**
+ * 오늘 날짜를 **로컬 타임존** 기준 'YYYY-MM-DD' 로 반환한다 (P0-3, 2026-06 코드리뷰).
+ *
+ * `new Date().toISOString().slice(0, 10)` 은 UTC 기준이라 KST 00:00~08:59 에 실행하면
+ * **어제 날짜**가 된다 — 입교일/퇴교일 기본값·스케줄 변경 기준일에 사용 금지.
+ * "오늘"이 필요한 모든 곳은 반드시 이 함수를 사용한다.
+ */
+export function todayLocalISO(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}

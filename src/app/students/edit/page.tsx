@@ -35,6 +35,7 @@ import {
   updateStudent,
   withdrawStudent,
 } from '@/lib/tauri'
+import { todayLocalISO } from '@/lib/format'
 import type { NewStudent, Student } from '@/types/student'
 import type { WithdrawalPendingMakeup } from '@/types/withdrawal'
 import { WithdrawalMakeupDialog } from '@/components/students/WithdrawalMakeupDialog'
@@ -60,10 +61,10 @@ function StudentDetailContent() {
   // hotfix (Sprint 10 post-merge): AlertDialog 를 controlled 로 관리해야 비동기 흐름 종료 시점에
   // 명시적으로 닫고 WithdrawalMakeupDialog 를 mount 할 수 있다.
   const [withdrawAlertOpen, setWithdrawAlertOpen] = useState(false)
-  // T8: 퇴교일자는 사용자가 직접 지정 (기본값 오늘)
-  const [withdrawDate, setWithdrawDate] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  )
+  // T8: 퇴교일자는 사용자가 직접 지정 (기본값 오늘 — P0-3: 로컬 기준, UTC 오전 9시 전 어제 방지)
+  const [withdrawDate, setWithdrawDate] = useState(() => todayLocalISO())
+  // P1-2: 퇴교/번복 IPC 실패 표시 (기존엔 catch 없이 무반응이었음)
+  const [actionError, setActionError] = useState<string | null>(null)
   // Sprint 10 T10 (PRD §4.5.9): 잔여 보강 보유 시 처리 다이얼로그.
   const [pendingWithdrawalMakeup, setPendingWithdrawalMakeup] =
     useState<WithdrawalPendingMakeup | null>(null)
@@ -98,6 +99,7 @@ function StudentDetailContent() {
     // 후속 WithdrawalMakeupDialog 클릭 차단을 방지.
     setWithdrawAlertOpen(false)
     setWithdrawing(true)
+    setActionError(null)
     try {
       // Sprint 10 T10: 잔여 보강 검증 — 있으면 처리 다이얼로그, 없으면 기존 흐름.
       const pending = await getPendingMakeupForWithdrawal(student.id)
@@ -109,6 +111,8 @@ function StudentDetailContent() {
       }
       // 잔여 보강 있음 — WithdrawalMakeupDialog 가 mount 되며 IPC 호출 담당.
       setPendingWithdrawalMakeup(pending)
+    } catch (e) {
+      setActionError(typeof e === 'string' ? e : e instanceof Error ? e.message : '퇴교 처리에 실패했습니다.')
     } finally {
       setWithdrawing(false)
     }
@@ -130,10 +134,13 @@ function StudentDetailContent() {
     if (!student) return
     if (student.withdraw_date === null) return
     setReinstating(true)
+    setActionError(null)
     try {
       await reinstateStudent(student.id)
       qc.invalidateQueries({ queryKey: ['students'] })
       qc.invalidateQueries({ queryKey: ['students', 'detail', student.id] })
+    } catch (e) {
+      setActionError(typeof e === 'string' ? e : e instanceof Error ? e.message : '퇴교 번복에 실패했습니다.')
     } finally {
       setReinstating(false)
     }
@@ -163,6 +170,14 @@ function StudentDetailContent() {
         {error !== null && error !== undefined && (
           <p role="alert" className="text-[var(--danger)]">
             원생을 불러올 수 없습니다.
+          </p>
+        )}
+        {actionError !== null && (
+          <p
+            role="alert"
+            className="mb-4 rounded-md border border-[var(--danger)] bg-red-50 p-3 text-base text-[var(--danger)]"
+          >
+            {actionError}
           </p>
         )}
 
@@ -213,9 +228,11 @@ function StudentDetailContent() {
                       </div>
                       <AlertDialogFooter>
                         <AlertDialogCancel>취소</AlertDialogCancel>
+                        {/* P1-6: 위험 동작(퇴교) 확정 버튼은 빨강 — 삭제류 일관 규칙 */}
                         <AlertDialogAction
                           onClick={handleWithdrawConfirmed}
                           disabled={withdrawing}
+                          className="bg-[var(--danger)] text-white hover:bg-[var(--danger)] hover:opacity-90"
                         >
                           퇴교 처리
                         </AlertDialogAction>

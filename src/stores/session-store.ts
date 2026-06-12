@@ -19,18 +19,24 @@ interface SessionState {
   lastStartup: StartupResult | null
   /** Sprint 10 T9 — 사용자가 expiration_report 토스트를 닫은 후 재표시 차단 플래그. */
   expirationNoticeDismissed: boolean
+  /** Sprint 16 — 사용자가 DB 자동복원 고지를 닫은 후 재표시 차단 플래그. */
+  restoreNoticeDismissed: boolean
   markUnlocked: (result: StartupResult) => void
   dismissExpirationNotice: () => void
+  dismissRestoreNotice: () => void
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
   unlocked: false,
   lastStartup: null,
   expirationNoticeDismissed: false,
+  restoreNoticeDismissed: false,
   markUnlocked: (result) => set({
     unlocked: true,
     lastStartup: result,
     expirationNoticeDismissed: false,
+    restoreNoticeDismissed: false,
   }),
   dismissExpirationNotice: () => set({ expirationNoticeDismissed: true }),
+  dismissRestoreNotice: () => set({ restoreNoticeDismissed: true }),
 }))

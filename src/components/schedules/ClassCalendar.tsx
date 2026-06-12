@@ -18,6 +18,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import koLocale from '@fullcalendar/core/locales/ko'
 import type { DatesSetArg, EventInput } from '@fullcalendar/core'
+import { codeColor } from '@/lib/schedule-code-colors'
 import type { CalendarMonth } from '@/types/calendar'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 
@@ -30,21 +31,10 @@ interface Props {
   onStudentNameClick: (studentName: string) => void
 }
 
-/** 학사일정 코드명 → 텍스트 색 (academic CalendarCell 팔레트). */
-const EVENT_TEXT_COLOR: Record<string, string> = {
-  공휴일: '#dc2626',
-  보강데이: '#0d9488',
-  공휴수업일: '#db2777',
-  방학: '#9333ea',
-  휴원일: '#6b7280',
-  '단원평가 응시일': '#2563eb',
-}
-const USER_EVENT_TEXT_COLOR = '#d97706'
-
-/** "HH:MM[:SS]" → "HH:MM:00" (초 포함 입력도 안전하게 정규화). */
-function toIsoTime(t: string): string {
-  const [h, m] = t.split(':')
-  return `${h.padStart(2, '0')}:${m.padStart(2, '0')}:00`
+/** "HH:MM[:SS]" → "HH:MM:00" (초 포함 입력도 안전하게 정규화). 비정상/빈 값은 "00:00:00". */
+function toIsoTime(t: string | null | undefined): string {
+  const [h = '', m = ''] = (t ?? '').split(':')
+  return `${(h || '00').padStart(2, '0')}:${(m || '00').padStart(2, '0')}:00`
 }
 
 /** "HH:MM[:SS]" + 분 → "HH:MM:00". */
@@ -93,6 +83,23 @@ const VIEWS: Array<[string, string]> = [
   ['timeGridDay', '일'],
 ]
 
+/** 원생별 수업 블록 색상 팔레트 — 같은 시간대 다른 원생을 시각적으로 구분 (주/일 뷰). */
+const STUDENT_PALETTE: Array<{ bg: string; border: string; text: string }> = [
+  { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' }, // blue
+  { bg: '#dcfce7', border: '#22c55e', text: '#14532d' }, // green
+  { bg: '#fef9c3', border: '#ca8a04', text: '#713f12' }, // yellow
+  { bg: '#fee2e2', border: '#ef4444', text: '#7f1d1d' }, // red
+  { bg: '#f3e8ff', border: '#a855f7', text: '#581c87' }, // purple
+  { bg: '#ffedd5', border: '#f97316', text: '#7c2d12' }, // orange
+  { bg: '#cffafe', border: '#06b6d4', text: '#164e63' }, // cyan
+  { bg: '#fce7f3', border: '#db2777', text: '#831843' }, // pink
+]
+
+/** 원생 ID → 안정적 색상 매핑 (같은 원생은 항상 같은 색). */
+function colorForStudent(studentId: number): { bg: string; border: string; text: string } {
+  return STUDENT_PALETTE[studentId % STUDENT_PALETTE.length]
+}
+
 export default function ClassCalendar({
   data,
   academicEvents,
@@ -119,9 +126,8 @@ export default function ClassCalendar({
     const byDate = new Map<string, Array<{ name: string; color: string }>>()
     const flags = new Map<string, { hasMakeupOn: boolean; hasRegularOff: boolean }>()
     for (const e of academicEvents) {
-      const color = e.is_system_reserved
-        ? (EVENT_TEXT_COLOR[e.code_name] ?? USER_EVENT_TEXT_COLOR)
-        : USER_EVENT_TEXT_COLOR
+      // P2-13: 색은 schedule-code-colors.ts SSOT (학사 캘린더·공지문 달력과 일치).
+      const color = codeColor(e.code_name, e.is_system_reserved).hex
       const name = e.display_name ?? e.code_name
       const dates = expandDates(e.event_date, e.period_end_date)
       for (const d of dates) {
@@ -145,7 +151,8 @@ export default function ClassCalendar({
       const bySlot = new Map<string, string[]>()
       for (const s of day.regularSessions) {
         ids.add(s.studentId)
-        const key = s.startTime ?? '시간미정'
+        // 이동된 출결 등 시작시간 미상(null/빈값)인 정규 수업은 '시간미정' 그룹으로.
+        const key = s.startTime || '시간미정'
         bySlot.set(key, [...(bySlot.get(key) ?? []), s.studentName])
       }
       for (const s of day.makeupSessions) {
@@ -161,35 +168,87 @@ export default function ClassCalendar({
     return map
   }, [data])
 
-  // 주/일 보기 이벤트 — 시간대별 수업 블록만. 학사일정은 dayHeaderContent 안에 표기.
+  // 원생 칩 hover 시 그 원생 수업 시간 범위(시작~종료)를 시간 그리드에 테두리(검정)로 강조.
+  const [hovered, setHovered] = useState<{
+    date: string
+    startTime: string
+    classMinutes: number
+  } | null>(null)
+
+  // 주 보기: 시간대별 원생을 한 블록에 묶어 2열 grid(2×N). 셀이 좁아 길이는 칩 텍스트로 표기.
+  // 일 보기: 원생별 개별 블록(실제 수업 길이 → 1h/3h 높이로 시각 구분, 같은 시간대는 가로 나란히).
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
+    const isDay = viewType === 'timeGridDay'
     const result: EventInput[] = []
     for (const day of data.days) {
-      const bySlot = new Map<string, { names: string[]; maxMin: number }>()
-      for (const s of day.regularSessions) {
-        if (s.startTime === null) continue
-        const cur = bySlot.get(s.startTime) ?? { names: [], maxMin: 0 }
-        cur.names.push(s.studentName)
-        cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
-        bySlot.set(s.startTime, cur)
-      }
-      const isDay = viewType === 'timeGridDay'
-      for (const [startTime, { names, maxMin }] of bySlot) {
-        result.push({
-          start: `${day.eventDate}T${toIsoTime(startTime)}`,
-          end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
-          // 일 보기는 배경/테두리 없음 (사용자 지정). 주 보기는 옅은 블루 유지.
-          backgroundColor: isDay ? 'transparent' : '#dbeafe',
-          borderColor: isDay ? 'transparent' : '#3b82f6',
-          textColor: '#1e3a8a',
-          editable: false,
-          extendedProps: { kind: 'class', names },
-        })
+      // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
+      const valid = day.regularSessions.filter((s) => s.startTime && s.startTime.includes(':'))
+      if (isDay) {
+        for (const s of valid) {
+          result.push({
+            start: `${day.eventDate}T${toIsoTime(s.startTime)}`,
+            end: `${day.eventDate}T${addMinutes(s.startTime!, s.classMinutes)}`,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            editable: false,
+            extendedProps: {
+              kind: 'class',
+              students: [
+                {
+                  studentId: s.studentId,
+                  studentName: s.studentName,
+                  classMinutes: s.classMinutes,
+                },
+              ],
+            },
+          })
+        }
+      } else {
+        const bySlot = new Map<
+          string,
+          {
+            students: { studentId: number; studentName: string; classMinutes: number }[]
+            maxMin: number
+          }
+        >()
+        for (const s of valid) {
+          const cur = bySlot.get(s.startTime!) ?? { students: [], maxMin: 0 }
+          cur.students.push({
+            studentId: s.studentId,
+            studentName: s.studentName,
+            classMinutes: s.classMinutes,
+          })
+          cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
+          bySlot.set(s.startTime!, cur)
+        }
+        for (const [startTime, { students, maxMin }] of bySlot) {
+          result.push({
+            start: `${day.eventDate}T${toIsoTime(startTime)}`,
+            end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            editable: false,
+            extendedProps: { kind: 'class', students },
+          })
+        }
       }
     }
     return result
   }, [data, isTimeGrid, viewType])
+
+  // hover 강조용 background 이벤트를 합쳐서 전달.
+  const allEvents = useMemo<EventInput[]>(() => {
+    if (hovered === null) return events
+    return [
+      ...events,
+      {
+        start: `${hovered.date}T${toIsoTime(hovered.startTime)}`,
+        end: `${hovered.date}T${addMinutes(hovered.startTime, hovered.classMinutes)}`,
+        display: 'background',
+      },
+    ]
+  }, [events, hovered])
 
   function api() {
     return calendarRef.current?.getApi()
@@ -247,12 +306,12 @@ export default function ClassCalendar({
             type="button"
             aria-label="이전"
             onClick={() => api()?.prev()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-sm leading-none hover:bg-gray-50"
           >
-            ← 이전
+            ◀
           </button>
           <div className="relative inline-flex items-center justify-center">
-            <span className="px-2 text-2xl font-bold text-[var(--foreground)]">{title}</span>
+            <span className="px-2 text-[18px] font-bold text-[var(--foreground)]">{title}</span>
             <input
               ref={dateInputRef}
               type="date"
@@ -269,9 +328,9 @@ export default function ClassCalendar({
             type="button"
             aria-label="다음"
             onClick={() => api()?.next()}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50"
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-sm leading-none hover:bg-gray-50"
           >
-            다음 →
+            ▶
           </button>
         </div>
         <div className="flex justify-end gap-1">
@@ -303,9 +362,23 @@ export default function ClassCalendar({
           locale={koLocale}
           firstDay={1}
           headerToolbar={false}
-          events={events}
+          events={allEvents}
+          // hover 강조 background 이벤트는 채움(음영) 대신 테두리만 표시한다.
+          eventDidMount={(arg) => {
+            if (arg.event.display === 'background') {
+              arg.el.style.backgroundColor = 'transparent'
+              // 월 보기 셀 hover 테두리와 동일한 스타일 (outline 2px #334155, offset -2px).
+              arg.el.style.border = 'none'
+              arg.el.style.outline = '2px solid #334155'
+              arg.el.style.outlineOffset = '-2px'
+              arg.el.style.borderRadius = '0'
+              arg.el.style.boxSizing = 'border-box'
+            }
+          }}
           height="100%"
           expandRows
+          // 일 보기 개별 블록을 겹치지 않고 나란히 배치(같은 시간대 여러 원생).
+          slotEventOverlap={false}
           slotDuration="01:00:00"
           slotLabelInterval="01:00:00"
           slotLabelContent={(arg) => {
@@ -315,7 +388,7 @@ export default function ClassCalendar({
             const h12 = h % 12 === 0 ? 12 : h % 12
             return `${h12}${m > 0 ? `:${String(m).padStart(2, '0')}` : ''}${meridiem}`
           }}
-          slotMinTime="12:00:00"
+          slotMinTime="14:00:00"
           slotMaxTime="23:00:00"
           allDaySlot={false}
           nowIndicator
@@ -353,6 +426,17 @@ export default function ClassCalendar({
           }}
           // 주/일 보기 날짜 헤더 — 날짜 / 학사일정 코드(중앙) / 총 N명 수업.
           dayHeaderContent={(arg) => {
+            // 월 보기: 요일(일~토)만 표기. 주말은 색 구분.
+            if (arg.view.type === 'dayGridMonth') {
+              const dow = arg.date.getDay()
+              const color = dow === 0 ? '#dc2626' : dow === 6 ? '#2563eb' : 'inherit'
+              const label = ['일', '월', '화', '수', '목', '금', '토'][dow]
+              return (
+                <span className="text-sm font-semibold" style={{ color }}>
+                  {label}
+                </span>
+              )
+            }
             if (!arg.view.type.startsWith('timeGrid')) return undefined
             const ds = dateStr(arg.date)
             const acts = academicByDate.get(ds) ?? []
@@ -363,14 +447,14 @@ export default function ClassCalendar({
                 {acts.map((a, i) => (
                   <span
                     key={`${a.name}-${i}`}
-                    className="text-xs font-semibold"
+                    className="text-sm font-semibold"
                     style={{ color: a.color }}
                   >
                     {a.name}
                   </span>
                 ))}
                 {info !== undefined && (
-                  <span className="text-xs text-gray-700">총 {info.count}명 수업</span>
+                  <span className="text-sm text-gray-700">총 {info.count}명 수업</span>
                 )}
               </div>
             )
@@ -386,7 +470,7 @@ export default function ClassCalendar({
                   {acts.map((a, i) => (
                     <span
                       key={i}
-                      className="max-w-full truncate text-xs font-semibold"
+                      className="max-w-full truncate text-sm font-semibold"
                       style={{ color: a.color }}
                     >
                       {a.name}
@@ -405,29 +489,56 @@ export default function ClassCalendar({
           // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
           // 일 보기는 폰트 2단계 확대 + 파랑 볼드 (text-xs → text-base text-blue-700 font-bold).
           eventContent={(arg) => {
-            const names = (arg.event.extendedProps.names as string[]) ?? []
-            const cls =
-              viewType === 'timeGridDay'
-                ? 'text-base font-bold text-blue-700 text-center'
-                : 'text-xs'
+            const students =
+              (arg.event.extendedProps.students as {
+                studentId: number
+                studentName: string
+                classMinutes: number
+              }[]) ?? []
+            const isDay = viewType === 'timeGridDay'
+            const hoursLabel = (min: number): string => {
+              const h = min / 60
+              return Number.isInteger(h) ? `${h}시간` : `${h.toFixed(1)}시간`
+            }
+            // 주 보기: 2열 grid(2×N). 일 보기: 한 시간대 원생을 모두 한 행으로 가로 나열(균등 폭).
             return (
-              <div className={`whitespace-normal break-words px-1 py-0.5 leading-snug ${cls}`}>
-                {names.map((n, i) => (
-                  <span key={`${n}-${i}`}>
+              <div
+                className={`h-full content-start gap-0.5 overflow-hidden p-0.5 ${
+                  isDay ? 'flex flex-row items-stretch text-sm' : 'grid grid-cols-2 text-sm'
+                }`}
+              >
+                {students.map((st, i) => {
+                  const c = colorForStudent(st.studentId)
+                  return (
                     <span
+                      key={`${st.studentId}-${i}`}
                       role="button"
                       tabIndex={0}
-                      className="cursor-pointer hover:underline"
                       onClick={(ev) => {
                         ev.stopPropagation()
-                        onStudentNameClick(n)
+                        onStudentNameClick(st.studentName)
                       }}
+                      onMouseEnter={() =>
+                        setHovered({
+                          date: arg.event.startStr.slice(0, 10),
+                          startTime: arg.event.startStr.slice(11, 16),
+                          classMinutes: st.classMinutes,
+                        })
+                      }
+                      onMouseLeave={() => setHovered(null)}
+                      className={`flex cursor-pointer items-center justify-center gap-0.5 truncate rounded px-1 py-0.5 text-center font-semibold hover:underline ${
+                        isDay ? 'min-w-0 flex-1' : ''
+                      }`}
+                      style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+                      title={`${st.studentName} ${hoursLabel(st.classMinutes)}`}
                     >
-                      {n}
+                      <span className="truncate">{st.studentName}</span>
+                      <span className="shrink-0 font-normal opacity-80">
+                        {hoursLabel(st.classMinutes)}
+                      </span>
                     </span>
-                    {i < names.length - 1 ? ', ' : ''}
-                  </span>
-                ))}
+                  )
+                })}
               </div>
             )
           }}

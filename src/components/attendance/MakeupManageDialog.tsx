@@ -82,7 +82,7 @@ export function MakeupManageDialog({
         </h2>
         <p className="mt-1 text-sm text-gray-600">
           <span className="font-semibold">{studentName}</span>
-          <span className="ml-1 text-gray-500">#{studentSerialNo}</span>
+          <span className="ml-1 text-muted-foreground">#{studentSerialNo}</span>
           <span className="mx-2">·</span>
           <span>
             {eventDate} 보강 ({minutesToHoursText(classMinutes)}시간)
@@ -98,7 +98,7 @@ export function MakeupManageDialog({
               className="block w-full min-h-[44px] rounded-md border border-[var(--border)] bg-white px-4 py-3 text-left text-base text-gray-700 hover:bg-gray-50"
             >
               <span className="font-semibold">보강 삭제</span>
-              <span className="ml-2 text-sm text-gray-500">
+              <span className="ml-2 text-sm text-muted-foreground">
                 — 보강 기록 삭제 + 결석으로 환원
               </span>
             </button>

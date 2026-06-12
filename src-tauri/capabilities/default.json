@@ -9,6 +9,7 @@
     "shell:allow-open",
     "dialog:allow-open",
     "dialog:allow-save",
-    "window-state:default"
+    "window-state:default",
+    "process:allow-restart"
   ]
 }

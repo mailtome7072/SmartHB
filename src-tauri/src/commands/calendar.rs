@@ -88,12 +88,13 @@ pub(crate) async fn get_calendar_data_impl(
     //    학생 스케줄에서 start_time 추출 (effective_to IS NULL — 현행).
     //    status 무관 — 출결 그리드에 모든 상태 표시.
     let regular_rows = sqlx::query(
+        // Sprint 16 T0(PI-28): 이동 출결은 ra.start_time(입력값) 우선, 일반 출결은 요일 스케줄 시간.
         "SELECT \
             ra.event_date, \
             ra.class_minutes, \
             ra.student_id, \
             s.name AS student_name, \
-            ss.start_time \
+            COALESCE(ra.start_time, ss.start_time) AS start_time \
          FROM regular_attendances ra \
          JOIN students s ON s.id = ra.student_id \
          LEFT JOIN student_schedules ss \
@@ -101,7 +102,7 @@ pub(crate) async fn get_calendar_data_impl(
           AND ss.effective_to IS NULL \
           AND ss.day_of_week = ((CAST(strftime('%w', ra.event_date) AS INTEGER) + 6) % 7) + 1 \
          WHERE ra.year_month = ? \
-         ORDER BY ra.event_date, ss.start_time, s.name",
+         ORDER BY ra.event_date, COALESCE(ra.start_time, ss.start_time), s.name",
     )
     .bind(year_month)
     .fetch_all(pool)

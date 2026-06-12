@@ -33,7 +33,7 @@ use crate::commands::db::pool;
 use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 const MINUTES_PER_HOUR: i64 = 60;
 
@@ -98,8 +98,9 @@ async fn generate_impl(pool: &SqlitePool, year_month: &str) -> Result<GenerateRe
     let mut student_count: i64 = 0;
 
     for s in &students {
-        let dow_to_minutes = load_weekly_schedule(&mut *tx, s.id).await?;
-        if dow_to_minutes.is_empty() {
+        // Sprint 16 T0: 날짜 인식 — 현행만이 아닌 전체 스케줄 이력을 로드하여 각 일자에 유효한 스케줄을 매칭.
+        let slices = load_schedule_slices(&mut *tx, s.id).await?;
+        if slices.is_empty() {
             continue;
         }
 
@@ -112,8 +113,7 @@ async fn generate_impl(pool: &SqlitePool, year_month: &str) -> Result<GenerateRe
         let mut inserted = 0i64;
         let mut d = sd;
         while d <= ed {
-            let dow = d.weekday().number_from_monday() as i64;
-            if let Some(&minutes) = dow_to_minutes.get(&dow) {
+            if let Some(minutes) = minutes_for_date(&slices, d) {
                 let in_enroll_range = d >= enroll_d && withdraw_d.is_none_or(|wd| d <= wd);
                 let date_str = d.format("%Y-%m-%d").to_string();
                 if in_enroll_range && !off_dates.contains(&date_str) {
@@ -306,29 +306,70 @@ async fn load_active_students(
         .collect()
 }
 
-async fn load_weekly_schedule<'c, E>(
+/// Sprint 16 T0 — 날짜 인식 스케줄 슬라이스.
+///
+/// 원생의 전체 스케줄 이력(마감 행 포함)을 보유하여, 임의 일자에 유효한 스케줄(요일별
+/// 수업 분)을 산출한다. 케이스2(특정일 이후 영구 변경) 이후에도 변경일 기준으로 옛/신
+/// 스케줄을 날짜별로 정확히 반영하기 위함.
+struct ScheduleSlice {
+    day_of_week: i64,
+    minutes: i64,
+    effective_from: String,
+    effective_to: Option<String>,
+}
+
+/// 원생의 전체 스케줄 이력을 로드한다 (현행 + 마감 행 모두).
+async fn load_schedule_slices<'c, E>(
     executor: E,
     student_id: i64,
-) -> Result<HashMap<i64, i64>, String>
+) -> Result<Vec<ScheduleSlice>, String>
 where
     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
 {
     let rows = sqlx::query(
-        "SELECT day_of_week, duration_hours FROM student_schedules \
-         WHERE student_id = ? AND effective_to IS NULL",
+        "SELECT day_of_week, duration_hours, effective_from, effective_to \
+         FROM student_schedules WHERE student_id = ?",
     )
     .bind(student_id)
     .fetch_all(executor)
     .await
     .map_err(|e| format!("원생 스케줄 조회 실패: {}", e))?;
 
-    let mut map = HashMap::new();
-    for r in rows {
-        let dow: i64 = r.try_get("day_of_week").map_err(|e| e.to_string())?;
-        let hours: i64 = r.try_get("duration_hours").map_err(|e| e.to_string())?;
-        map.insert(dow, hours * MINUTES_PER_HOUR);
-    }
-    Ok(map)
+    rows.into_iter()
+        .map(|r| {
+            let hours: i64 = r
+                .try_get("duration_hours")
+                .map_err(|e: sqlx::Error| e.to_string())?;
+            Ok(ScheduleSlice {
+                day_of_week: r.try_get("day_of_week").map_err(|e: sqlx::Error| e.to_string())?,
+                minutes: hours * MINUTES_PER_HOUR,
+                effective_from: r
+                    .try_get("effective_from")
+                    .map_err(|e: sqlx::Error| e.to_string())?,
+                effective_to: r
+                    .try_get("effective_to")
+                    .map_err(|e: sqlx::Error| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
+/// 특정 일자에 유효한 스케줄의 수업 분을 반환한다. 매칭 없으면 None.
+///
+/// 유효 조건: 요일 일치 AND `effective_from ≤ d` AND (`effective_to` IS NULL OR `d < effective_to`).
+/// effective_to 는 **exclusive** — `set_schedule` 이 이전 스케줄의 effective_to 를 신규
+/// effective_from 과 동일 일자로 마감하므로, 변경일 당일부터 신 스케줄이 적용된다 (무경계 연결).
+fn minutes_for_date(slices: &[ScheduleSlice], d: NaiveDate) -> Option<i64> {
+    let dow = d.weekday().number_from_monday() as i64;
+    let ds = d.format("%Y-%m-%d").to_string();
+    slices
+        .iter()
+        .find(|s| {
+            s.day_of_week == dow
+                && s.effective_from.as_str() <= ds.as_str()
+                && s.effective_to.as_deref().is_none_or(|to| ds.as_str() < to)
+        })
+        .map(|s| s.minutes)
 }
 
 // ─────────────────────── T3: 조회 + 토글 ───────────────────────
@@ -344,6 +385,8 @@ pub struct AttendanceCell {
     pub absence_memo: Option<String>,
     pub makeup_deadline: Option<String>,
     pub makeup_attendance_id: Option<i64>,
+    /// Sprint 16 T0 케이스1 — 1회성 수업일 이동 메모 (예: "6/8(월)→6/10(수) 이동"). 없으면 None.
+    pub note: Option<String>,
 }
 
 /// 원생별 월간 요약.
@@ -414,6 +457,9 @@ pub struct DaySchedule {
     pub allows_makeup: bool,
     /// 보강 불가 코드 명시 (공휴일/방학/휴원일).
     pub is_block: bool,
+    /// 정규수업 불가 — `allows_regular_class=0` 코드 존재 (공휴일/방학/휴원/보강데이 등). Sprint 16 T0.
+    /// 공휴수업일처럼 보강 가능(allows_makeup)이면서 정규도 가능한 코드는 false.
+    pub regular_blocked: bool,
     /// 표시용 코드명 (우선순위: allows_makeup > is_block > 일반).
     pub label: String,
 }
@@ -573,7 +619,7 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
         // 출결 셀들
         let cell_rows = sqlx::query(
             "SELECT id, event_date, status, class_minutes, absence_memo, \
-                    makeup_deadline, makeup_attendance_id \
+                    makeup_deadline, makeup_attendance_id, note \
              FROM regular_attendances \
              WHERE student_id = ? AND year_month = ? \
              ORDER BY event_date",
@@ -603,6 +649,7 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
                     makeup_attendance_id: r
                         .try_get("makeup_attendance_id")
                         .map_err(|e: sqlx::Error| e.to_string())?,
+                    note: r.try_get("note").map_err(|e: sqlx::Error| e.to_string())?,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -715,8 +762,8 @@ async fn build_day_schedules(
     .map_err(|e| format!("학사일정 조회 실패: {}", e))?;
 
     use std::collections::BTreeMap;
-    // 일자별 코드 후보 — (allows_makeup, is_block, label) 우선순위로 reduce.
-    let mut by_date: BTreeMap<String, (bool, bool, String)> = BTreeMap::new();
+    // 일자별 코드 후보 — (allows_makeup, is_block, regular_blocked, label) 로 reduce.
+    let mut by_date: BTreeMap<String, (bool, bool, bool, String)> = BTreeMap::new();
     for r in rows {
         let s: String = r.try_get("event_date").map_err(|e| e.to_string())?;
         let e_str: String = r.try_get("end_d").map_err(|e| e.to_string())?;
@@ -731,19 +778,19 @@ async fn build_day_schedules(
         while d <= ed {
             if d >= first && d < next_month_first {
                 let key = d.to_string();
-                let entry = by_date.entry(key).or_insert((false, false, String::new()));
-                // 우선순위: allows_makeup 가 우세 — 한 일자에 보강데이 + 공휴일 동시 등록 시 보강데이로 표시.
+                let entry = by_date
+                    .entry(key)
+                    .or_insert((false, false, false, String::new()));
+                // 라벨 우선순위: allows_makeup 우세(보강데이 + 공휴일 동시 등록 시 보강데이 표시),
+                // 그 외에는 첫 등록 코드명 유지.
                 let new_makeup = allows_mk == 1;
-                let new_block = is_block;
-                if new_makeup && !entry.0 {
-                    *entry = (true, entry.1 || new_block, code_name.clone());
-                } else if !entry.0 && new_block && !entry.1 {
-                    *entry = (false, true, code_name.clone());
-                } else if entry.2.is_empty() {
-                    entry.2 = code_name.clone();
+                if (new_makeup && !entry.0) || entry.3.is_empty() {
+                    entry.3 = code_name.clone();
                 }
                 entry.0 = entry.0 || new_makeup;
-                entry.1 = entry.1 || new_block;
+                entry.1 = entry.1 || is_block;
+                // 정규수업 불가: allows_regular_class=0 코드가 하나라도 있으면 true.
+                entry.2 = entry.2 || allows_reg == 0;
             }
             // Sprint 11 F1: succ_opt() 는 NaiveDate::MAX 도달 시 None 반환 — panic 대신 Result 전파.
             d = d
@@ -754,12 +801,15 @@ async fn build_day_schedules(
 
     Ok(by_date
         .into_iter()
-        .map(|(event_date, (allows_makeup, is_block, label))| DaySchedule {
-            event_date,
-            allows_makeup,
-            is_block,
-            label,
-        })
+        .map(
+            |(event_date, (allows_makeup, is_block, regular_blocked, label))| DaySchedule {
+                event_date,
+                allows_makeup,
+                is_block,
+                regular_blocked,
+                label,
+            },
+        )
         .collect())
 }
 
@@ -1005,6 +1055,364 @@ fn next_month_str(year_month: &str) -> Result<String, String> {
         .checked_add_months(Months::new(1))
         .ok_or_else(|| "다음 달 계산 오버플로".to_string())?;
     Ok(format!("{:04}-{:02}", next.year(), next.month()))
+}
+
+// ─────────────────── Sprint 16 T0: 수업일 변경 ───────────────────
+//
+// 케이스1(move_attendance): 특정일 1회성 수업일 이동 — 출결 행 1건의 event_date 변경.
+// 케이스2(apply_schedule_change): 특정일 이후 영구 스케줄 변경 + 변경일 이후 출결 재생성.
+// 설계 근거: docs/sprint/sprint16.md T0 (PI-20~27).
+
+/// `NaiveDate` → "M/D" (예: 6/8). 메모 표기용.
+fn format_md(d: NaiveDate) -> String {
+    format!("{}/{}", d.month(), d.day())
+}
+
+/// `NaiveDate` → 한글 요일 1글자.
+fn weekday_ko(d: NaiveDate) -> &'static str {
+    match d.weekday().number_from_monday() {
+        1 => "월",
+        2 => "화",
+        3 => "수",
+        4 => "목",
+        5 => "금",
+        6 => "토",
+        _ => "일",
+    }
+}
+
+/// 특정 시점에 유효한 모든 요일 스케줄의 수업 분 합 (주당 수업시간, 분 단위).
+fn weekly_minutes_on(slices: &[ScheduleSlice], ref_date: NaiveDate) -> i64 {
+    let ds = ref_date.format("%Y-%m-%d").to_string();
+    slices
+        .iter()
+        .filter(|s| {
+            s.effective_from.as_str() <= ds.as_str()
+                && s.effective_to.as_deref().is_none_or(|to| ds.as_str() < to)
+        })
+        .map(|s| s.minutes)
+        .sum()
+}
+
+/// 케이스1 — 특정일 1회성 수업일 이동 결과.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveAttendanceResult {
+    pub attendance_id: i64,
+    pub from_date: String,
+    pub to_date: String,
+    pub note: String,
+}
+
+/// 케이스1 — 특정일 1회성 수업일 이동.
+///
+/// 출결 행(present) 1건의 `event_date` 를 다른 날로 옮기고 `note` 에 이동 내역을 남긴다.
+/// 사용자가 도착일의 수업 시작시간(`start_time`, "HH:MM")을 입력하면 `regular_attendances`
+/// 에 저장하여 수업 캘린더가 시간을 표시할 수 있게 한다 (PI-28).
+/// 동월 한정, 도착일 OFF/공휴일·충돌 차단 (PI-25). class_minutes 유지 → 청구·주당시간 불변.
+#[tauri::command]
+pub async fn move_attendance(
+    student_id: i64,
+    from_date: String,
+    to_date: String,
+    start_time: String,
+) -> Result<MoveAttendanceResult, String> {
+    let pool = pool().map_err(|e| e.to_string())?;
+    let result = move_attendance_impl(pool, student_id, &from_date, &to_date, &start_time).await?;
+    audit::try_record(
+        AuditEventType::AttendanceRescheduled,
+        Some(&student_id.to_string()),
+        Some(&format!(
+            r#"{{"from":"{}","to":"{}","startTime":"{}"}}"#,
+            from_date, to_date, start_time
+        )),
+    )
+    .await;
+    Ok(result)
+}
+
+/// "HH:MM" 또는 "HH:MM:SS" → "HH:MM:SS" 정규화. 형식 위반 시 Err.
+fn normalize_time(t: &str) -> Result<String, String> {
+    let parts: Vec<&str> = t.split(':').collect();
+    if parts.len() < 2 || parts.len() > 3 {
+        return Err("수업 시작시간 형식이 올바르지 않습니다 (예: 16:00).".to_string());
+    }
+    let h: u32 = parts[0]
+        .parse()
+        .map_err(|_| "수업 시작시간의 시(時)가 올바르지 않습니다.".to_string())?;
+    let m: u32 = parts[1]
+        .parse()
+        .map_err(|_| "수업 시작시간의 분(分)이 올바르지 않습니다.".to_string())?;
+    if h > 23 || m > 59 {
+        return Err("수업 시작시간 범위가 올바르지 않습니다 (00:00~23:59).".to_string());
+    }
+    Ok(format!("{:02}:{:02}:00", h, m))
+}
+
+async fn move_attendance_impl(
+    pool: &SqlitePool,
+    student_id: i64,
+    from_date: &str,
+    to_date: &str,
+    start_time: &str,
+) -> Result<MoveAttendanceResult, String> {
+    let from_d = parse_date(from_date)?;
+    let to_d = parse_date(to_date)?;
+    let start_time = normalize_time(start_time)?;
+    if from_d == to_d {
+        return Err("출발일과 도착일이 같습니다.".to_string());
+    }
+    // 동월 한정 — 파싱된 날짜의 연·월 비교 (P1-8: 문자열 바이트 슬라이싱은 7바이트 미만
+    // 입력에서 panic — parse_date 는 "26-6-1" 같은 축약 표기도 통과시키므로 안전하지 않다)
+    if from_d.format("%Y-%m").to_string() != to_d.format("%Y-%m").to_string() {
+        return Err(
+            "수업일 이동은 같은 달 안에서만 가능합니다. 다른 달로 옮기려면 보강 기능을 이용하세요."
+                .to_string(),
+        );
+    }
+    // 원본 출결 — present 만 이동 허용
+    let row = sqlx::query("SELECT id, status FROM regular_attendances WHERE student_id = ? AND event_date = ?")
+        .bind(student_id)
+        .bind(from_date)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("출결 조회 실패: {}", e))?
+        .ok_or_else(|| format!("{} 에 옮길 수업이 없습니다.", from_date))?;
+    let att_id: i64 = row.try_get("id").map_err(|e| e.to_string())?;
+    let status: String = row.try_get("status").map_err(|e| e.to_string())?;
+    if status != "present" {
+        return Err(
+            "출석(미처리) 상태의 수업만 이동할 수 있습니다. 결석·보강 처리된 수업은 보강 기능을 이용하세요."
+                .to_string(),
+        );
+    }
+    // 도착일 주말 차단 — 정규수업은 평일만 (PI-30)
+    let to_dow = to_d.weekday().number_from_monday();
+    if to_dow >= 6 {
+        return Err(format!(
+            "{} 은(는) 주말이라 정규수업을 옮길 수 없습니다.",
+            format_md(to_d)
+        ));
+    }
+    // 도착일 OFF/공휴일/보강데이 차단 — allows_regular_class=0 일자 (PI-25)
+    let off = load_off_dates(pool, to_date, to_date).await?;
+    if off.contains(to_date) {
+        return Err(format!(
+            "{} 은(는) 휴일·보강데이 등 정규수업이 불가능한 날이라 수업을 옮길 수 없습니다.",
+            format_md(to_d)
+        ));
+    }
+    // 도착일 충돌 차단
+    let exists: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM regular_attendances WHERE student_id = ? AND event_date = ?")
+            .bind(student_id)
+            .bind(to_date)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("도착일 출결 조회 실패: {}", e))?;
+    if exists.is_some() {
+        return Err(format!(
+            "{} 에 이미 수업이 있어 옮길 수 없습니다.",
+            format_md(to_d)
+        ));
+    }
+    let note = format!(
+        "{}({})→{}({}) 이동",
+        format_md(from_d),
+        weekday_ko(from_d),
+        format_md(to_d),
+        weekday_ko(to_d)
+    );
+    sqlx::query(
+        "UPDATE regular_attendances SET event_date = ?, note = ?, start_time = ?, \
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+    )
+    .bind(to_date)
+    .bind(&note)
+    .bind(&start_time)
+    .bind(att_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("수업일 이동 실패: {}", e))?;
+
+    Ok(MoveAttendanceResult {
+        attendance_id: att_id,
+        from_date: from_date.to_string(),
+        to_date: to_date.to_string(),
+        note,
+    })
+}
+
+/// 케이스2 — 특정일 이후 영구 스케줄 변경 + 출결 재생성 결과.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleChangeResult {
+    /// 변경일 이후 신 스케줄로 새로 생성된 출결 수.
+    pub regenerated_count: i64,
+    /// 변경일 이후 보존된 처리행(결석/보강/메모) 수.
+    pub preserved_count: i64,
+    pub weekly_minutes_before: i64,
+    pub weekly_minutes_after: i64,
+}
+
+/// 케이스2 — 변경일(effective_date) 이후 스케줄 변경을 출결에 반영한다.
+///
+/// 선행: 호출 전에 `set_schedule(effective_from = effective_date)` 로 신 스케줄이 반영되어 있어야 한다.
+/// 동작: 변경일 D 이후의 `present`(미처리) 출결만 삭제 후, 날짜 인식 스케줄로 재생성한다.
+/// 결석/보강완료/소멸/메모 행은 **보존**한다 (PI-21). 변경일은 사전(미래)·사후(과거) 모두 허용 (PI-24).
+#[tauri::command]
+pub async fn apply_schedule_change(
+    student_id: i64,
+    effective_date: String,
+) -> Result<ScheduleChangeResult, String> {
+    let pool = pool().map_err(|e| e.to_string())?;
+    let result = apply_schedule_change_impl(pool, student_id, &effective_date).await?;
+    audit::try_record(
+        AuditEventType::ScheduleChangedWithRegen,
+        Some(&student_id.to_string()),
+        Some(&format!(
+            r#"{{"effectiveDate":"{}","regenerated":{},"preserved":{}}}"#,
+            effective_date, result.regenerated_count, result.preserved_count
+        )),
+    )
+    .await;
+    Ok(result)
+}
+
+async fn apply_schedule_change_impl(
+    pool: &SqlitePool,
+    student_id: i64,
+    effective_date: &str,
+) -> Result<ScheduleChangeResult, String> {
+    let d = parse_date(effective_date)?;
+
+    // 원생 입퇴교일 — 변경일 하한 검증 + 재생성 범위 제한
+    let stu = sqlx::query("SELECT enroll_date, withdraw_date FROM students WHERE id = ?")
+        .bind(student_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("원생 조회 실패: {}", e))?
+        .ok_or_else(|| "원생을 찾을 수 없습니다.".to_string())?;
+    let enroll_date: String = stu.try_get("enroll_date").map_err(|e| e.to_string())?;
+    let withdraw_date: Option<String> = stu.try_get("withdraw_date").map_err(|e| e.to_string())?;
+    if effective_date < enroll_date.as_str() {
+        return Err(format!("변경일은 입교일({}) 이후여야 합니다.", enroll_date));
+    }
+    let enroll_d = parse_date(&enroll_date)?;
+    let withdraw_d = match &withdraw_date {
+        Some(w) => Some(parse_date(w)?),
+        None => None,
+    };
+
+    // 신 스케줄(현행 반영 완료) 이력 로드
+    let slices = load_schedule_slices(pool, student_id).await?;
+    let weekly_minutes_after = weekly_minutes_on(&slices, d);
+    let weekly_minutes_before = match d.pred_opt() {
+        Some(prev) => weekly_minutes_on(&slices, prev),
+        None => 0,
+    };
+
+    // ── 트랜잭션 전 데이터 수집 ──
+    // D 이후 ~ 와 겹치는 확정 교습기간들
+    let period_rows = sqlx::query(
+        "SELECT start_date, end_date FROM study_periods \
+         WHERE is_confirmed = 1 AND end_date >= ? ORDER BY start_date",
+    )
+    .bind(effective_date)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
+
+    struct Period {
+        start: NaiveDate,
+        end: NaiveDate,
+    }
+    let mut periods = Vec::with_capacity(period_rows.len());
+    for r in &period_rows {
+        let ps: String = r.try_get("start_date").map_err(|e| e.to_string())?;
+        let pe: String = r.try_get("end_date").map_err(|e| e.to_string())?;
+        periods.push(Period {
+            start: parse_date(&ps)?,
+            end: parse_date(&pe)?,
+        });
+    }
+
+    // off_dates — 재생성 전체 범위 (변경일 ~ 최대 교습기간 말)
+    let off_dates = match periods.iter().map(|p| p.end).max() {
+        Some(max_end) => {
+            load_off_dates(pool, effective_date, &max_end.format("%Y-%m-%d").to_string()).await?
+        }
+        None => HashSet::new(),
+    };
+
+    // ── 트랜잭션: 변경일 이후 present 삭제 → 재생성 ──
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
+
+    sqlx::query(
+        "DELETE FROM regular_attendances \
+         WHERE student_id = ? AND event_date >= ? AND status = 'present'",
+    )
+    .bind(student_id)
+    .bind(effective_date)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("기존 출결 삭제 실패: {}", e))?;
+
+    // 보존된 처리행(결석/보강/소멸/메모) 수 — 삭제 후 남은 변경일 이후 행
+    let preserved_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM regular_attendances WHERE student_id = ? AND event_date >= ?",
+    )
+    .bind(student_id)
+    .bind(effective_date)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| format!("보존 행 카운트 실패: {}", e))?;
+
+    let mut regenerated_count = 0i64;
+    for p in &periods {
+        let mut cur = p.start.max(d);
+        while cur <= p.end {
+            if let Some(minutes) = minutes_for_date(&slices, cur) {
+                let in_range = cur >= enroll_d && withdraw_d.is_none_or(|wd| cur <= wd);
+                let ds = cur.format("%Y-%m-%d").to_string();
+                if in_range && !off_dates.contains(&ds) {
+                    let ym = &ds[..7];
+                    let res = sqlx::query(
+                        "INSERT OR IGNORE INTO regular_attendances \
+                         (student_id, event_date, year_month, status, class_minutes) \
+                         VALUES (?, ?, ?, 'present', ?)",
+                    )
+                    .bind(student_id)
+                    .bind(&ds)
+                    .bind(ym)
+                    .bind(minutes)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| format!("출결 재생성 INSERT 실패: {}", e))?;
+                    if res.rows_affected() > 0 {
+                        regenerated_count += 1;
+                    }
+                }
+            }
+            cur = cur
+                .succ_opt()
+                .ok_or_else(|| "재생성 날짜 계산 오버플로".to_string())?;
+        }
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
+
+    Ok(ScheduleChangeResult {
+        regenerated_count,
+        preserved_count,
+        weekly_minutes_before,
+        weekly_minutes_after,
+    })
 }
 
 // ─────────────────────── 단위 테스트 ───────────────────────
@@ -1371,7 +1779,7 @@ mod tests {
     async fn fetch_cell(pool: &SqlitePool, attendance_id: i64) -> AttendanceCell {
         let row = sqlx::query(
             "SELECT id, event_date, status, class_minutes, absence_memo, \
-                    makeup_deadline, makeup_attendance_id \
+                    makeup_deadline, makeup_attendance_id, note \
              FROM regular_attendances WHERE id = ?",
         )
         .bind(attendance_id)
@@ -1386,6 +1794,7 @@ mod tests {
             absence_memo: row.try_get("absence_memo").unwrap(),
             makeup_deadline: row.try_get("makeup_deadline").unwrap(),
             makeup_attendance_id: row.try_get("makeup_attendance_id").unwrap(),
+            note: row.try_get("note").unwrap(),
         }
     }
 
@@ -1927,5 +2336,257 @@ mod tests {
         // 실제 transitioned_count 는 환경 시점에 따라 달라지므로 단언하지 않음.
         let _ = result.expiration_report.transitioned_count;
         assert_eq!(result.year_month, "2026-07");
+    }
+
+    // ─────────── Sprint 16 T0: 수업일 변경 ───────────
+
+    #[tokio::test]
+    async fn minutes_for_date_respects_effective_range() {
+        // 같은 요일(6/8과 6/22는 14일 차 = 동일 요일), 6/01~6/15(exclusive) 60분 슬라이스.
+        let day1 = NaiveDate::from_ymd_opt(2026, 6, 8).unwrap();
+        let day2 = NaiveDate::from_ymd_opt(2026, 6, 22).unwrap();
+        let dow = day1.weekday().number_from_monday() as i64;
+        let slices = vec![ScheduleSlice {
+            day_of_week: dow,
+            minutes: 60,
+            effective_from: "2026-06-01".into(),
+            effective_to: Some("2026-06-15".into()),
+        }];
+        // 6/8 < 6/15 → 유효, 6/22 >= 6/15 → 마감(exclusive)
+        assert_eq!(minutes_for_date(&slices, day1), Some(60));
+        assert_eq!(minutes_for_date(&slices, day2), None);
+        // 다른 요일은 매칭 없음
+        let other = day1.succ_opt().unwrap();
+        assert_eq!(minutes_for_date(&slices, other), None);
+    }
+
+    /// 6월의 특정 요일 첫 출결 일자를 반환.
+    async fn first_event_date(pool: &SqlitePool, sid: i64) -> String {
+        sqlx::query_scalar(
+            "SELECT event_date FROM regular_attendances WHERE student_id = ? ORDER BY event_date LIMIT 1",
+        )
+        .bind(sid)
+        .fetch_one(pool)
+        .await
+        .expect("첫 출결 일자")
+    }
+
+    #[tokio::test]
+    async fn move_attendance_moves_present_cell() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await; // 월요일 1h
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        let from = first_event_date(&pool, sid).await; // 첫 월요일
+        let from_d = NaiveDate::parse_from_str(&from, "%Y-%m-%d").unwrap();
+        let to_d = from_d.succ_opt().unwrap(); // 다음날(화요일, 비수업·비OFF·동월)
+        let to = to_d.format("%Y-%m-%d").to_string();
+
+        let r = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.expect("이동 성공");
+        assert_eq!(r.to_date, to);
+        assert!(r.note.contains("이동"));
+
+        // 원본 비고, 도착 출석 + note
+        let from_left: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM regular_attendances WHERE student_id = ? AND event_date = ?",
+        )
+        .bind(sid).bind(&from).fetch_optional(&pool).await.unwrap();
+        assert!(from_left.is_none(), "원본 일자는 비어야 함");
+
+        let to_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM regular_attendances WHERE student_id = ? AND event_date = ?",
+        )
+        .bind(sid).bind(&to).fetch_one(&pool).await.unwrap();
+        let cell = fetch_cell(&pool, to_id).await;
+        assert_eq!(cell.status, "present");
+        assert!(cell.note.is_some());
+
+        // PI-28: 입력한 시작시간이 "HH:MM:SS" 로 저장되어야 (캘린더 표시용)
+        let saved_time: Option<String> = sqlx::query_scalar(
+            "SELECT start_time FROM regular_attendances WHERE id = ?",
+        )
+        .bind(to_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(saved_time.as_deref(), Some("16:00:00"));
+    }
+
+    #[test]
+    fn normalize_time_formats_and_validates() {
+        assert_eq!(normalize_time("16:00").unwrap(), "16:00:00");
+        assert_eq!(normalize_time("9:5").unwrap(), "09:05:00");
+        assert_eq!(normalize_time("16:00:00").unwrap(), "16:00:00");
+        assert!(normalize_time("25:00").is_err());
+        assert!(normalize_time("16:75").is_err());
+        assert!(normalize_time("abc").is_err());
+        assert!(normalize_time("16").is_err());
+    }
+
+    #[tokio::test]
+    async fn move_attendance_blocks_weekend() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let from = first_event_date(&pool, sid).await; // 첫 월요일
+        let from_d = NaiveDate::parse_from_str(&from, "%Y-%m-%d").unwrap();
+        // 같은 주 토요일(월 + 5일) — 동월 범위
+        let sat = from_d.checked_add_days(chrono::Days::new(5)).unwrap();
+        let to = sat.format("%Y-%m-%d").to_string();
+        let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
+        assert!(err.contains("주말"), "주말 이동 차단: {}", err);
+    }
+
+    #[tokio::test]
+    async fn move_attendance_blocks_off_day() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        let from = first_event_date(&pool, sid).await;
+        let from_d = NaiveDate::parse_from_str(&from, "%Y-%m-%d").unwrap();
+        let to_d = from_d.succ_opt().unwrap();
+        let to = to_d.format("%Y-%m-%d").to_string();
+        // 도착일을 공휴일(allows_regular_class=0)로 지정
+        let code = schedule_code_id(&pool, "공휴일").await;
+        add_schedule_event(&pool, code, &to, None).await;
+
+        let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
+        assert!(err.contains("옮길 수 없습니다"), "OFF일 차단: {}", err);
+    }
+
+    #[tokio::test]
+    async fn move_attendance_blocks_cross_month() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let from = first_event_date(&pool, sid).await;
+
+        let err = move_attendance_impl(&pool, sid, &from, "2026-07-06", "16:00").await.unwrap_err();
+        assert!(err.contains("같은 달"), "월 경계 차단: {}", err);
+    }
+
+    #[tokio::test]
+    async fn move_attendance_blocks_conflict() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        // 월(1) + 화(2) 둘 다 수업 → 화요일에 이미 출결 존재
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1), (2, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        let from = first_event_date(&pool, sid).await; // 첫 출결(월 또는 화 중 이른 것)
+        let from_d = NaiveDate::parse_from_str(&from, "%Y-%m-%d").unwrap();
+        let to_d = from_d.succ_opt().unwrap(); // 다음날 — 둘 다 수업이면 충돌 가능
+        let to = to_d.format("%Y-%m-%d").to_string();
+        let to_has: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM regular_attendances WHERE student_id = ? AND event_date = ?",
+        )
+        .bind(sid).bind(&to).fetch_optional(&pool).await.unwrap();
+        if to_has.is_some() {
+            let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
+            assert!(err.contains("이미 수업"), "충돌 차단: {}", err);
+        }
+    }
+
+    #[tokio::test]
+    async fn move_attendance_rejects_non_present() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let from = first_event_date(&pool, sid).await;
+        let from_d = NaiveDate::parse_from_str(&from, "%Y-%m-%d").unwrap();
+        let to = from_d.succ_opt().unwrap().format("%Y-%m-%d").to_string();
+        // 결석으로 변경
+        sqlx::query("UPDATE regular_attendances SET status = 'absent' WHERE student_id = ? AND event_date = ?")
+            .bind(sid).bind(&from).execute(&pool).await.unwrap();
+
+        let err = move_attendance_impl(&pool, sid, &from, &to, "16:00").await.unwrap_err();
+        assert!(err.contains("출석(미처리)"), "present 외 거부: {}", err);
+    }
+
+    /// 케이스2 셋업: 월(1) 1h 스케줄을 effective_date 부터 화(2) 2h 로 변경 (set_schedule 패턴 재현).
+    async fn change_mon_to_tue(pool: &SqlitePool, sid: i64, effective_date: &str, new_hours: i64) {
+        sqlx::query(
+            "UPDATE student_schedules SET effective_to = ? \
+             WHERE student_id = ? AND day_of_week = 1 AND effective_to IS NULL",
+        )
+        .bind(effective_date).bind(sid).execute(pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) \
+             VALUES (?, 2, '16:00', ?, ?)",
+        )
+        .bind(sid).bind(new_hours).bind(effective_date).execute(pool).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn apply_schedule_change_regenerates_after_date() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await; // 월 1h
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        change_mon_to_tue(&pool, sid, "2026-06-15", 2).await; // 6/15부터 화 2h
+        let r = apply_schedule_change_impl(&pool, sid, "2026-06-15").await.expect("apply");
+
+        // 변경일 이후 월요일(%w=1) 출결 없음, 화요일(%w=2) 출결 생성
+        let mon_after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances \
+             WHERE student_id = ? AND event_date >= '2026-06-15' AND CAST(strftime('%w', event_date) AS INTEGER) = 1",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert_eq!(mon_after, 0, "변경일 이후 월요일 출결 없어야");
+        let tue_after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances \
+             WHERE student_id = ? AND event_date >= '2026-06-15' AND CAST(strftime('%w', event_date) AS INTEGER) = 2",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert!(tue_after > 0, "변경일 이후 화요일 출결 생성");
+        assert!(r.regenerated_count > 0);
+
+        // 변경일 이전 월요일 출결 유지(불변)
+        let mon_before: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances \
+             WHERE student_id = ? AND event_date < '2026-06-15' AND CAST(strftime('%w', event_date) AS INTEGER) = 1",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert!(mon_before > 0, "변경일 이전 월요일 출결은 유지");
+
+        // 주당 분 변동 감지 (월 60 → 화 120)
+        assert_eq!(r.weekly_minutes_before, 60);
+        assert_eq!(r.weekly_minutes_after, 120);
+    }
+
+    #[tokio::test]
+    async fn apply_schedule_change_preserves_processed_rows() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-06").await.expect("generate");
+
+        // 변경일 이후 첫 월요일 출결을 결석 처리
+        let absent_date: String = sqlx::query_scalar(
+            "SELECT event_date FROM regular_attendances \
+             WHERE student_id = ? AND event_date >= '2026-06-15' ORDER BY event_date LIMIT 1",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        sqlx::query("UPDATE regular_attendances SET status = 'absent' WHERE student_id = ? AND event_date = ?")
+            .bind(sid).bind(&absent_date).execute(&pool).await.unwrap();
+
+        change_mon_to_tue(&pool, sid, "2026-06-15", 1).await;
+        let r = apply_schedule_change_impl(&pool, sid, "2026-06-15").await.expect("apply");
+
+        assert!(r.preserved_count >= 1, "결석 행 보존 카운트");
+        // 결석 행 여전히 존재 + 상태 유지
+        let still: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM regular_attendances WHERE student_id = ? AND event_date = ?",
+        ).bind(sid).bind(&absent_date).fetch_optional(&pool).await.unwrap();
+        assert_eq!(still.as_deref(), Some("absent"), "결석 행은 보존되어야");
+    }
+
+    #[tokio::test]
+    async fn apply_schedule_change_rejects_before_enroll() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        let err = apply_schedule_change_impl(&pool, sid, "2026-03-01").await.unwrap_err();
+        assert!(err.contains("입교일"), "입교일 이전 차단: {}", err);
     }
 }

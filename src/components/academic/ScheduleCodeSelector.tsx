@@ -45,7 +45,7 @@ export function ScheduleCodeSelector({
       </div>
 
       {codesQuery.isLoading && (
-        <p className="text-xs text-gray-500">코드 목록 불러오는 중...</p>
+        <p className="text-xs text-muted-foreground">코드 목록 불러오는 중...</p>
       )}
       {codesQuery.isError && (
         <p role="alert" className="text-xs text-red-700">
@@ -54,7 +54,7 @@ export function ScheduleCodeSelector({
       )}
 
       {!codesQuery.isLoading && activeCodes.length === 0 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           활성 코드가 없습니다.{' '}
           <Link href="/settings/schedule-codes" className="text-blue-700 underline">
             설정에서 활성화하세요

@@ -36,7 +36,7 @@ export type LockStatus =
  * 백업 계층 — T7 PRD §5.3/§5.4 (ADR-003).
  *
  * `src-tauri/src/commands/backup.rs::BackupLayer` 와 serde rename_all="kebab-case" 정합.
- * 보관 정책: exit(10) / hourly(24) / daily(30) / weekly(4) — 초과 시 가장 오래된 파일 삭제.
+ * 보관 정책: exit(5) / hourly(12) / daily(14) / weekly(4) — 초과 시 가장 오래된 파일 삭제 (PRD §5.4 v1.5.2).
  */
 export type BackupLayer = 'exit' | 'hourly' | 'daily' | 'weekly'
 
@@ -171,4 +171,7 @@ export interface StartupResult {
    *  내부는 camelCase, 본 필드는 snake_case 유지 (기존 StartupResult 패턴).
    *  `transitioned_count > 0` 시 메인 페이지에서 토스트 표시 (T9). */
   expiration_report: import('./expiration').ExpirationReport
+  /** Sprint 16: 시작 시 DB 손상이 감지되어 자동 복원된 경우의 결과 (없으면 null).
+   *  null 이 아니면 메인 페이지에서 "최근 정상 백업으로 복원됨" 고지. */
+  auto_restored: RestoreResult | null
 }

@@ -15,8 +15,12 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
-import { listBackups, runBackupRehearsal } from '@/lib/tauri'
+import { listBackups, relaunchApp, restoreBackup, runBackupRehearsal } from '@/lib/tauri'
 import type { BackupLayer, BackupMetadata, RehearsalResult } from '@/types'
+
+// 개발 빌드는 화면을 localhost dev 서버에서 로드하므로 relaunch() 시 화면을 못 띄운다.
+// 개발 모드에서는 자동 재시작 대신 수동 안내. (T3 DB 폴더 변경과 동일 가드)
+const IS_DEV = process.env.NODE_ENV !== 'production'
 
 const LAYER_LABEL: Record<BackupLayer, string> = {
   exit: '종료 시',
@@ -61,6 +65,10 @@ export default function BackupPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RehearsalResult | null>(null)
+  // 수동 복원: 확인 모달 / 진행 중 / 완료(재시작 안내).
+  const [confirmRestore, setConfirmRestore] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [restored, setRestored] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -95,11 +103,27 @@ export default function BackupPage() {
     }
   }
 
+  // 수동 복원 — 선택 백업으로 현재 DB 교체(현재 DB 는 rollback 보존). 완료 후 재시작 필요.
+  const handleRestore = async () => {
+    if (restoring || selected === null) return
+    setConfirmRestore(false)
+    setRestoring(true)
+    setError(null)
+    try {
+      await restoreBackup(selected.path)
+      setRestored(true)
+    } catch (e) {
+      setError(typeof e === 'string' ? e : '백업 복원에 실패했습니다.')
+    } finally {
+      setRestoring(false)
+    }
+  }
+
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <div className="mx-auto max-w-4xl">
         <div className="mb-4">
-          <Link href="/settings" className="text-sm text-gray-500 hover:text-[var(--accent)]">
+          <Link href="/settings" className="text-sm text-muted-foreground hover:text-[var(--accent)]">
             ← 설정
           </Link>
         </div>
@@ -128,9 +152,9 @@ export default function BackupPage() {
           >
             <h2 className="mb-3 text-lg font-bold">백업 파일</h2>
             {loading ? (
-              <p className="text-sm text-gray-500">불러오는 중...</p>
+              <p className="text-sm text-muted-foreground">불러오는 중...</p>
             ) : backups.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 아직 백업 파일이 없습니다. (개발 빌드에서는 암호화 백업이 생성되지 않습니다)
               </p>
             ) : (
@@ -154,7 +178,7 @@ export default function BackupPage() {
                         <span className="text-sm font-medium text-[var(--foreground)]">
                           {formatDateTime(b.created_at)}
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           {LAYER_LABEL[b.layer]} · {formatBytes(b.size_bytes)}
                         </span>
                       </button>
@@ -171,7 +195,7 @@ export default function BackupPage() {
             className="rounded-lg border border-[var(--border)] bg-white p-5"
           >
             {selected === null ? (
-              <p className="text-base text-gray-500">
+              <p className="text-base text-muted-foreground">
                 왼쪽에서 검증할 백업 파일을 선택하세요.
               </p>
             ) : (
@@ -179,22 +203,32 @@ export default function BackupPage() {
                 <div className="mb-4 flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-lg font-bold">복원 리허설</h2>
-                    <p className="mt-1 truncate text-sm text-gray-500" title={selected.path}>
+                    <p className="mt-1 truncate text-sm text-muted-foreground" title={selected.path}>
                       {formatDateTime(selected.created_at)} · {LAYER_LABEL[selected.layer]}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleRehearsal}
-                    disabled={running}
-                    className="h-12 shrink-0 rounded-md bg-[var(--accent)] px-5 text-base font-bold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
-                  >
-                    {running ? '검증 중...' : '복원 리허설 실행'}
-                  </button>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRehearsal}
+                      disabled={running || restoring}
+                      className="h-12 rounded-md bg-[var(--accent)] px-5 text-base font-bold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
+                    >
+                      {running ? '검증 중...' : '복원 리허설 실행'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRestore(true)}
+                      disabled={running || restoring}
+                      className="h-12 rounded-md border-2 border-[var(--danger)] px-5 text-base font-bold text-[var(--danger)] hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {restoring ? '복원 중...' : '이 백업으로 복원'}
+                    </button>
+                  </div>
                 </div>
 
                 {result === null ? (
-                  <p className="text-base text-gray-500">
+                  <p className="text-base text-muted-foreground">
                     “복원 리허설 실행”을 누르면 이 백업의 사본을 만들어 무결성과 데이터 건수를
                     점검합니다.
                   </p>
@@ -205,6 +239,75 @@ export default function BackupPage() {
             )}
           </section>
         </div>
+
+        {/* 복원 확인 모달 */}
+        {confirmRestore && selected !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-lg border border-[var(--border)] bg-white p-6 shadow-xl">
+              <h3 className="mb-2 text-lg font-bold text-[var(--danger)]">이 백업으로 복원할까요?</h3>
+              <p className="mb-4 text-sm text-gray-700">
+                <b>{formatDateTime(selected.created_at)}</b> ({LAYER_LABEL[selected.layer]}) 시점으로
+                되돌립니다. 그 이후 입력한 데이터는 사라집니다.
+                <br />
+                현재 데이터는 <b>복원 직전 상태로 보존</b>되며(되돌리기 가능), 복원 후 앱을
+                재시작해야 적용됩니다.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmRestore(false)}
+                  className="h-11 rounded-md border border-[var(--border)] px-5 text-base hover:bg-gray-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRestore}
+                  className="h-11 rounded-md bg-[var(--danger)] px-5 text-base font-bold text-white hover:opacity-90"
+                >
+                  복원 실행
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 복원 완료 모달 — 재시작 안내 */}
+        {restored && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-lg border border-[var(--border)] bg-white p-6 shadow-xl">
+              <h3 className="mb-2 text-lg font-bold">복원 완료</h3>
+              {IS_DEV ? (
+                <>
+                  <p className="mb-4 text-sm text-gray-700">
+                    백업으로 복원했습니다. <b>개발 모드</b>에서는 자동 재시작이 동작하지 않습니다.
+                    앱을 직접 종료한 뒤 다시 실행해 주세요.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setRestored(false)}
+                    className="h-12 w-full rounded-md bg-[var(--accent)] px-6 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
+                  >
+                    확인
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="mb-4 text-sm text-gray-700">
+                    백업으로 복원했습니다. 변경을 적용하려면 앱을 재시작해야 합니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void relaunchApp()}
+                    className="h-12 w-full rounded-md bg-[var(--accent)] px-6 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
+                  >
+                    지금 재시작
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   )
@@ -234,7 +337,7 @@ function RehearsalReport({ result }: { result: RehearsalResult }) {
       </p>
       <table className="mt-4 w-full text-sm">
         <thead>
-          <tr className="border-b border-[var(--border)] text-left text-gray-500">
+          <tr className="border-b border-[var(--border)] text-left text-muted-foreground">
             <th className="py-2 font-medium">항목</th>
             <th className="py-2 text-right font-medium">건수</th>
           </tr>
