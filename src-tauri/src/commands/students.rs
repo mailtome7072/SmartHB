@@ -289,17 +289,34 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
         .await
         .map_err(AppError::Db)
         .map_err(String::from)?;
+    let student = insert_student_tx(&mut tx, &payload)
+        .await
+        .map_err(String::from)?;
+    tx.commit().await.map_err(AppError::Db).map_err(String::from)?;
+
+    // R13 PII 마스킹: 원생 이름은 details 에 기록하지 않는다 — event_subject(serial_no) 만으로 추적 가능.
+    audit::try_record(AuditEventType::StudentCreated, Some(&student.serial_no), None).await;
+    Ok(student)
+}
+
+/// 주어진 트랜잭션 안에서 원생 1건을 INSERT 하고 `Student` 를 반환한다 (commit·audit 미포함).
+///
+/// `create_student`(단건)와 CSV 일괄 가져오기(`import::import_students_csv`)가 공유한다.
+/// 후자는 전체 행을 **하나의 트랜잭션**으로 묶어 중간 실패 시 부분 삽입을 방지한다(코드리뷰 C2).
+pub(crate) async fn insert_student_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    payload: &NewStudent,
+) -> Result<Student, AppError> {
     // BEGIN IMMEDIATE 의 효과를 위해 즉시 쓰기 의도를 표시 — sqlx 의 begin() 은 deferred.
     // 단일 사용자 모델이라 실질 race 없음. PI-05 안전망으로 INSERT 전 MAX 조회를 같은 tx 안에서 수행.
     sqlx::query("SELECT 1 FROM students LIMIT 0")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
-        .map_err(AppError::Db)
-        .map_err(String::from)?;
+        .map_err(AppError::Db)?;
 
     let serial = match payload.serial_no.as_deref() {
         Some(s) if !s.is_empty() => s.to_string(),
-        _ => compute_next_serial(&mut tx).await.map_err(String::from)?,
+        _ => compute_next_serial(tx).await?,
     };
 
     let row = sqlx::query(
@@ -322,17 +339,11 @@ pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
     .bind(payload.phone_father.as_deref())
     .bind(payload.birth_date.as_deref())
     .bind(&payload.enroll_date)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await
-    .map_err(|e| map_serial_unique_violation(&serial, e))
-    .map_err(String::from)?;
+    .map_err(|e| map_serial_unique_violation(&serial, e))?;
 
-    let student = Student::from_row(&row).map_err(String::from)?;
-    tx.commit().await.map_err(AppError::Db).map_err(String::from)?;
-
-    // R13 PII 마스킹: 원생 이름은 details 에 기록하지 않는다 — event_subject(serial_no) 만으로 추적 가능.
-    audit::try_record(AuditEventType::StudentCreated, Some(&serial), None).await;
-    Ok(student)
+    Student::from_row(&row)
 }
 
 /// 원생 정보를 PUT-like 로 갱신한다.
@@ -697,6 +708,46 @@ mod tests {
         let sql = StudentSort::SerialAsc.order_by_sql();
         assert!(sql.contains("CAST(serial_no AS INTEGER)"));
         assert!(sql.contains("ASC"));
+    }
+
+    #[tokio::test]
+    async fn insert_student_tx_rollback_discards_all() {
+        // 코드리뷰 C2: import 가 여러 행을 단일 트랜잭션으로 묶을 때, 중간 롤백 시
+        // 이전에 삽입한 행도 남지 않아야 한다(부분 삽입 방지).
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let mut tx = pool.begin().await.expect("tx 시작");
+        insert_student_tx(&mut tx, &sample_payload(Some("100")))
+            .await
+            .expect("첫 행 삽입");
+        insert_student_tx(&mut tx, &sample_payload(Some("101")))
+            .await
+            .expect("둘째 행 삽입");
+        tx.rollback().await.expect("롤백");
+
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM students")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count.0, 0, "롤백 후 어떤 행도 커밋되지 않아야 함");
+    }
+
+    #[tokio::test]
+    async fn insert_student_tx_commit_persists_all() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let mut tx = pool.begin().await.expect("tx 시작");
+        insert_student_tx(&mut tx, &sample_payload(Some("100")))
+            .await
+            .expect("삽입");
+        insert_student_tx(&mut tx, &sample_payload(Some("101")))
+            .await
+            .expect("삽입");
+        tx.commit().await.expect("커밋");
+
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM students")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count.0, 2, "커밋 후 2행 모두 존재");
     }
 
     #[cfg(not(feature = "cipher"))]

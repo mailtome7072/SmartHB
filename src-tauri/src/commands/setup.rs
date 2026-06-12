@@ -267,6 +267,15 @@ async fn change_data_folder_impl(app: &AppHandle, new_path: &str) -> Result<(), 
     status.cloud_folder_path = new_cloud.to_string_lossy().to_string();
     write_status(app, &status)?;
 
+    // 6. 구 경로 DB pool 종료 — 재시작 전 다른 IPC 가 구 DB 에 쓰는 것을 차단한다(코드리뷰 A6).
+    //    전역 POOL 은 OnceCell 이라 새 경로로 교체할 수 없으므로, 닫아서 후속 쿼리를 명확히
+    //    실패시키고 재시작(프론트 relaunch / dev 수동 안내)을 강제한다. 재시작 후 새 프로세스가
+    //    새 경로 config 로 POOL 을 다시 초기화한다. 닫지 않으면 변경 직후 입력이 구 DB 에 쓰여
+    //    재시작 후 신 DB 에서 누락된다.
+    if let Ok(pool) = crate::commands::db::pool() {
+        pool.close().await;
+    }
+
     Ok(())
 }
 
