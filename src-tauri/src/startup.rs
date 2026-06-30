@@ -297,6 +297,13 @@ fn spawn_background_tasks() {
                 ticker.tick().await;
                 backup::try_create_backup(backup::BackupLayer::Hourly).await;
                 backup::run_catchup_backups().await;
+                // WAL 파일을 본체로 병합해 클라우드 동기화 대상 크기 제어
+                if let Ok(pool) = db::pool() {
+                    let _ = sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
+                        .execute(pool)
+                        .await
+                        .inspect_err(|e| eprintln!("[backup] hourly WAL checkpoint 실패: {}", e));
+                }
             }
         });
         BackgroundHandles {
