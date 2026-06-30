@@ -387,20 +387,6 @@ pub async fn acquire_lock(force: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// 백그라운드 heartbeat task — 60초마다 호출되어 mtime 갱신.
-///
-/// `acquire_lock_atomic(false)` 는 본 디바이스 점유 중일 때도 성공하므로 heartbeat 효과와 동등.
-/// 실패는 stderr 로만 기록 — 백그라운드 task 가 panic 으로 죽지 않도록 한다.
-pub(crate) async fn heartbeat_tick() {
-    if let Err(e) = tokio::task::spawn_blocking(|| acquire_lock_atomic(false))
-        .await
-        .map_err(|e| app_err!(Lock, "heartbeat 작업 실패", e))
-        .and_then(|r| r)
-    {
-        eprintln!("[lock] heartbeat 실패 (재시도 60초 후): {}", e);
-    }
-}
-
 /// 락을 해제한다 (본 디바이스 점유일 때만, T11 R7 advisory lock 적용).
 ///
 /// `acquire_lock_atomic` 와 동일한 advisory lock 보호 수준을 제공한다 — fs2 의
@@ -687,21 +673,4 @@ mod tests {
         assert!(result.unwrap().is_self());
     }
 
-    #[tokio::test]
-    async fn heartbeat_tick_does_not_panic_on_success() {
-        // 본 디바이스 락 점유 후 heartbeat 호출 — 락 디렉토리는 SmartHB-data 공유.
-        // acquire_lock_atomic 이 idempotent 하므로 결과적으로 mtime 만 갱신.
-        let acquired = acquire_lock_atomic(false);
-        if acquired.is_err() {
-            // 다른 테스트 또는 외부 프로세스가 점유 중 — heartbeat 도 동일하게 거부될 것.
-            // 본 테스트는 panic 없는 동작만 검증하므로 skip.
-            return;
-        }
-        // heartbeat 호출이 panic 없이 완료되어야 한다.
-        heartbeat_tick().await;
-        heartbeat_tick().await; // 2회 호출도 안전 (재진입)
-
-        // 정리 — 다른 테스트와 격리.
-        let _ = std::fs::remove_file(lock_path());
-    }
 }

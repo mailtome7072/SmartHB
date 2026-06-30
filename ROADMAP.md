@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 100% (16/16 스프린트 완료, Phase 5 취소로 17→16 스프린트) |
-| 현재 Phase | **v1.0 릴리즈 완료** — Sprint 16 완료(2026-06-12), deploy-prod 대기 중 |
-| 다음 마일스톤 | v1.0.0 GitHub Release (deploy-prod agent 실행 후) |
+| 전체 진행률 | v1.0.0 릴리즈 완료 + Post-v1.0 유지보수 진행 중 |
+| 현재 Phase | **Post-v1.0 안정화** — Sprint 17 진행 중 (DB 안전성 + 정책 간소화) |
+| 다음 마일스톤 | v1.0.1 패치 (Sprint 17 완료 후) |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -887,6 +887,38 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
+## Post-v1.0: 유지보수 + 안정화
+
+### Sprint 17: DB 안전성 잔여 수정 + 클라우드 동기화 정책 간소화 (2주) 🔄 진행 중
+
+> 계획 문서: `docs/sprint/sprint17.md`
+> v1.0.0 실사용 중 발견된 DB 오류 버그 9건 중 긴급 6건은 Hotfix(`hotfix/db-lock-and-backup-fix`)로 선행 처리.
+> Sprint 17은 남은 안전성 수정 3건 + 정책 간소화 3건을 담당.
+
+#### 작업 목록
+
+**그룹 A — 남은 안전성 수정**
+- ⬜ **T1**: DB 폴더 변경 WAL 체크포인트 에러 처리 (`setup.rs`)
+- ⬜ **T2**: 백업 파일 임시 파일 후 이동 방식 — atomic write (`backup.rs`)
+- ⬜ **T3**: 자동 복원 후 재검증 — quick_check + rollback (`startup.rs`, `integrity.rs`)
+
+**그룹 B — 정책 간소화**
+- ⬜ **T4**: Hourly 백업 간격 1시간 -> 2시간 (`startup.rs`)
+- ⬜ **T5**: Heartbeat 제거 — app.lock 시작/종료 단순화 (`startup.rs`, `lock.rs`)
+- ⬜ **T6**: SyncStatus 삭제 — 백엔드 IPC + 프론트엔드 polling + UI 제거 (`sync.rs` 삭제, `app-shell.tsx`, `top-bar.tsx`)
+
+**통합**
+- ⬜ **T7**: 통합 검증 (cargo test + clippy + cipher check + lint + tsc + build)
+
+#### 완료 기준 (Definition of Done)
+- ⬜ WAL 체크포인트 실패 시 복사 중단 + 사용자 오류 메시지
+- ⬜ 백업 파일 atomic write (tmp -> rename)
+- ⬜ 자동 복원 후 재검증, 실패 시 rollback
+- ⬜ hourly 간격 2시간, heartbeat 제거, SyncStatus 삭제
+- ⬜ cargo test + clippy --all-targets + cipher check + lint + tsc + build 전수 통과
+
+---
+
 ## 📈 마일스톤
 
 | 마일스톤 | Phase | Sprint | 예상 시점 | 핵심 산출물 |
@@ -900,7 +932,8 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 | M6: PIN 옵션화 | — | Sprint 13 | +24주 ✅ | PIN 스킵 토글 + Phase 5 취소 반영 |
 | M7: 대시보드 | Phase 5 | Sprint 14 | +26주 ✅ | 대시보드 + 자가 진단 + 내보내기 |
 | M7.5: 안정화 | Phase 6 | Sprint 15 | +28주 ✅ | 교습소 정보 + 접근성 감사 + 성능 최적화 (T7~T9 Sprint 16 이연) |
-| M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +32주 | 양 OS 빌드 검증 + UAT + v1.0.0 |
+| M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +32주 ✅ | 양 OS 빌드 검증 + UAT + v1.0.0 |
+| M9: v1.0.1 안정화 | Post-v1.0 | Sprint 17 | +34주 | DB 안전성 잔여 수정 + 정책 간소화 |
 
 ---
 

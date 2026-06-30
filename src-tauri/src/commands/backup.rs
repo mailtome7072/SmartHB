@@ -425,11 +425,19 @@ fn create_backup_sync(layer: BackupLayer) -> Result<BackupMetadata, AppError> {
     let now = Utc::now();
     let filename = generate_filename(now);
     let dest = dir.join(&filename);
+    // 미완성 파일이 MYBOX 에 즉시 동기화되지 않도록 tmp 파일로 먼저 쓰고 검증 후 rename.
+    let dest_tmp = dir.join(format!("{}.tmp", filename));
 
     let source = paths::db_path();
-    if let Err(e) = perform_backup_with_cipher(&source, &dest) {
-        let _ = std::fs::remove_file(&dest);
+    if let Err(e) = perform_backup_with_cipher(&source, &dest_tmp) {
+        let _ = std::fs::remove_file(&dest_tmp);
         return Err(e);
+    }
+
+    // perform_backup_with_cipher 가 quick_check 통과 후 반환 — 검증된 tmp 를 최종 경로로 이동.
+    if let Err(e) = std::fs::rename(&dest_tmp, &dest) {
+        let _ = std::fs::remove_file(&dest_tmp);
+        return Err(app_err!(Backup, "백업 파일 이름 변경 실패", e));
     }
 
     let size_bytes = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
@@ -441,6 +449,25 @@ fn create_backup_sync(layer: BackupLayer) -> Result<BackupMetadata, AppError> {
         created_at: now,
         size_bytes,
     })
+}
+
+/// 앱 시작 시 이전 비정상 종료로 남은 `.tmp` 백업 파일을 정리한다.
+///
+/// `create_backup_sync` 가 tmp→rename 방식을 사용하므로, 비정상 종료 시 `.tmp` 파일이 남을 수
+/// 있다. 미완성 파일이므로 안전하게 삭제한다.
+pub(crate) fn cleanup_stale_tmp_backups() {
+    for layer in BackupLayer::ALL {
+        let dir = backup_dir(layer);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("tmp") {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
 }
 
 fn list_backups_sync(layer: Option<BackupLayer>) -> Result<Vec<BackupMetadata>, AppError> {

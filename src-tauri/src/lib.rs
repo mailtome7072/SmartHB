@@ -53,7 +53,6 @@ pub fn run() {
             commands::backup::run_backup_rehearsal,
             commands::integrity::check_integrity,
             commands::integrity::auto_restore,
-            commands::sync::check_sync_status,
             commands::audit::get_audit_logs,
             commands::students::next_serial_number,
             commands::students::create_student,
