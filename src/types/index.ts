@@ -110,17 +110,6 @@ export interface RehearsalResult {
 }
 
 /**
- * 클라우드 동기화 대기 상태 — T9 PRD §5.3.
- *
- * `src-tauri/src/commands/sync.rs::SyncStatus` 와 serde `tag = "kind"` + `kebab-case` 정합.
- * - `ready`: DB/락 파일 mtime 안정 — 시작 시퀀스 진입 가능
- * - `waiting`: 최근 30초 이내 mtime 변경 감지 — 동기화 진행 중 가능성, UI 가 일정 간격 재호출
- */
-export type SyncStatus =
-  | { kind: 'ready' }
-  | { kind: 'waiting'; seconds_since_change: number }
-
-/**
  * 감사 로그 이벤트 종류 — T9 PRD §6.6.
  *
  * `src-tauri/src/commands/audit.rs::AuditEventType` 와 kebab-case 직렬화 정합.

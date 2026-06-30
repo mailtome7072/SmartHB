@@ -6,10 +6,7 @@
  * Sprint 3 T5 + Sprint 4 T3 (상태바 IPC 통합).
  * - `/`, `/students`, `/settings/*` 등에서 사용
  * - `/lock`, `/setup` 은 본 셸 미적용
- * - mount 시 락/백업/동기화 IPC 호출 + 60초 polling — 결과를 TopBar 에 전달
- *
- * **사용자 이슈 #1 해소**: 이전엔 `setLockStatus` 호출자가 없어 TopBar 가 영원히
- * "확인 중...". AppShell 이 단일 책임으로 IPC 호출 + store 갱신.
+ * - mount 시 락/백업 IPC 호출 + 60초 polling — 결과를 TopBar 에 전달
  */
 
 import { useEffect, useState } from 'react'
@@ -23,11 +20,9 @@ import { useSessionStore } from '@/stores/session-store'
 import {
   checkAutoDiagnosisNeeded,
   checkLockStatus,
-  checkSyncStatus,
   listBackups,
   runDiagnosis,
 } from '@/lib/tauri'
-import type { SyncStatus } from '@/types'
 
 const POLLING_INTERVAL_MS = 60_000
 
@@ -46,7 +41,6 @@ export function AppShell({
   const unlocked = useSessionStore((s) => s.unlocked)
   const setLockStatus = useAppStore((s) => s.setLockStatus)
   const [latestBackupAt, setLatestBackupAt] = useState<string | null>(null)
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
 
   useEffect(() => {
     // IPC 호출은 unlock 후 DB pool 초기화 완료 상태에서만 의미. 마법사 등 unlock 전
@@ -61,12 +55,6 @@ export function AppShell({
         if (!cancelled) setLockStatus(lock)
       } catch {
         /* IPC 실패는 store 갱신 생략 — 다음 polling 에서 재시도 */
-      }
-      try {
-        const sync = await checkSyncStatus()
-        if (!cancelled) setSyncStatus(sync)
-      } catch {
-        /* noop */
       }
       try {
         const backups = await listBackups()
@@ -110,7 +98,7 @@ export function AppShell({
       <UnsavedNavDialog />
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar latestBackupAt={latestBackupAt} syncStatus={syncStatus}>
+        <TopBar latestBackupAt={latestBackupAt}>
           {topBarSlot}
         </TopBar>
         <main className="flex-1 overflow-y-auto bg-[var(--background)] p-6">{children}</main>

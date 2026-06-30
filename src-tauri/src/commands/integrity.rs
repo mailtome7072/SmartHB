@@ -248,6 +248,50 @@ pub(crate) fn auto_restore_sync() -> Result<RestoreResult, AppError> {
     restore_from_path_sync(Path::new(&backup_meta.path))
 }
 
+/// 복원 후 quick_check 재검증을 포함한 자동 복원 — startup 전용.
+///
+/// 파일 복사 후 OS 레벨 손상(NTFS power-loss 등)을 감지하기 위해 복원된 app.db 에
+/// quick_check 를 재실행한다. 실패 시 다음 최신 exit 백업으로 재시도 (최대 3회).
+/// 모두 실패하면 사용자 친화 에러 반환.
+pub(crate) fn auto_restore_with_retry() -> Result<RestoreResult, AppError> {
+    let candidates = candidates_newest_first(BackupLayer::Exit)?;
+    if candidates.is_empty() {
+        return Err(AppError::Integrity(
+            "복원할 수 있는 백업이 없습니다. 수동으로 백업 파일을 선택해주세요.".to_string(),
+        ));
+    }
+
+    let mut last_err = AppError::Integrity("알 수 없는 복원 오류".to_string());
+
+    for candidate in candidates.into_iter().take(3) {
+        let result = restore_from_path_sync(Path::new(&candidate.path));
+        let restore_result = match result {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = e;
+                continue;
+            }
+        };
+        // 복원 후 quick_check 재검증 — 파일 복사 후 OS 레벨 손상 감지.
+        match run_pragma_check(&paths::db_path(), IntegrityMode::Quick) {
+            Ok(IntegrityCheckResult::Ok) => return Ok(restore_result),
+            Ok(IntegrityCheckResult::Failed { detail }) => {
+                eprintln!("[integrity] 복원 후 재검증 실패 (다음 백업 시도): {}", detail);
+                last_err = AppError::Integrity(format!("복원 후 무결성 검증 실패: {}", detail));
+            }
+            Err(e) => {
+                eprintln!("[integrity] 복원 후 재검증 실행 오류 (다음 백업 시도): {}", e);
+                last_err = e;
+            }
+        }
+    }
+
+    Err(AppError::Integrity(format!(
+        "복원할 수 있는 백업이 없습니다. 마지막 오류: {}",
+        last_err
+    )))
+}
+
 /// `backup::restore_backup` 에서 사용하는 동기 인터페이스.
 ///
 /// path 지정 복원 — 사용자가 `list_backups` 결과에서 특정 파일을 선택했을 때 호출된다.

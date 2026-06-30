@@ -3,14 +3,15 @@
 /**
  * 상단바 (Sprint 3 T5 + Sprint 4 T3 / 사용자 이슈 #1, #2).
  *
- * 우측 영역: 점유 디바이스 / 마지막 백업 / 동기화 상태 / 시작 속도 (정상속도/속도저하).
+ * 우측 영역: 점유 디바이스 / 마지막 백업 / 시작 속도 (정상속도/속도저하).
  * IPC 호출은 AppShell 이 담당하고 본 컴포넌트는 표시만 한다 (store + props SSOT).
  * 사이드바 토글 + 글로벌 검색바 슬롯도 유지.
+ * 동기화 상태 표시는 T6 에서 제거 (1인 운영 — MYBOX 트레이 아이콘으로 확인).
  */
 
 import { useAppStore } from '@/stores/app-store'
 import { useSessionStore } from '@/stores/session-store'
-import type { LockStatus, SyncStatus } from '@/types'
+import type { LockStatus } from '@/types'
 
 function formatLockStatus(status: LockStatus | null): string {
   if (status === null) return '점유: 확인 중...'
@@ -33,24 +34,12 @@ function formatBackupAt(iso: string | null): string {
   return `백업: ${d.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })}`
 }
 
-function formatSyncStatus(status: SyncStatus | null): string {
-  if (status === null) return '동기화: 확인 중...'
-  switch (status.kind) {
-    case 'ready':
-      return '동기화: 준비됨'
-    case 'waiting':
-      return `동기화: 대기 중 (${status.seconds_since_change}s)`
-  }
-}
-
 export function TopBar({
   children,
   latestBackupAt,
-  syncStatus,
 }: {
   children?: React.ReactNode
   latestBackupAt?: string | null
-  syncStatus?: SyncStatus | null
 }) {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const lockStatus = useAppStore((s) => s.lockStatus)
@@ -80,10 +69,6 @@ export function TopBar({
         <span title="현재 클라우드 폴더 락 점유 상태">{formatLockStatus(lockStatus)}</span>
         <span aria-hidden="true" className="text-gray-300">|</span>
         <span title="마지막 백업 생성 시각">{formatBackupAt(latestBackupAt ?? null)}</span>
-        <span aria-hidden="true" className="text-gray-300">|</span>
-        <span title="클라우드 동기화 폴더 mtime 안정 여부">
-          {formatSyncStatus(syncStatus ?? null)}
-        </span>
         {startupLabel !== null && (
           <>
             <span aria-hidden="true" className="text-gray-300">|</span>
