@@ -24,6 +24,7 @@ use crate::error::AppError;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 use tokio::sync::OnceCell;
 
 /// 전역 SqlitePool — unlock 후 lazy 초기화. 미초기화 상태에서 호출 시 `AppError::Config` 반환.
@@ -33,6 +34,13 @@ static POOL: OnceCell<SqlitePool> = OnceCell::const_new();
 ///
 /// 다중 reader 허용을 위해 WAL 모드를 켜는 것은 T10 startup PRAGMA 설정에서 처리.
 const MAX_CONNECTIONS: u32 = 1;
+
+/// connection acquire 대기 최대 시간 — pool 이 busy 할 때 이 시간 내 acquire 못하면 에러.
+const ACQUIRE_TIMEOUT_SECS: u64 = 30;
+/// connection 최대 수명 — 이 시간 초과 시 pool 이 connection 을 재생성해 stale 연결을 방지.
+const MAX_LIFETIME_SECS: u64 = 600;
+/// connection idle 유지 시간 — 미사용 connection 을 회수해 OS/클라우드 lock 해제.
+const IDLE_TIMEOUT_SECS: u64 = 300;
 
 /// 전역 pool 참조. 미초기화 시 `AppError::Config` — 호출자가 unlock 흐름을 안내한다.
 pub(crate) fn pool() -> Result<&'static SqlitePool, AppError> {
@@ -83,6 +91,9 @@ async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
 
     let pool = SqlitePoolOptions::new()
         .max_connections(MAX_CONNECTIONS)
+        .acquire_timeout(Duration::from_secs(ACQUIRE_TIMEOUT_SECS))
+        .max_lifetime(Duration::from_secs(MAX_LIFETIME_SECS))
+        .idle_timeout(Duration::from_secs(IDLE_TIMEOUT_SECS))
         .connect_with(connect_options)
         .await?;
 
@@ -107,6 +118,12 @@ async fn apply_startup_pragmas(pool: &SqlitePool) -> Result<(), AppError> {
     sqlx::query("PRAGMA journal_mode=WAL").execute(pool).await?;
     sqlx::query("PRAGMA cache_size=-8000").execute(pool).await?;
     sqlx::query("PRAGMA foreign_keys=ON").execute(pool).await?;
+    // 클라우드 동기화/백업 lock 충돌 시 즉시 실패 대신 최대 30초 재시도 (busy_timeout_fix)
+    sqlx::query("PRAGMA busy_timeout=30000").execute(pool).await?;
+    // WAL 모드에서 NORMAL 은 FULL 과 동일한 내구성 보장 + fsync 부하 감소
+    sqlx::query("PRAGMA synchronous=NORMAL").execute(pool).await?;
+    // WAL 파일 상한 64MB — 초과 시 자동 checkpoint 유도로 클라우드 동기화 부하 제어
+    sqlx::query("PRAGMA journal_size_limit=67108864").execute(pool).await?;
     Ok(())
 }
 

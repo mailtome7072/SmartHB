@@ -249,6 +249,9 @@ fn perform_backup_with_cipher(source: &Path, dest: &Path) -> Result<(), AppError
     let pragma_sql = paths::pragma_key_sql(hex_key.as_str());
 
     let src = Connection::open(source).map_err(|e| app_err!(Backup, "소스 DB 열기 실패", e))?;
+    // 클라우드 동기화 lock 충돌 시 30초 재시도 — busy_timeout 미설정 시 즉시 SQLITE_BUSY
+    src.busy_timeout(Duration::from_secs(30))
+        .map_err(|e| app_err!(Backup, "소스 DB busy_timeout 설정 실패", e))?;
     src.execute_batch(&pragma_sql).map_err(|e| app_err!(Backup, "소스 PRAGMA key 적용 실패", e))?;
 
     let mut dst = Connection::open(dest).map_err(|e| app_err!(Backup, "대상 DB 열기 실패", e))?;
@@ -338,6 +341,7 @@ async fn collect_rehearsal_findings(temp_db: &Path) -> Result<Vec<TableCount>, S
         .read_only(true);
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(10))
         .connect_with(options)
         .await
         .map_err(|e| format!("백업 파일을 열 수 없습니다: {}", e))?;
@@ -345,6 +349,10 @@ async fn collect_rehearsal_findings(temp_db: &Path) -> Result<Vec<TableCount>, S
     // 검증 결과를 먼저 받은 뒤 pool 을 닫아, 검증 실패 시에도 connection 을 누수하지 않는다.
     let result = async {
         apply_rehearsal_key(&pool).await.map_err(String::from)?;
+        sqlx::query("PRAGMA busy_timeout=30000")
+            .execute(&pool)
+            .await
+            .map_err(|e| format!("리허설 busy_timeout 설정 실패: {}", e))?;
 
         let integrity_rows: Vec<String> = sqlx::query_scalar("PRAGMA integrity_check")
             .fetch_all(&pool)
