@@ -889,33 +889,34 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ## Post-v1.0: 유지보수 + 안정화
 
-### Sprint 17: DB 안전성 잔여 수정 + 클라우드 동기화 정책 간소화 (2주) 🔄 진행 중
+### Sprint 17: DB 안전성 잔여 수정 + 클라우드 동기화 정책 간소화 (2주) ✅ 완료 (2026-06-30)
 
 > 계획 문서: `docs/sprint/sprint17.md`
 > v1.0.0 실사용 중 발견된 DB 오류 버그 9건 중 긴급 6건은 Hotfix(`hotfix/db-lock-and-backup-fix`)로 선행 처리.
 > Sprint 17은 남은 안전성 수정 3건 + 정책 간소화 3건을 담당.
+> develop 머지: `sprint17 → develop` 직접 머지 (단일 개발자 정책, 2026-06-30)
 
 #### 작업 목록
 
 **그룹 A — 남은 안전성 수정**
-- ⬜ **T1**: DB 폴더 변경 WAL 체크포인트 에러 처리 (`setup.rs`)
-- ⬜ **T2**: 백업 파일 임시 파일 후 이동 방식 — atomic write (`backup.rs`)
-- ⬜ **T3**: 자동 복원 후 재검증 — quick_check + rollback (`startup.rs`, `integrity.rs`)
+- ✅ **T1**: DB 폴더 변경 WAL 체크포인트 에러 처리 (`setup.rs`)
+- ✅ **T2**: 백업 파일 임시 파일 후 이동 방식 — atomic write + stale tmp 정리 (`backup.rs`)
+- ✅ **T3**: 자동 복원 후 재검증 — quick_check 최대 3회 retry, `auto_restore_with_retry` (`startup.rs`, `integrity.rs`)
 
 **그룹 B — 정책 간소화**
-- ⬜ **T4**: Hourly 백업 간격 1시간 -> 2시간 (`startup.rs`)
-- ⬜ **T5**: Heartbeat 제거 — app.lock 시작/종료 단순화 (`startup.rs`, `lock.rs`)
-- ⬜ **T6**: SyncStatus 삭제 — 백엔드 IPC + 프론트엔드 polling + UI 제거 (`sync.rs` 삭제, `app-shell.tsx`, `top-bar.tsx`)
+- ✅ **T4**: Hourly 백업 간격 3600 → 7200초 (MYBOX 부하 절감) (`startup.rs`)
+- ✅ **T5**: Heartbeat 완전 제거 — 1인 운영 최적화 (`startup.rs`, `lock.rs`)
+- ✅ **T6**: SyncStatus 백엔드+프론트 완전 삭제 — `sync.rs` 삭제, `app-shell.tsx`, `top-bar.tsx`, `types/index.ts`, `tauri/index.ts`
 
 **통합**
-- ⬜ **T7**: 통합 검증 (cargo test + clippy + cipher check + lint + tsc + build)
+- ✅ **T7**: 통합 검증 — cargo test 411건 / clippy --all-targets clean / cipher check / pnpm lint+tsc+build 전수 통과
 
 #### 완료 기준 (Definition of Done)
-- ⬜ WAL 체크포인트 실패 시 복사 중단 + 사용자 오류 메시지
-- ⬜ 백업 파일 atomic write (tmp -> rename)
-- ⬜ 자동 복원 후 재검증, 실패 시 rollback
-- ⬜ hourly 간격 2시간, heartbeat 제거, SyncStatus 삭제
-- ⬜ cargo test + clippy --all-targets + cipher check + lint + tsc + build 전수 통과
+- ✅ WAL 체크포인트 실패 시 복사 중단 + 사용자 오류 메시지
+- ✅ 백업 파일 atomic write (tmp -> rename)
+- ✅ 자동 복원 후 재검증, 실패 시 rollback
+- ✅ hourly 간격 2시간, heartbeat 제거, SyncStatus 삭제
+- ✅ cargo test 411건 + clippy --all-targets + cipher check + lint + tsc + build 전수 통과
 
 ---
 
@@ -933,7 +934,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 | M7: 대시보드 | Phase 5 | Sprint 14 | +26주 ✅ | 대시보드 + 자가 진단 + 내보내기 |
 | M7.5: 안정화 | Phase 6 | Sprint 15 | +28주 ✅ | 교습소 정보 + 접근성 감사 + 성능 최적화 (T7~T9 Sprint 16 이연) |
 | M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +32주 ✅ | 양 OS 빌드 검증 + UAT + v1.0.0 |
-| M9: v1.0.1 안정화 | Post-v1.0 | Sprint 17 | +34주 | DB 안전성 잔여 수정 + 정책 간소화 |
+| M9: v1.0.1 안정화 | Post-v1.0 | Sprint 17 | +34주 ✅ | DB 안전성 잔여 수정 + 정책 간소화 |
 
 ---
 

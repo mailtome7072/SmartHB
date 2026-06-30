@@ -37,6 +37,18 @@
 
 ## [Unreleased]
 
+### Changed
+- Sprint 17: hourly 백업 생성 간격 3600초 → 7200초 (MYBOX 부하 절감)
+- Sprint 17: `app.lock` heartbeat 완전 제거 — 1인 운영 정책으로 잠금 파일 단순화 (시작 시 생성 / 종료 시 삭제)
+- Sprint 17: DB 폴더 변경(`change_db_folder`) WAL 체크포인트 실패 시 복사 중단 + 사용자 친화 오류 메시지 반환 (기존: 에러 묵살)
+- Sprint 17: 자동 복원 로직 `auto_restore` → `auto_restore_with_retry` — quick_check 재검증 최대 3회 retry, 모두 실패 시 다음 백업으로 순차 시도
+
+### Removed
+- Sprint 17: `SyncStatus` 백엔드 IPC + 프론트엔드 polling + UI 상태바 표시 완전 삭제 (`sync.rs` 삭제, `app-shell.tsx`, `top-bar.tsx`, `types/index.ts`, `tauri/index.ts` 정리)
+
+### Fixed
+- Sprint 17: 백업 파일 저장 방식을 직접 쓰기에서 tmp 파일 후 rename (atomic write)으로 변경 — 클라우드 동기화 중 백업 파일 손상 방지. stale tmp 파일 자동 정리 함수 추가
+
 ---
 
 ## [1.0.0] - 2026-06-12
