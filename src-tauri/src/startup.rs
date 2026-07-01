@@ -204,7 +204,9 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
     };
 
     // 3-b. 비정상 종료로 남은 .tmp 백업 파일 정리 (T2 atomic write 부산물).
-    backup::cleanup_stale_tmp_backups();
+    // spawn_blocking 으로 OS I/O 를 스레드 풀로 이전 — 시작 시퀀스 지연 없이 백그라운드 처리.
+    // JoinHandle 을 _handle 로 바인딩해 drop 시 태스크가 취소되지 않도록 한다 (tokio 정책).
+    let _cleanup_handle = tokio::task::spawn_blocking(backup::cleanup_stale_tmp_backups);
 
     // 4. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
     let db_init_start = Instant::now();

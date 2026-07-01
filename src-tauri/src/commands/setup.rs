@@ -242,15 +242,16 @@ async fn change_data_folder_impl(app: &AppHandle, new_path: &str) -> Result<(), 
 
     // 1. WAL 체크포인트 — 현재 DB 의 WAL 내용을 본체로 반영(복사본 정합). 풀 미초기화면 skip.
     if let Ok(pool) = crate::commands::db::pool() {
-        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
             .execute(pool)
             .await
-            .map_err(|e| {
-                eprintln!("[setup] WAL checkpoint 실패: {}", e);
-                AppError::UserFacing(
-                    "데이터 정리 중 오류가 발생했습니다. 다시 시도해 주세요.".to_string(),
-                )
-            })?;
+        {
+            eprintln!("[setup] WAL checkpoint 실패: {}", e);
+            pool.close().await; // A111: early return 전 pool 명시적 종료
+            return Err(AppError::UserFacing(
+                "데이터 정리 중 오류가 발생했습니다. 다시 시도해 주세요.".to_string(),
+            ));
+        }
     }
 
     // 2. 재귀 복사 → 3. 검증. 실패 시 우리가 만든 새 루트를 정리하고 즉시 반환(원본 무손상).

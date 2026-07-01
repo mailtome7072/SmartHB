@@ -35,8 +35,8 @@ use uuid::Uuid;
 /// 락 파일명.
 const LOCK_FILENAME: &str = "app.lock";
 
-/// 5분 미갱신 시 strale 판정 (PRD §5.3).
-const STALE_THRESHOLD_SECONDS: i64 = 300;
+/// 24시간 미갱신 시 stale 판정 — heartbeat 제거(Sprint 17) 후 비정상 종료 기준을 24h로 완화.
+const STALE_THRESHOLD_SECONDS: i64 = 86400;
 
 /// device.id 파일 경로 — `lib.rs::setup` 에서 OS `app_config_dir/device.id` 로 1회 초기화.
 ///

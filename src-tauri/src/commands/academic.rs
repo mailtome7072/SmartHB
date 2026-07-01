@@ -1584,7 +1584,7 @@ mod tests {
         assert_eq!(code.0, 1, "공휴일 is_system_reserved = 1 (3속성 수정 차단)");
         assert_eq!(code.1, 0, "공휴일 정규수업 OFF");
         assert_eq!(code.2, 0, "공휴일 보강 OFF");
-        assert_eq!(code.3, 1, "공휴일 중복불가 ON");
+        assert_eq!(code.3, 0, "공휴일 중복불가 OFF (V309 Sprint 18 이슈6 — 중복 허용으로 변경)");
         assert_eq!(code.4, 0, "공휴일 단일 일자");
     }
 
