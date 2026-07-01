@@ -1004,13 +1004,16 @@ pub async fn create_schedule_event(
     .map_err(AppError::Db)
     .map_err(String::from)?;
     let result = ScheduleEvent::from_row(&row).map_err(String::from)?;
-    // T8: 일정 생성 후 해당 날짜 출결 동기화
-    attendance::sync_attendance_on_schedule_change(
+    // T8: 일정 생성 후 해당 날짜 출결 동기화 — 실패해도 IPC 흐름 차단하지 않음 (fail-soft)
+    if let Err(e) = attendance::sync_attendance_on_schedule_change(
         pool,
         &result.event_date,
         result.period_end_date.as_deref(),
     )
-    .await?;
+    .await
+    {
+        eprintln!("[sync] create_schedule_event 동기화 실패: {e}");
+    }
     Ok(result)
 }
 
@@ -1080,16 +1083,23 @@ pub async fn update_schedule_event(
     .map_err(AppError::Db)
     .map_err(String::from)?;
     let result = ScheduleEvent::from_row(&row).map_err(String::from)?;
-    // T8: 수정 전 날짜 범위 + 수정 후 날짜 범위 모두 동기화
-    attendance::sync_attendance_on_schedule_change(pool, &event_date, old_period_end.as_deref())
-        .await?;
+    // T8: 수정 전/후 날짜 범위 동기화 — 실패해도 IPC 흐름 차단하지 않음 (fail-soft)
+    if let Err(e) =
+        attendance::sync_attendance_on_schedule_change(pool, &event_date, old_period_end.as_deref())
+            .await
+    {
+        eprintln!("[sync] update_schedule_event 구 범위 동기화 실패: {e}");
+    }
     if result.event_date != event_date || result.period_end_date != old_period_end {
-        attendance::sync_attendance_on_schedule_change(
+        if let Err(e) = attendance::sync_attendance_on_schedule_change(
             pool,
             &result.event_date,
             result.period_end_date.as_deref(),
         )
-        .await?;
+        .await
+        {
+            eprintln!("[sync] update_schedule_event 신 범위 동기화 실패: {e}");
+        }
     }
     Ok(result)
 }
@@ -1146,9 +1156,13 @@ pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
         .await
         .map_err(AppError::Db)
         .map_err(String::from)?;
-    // T8: 삭제 후 해당 날짜 출결 동기화 (OFF→ON 복원 가능)
-    attendance::sync_attendance_on_schedule_change(pool, &event_date, period_end_date.as_deref())
-        .await?;
+    // T8: 삭제 후 해당 날짜 출결 동기화 — 실패해도 IPC 흐름 차단하지 않음 (fail-soft)
+    if let Err(e) =
+        attendance::sync_attendance_on_schedule_change(pool, &event_date, period_end_date.as_deref())
+            .await
+    {
+        eprintln!("[sync] delete_schedule_event 동기화 실패: {e}");
+    }
     Ok(())
 }
 

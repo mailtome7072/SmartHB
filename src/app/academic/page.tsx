@@ -156,6 +156,13 @@ export default function AcademicPage() {
     enabled: printMode && confirmedPeriod !== null,
     staleTime: 30_000,
   })
+  // T9: 쿼리 완료 후 인쇄 다이얼로그 — setTimeout 대신 쿼리 상태 감지로 race condition 방지
+  useEffect(() => {
+    if (printMode && printEventsQuery.isSuccess) {
+      window.print()
+      setPrintMode(false)
+    }
+  }, [printMode, printEventsQuery.isSuccess])
 
   // V12 (Sprint 7 post-review): 인접 3개월 교습기간 조회 — selection 단계에서 다른 교습기간
   // 일자 포함 차단. ThreeMonthCalendar 와 동일 쿼리 키로 캐시 공유.
@@ -278,11 +285,7 @@ export default function AcademicPage() {
             <button
               type="button"
               className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 print:hidden"
-              onClick={() => {
-                setPrintMode(true)
-                // 데이터 로드 완료 후 인쇄 다이얼로그 오픈
-                setTimeout(() => window.print(), 300)
-              }}
+              onClick={() => setPrintMode(true)}
             >
               교습일정 인쇄
             </button>

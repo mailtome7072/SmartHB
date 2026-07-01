@@ -282,10 +282,9 @@ export default function ClassCalendar({
       container.style.cssText =
         'display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:2px 4px 4px;' +
         'width:100%;box-sizing:border-box;z-index:5;pointer-events:auto;'
-      const COLORS: Record<number, string> = { 60: '#3b82f6', 120: '#22c55e', 180: '#ca8a04', 240: '#ef4444' }
       for (const st of info.students) {
         const chip = document.createElement('span')
-        const color = COLORS[st.classMinutes] ?? COLORS[60]
+        const color = (DURATION_COLORS[st.classMinutes] ?? DURATION_COLORS[60]).border
         const label = st.isMakeup ? `${st.name}(보강)` : st.name
         chip.textContent = label
         chip.title = `${label} ${st.classMinutes / 60}시간`

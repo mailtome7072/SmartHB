@@ -4,17 +4,17 @@
  * 다른 디바이스가 app.lock 을 점유 중일 때 표시되는 경고 화면 (T6 PRD §5.3).
  *
  * 흐름:
- * - 5분 미만 미갱신: 강제 점유 비활성. "다른 PC 종료 후 다시 시도" 안내 + 타이머 표시
- * - 5분 이상 미갱신(stale=true): 강제 점유 버튼 활성 — 사용자 확인 후 `force=true` 호출
+ * - 24시간 미만 미갱신: 강제 점유 비활성. "다른 PC 종료 후 다시 시도" 안내 + 타이머 표시
+ * - 24시간 이상 미갱신(stale=true): 강제 점유 버튼 활성 — 사용자 확인 후 `force=true` 호출
  *
  * 타이머는 1초마다 last_heartbeat 경과 시간을 갱신 (백엔드 재조회 없이 클라이언트 측 계산).
- * 5분 임계 도달 시 강제 점유 버튼이 자동 활성화된다.
+ * 24시간 임계 도달 시 강제 점유 버튼이 자동 활성화된다 (Sprint 18 T0 — A107: 86400초).
  */
 
 import { useEffect, useState } from 'react'
 import { acquireLock, checkLockStatus } from '@/lib/tauri'
 
-const STALE_THRESHOLD_SECONDS = 300
+const STALE_THRESHOLD_SECONDS = 86400 // 24시간 — lock.rs STALE_THRESHOLD_SECONDS와 동기 (Sprint 18 T0)
 
 interface LockWarningProps {
   /**
@@ -145,7 +145,7 @@ export function LockWarning({ initialSecondsAgo, onForceAcquired, onRetry }: Loc
         <section className="rounded-md bg-gray-50 p-3 text-sm text-gray-600">
           <p>
             <strong>강제 점유 시 주의:</strong> 다른 컴퓨터에서 작업 중인 내용이 손실될 수
-            있습니다. 5분 이상 활동이 없을 때만 사용해주세요.
+            있습니다. 24시간 이상 활동이 없을 때만 사용해주세요.
           </p>
         </section>
       </div>

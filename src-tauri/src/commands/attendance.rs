@@ -1456,12 +1456,16 @@ async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
     .map_err(|e| format!("날짜 상태 조회 실패: {}", e))?;
 
     if off_count > 0 {
-        // OFF 이벤트 존재 → 정규 출결 전체 삭제
-        sqlx::query("DELETE FROM regular_attendances WHERE event_date = ?")
-            .bind(date)
-            .execute(pool)
-            .await
-            .map_err(|e| format!("출결 삭제 실패: {}", e))?;
+        // OFF 이벤트 존재 → 자동 생성된 출석(present) 행만 삭제.
+        // 결석(absent) 또는 보강 매칭된 행(makeup_attendance_id IS NOT NULL)은 보존.
+        sqlx::query(
+            "DELETE FROM regular_attendances \
+             WHERE event_date = ? AND status = 'present' AND makeup_attendance_id IS NULL",
+        )
+        .bind(date)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("출결 삭제 실패: {}", e))?;
     } else {
         // OFF 이벤트 없음 → 교습기간 확인 후 INSERT OR IGNORE
         let in_period: Option<i64> = sqlx::query_scalar(
