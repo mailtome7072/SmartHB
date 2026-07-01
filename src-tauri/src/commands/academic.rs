@@ -21,7 +21,7 @@
 //! 5종(보강데이/공휴수업일/방학/단원평가 응시일/휴원일)도 V102 시드로 존재.
 //! Sprint 6 은 IPC 레벨 구현만 — DB 변경 없음.
 
-use crate::commands::db;
+use crate::commands::{attendance, db};
 use crate::error::AppError;
 use chrono::Datelike;
 use serde::{Deserialize, Serialize};
@@ -1003,7 +1003,15 @@ pub async fn create_schedule_event(
     .await
     .map_err(AppError::Db)
     .map_err(String::from)?;
-    ScheduleEvent::from_row(&row).map_err(String::from)
+    let result = ScheduleEvent::from_row(&row).map_err(String::from)?;
+    // T8: 일정 생성 후 해당 날짜 출결 동기화
+    attendance::sync_attendance_on_schedule_change(
+        pool,
+        &result.event_date,
+        result.period_end_date.as_deref(),
+    )
+    .await?;
+    Ok(result)
 }
 
 /// 학사 일정 수정 — 지난 달 차단 (AC-T7-3) + 배치 제약 (Sprint 7 T7).
@@ -1014,7 +1022,7 @@ pub async fn update_schedule_event(
 ) -> Result<ScheduleEvent, String> {
     let pool = db::pool().map_err(String::from)?;
     let target = sqlx::query(
-        "SELECT e.event_date, e.code_id, c.code_name, c.is_duplicate_blocked \
+        "SELECT e.event_date, e.period_end_date, e.code_id, c.code_name, c.is_duplicate_blocked \
          FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
          WHERE e.id = ?",
     )
@@ -1026,6 +1034,10 @@ pub async fn update_schedule_event(
     .ok_or_else(|| "해당 학사 일정을 찾을 수 없습니다.".to_string())?;
     let event_date: String = target
         .try_get("event_date")
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    let old_period_end: Option<String> = target
+        .try_get("period_end_date")
         .map_err(AppError::Db)
         .map_err(String::from)?;
     let code_id: i64 = target.try_get("code_id").map_err(AppError::Db).map_err(String::from)?;
@@ -1067,7 +1079,19 @@ pub async fn update_schedule_event(
     .await
     .map_err(AppError::Db)
     .map_err(String::from)?;
-    ScheduleEvent::from_row(&row).map_err(String::from)
+    let result = ScheduleEvent::from_row(&row).map_err(String::from)?;
+    // T8: 수정 전 날짜 범위 + 수정 후 날짜 범위 모두 동기화
+    attendance::sync_attendance_on_schedule_change(pool, &event_date, old_period_end.as_deref())
+        .await?;
+    if result.event_date != event_date || result.period_end_date != old_period_end {
+        attendance::sync_attendance_on_schedule_change(
+            pool,
+            &result.event_date,
+            result.period_end_date.as_deref(),
+        )
+        .await?;
+    }
+    Ok(result)
 }
 
 /// 학사 일정 삭제 — 지난 달 차단 (AC-T7-3) + 시드 공휴일 차단 (Sprint 7 T9 + V16 post-review).
@@ -1075,7 +1099,7 @@ pub async fn update_schedule_event(
 pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
     let pool = db::pool().map_err(String::from)?;
     let target = sqlx::query(
-        "SELECT e.event_date, e.is_seeded, c.code_name, c.is_system_reserved \
+        "SELECT e.event_date, e.period_end_date, e.is_seeded, c.code_name, c.is_system_reserved \
          FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
          WHERE e.id = ?",
     )
@@ -1087,6 +1111,10 @@ pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
     .ok_or_else(|| "해당 학사 일정을 찾을 수 없습니다.".to_string())?;
     let event_date: String = target
         .try_get("event_date")
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    let period_end_date: Option<String> = target
+        .try_get("period_end_date")
         .map_err(AppError::Db)
         .map_err(String::from)?;
     let code_name: String = target
@@ -1118,6 +1146,9 @@ pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
         .await
         .map_err(AppError::Db)
         .map_err(String::from)?;
+    // T8: 삭제 후 해당 날짜 출결 동기화 (OFF→ON 복원 가능)
+    attendance::sync_attendance_on_schedule_change(pool, &event_date, period_end_date.as_deref())
+        .await?;
     Ok(())
 }
 
