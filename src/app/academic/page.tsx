@@ -19,6 +19,7 @@ import {
   checkAuthStatus,
   deleteScheduleEvent,
   getStudyPeriod,
+  listScheduleEvents,
   listStudyPeriods,
   updateScheduleEvent,
 } from '@/lib/tauri'
@@ -36,6 +37,7 @@ import {
   EventPlacer,
   useEventPlaceCellHandler,
 } from '@/components/academic/EventPlacer'
+import { AcademicSchedulePrint } from '@/components/academic/AcademicSchedulePrint'
 import type { ScheduleCode, ScheduleEventListItem } from '@/types/academic'
 import {
   AlertDialog,
@@ -69,6 +71,9 @@ export default function AcademicPage() {
   // T11 일정 삭제 다이얼로그
   const [eventToDelete, setEventToDelete] = useState<ScheduleEventListItem | null>(null)
   const [eventErrorMessage, setEventErrorMessage] = useState<string | null>(null)
+
+  // T9: 교습일정 인쇄
+  const [printMode, setPrintMode] = useState(false)
 
   useEffect(() => {
     if (unlocked) {
@@ -142,6 +147,15 @@ export default function AcademicPage() {
     !centerPeriodQuery.isLoading &&
     centerPeriodQuery.data === null
   const studyPeriodMode = isCenterUnconfirmed && selectedCode === null
+  // T9: 확정 교습기간 이벤트 — 인쇄용 (printMode=true 일 때만 fetch)
+  const confirmedPeriod = centerPeriodQuery.data ?? null
+  const printEventsQuery = useQuery({
+    queryKey: ['schedule-events-print', confirmedPeriod?.start_date, confirmedPeriod?.end_date],
+    queryFn: () =>
+      listScheduleEvents(confirmedPeriod!.start_date, confirmedPeriod!.end_date),
+    enabled: printMode && confirmedPeriod !== null,
+    staleTime: 30_000,
+  })
 
   // V12 (Sprint 7 post-review): 인접 3개월 교습기간 조회 — selection 단계에서 다른 교습기간
   // 일자 포함 차단. ThreeMonthCalendar 와 동일 쿼리 키로 캐시 공유.
@@ -253,11 +267,26 @@ export default function AcademicPage() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       <main className="flex flex-col gap-4 p-4">
-        <header>
-          <h1 className="text-2xl font-bold text-[var(--foreground)]">일정 관리</h1>
-          <p className="text-sm text-gray-600">
-            교습기간 설정 / 학사 일정 코드 관리 / 일정 배치 — 좌·중·우 3개월을 한 화면에서.
-          </p>
+        <header className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--foreground)]">일정 관리</h1>
+            <p className="text-sm text-gray-600">
+              교습기간 설정 / 학사 일정 코드 관리 / 일정 배치 — 좌·중·우 3개월을 한 화면에서.
+            </p>
+          </div>
+          {confirmedPeriod !== null && (
+            <button
+              type="button"
+              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 print:hidden"
+              onClick={() => {
+                setPrintMode(true)
+                // 데이터 로드 완료 후 인쇄 다이얼로그 오픈
+                setTimeout(() => window.print(), 300)
+              }}
+            >
+              교습일정 인쇄
+            </button>
+          )}
         </header>
 
         {/* V11 (Sprint 7 post-review): 교습기간 + 일정 배치 코드를 단일 컨트롤 바로 통합.
@@ -367,6 +396,15 @@ export default function AcademicPage() {
           </AlertDialogContent>
         </AlertDialog>
       </main>
+      {/* T9: 인쇄 전용 컴포넌트 — @media print 에서만 표시 */}
+      {printMode && confirmedPeriod !== null && (
+        <div className="academic-print-wrapper" style={{ display: 'none' }}>
+          <AcademicSchedulePrint
+            period={confirmedPeriod}
+            events={printEventsQuery.data ?? []}
+          />
+        </div>
+      )}
     </AppShell>
   )
 }
