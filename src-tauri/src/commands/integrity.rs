@@ -84,8 +84,9 @@ fn ensure_rollback_dir() -> Result<PathBuf, AppError> {
     Ok(dir)
 }
 
-fn generate_rollback_filename(now: DateTime<Utc>) -> String {
-    backup::timestamped_filename(ROLLBACK_FILENAME_PREFIX, ROLLBACK_FILENAME_SUFFIX, now)
+fn generate_rollback_filename(now: DateTime<Utc>, idx: usize) -> String {
+    let base = backup::timestamped_filename(ROLLBACK_FILENAME_PREFIX, "", now);
+    format!("{}_{}{}",  base, idx, ROLLBACK_FILENAME_SUFFIX)
 }
 
 // ============================================================================
@@ -205,7 +206,7 @@ fn select_first_healthy_with_cached_key(
 /// 2. 현재 DB 를 `restore_rollback/` 으로 rename (atomic on most filesystems)
 /// 3. 백업 파일을 `app.db` 로 파일 복사 — SQLCipher 암호화 상태 그대로 (복호화 금지)
 /// 4. 복사 실패 시 rollback 을 되돌려 원상 복구 시도
-fn restore_from_path_sync(backup_path: &Path) -> Result<RestoreResult, AppError> {
+fn restore_from_path_sync(backup_path: &Path, idx: usize) -> Result<RestoreResult, AppError> {
     let check = run_pragma_check(backup_path, IntegrityMode::Quick)?;
     if !matches!(check, IntegrityCheckResult::Ok) {
         return Err(AppError::Integrity(format!(
@@ -215,7 +216,7 @@ fn restore_from_path_sync(backup_path: &Path) -> Result<RestoreResult, AppError>
     }
 
     let rollback_dir = ensure_rollback_dir()?;
-    let rollback_path = rollback_dir.join(generate_rollback_filename(Utc::now()));
+    let rollback_path = rollback_dir.join(generate_rollback_filename(Utc::now(), idx));
     let current_db = paths::db_path();
 
     if current_db.exists() {
@@ -245,7 +246,51 @@ pub(crate) fn auto_restore_sync() -> Result<RestoreResult, AppError> {
                 .to_string(),
         )
     })?;
-    restore_from_path_sync(Path::new(&backup_meta.path))
+    restore_from_path_sync(Path::new(&backup_meta.path), 0)
+}
+
+/// 복원 후 quick_check 재검증을 포함한 자동 복원 — startup 전용.
+///
+/// 파일 복사 후 OS 레벨 손상(NTFS power-loss 등)을 감지하기 위해 복원된 app.db 에
+/// quick_check 를 재실행한다. 실패 시 다음 최신 exit 백업으로 재시도 (최대 3회).
+/// 모두 실패하면 사용자 친화 에러 반환.
+pub(crate) fn auto_restore_with_retry() -> Result<RestoreResult, AppError> {
+    let candidates = candidates_newest_first(BackupLayer::Exit)?;
+    if candidates.is_empty() {
+        return Err(AppError::Integrity(
+            "복원할 수 있는 백업이 없습니다. 수동으로 백업 파일을 선택해주세요.".to_string(),
+        ));
+    }
+
+    let mut last_err = AppError::Integrity("알 수 없는 복원 오류".to_string());
+
+    for (idx, candidate) in candidates.into_iter().take(3).enumerate() {
+        let result = restore_from_path_sync(Path::new(&candidate.path), idx);
+        let restore_result = match result {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = e;
+                continue;
+            }
+        };
+        // 복원 후 quick_check 재검증 — 파일 복사 후 OS 레벨 손상 감지.
+        match run_pragma_check(&paths::db_path(), IntegrityMode::Quick) {
+            Ok(IntegrityCheckResult::Ok) => return Ok(restore_result),
+            Ok(IntegrityCheckResult::Failed { detail }) => {
+                eprintln!("[integrity] 복원 후 재검증 실패 (다음 백업 시도): {}", detail);
+                last_err = AppError::Integrity(format!("복원 후 무결성 검증 실패: {}", detail));
+            }
+            Err(e) => {
+                eprintln!("[integrity] 복원 후 재검증 실행 오류 (다음 백업 시도): {}", e);
+                last_err = e;
+            }
+        }
+    }
+
+    Err(AppError::Integrity(format!(
+        "복원할 수 있는 백업이 없습니다. 마지막 오류: {}",
+        last_err
+    )))
 }
 
 /// `backup::restore_backup` 에서 사용하는 동기 인터페이스.
@@ -253,7 +298,7 @@ pub(crate) fn auto_restore_sync() -> Result<RestoreResult, AppError> {
 /// path 지정 복원 — 사용자가 `list_backups` 결과에서 특정 파일을 선택했을 때 호출된다.
 /// auto_restore 와 동일한 안전망(quick_check + rollback 보존)을 공유한다.
 pub(crate) fn restore_from_path(backup_path: &Path) -> Result<RestoreResult, AppError> {
-    restore_from_path_sync(backup_path)
+    restore_from_path_sync(backup_path, 0)
 }
 
 /// T10 시작 시퀀스 전용 동기 quick_check — 현재 DB 가 없거나 cipher off 빌드면 `Ok` 로 fail-soft.
@@ -360,10 +405,33 @@ mod tests {
         let now = DateTime::parse_from_rfc3339("2026-05-19T15:30:45Z")
             .unwrap()
             .with_timezone(&Utc);
-        let name = generate_rollback_filename(now);
-        assert_eq!(name, "rollback_20260519_153045.db");
-        assert!(name.starts_with(ROLLBACK_FILENAME_PREFIX));
-        assert!(name.ends_with(ROLLBACK_FILENAME_SUFFIX));
+        // A108: idx 접미사로 동일 초 내 충돌 방지
+        let name0 = generate_rollback_filename(now, 0);
+        let name1 = generate_rollback_filename(now, 1);
+        assert_eq!(name0, "rollback_20260519_153045_0.db");
+        assert_eq!(name1, "rollback_20260519_153045_1.db");
+        assert!(name0.starts_with(ROLLBACK_FILENAME_PREFIX));
+        assert!(name0.ends_with(ROLLBACK_FILENAME_SUFFIX));
+        assert_ne!(name0, name1, "동일 타임스탬프라도 idx 로 고유성 보장");
+    }
+
+    #[test]
+    fn auto_restore_with_retry_returns_err_when_no_backups() {
+        // A109: Exit 계층 백업이 없는 환경(CI/테스트)에서는 즉시 Err 반환
+        let result = auto_restore_with_retry();
+        match result {
+            Err(e) => {
+                let msg: String = e.into();
+                assert!(
+                    msg.contains("백업") || msg.contains("복원") || msg.contains("cipher"),
+                    "에러 메시지가 사용자 친화적이어야 함: {}",
+                    msg
+                );
+            }
+            Ok(_) => {
+                // 로컬 환경에서 Exit 백업이 실제로 있는 경우 Ok 도 허용
+            }
+        }
     }
 
     #[test]

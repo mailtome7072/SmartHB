@@ -14,7 +14,6 @@ import type {
   RehearsalResult,
   RestoreResult,
   StartupResult,
-  SyncStatus,
 } from '@/types'
 import type {
   CodeEntry,
@@ -405,18 +404,6 @@ export async function autoRestore(): Promise<RestoreResult> {
 }
 
 /**
- * 클라우드 동기화 상태를 조회한다 (T9 PRD §5.3).
- *
- * `'waiting'` 응답 시 UI 가 일정 간격으로 본 함수를 재호출 — 30초 대기 후에도 `'waiting'`
- * 이면 "새로고침" 옵션 노출. 브라우저 개발 모드에서는 항상 `'ready'` 반환.
- */
-export async function checkSyncStatus(): Promise<SyncStatus> {
-  const inv = await getInvoke()
-  if (!inv) return { kind: 'ready' }
-  return inv('check_sync_status') as Promise<SyncStatus>
-}
-
-/**
  * 감사 로그를 시간 역순으로 조회한다 (T9 PRD §6.6).
  *
  * @param since ISO8601 UTC 시각 (선택). 본 시각 이후 항목만 조회.
@@ -441,7 +428,7 @@ export async function getAuditLogs(
  * 앱 시작 시퀀스를 실행한다 (T10 PRD §5.6).
  *
  * 흐름: 락 + 무결성 quick_check 병렬 → 비밀번호 검증 → DB pool 초기화 → audit 1년 정리 →
- * 백그라운드 task spawn. UI 가 `checkSyncStatus` 로 동기화 대기를 먼저 처리한 후 본 함수를 호출한다.
+ * 백그라운드 task spawn. 시작 전 MYBOX 동기화 완료를 사용자가 트레이 아이콘으로 확인 후 호출한다.
  *
  * `forceLock=true` 는 사용자가 이전 화면에서 stale 락 강제 점유에 동의한 후에만 호출.
  * 브라우저 개발 모드에서는 더미 결과를 반환하여 UI 흐름만 검증 가능.

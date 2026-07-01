@@ -2,8 +2,8 @@
 //!
 //! ## 흐름
 //!
-//! UI 가 별도로 [`crate::commands::sync::check_sync_status`] 로 동기화 대기를 처리한 후
-//! 사용자 비밀번호를 받아 본 IPC [`app_startup_sequence`] 를 호출한다.
+//! 사용자가 MYBOX 동기화 완료를 확인한 후 비밀번호를 입력하면 본 IPC [`app_startup_sequence`] 가
+//! 호출된다.
 //!
 //! ```text
 //! app_startup_sequence(password, force_lock)
@@ -12,7 +12,7 @@
 //!     ├── 비밀번호 검증 (auth::verify_password)
 //!     ├── db::initialize → PRAGMA key (cipher build) + WAL + cache_size + migrate
 //!     ├── audit::cleanup_older_than(365)  (best-effort)
-//!     ├── 백그라운드 spawn: heartbeat (60초) + hourly 백업 (1시간) + daily/weekly catch-up
+//!     ├── 백그라운드 spawn: hourly 백업 (2시간) + daily/weekly catch-up
 //!     └── 측정 종료 → StartupResult 반환
 //! ```
 //!
@@ -43,11 +43,8 @@ use zeroize::Zeroizing;
 /// audit_logs 보관 기간 (PRD §6.6 — 최근 1년).
 const AUDIT_RETENTION_DAYS: i64 = 365;
 
-/// heartbeat 갱신 간격 (PRD §5.3 — 60초).
-const HEARTBEAT_INTERVAL_SECS: u64 = 60;
-
-/// hourly 백업 간격.
-const HOURLY_BACKUP_INTERVAL_SECS: u64 = 3600;
+/// hourly 백업 간격 — 2시간으로 확대해 MYBOX 업로드 부하 및 lock 충돌 빈도 절감 (T4).
+const HOURLY_BACKUP_INTERVAL_SECS: u64 = 7200;
 
 /// 시작 시퀀스 결과 — IPC 응답.
 ///
@@ -80,7 +77,6 @@ pub struct StartupResult {
 
 /// 백그라운드 task 핸들 묶음 — `OnceLock` 으로 1회 spawn 보장.
 struct BackgroundHandles {
-    _heartbeat: JoinHandle<()>,
     _hourly_backup: JoinHandle<()>,
 }
 
@@ -180,7 +176,7 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
         integrity_result,
         Ok(integrity::IntegrityCheckResult::Failed { .. })
     ) {
-        match tokio::task::spawn_blocking(integrity::auto_restore_sync).await {
+        match tokio::task::spawn_blocking(integrity::auto_restore_with_retry).await {
             Ok(Ok(r)) => {
                 audit::try_record(
                     audit::AuditEventType::BackupRestored,
@@ -206,6 +202,11 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
     } else {
         None
     };
+
+    // 3-b. 비정상 종료로 남은 .tmp 백업 파일 정리 (T2 atomic write 부산물).
+    // spawn_blocking 으로 OS I/O 를 스레드 풀로 이전 — 시작 시퀀스 지연 없이 백그라운드 처리.
+    // JoinHandle 을 _handle 로 바인딩해 drop 시 태스크가 취소되지 않도록 한다 (tokio 정책).
+    let _cleanup_handle = tokio::task::spawn_blocking(backup::cleanup_stale_tmp_backups);
 
     // 4. DB pool 초기화 — PRAGMA key (cipher build) + WAL + cache_size + migrate.
     let db_init_start = Instant::now();
@@ -272,22 +273,14 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
     })
 }
 
-/// heartbeat + 백업(hourly + daily/weekly catch-up) 백그라운드 task 를 1회 spawn 한다.
+/// 백업(hourly + daily/weekly catch-up) 백그라운드 task 를 1회 spawn 한다.
 ///
+/// heartbeat 는 T5 에서 제거 — 집<->교습소 동시 사용 없으므로 MYBOX 업로드 트리거 필요 없음.
 /// daily/weekly 는 순수 interval 로는 앱이 24시간/7일 연속 떠 있어야만 fire 하므로
-/// **catch-up 방식** 채택 — 시작 직후 1회 + hourly tick 마다 최신 백업 경과 시간을 보고
+/// **catch-up 방식** 채택 — 시작 직후 1회 + 2시간 tick 마다 최신 백업 경과 시간을 보고
 /// 기한(24h/7d) 경과 또는 0건이면 생성한다 ([`backup::run_catchup_backups`]).
 fn spawn_background_tasks() {
     BACKGROUND.get_or_init(|| {
-        let heartbeat = tokio::spawn(async {
-            let mut ticker = tokio::time::interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
-            // 첫 tick 은 즉시 발생 — 이를 소비하여 다음 tick 부터 60초 간격이 되도록 한다.
-            ticker.tick().await;
-            loop {
-                ticker.tick().await;
-                lock::heartbeat_tick().await;
-            }
-        });
         let hourly_backup = tokio::spawn(async {
             // 시작 catch-up — 마지막 실행 후 24h/7d 지났으면 즉시 따라잡는다 (간헐적 사용 대응).
             backup::run_catchup_backups().await;
@@ -307,7 +300,6 @@ fn spawn_background_tasks() {
             }
         });
         BackgroundHandles {
-            _heartbeat: heartbeat,
             _hourly_backup: hourly_backup,
         }
     });
@@ -362,8 +354,8 @@ mod tests {
     #[test]
     fn startup_constants_match_prd() {
         assert_eq!(AUDIT_RETENTION_DAYS, 365);
-        assert_eq!(HEARTBEAT_INTERVAL_SECS, 60);
-        assert_eq!(HOURLY_BACKUP_INTERVAL_SECS, 3600);
+        // hourly 간격은 T4 에서 2시간으로 확대 (MYBOX 부하 절감)
+        assert_eq!(HOURLY_BACKUP_INTERVAL_SECS, 7200);
     }
 
     #[test]

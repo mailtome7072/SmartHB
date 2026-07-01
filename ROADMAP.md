@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | 100% (16/16 스프린트 완료, Phase 5 취소로 17→16 스프린트) |
-| 현재 Phase | **v1.0 릴리즈 완료** — Sprint 16 완료(2026-06-12), deploy-prod 대기 중 |
-| 다음 마일스톤 | v1.0.0 GitHub Release (deploy-prod agent 실행 후) |
+| 전체 진행률 | v1.0.0 릴리즈 완료 + Post-v1.0 유지보수 진행 중 |
+| 현재 Phase | **Post-v1.0 안정화** — Sprint 18 완료 (사용자 피드백 10건 + 캘린더 UX 개선 + 출결 동기화) |
+| 다음 마일스톤 | v1.1.0 (Sprint 18 완료) |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -887,6 +887,81 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
+## Post-v1.0: 유지보수 + 안정화
+
+### Sprint 17: DB 안전성 잔여 수정 + 클라우드 동기화 정책 간소화 (2주) ✅ 완료 (2026-06-30)
+
+> 계획 문서: `docs/sprint/sprint17.md`
+> v1.0.0 실사용 중 발견된 DB 오류 버그 9건 중 긴급 6건은 Hotfix(`hotfix/db-lock-and-backup-fix`)로 선행 처리.
+> Sprint 17은 남은 안전성 수정 3건 + 정책 간소화 3건을 담당.
+> develop 머지: `sprint17 → develop` 직접 머지 (단일 개발자 정책, 2026-06-30)
+
+#### 작업 목록
+
+**그룹 A — 남은 안전성 수정**
+- ✅ **T1**: DB 폴더 변경 WAL 체크포인트 에러 처리 (`setup.rs`)
+- ✅ **T2**: 백업 파일 임시 파일 후 이동 방식 — atomic write + stale tmp 정리 (`backup.rs`)
+- ✅ **T3**: 자동 복원 후 재검증 — quick_check 최대 3회 retry, `auto_restore_with_retry` (`startup.rs`, `integrity.rs`)
+
+**그룹 B — 정책 간소화**
+- ✅ **T4**: Hourly 백업 간격 3600 → 7200초 (MYBOX 부하 절감) (`startup.rs`)
+- ✅ **T5**: Heartbeat 완전 제거 — 1인 운영 최적화 (`startup.rs`, `lock.rs`)
+- ✅ **T6**: SyncStatus 백엔드+프론트 완전 삭제 — `sync.rs` 삭제, `app-shell.tsx`, `top-bar.tsx`, `types/index.ts`, `tauri/index.ts`
+
+**통합**
+- ✅ **T7**: 통합 검증 — cargo test 411건 / clippy --all-targets clean / cipher check / pnpm lint+tsc+build 전수 통과
+
+#### 완료 기준 (Definition of Done)
+- ✅ WAL 체크포인트 실패 시 복사 중단 + 사용자 오류 메시지
+- ✅ 백업 파일 atomic write (tmp -> rename)
+- ✅ 자동 복원 후 재검증, 실패 시 rollback
+- ✅ hourly 간격 2시간, heartbeat 제거, SyncStatus 삭제
+- ✅ cargo test 411건 + clippy --all-targets + cipher check + lint + tsc + build 전수 통과
+
+---
+
+### Sprint 18: 사용자 피드백 10건 반영 + 캘린더 UX 개선 + 출결 동기화 (2주) ✅ 완료 (2026-07-01)
+
+> 계획 문서: `docs/sprint/sprint18.md`
+> v1.0.0 실사용 중 수집된 사용자 피드백 이슈 10건 반영. Sprint 17 회고 액션 아이템 5건 선행 처리.
+> master 직접 머지 완료 (단일 개발자 정책, 2026-07-01)
+
+#### 작업 목록
+
+**회고 액션 아이템 해소**
+- ✅ **T0**: A107~A111 — stale lock 임계값 상향(86400) + rollback 파일명 고유성 + auto_restore_with_retry 테스트 + spawn_blocking + WAL pool.close()
+
+**이미 완료 (V308/V309)**
+- ✅ **T1**: 이슈 6 — 보강데이 is_duplicate_blocked=0 (V308 마이그레이션)
+- ✅ **T2**: 이슈 6 — 공휴일 is_duplicate_blocked=0 (V309 마이그레이션)
+
+**프론트엔드 — 수업관리 캘린더 UX**
+- ✅ **T3**: 이슈 8 — '결제선생' 카드사 선택 가능 (optional)
+- ✅ **T4**: 이슈 1 — 수업관리 기본 뷰 '주'로 변경
+- ✅ **T5**: 이슈 9 — 달력 요일 순서 '일월화수목금토'로 변경 (FullCalendar + 공지문 달력)
+- ✅ **T6**: 이슈 2+3+4 — 주 보기 색상(시간기준 4색)/레이아웃(2열 균등)/다중슬롯 칩 재정비
+- ✅ **T7**: 이슈 5 — 월 보기 셀 원생 이름 직접 표기 (Nx2 그리드 + hover 상세)
+
+**백엔드 — 출결 자동 동기화**
+- ✅ **T8**: 이슈 7 — 일정코드 변경 시 출결 자동 동기화 (`sync_attendance_on_schedule_change` + academic.rs 3개 IPC 수정 + 단위 테스트 2건)
+
+**프론트엔드 — 교습일정 인쇄**
+- ✅ **T9**: 이슈 10 — 교습일정 인쇄 기능 (A4 세로 + window.print() + @media print)
+
+**통합**
+- ✅ **T10**: 통합 검증 — cargo test 418건 + clippy --all-targets + cipher check + pnpm lint+tsc+build 전수 통과
+
+#### 완료 기준 (Definition of Done)
+- ✅ Sprint 17 회고 액션 A107~A111 전수 해소
+- ✅ 수업관리 기본 뷰 '주' + 요일 '일월화수목금토' + 시간 기준 4색 + 다중 슬롯 칩
+- ✅ 월 보기 셀 원생 이름 직접 표기
+- ✅ 결제선생 카드사 optional 선택
+- ✅ 일정코드 변경 시 출결 자동 동기화 (OFF->ON, ON->OFF)
+- ✅ 교습일정 인쇄 A4 레이아웃 정상 출력
+- ✅ cargo test 418 passed + clippy --all-targets + cipher check + lint + tsc + build
+
+---
+
 ## 📈 마일스톤
 
 | 마일스톤 | Phase | Sprint | 예상 시점 | 핵심 산출물 |
@@ -900,7 +975,9 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 | M6: PIN 옵션화 | — | Sprint 13 | +24주 ✅ | PIN 스킵 토글 + Phase 5 취소 반영 |
 | M7: 대시보드 | Phase 5 | Sprint 14 | +26주 ✅ | 대시보드 + 자가 진단 + 내보내기 |
 | M7.5: 안정화 | Phase 6 | Sprint 15 | +28주 ✅ | 교습소 정보 + 접근성 감사 + 성능 최적화 (T7~T9 Sprint 16 이연) |
-| M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +32주 | 양 OS 빌드 검증 + UAT + v1.0.0 |
+| M8: v1.0 릴리즈 | Phase 6 | Sprint 16 | +32주 ✅ | 양 OS 빌드 검증 + UAT + v1.0.0 |
+| M9: v1.0.1 안정화 | Post-v1.0 | Sprint 17 | +34주 ✅ | DB 안전성 잔여 수정 + 정책 간소화 |
+| M10: 사용자 피드백 반영 | Post-v1.0 | Sprint 18 | +36주 ✅ | 캘린더 UX 개선 + 출결 동기화 + 교습일정 인쇄 |
 
 ---
 

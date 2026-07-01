@@ -1415,6 +1415,96 @@ async fn apply_schedule_change_impl(
     })
 }
 
+// ─────────────────────── 학사 일정 변경 시 출결 동기화 ───────────────────────
+
+/// 학사 일정 이벤트 생성/수정/삭제 후 해당 날짜의 정규 출결을 현재 DB 상태와 동기화한다.
+///
+/// - **allows_regular_class=0인 이벤트가 남아있으면** 해당 날짜 정규 출결 전체 DELETE (ON→OFF).
+/// - **allows_regular_class=0인 이벤트가 없으면** 해당 요일 스케줄 있는 원생에게 INSERT OR IGNORE (OFF→ON).
+///
+/// 교습기간 밖이거나 미확정 기간이면 INSERT 를 건너뜀 (출결 생성 조건 미충족).
+pub async fn sync_attendance_on_schedule_change(
+    pool: &SqlitePool,
+    event_date: &str,
+    period_end_date: Option<&str>,
+) -> Result<(), String> {
+    let end = period_end_date.unwrap_or(event_date);
+    let mut d = parse_date(event_date)?;
+    let ed = parse_date(end)?;
+    while d <= ed {
+        let ds = d.format("%Y-%m-%d").to_string();
+        sync_single_date(pool, &ds).await?;
+        d = d
+            .succ_opt()
+            .ok_or_else(|| "날짜 계산 오버플로".to_string())?;
+    }
+    Ok(())
+}
+
+async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
+    // allows_regular_class=0 인 이벤트가 해당 날짜에 존재하는지 확인
+    let off_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM schedule_events e \
+         JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE c.allows_regular_class = 0 \
+           AND e.event_date <= ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+    )
+    .bind(date)
+    .bind(date)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("날짜 상태 조회 실패: {}", e))?;
+
+    if off_count > 0 {
+        // OFF 이벤트 존재 → 정규 출결 전체 삭제
+        sqlx::query("DELETE FROM regular_attendances WHERE event_date = ?")
+            .bind(date)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("출결 삭제 실패: {}", e))?;
+    } else {
+        // OFF 이벤트 없음 → 교습기간 확인 후 INSERT OR IGNORE
+        let in_period: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM study_periods \
+             WHERE start_date <= ? AND end_date >= ? AND is_confirmed = 1",
+        )
+        .bind(date)
+        .bind(date)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
+
+        if in_period.is_some() {
+            let d = parse_date(date)?;
+            let dow = d.weekday().number_from_monday() as i64;
+            let ym = &date[..7];
+            sqlx::query(
+                "INSERT OR IGNORE INTO regular_attendances \
+                 (student_id, event_date, year_month, status, class_minutes) \
+                 SELECT ss.student_id, ?, ?, 'present', ss.duration_hours * 60 \
+                 FROM student_schedules ss \
+                 JOIN students s ON s.id = ss.student_id \
+                 WHERE ss.day_of_week = ? \
+                   AND ss.effective_from <= ? \
+                   AND (ss.effective_to IS NULL OR ss.effective_to > ?) \
+                   AND s.enroll_date <= ? \
+                   AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?)",
+            )
+            .bind(date)
+            .bind(ym)
+            .bind(dow)
+            .bind(date)
+            .bind(date)
+            .bind(date)
+            .bind(date)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("출결 INSERT 실패: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
 // ─────────────────────── 단위 테스트 ───────────────────────
 
 #[cfg(all(test, not(feature = "cipher")))]
@@ -2588,5 +2678,61 @@ mod tests {
         let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
         let err = apply_schedule_change_impl(&pool, sid, "2026-03-01").await.unwrap_err();
         assert!(err.contains("입교일"), "입교일 이전 차단: {}", err);
+    }
+
+    // ─────────────────────── T8: sync_attendance_on_schedule_change 테스트 ───────────────────────
+
+    /// T8 AC-1: OFF→ON — OFF 이벤트 삭제 후 해당 날짜 출결 INSERT
+    #[tokio::test]
+    async fn sync_attendance_inserts_on_off_to_on_transition() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        // 월요일(1) 1h 스케줄 원생 (2026-06-01 = 월)
+        let _sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+
+        // OFF 이벤트 없는 상태에서 sync → INSERT 발생
+        sync_attendance_on_schedule_change(&pool, "2026-06-01", None)
+            .await
+            .expect("sync ok");
+        let cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE event_date = '2026-06-01'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(cnt >= 1, "OUT→ON: 출결 INSERT 기대, 실제 {}", cnt);
+    }
+
+    /// T8 AC-2: ON→OFF — OFF 이벤트 추가 후 해당 날짜 출결 DELETE
+    #[tokio::test]
+    async fn sync_attendance_deletes_on_on_to_off_transition() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let _sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        // 먼저 출결 데이터 생성
+        generate_impl(&pool, "2026-06").await.expect("generate");
+        let before: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE event_date = '2026-06-01'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(before >= 1, "generate 후 출결 존재 기대");
+
+        // OFF 코드 이벤트 추가
+        let holiday_id = schedule_code_id(&pool, "공휴일임시").await;
+        add_schedule_event(&pool, holiday_id, "2026-06-01", None).await;
+
+        // sync → DELETE 발생
+        sync_attendance_on_schedule_change(&pool, "2026-06-01", None)
+            .await
+            .expect("sync ok");
+        let after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE event_date = '2026-06-01'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "ON→OFF: 출결 DELETE 기대, 실제 {}", after);
     }
 }

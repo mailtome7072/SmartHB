@@ -46,6 +46,8 @@ interface RowDraft {
 }
 
 const CARD_PAYMENT_CODE = 'card'
+// 결제선생(pay_teacher)은 카드사 선택 optional — 카드와 동일하게 select 활성, 단 필수 아님
+const PAY_TEACHER_CODE = 'pay_teacher'
 
 function todayStr(): string {
   const d = new Date()
@@ -132,6 +134,10 @@ export function PaymentsView({
   )
   const cardMethodId = useMemo(
     () => paymentMethods.find((p) => p.code === CARD_PAYMENT_CODE)?.id ?? null,
+    [paymentMethods],
+  )
+  const payTeacherMethodId = useMemo(
+    () => paymentMethods.find((p) => p.code === PAY_TEACHER_CODE)?.id ?? null,
     [paymentMethods],
   )
 
@@ -304,6 +310,9 @@ export function PaymentsView({
             {rows.map((b) => {
               const d = getDraft(b.billId)
               const isCard = cardMethodId !== null && d.paymentMethodId === cardMethodId
+              // 결제선생은 카드사 선택 활성이나 필수 아님
+              const isPayTeacher = payTeacherMethodId !== null && d.paymentMethodId === payTeacherMethodId
+              const showCardCompany = isCard || isPayTeacher
               const rowBg = b.isPaid
                 ? 'bg-emerald-50'
                 : b.isMidMonth
@@ -440,7 +449,7 @@ export function PaymentsView({
                             cardCompanyId: e.target.value === '' ? null : Number(e.target.value),
                           })
                         }
-                        disabled={!isCard}
+                        disabled={!showCardCompany}
                         className={`h-9 w-32 rounded border px-2 disabled:bg-gray-100 ${
                           isCard && d.cardCompanyId === null
                             ? 'border-[var(--danger)]'
@@ -448,7 +457,7 @@ export function PaymentsView({
                         }`}
                         aria-invalid={isCard && d.cardCompanyId === null ? 'true' : undefined}
                       >
-                        <option value="">{isCard ? '카드사 선택 (필수)' : '—'}</option>
+                        <option value="">{isCard ? '카드사 선택 (필수)' : showCardCompany ? '카드사 선택 (선택)' : '—'}</option>
                         {cardCompanies.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.label}

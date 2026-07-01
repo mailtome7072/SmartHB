@@ -83,21 +83,17 @@ const VIEWS: Array<[string, string]> = [
   ['timeGridDay', '일'],
 ]
 
-/** 원생별 수업 블록 색상 팔레트 — 같은 시간대 다른 원생을 시각적으로 구분 (주/일 뷰). */
-const STUDENT_PALETTE: Array<{ bg: string; border: string; text: string }> = [
-  { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' }, // blue
-  { bg: '#dcfce7', border: '#22c55e', text: '#14532d' }, // green
-  { bg: '#fef9c3', border: '#ca8a04', text: '#713f12' }, // yellow
-  { bg: '#fee2e2', border: '#ef4444', text: '#7f1d1d' }, // red
-  { bg: '#f3e8ff', border: '#a855f7', text: '#581c87' }, // purple
-  { bg: '#ffedd5', border: '#f97316', text: '#7c2d12' }, // orange
-  { bg: '#cffafe', border: '#06b6d4', text: '#164e63' }, // cyan
-  { bg: '#fce7f3', border: '#db2777', text: '#831843' }, // pink
-]
+/** 수업 시간(분) 기준 4색 팔레트 — 1h/2h/3h/4h를 색상으로 시각적 구분. */
+const DURATION_COLORS: Record<number, { bg: string; border: string; text: string }> = {
+  60:  { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' }, // 1h — blue
+  120: { bg: '#dcfce7', border: '#22c55e', text: '#14532d' }, // 2h — green
+  180: { bg: '#fef9c3', border: '#ca8a04', text: '#713f12' }, // 3h — amber
+  240: { bg: '#fee2e2', border: '#ef4444', text: '#7f1d1d' }, // 4h — red
+}
 
-/** 원생 ID → 안정적 색상 매핑 (같은 원생은 항상 같은 색). */
-function colorForStudent(studentId: number): { bg: string; border: string; text: string } {
-  return STUDENT_PALETTE[studentId % STUDENT_PALETTE.length]
+/** 수업 시간(분) → 색상. 미등록 시간은 blue 기본. */
+function colorForDuration(classMinutes: number): { bg: string; border: string; text: string } {
+  return DURATION_COLORS[classMinutes] ?? DURATION_COLORS[60]
 }
 
 export default function ClassCalendar({
@@ -110,7 +106,7 @@ export default function ClassCalendar({
   const calendarRef = useRef<FullCalendar>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [viewType, setViewType] = useState('dayGridMonth')
+  const [viewType, setViewType] = useState('timeGridWeek')
   const [title, setTitle] = useState('')
 
   const isTimeGrid = viewType.startsWith('timeGrid')
@@ -143,27 +139,36 @@ export default function ClassCalendar({
     return { academicByDate: byDate, academicFlags: flags }
   }, [academicEvents])
 
-  // 월 보기: 일자별 인원수 + 시간대별 명단 툴팁.
+  // 월 보기: 일자별 원생 목록 + 툴팁.
   const dayInfo = useMemo(() => {
-    const map = new Map<string, { count: number; tooltip: string }>()
+    const map = new Map<
+      string,
+      {
+        count: number
+        tooltip: string
+        students: { name: string; classMinutes: number; isMakeup: boolean }[]
+      }
+    >()
     for (const day of data.days) {
       const ids = new Set<number>()
       const bySlot = new Map<string, string[]>()
+      const students: { name: string; classMinutes: number; isMakeup: boolean }[] = []
       for (const s of day.regularSessions) {
         ids.add(s.studentId)
-        // 이동된 출결 등 시작시간 미상(null/빈값)인 정규 수업은 '시간미정' 그룹으로.
         const key = s.startTime || '시간미정'
         bySlot.set(key, [...(bySlot.get(key) ?? []), s.studentName])
+        students.push({ name: s.studentName, classMinutes: s.classMinutes, isMakeup: false })
       }
       for (const s of day.makeupSessions) {
         ids.add(s.studentId)
         bySlot.set('보강', [...(bySlot.get('보강') ?? []), s.studentName])
+        students.push({ name: s.studentName, classMinutes: s.classMinutes ?? 60, isMakeup: true })
       }
       const tooltip = [...bySlot.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([slot, names]) => `${formatKoreanTime(slot)}: ${names.join(', ')}`)
         .join('\n')
-      if (ids.size > 0) map.set(day.eventDate, { count: ids.size, tooltip })
+      if (ids.size > 0) map.set(day.eventDate, { count: ids.size, tooltip, students })
     }
     return map
   }, [data])
@@ -175,8 +180,9 @@ export default function ClassCalendar({
     classMinutes: number
   } | null>(null)
 
-  // 주 보기: 시간대별 원생을 한 블록에 묶어 2열 grid(2×N). 셀이 좁아 길이는 칩 텍스트로 표기.
-  // 일 보기: 원생별 개별 블록(실제 수업 길이 → 1h/3h 높이로 시각 구분, 같은 시간대는 가로 나란히).
+  // 주 보기: 원생별 1시간 슬롯 이벤트 — 2h+ 수업은 슬롯마다 칩 생성(동일 색상).
+  //   FullCalendar가 겹치는 이벤트를 자동으로 균등 폭 열로 배분 → 이슈 3 해소.
+  // 일 보기: 원생별 전체 시간 블록 (1h/2h/3h/4h 높이 시각 구분).
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
     const isDay = viewType === 'timeGridDay'
@@ -184,53 +190,51 @@ export default function ClassCalendar({
     for (const day of data.days) {
       // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
       const valid = day.regularSessions.filter((s) => s.startTime && s.startTime.includes(':'))
-      if (isDay) {
-        for (const s of valid) {
+      for (const s of valid) {
+        const c = colorForDuration(s.classMinutes)
+        if (isDay) {
+          // 일 보기: 전체 기간 하나의 블록
           result.push({
             start: `${day.eventDate}T${toIsoTime(s.startTime)}`,
             end: `${day.eventDate}T${addMinutes(s.startTime!, s.classMinutes)}`,
-            backgroundColor: 'transparent',
-            borderColor: 'transparent',
+            backgroundColor: c.bg,
+            borderColor: c.border,
+            textColor: c.text,
             editable: false,
             extendedProps: {
               kind: 'class',
-              students: [
-                {
-                  studentId: s.studentId,
-                  studentName: s.studentName,
-                  classMinutes: s.classMinutes,
-                },
-              ],
+              studentId: s.studentId,
+              studentName: s.studentName,
+              classMinutes: s.classMinutes,
+              slotIndex: 0,
+              totalSlots: 1,
+              classStartTime: s.startTime!,
             },
           })
-        }
-      } else {
-        const bySlot = new Map<
-          string,
-          {
-            students: { studentId: number; studentName: string; classMinutes: number }[]
-            maxMin: number
+        } else {
+          // 주 보기: 1시간 단위 슬롯으로 분할 — 이슈 4
+          const totalSlots = Math.max(1, Math.ceil(s.classMinutes / 60))
+          for (let h = 0; h < totalSlots; h++) {
+            const slotStart = addMinutes(s.startTime!, h * 60)
+            const slotEnd = addMinutes(s.startTime!, (h + 1) * 60)
+            result.push({
+              start: `${day.eventDate}T${toIsoTime(slotStart)}`,
+              end: `${day.eventDate}T${toIsoTime(slotEnd)}`,
+              backgroundColor: c.bg,
+              borderColor: c.border,
+              textColor: c.text,
+              editable: false,
+              extendedProps: {
+                kind: 'class',
+                studentId: s.studentId,
+                studentName: s.studentName,
+                classMinutes: s.classMinutes,
+                slotIndex: h,
+                totalSlots,
+                classStartTime: s.startTime!,
+              },
+            })
           }
-        >()
-        for (const s of valid) {
-          const cur = bySlot.get(s.startTime!) ?? { students: [], maxMin: 0 }
-          cur.students.push({
-            studentId: s.studentId,
-            studentName: s.studentName,
-            classMinutes: s.classMinutes,
-          })
-          cur.maxMin = Math.max(cur.maxMin, s.classMinutes)
-          bySlot.set(s.startTime!, cur)
-        }
-        for (const [startTime, { students, maxMin }] of bySlot) {
-          result.push({
-            start: `${day.eventDate}T${toIsoTime(startTime)}`,
-            end: `${day.eventDate}T${addMinutes(startTime, maxMin)}`,
-            backgroundColor: 'transparent',
-            borderColor: 'transparent',
-            editable: false,
-            extendedProps: { kind: 'class', students },
-          })
         }
       }
     }
@@ -272,16 +276,26 @@ export default function ClassCalendar({
       const info = dayInfo.get(ds)
       if (info === undefined) return
       frame.style.position = 'relative'
-      const badge = document.createElement('div')
-      badge.className = 'shb-count-badge'
-      // title 은 전역 GlobalTooltip(AppShell)이 20px 커스텀 팝업으로 표시한다.
-      badge.title = info.tooltip
-      badge.textContent = `${info.count}명`
-      badge.style.cssText =
-        'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
-        'font-size:28px;font-weight:400;color:#111;cursor:pointer;' +
-        'z-index:5;pointer-events:auto;white-space:nowrap;'
-      frame.appendChild(badge)
+      // 원생 이름 칩 컨테이너 — 2열 그리드로 이름 표기 (이슈 5/T7)
+      const container = document.createElement('div')
+      container.className = 'shb-count-badge'
+      container.style.cssText =
+        'display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:2px 4px 4px;' +
+        'width:100%;box-sizing:border-box;z-index:5;pointer-events:auto;'
+      const COLORS: Record<number, string> = { 60: '#3b82f6', 120: '#22c55e', 180: '#ca8a04', 240: '#ef4444' }
+      for (const st of info.students) {
+        const chip = document.createElement('span')
+        const color = COLORS[st.classMinutes] ?? COLORS[60]
+        const label = st.isMakeup ? `${st.name}(보강)` : st.name
+        chip.textContent = label
+        chip.title = `${label} ${st.classMinutes / 60}시간`
+        chip.style.cssText =
+          `display:block;font-size:13px;font-weight:600;color:${color};` +
+          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;' +
+          'border-radius:3px;padding:0 2px;'
+        container.appendChild(chip)
+      }
+      frame.appendChild(container)
     })
   }, [dayInfo, viewType])
 
@@ -357,10 +371,10 @@ export default function ClassCalendar({
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin]}
-          initialView="dayGridMonth"
+          initialView="timeGridWeek"
           initialDate={`${data.yearMonth}-01`}
           locale={koLocale}
-          firstDay={1}
+          firstDay={0}
           headerToolbar={false}
           events={allEvents}
           // hover 강조 background 이벤트는 채움(음영) 대신 테두리만 표시한다.
@@ -486,59 +500,57 @@ export default function ClassCalendar({
           // 그 시점에 빈 상태(데이터 로딩 중)이면 배지가 빠진다. 데이터가 늦게 도착해 dayInfo 가
           // 갱신돼도 셀은 unmount 되지 않으므로 훅이 재발화 안 됨 — 주/일 보기 갔다 돌아올 때만
           // 셀이 재마운트되며 badge 가 늦게 나타나는 증상의 원인이었다.
-          // 주/일 수업 블록: 원생 이름 줄바꿈 + 클릭 시 출결관리 이동.
-          // 일 보기는 폰트 2단계 확대 + 파랑 볼드 (text-xs → text-base text-blue-700 font-bold).
+          // 주/일 수업 블록: 원생 이름 + 수업시간 표기. 클릭 시 출결관리 이동.
+          // 주 보기: 1시간 슬롯마다 칩. 2h+ 수업은 슬롯별로 연속 표시(→/←).
+          // 일 보기: 전체 기간 블록, 폰트 확대.
           eventContent={(arg) => {
-            const students =
-              (arg.event.extendedProps.students as {
-                studentId: number
+            const { studentName, classMinutes, slotIndex, totalSlots, classStartTime } =
+              arg.event.extendedProps as {
                 studentName: string
                 classMinutes: number
-              }[]) ?? []
+                slotIndex: number
+                totalSlots: number
+                classStartTime: string
+              }
             const isDay = viewType === 'timeGridDay'
             const hoursLabel = (min: number): string => {
               const h = min / 60
               return Number.isInteger(h) ? `${h}시간` : `${h.toFixed(1)}시간`
             }
-            // 주 보기: 2열 grid(2×N). 일 보기: 한 시간대 원생을 모두 한 행으로 가로 나열(균등 폭).
+            const isFirst = slotIndex === 0
+            const isLast = slotIndex === totalSlots - 1
+            const multiSlot = totalSlots > 1
             return (
               <div
-                className={`h-full content-start gap-0.5 overflow-hidden p-0.5 ${
-                  isDay ? 'flex flex-row items-stretch text-sm' : 'grid grid-cols-2 text-sm'
-                }`}
+                role="button"
+                tabIndex={0}
+                className={`flex h-full cursor-pointer items-center overflow-hidden px-1 py-0.5 font-semibold hover:underline ${isDay ? 'text-base' : 'text-sm'}`}
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  onStudentNameClick(studentName)
+                }}
+                onMouseEnter={() =>
+                  setHovered({
+                    date: arg.event.startStr.slice(0, 10),
+                    startTime: classStartTime,
+                    classMinutes,
+                  })
+                }
+                onMouseLeave={() => setHovered(null)}
+                title={`${studentName} ${hoursLabel(classMinutes)}`}
               >
-                {students.map((st, i) => {
-                  const c = colorForStudent(st.studentId)
-                  return (
-                    <span
-                      key={`${st.studentId}-${i}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={(ev) => {
-                        ev.stopPropagation()
-                        onStudentNameClick(st.studentName)
-                      }}
-                      onMouseEnter={() =>
-                        setHovered({
-                          date: arg.event.startStr.slice(0, 10),
-                          startTime: arg.event.startStr.slice(11, 16),
-                          classMinutes: st.classMinutes,
-                        })
-                      }
-                      onMouseLeave={() => setHovered(null)}
-                      className={`flex cursor-pointer items-center justify-center gap-0.5 truncate rounded px-1 py-0.5 text-center font-semibold hover:underline ${
-                        isDay ? 'min-w-0 flex-1' : ''
-                      }`}
-                      style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
-                      title={`${st.studentName} ${hoursLabel(st.classMinutes)}`}
-                    >
-                      <span className="truncate">{st.studentName}</span>
-                      <span className="shrink-0 font-normal opacity-80">
-                        {hoursLabel(st.classMinutes)}
-                      </span>
-                    </span>
-                  )
-                })}
+                {multiSlot && !isFirst && (
+                  <span className="mr-0.5 shrink-0 text-xs opacity-60">↑</span>
+                )}
+                <span className="truncate">{studentName}</span>
+                {isFirst && (
+                  <span className="ml-0.5 shrink-0 text-xs font-normal opacity-70">
+                    {hoursLabel(classMinutes)}
+                  </span>
+                )}
+                {multiSlot && !isLast && (
+                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↓</span>
+                )}
               </div>
             )
           }}
