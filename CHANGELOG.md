@@ -37,6 +37,26 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 18: **수업관리 캘린더 주보기 색상 4색 체계** — 수업 시간 기준 60분(파랑)/120분(초록)/180분(노랑)/240분(빨강). 원생별 개별 이벤트로 FullCalendar 균등 열 자동 배치. 2시간 이상 수업은 1시간 슬롯 단위 분할 칩(↑/↓ 연속 표시)
+- Sprint 18: **수업관리 캘린더 월보기 원생 이름 표기** — 월 보기 셀에 원생 이름 2열 그리드 직접 표기, 수업 시간 기준 4색 배지, hover 시 상세 정보
+- Sprint 18: **학사 일정 변경 시 출결 자동 동기화** — `sync_attendance_on_schedule_change` 함수 신규. 일정코드 `allows_regular_class` ON→OFF 전환 시 해당 날짜 정규 출결 삭제, OFF→ON 전환 시 해당 요일 정규 스케줄 원생에게 출결 자동 생성. `create_schedule_event`/`update_schedule_event`/`delete_schedule_event` IPC 3종 연동. 단위 테스트 2건 추가
+- Sprint 18: **교습일정 인쇄 기능** — 확정 교습기간 선택 후 A4 세로 레이아웃 교습일정 인쇄. `AcademicSchedulePrint` 컴포넌트 신규, `@media print` CSS 추가, 일정관리 화면에 인쇄 버튼 연결
+
+### Changed
+- Sprint 18: 수업관리 캘린더 기본 뷰 월보기 → 주보기(timeGridWeek) 변경
+- Sprint 18: 수업관리 캘린더 요일 시작 월요일(firstDay:1) → 일요일(firstDay:0) 변경
+- Sprint 18: 결제선생 결제수단 카드사 선택 optional 활성화 — 기존 `is_card_type=1` 필수에서 항상 선택 가능으로 변경
+- Sprint 18: `app.lock` stale 임계값 600초 → 86400초(24시간) 상향 — 1인 운영 실사용 패턴 반영 (A107)
+- Sprint 18: `auto_restore_with_retry` rollback 파일명에 루프 인덱스 접미사 추가 — 동시 복원 시도 시 파일명 충돌 방지 (A108)
+- Sprint 18: `cleanup_stale_tmp_backups`를 `tokio::task::spawn_blocking`으로 래핑 — 비동기 런타임 블로킹 방지 (A110)
+- Sprint 18: WAL 체크포인트 실패 시 `pool.close()` 후 early return — 커넥션 풀 누수 방지 (A111)
+- Sprint 18: V308 — 보강데이 `is_duplicate_blocked=0` (동일 날짜 복수 일정 코드 허용)
+- Sprint 18: V309 — 공휴일 `is_duplicate_blocked=0` (공휴일 + 보강데이/공휴수업 복수 배치 허용)
+
+### Fixed
+- Sprint 18: `auto_restore_with_retry` 단위 테스트 정리 — retry 성공/실패 시나리오 커버 (A109)
+
 ### Changed
 - Sprint 17: hourly 백업 생성 간격 3600초 → 7200초 (MYBOX 부하 절감)
 - Sprint 17: `app.lock` heartbeat 완전 제거 — 1인 운영 정책으로 잠금 파일 단순화 (시작 시 생성 / 종료 시 삭제)

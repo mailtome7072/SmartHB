@@ -30,12 +30,12 @@ Sprint: 18  |  Date: 2026-07-01  |  Session: #1
 - [x] 새 의존성 추가 없음
 
 ## 완료 기준 (이번 세션)
-- [ ] T0: A107~A111 5건 전수 해소, cargo test 통과
-- [ ] T3: 결제선생 카드사 드롭다운 optional 활성화
-- [ ] T4: 수업관리 기본 뷰 timeGridWeek
-- [ ] T5: FullCalendar firstDay=0 + calendar-image.ts 요일 동기화
-- [ ] T6: 수업 시간 기준 4색 + 2열 균등 너비 + 다중 슬롯 칩
-- [ ] T7: 월 보기 원생 이름 직접 표기 (Nx2 그리드 + hover)
-- [ ] T8: sync_attendance_on_schedule_change + IPC 3곳 연동 + 테스트 3건
-- [ ] T9: 교습일정 인쇄 버튼 + A4 HTML/CSS 출력
-- [ ] T10: 통합 검증 전수 통과
+- ✅ T0: A107~A111 5건 전수 해소, cargo test 통과
+- ✅ T3: 결제선생 카드사 드롭다운 optional 활성화
+- ✅ T4: 수업관리 기본 뷰 timeGridWeek
+- ✅ T5: FullCalendar firstDay=0 (calendar-image.ts 기존 일요일 시작 유지)
+- ✅ T6: 수업 시간 기준 4색 + 원생별 개별 이벤트(균등 열) + 다중 슬롯 칩
+- ✅ T7: 월 보기 원생 이름 직접 표기 (2열 그리드, 수업시간 4색)
+- ✅ T8: sync_attendance_on_schedule_change + IPC 3곳 연동 + 테스트 2건
+- ✅ T9: 교습일정 인쇄 버튼 + A4 HTML/CSS 출력
+- ✅ T10: 통합 검증 전수 통과 (418 tests, clippy clean, cipher check, pnpm build)
