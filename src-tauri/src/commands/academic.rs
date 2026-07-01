@@ -1545,7 +1545,7 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(bogang.0, 1, "보강데이 is_duplicate_blocked = 1 (PRD §4.4.4 ON)");
+        assert_eq!(bogang.0, 0, "보강데이 is_duplicate_blocked = 0 (Sprint 18 이슈6 — 중복 허용으로 변경)");
         assert_eq!(bogang.1, 1, "보강데이 allows_makeup_class = 1");
 
         let gonghyu: i64 = sqlx::query_scalar(
@@ -2122,7 +2122,7 @@ mod tests {
         .await
         .unwrap();
 
-        // 공휴일 + 보강데이 둘 다 같은 날에 배치 (보강데이는 is_duplicate_blocked=1 이지만 시뮬용 직접 삽입).
+        // 공휴일 + 보강데이 둘 다 같은 날에 배치 (보강데이는 is_duplicate_blocked=0 — 중복 허용).
         let holiday_id: i64 = sqlx::query_scalar(
             "SELECT id FROM schedule_codes WHERE code_name = '공휴일' AND is_system_reserved = 1",
         )
