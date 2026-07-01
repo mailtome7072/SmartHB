@@ -139,27 +139,36 @@ export default function ClassCalendar({
     return { academicByDate: byDate, academicFlags: flags }
   }, [academicEvents])
 
-  // 월 보기: 일자별 인원수 + 시간대별 명단 툴팁.
+  // 월 보기: 일자별 원생 목록 + 툴팁.
   const dayInfo = useMemo(() => {
-    const map = new Map<string, { count: number; tooltip: string }>()
+    const map = new Map<
+      string,
+      {
+        count: number
+        tooltip: string
+        students: { name: string; classMinutes: number; isMakeup: boolean }[]
+      }
+    >()
     for (const day of data.days) {
       const ids = new Set<number>()
       const bySlot = new Map<string, string[]>()
+      const students: { name: string; classMinutes: number; isMakeup: boolean }[] = []
       for (const s of day.regularSessions) {
         ids.add(s.studentId)
-        // 이동된 출결 등 시작시간 미상(null/빈값)인 정규 수업은 '시간미정' 그룹으로.
         const key = s.startTime || '시간미정'
         bySlot.set(key, [...(bySlot.get(key) ?? []), s.studentName])
+        students.push({ name: s.studentName, classMinutes: s.classMinutes, isMakeup: false })
       }
       for (const s of day.makeupSessions) {
         ids.add(s.studentId)
         bySlot.set('보강', [...(bySlot.get('보강') ?? []), s.studentName])
+        students.push({ name: s.studentName, classMinutes: s.classMinutes ?? 60, isMakeup: true })
       }
       const tooltip = [...bySlot.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([slot, names]) => `${formatKoreanTime(slot)}: ${names.join(', ')}`)
         .join('\n')
-      if (ids.size > 0) map.set(day.eventDate, { count: ids.size, tooltip })
+      if (ids.size > 0) map.set(day.eventDate, { count: ids.size, tooltip, students })
     }
     return map
   }, [data])
@@ -267,16 +276,26 @@ export default function ClassCalendar({
       const info = dayInfo.get(ds)
       if (info === undefined) return
       frame.style.position = 'relative'
-      const badge = document.createElement('div')
-      badge.className = 'shb-count-badge'
-      // title 은 전역 GlobalTooltip(AppShell)이 20px 커스텀 팝업으로 표시한다.
-      badge.title = info.tooltip
-      badge.textContent = `${info.count}명`
-      badge.style.cssText =
-        'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
-        'font-size:28px;font-weight:400;color:#111;cursor:pointer;' +
-        'z-index:5;pointer-events:auto;white-space:nowrap;'
-      frame.appendChild(badge)
+      // 원생 이름 칩 컨테이너 — 2열 그리드로 이름 표기 (이슈 5/T7)
+      const container = document.createElement('div')
+      container.className = 'shb-count-badge'
+      container.style.cssText =
+        'display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:2px 4px 4px;' +
+        'width:100%;box-sizing:border-box;z-index:5;pointer-events:auto;'
+      const COLORS: Record<number, string> = { 60: '#3b82f6', 120: '#22c55e', 180: '#ca8a04', 240: '#ef4444' }
+      for (const st of info.students) {
+        const chip = document.createElement('span')
+        const color = COLORS[st.classMinutes] ?? COLORS[60]
+        const label = st.isMakeup ? `${st.name}(보강)` : st.name
+        chip.textContent = label
+        chip.title = `${label} ${st.classMinutes / 60}시간`
+        chip.style.cssText =
+          `display:block;font-size:13px;font-weight:600;color:${color};` +
+          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;' +
+          'border-radius:3px;padding:0 2px;'
+        container.appendChild(chip)
+      }
+      frame.appendChild(container)
     })
   }, [dayInfo, viewType])
 
