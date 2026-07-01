@@ -110,7 +110,7 @@ export default function ClassCalendar({
   const calendarRef = useRef<FullCalendar>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [viewType, setViewType] = useState('dayGridMonth')
+  const [viewType, setViewType] = useState('timeGridWeek')
   const [title, setTitle] = useState('')
 
   const isTimeGrid = viewType.startsWith('timeGrid')
@@ -357,10 +357,10 @@ export default function ClassCalendar({
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin]}
-          initialView="dayGridMonth"
+          initialView="timeGridWeek"
           initialDate={`${data.yearMonth}-01`}
           locale={koLocale}
-          firstDay={1}
+          firstDay={0}
           headerToolbar={false}
           events={allEvents}
           // hover 강조 background 이벤트는 채움(음영) 대신 테두리만 표시한다.
