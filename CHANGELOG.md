@@ -53,9 +53,21 @@
 - Sprint 18: WAL 체크포인트 실패 시 `pool.close()` 후 early return — 커넥션 풀 누수 방지 (A111)
 - Sprint 18: V308 — 보강데이 `is_duplicate_blocked=0` (동일 날짜 복수 일정 코드 허용)
 - Sprint 18: V309 — 공휴일 `is_duplicate_blocked=0` (공휴일 + 보강데이/공휴수업 복수 배치 허용)
+- Sprint 18 후속: 수업관리 캘린더 주/일보기 겹침 열 배정을 하루 단위 interval greedy packing(`assignColumns`)으로 재구현 — 여러 시간대에 걸친 원생이 항상 동일한 열에 표시되도록 보장. 겹침 3명 이상은 주보기만 2열×N행 재배치(일보기는 폭이 넓어 한 행 유지)
+- Sprint 18 후속: 수업관리 캘린더 월보기 원생 배지 2열→3열 그리드, 색상을 주보기와 동일한 `colorForDuration` 기준으로 통일
+- Sprint 18 후속: 수업관리 캘린더 3시간(180분) 색상을 amber에서 violet 계열로 교체 — 교습일 셀배경(amber)과 가독성 구분
+- Sprint 18 후속: 수업관리 캘린더 다중 슬롯 화살표(↑/↓) 위치를 원생 이름 뒤로 이동
+- Sprint 18 후속: 일정관리(학사) `ThreeMonthCalendar` 요일 시작을 일요일로 변경 — 수업관리 캘린더만 적용되고 누락됐던 부분 보정
+- Sprint 18 후속: 교습일정 인쇄 버튼을 교습기간 미등록 시에도 항상 표시(비활성화+안내 툴팁)로 변경 — 기존에는 조건 미충족 시 버튼 자체가 숨겨져 찾기 어려웠음
+- Sprint 18 후속: 교습일정 인쇄 레이아웃 A4 가로 방향 + 여백 최소화(브라우저 기본 머리글/바닥글 억제) + 달력 셀 균등 배분으로 개선
+- Sprint 18 후속: 결제선생 카드사 매칭에 라벨(`결제선생`) 폴백 추가 — 코드값 불일치 레거시 데이터 대비
+- Sprint 18 후속: 수납 관리 · 월별 집계 탭의 청구년월/연도 선택 UI를 드롭다운에서 일정 관리와 동일한 "◀ 이전 / 년월 / 다음 ▶" 방식으로 통일
 
 ### Fixed
 - Sprint 18: `auto_restore_with_retry` 단위 테스트 정리 — retry 성공/실패 시나리오 커버 (A109)
+- Sprint 18 후속: 수업관리 캘린더 주보기에서 원생 칩 hover 시 `Cannot read properties of undefined (reading 'split')` 크래시 수정 — hover 강조용 background 이벤트가 `eventContent`에서 `extendedProps` 없이 처리되던 문제
+- Sprint 18 후속: 교습일정 인쇄 클릭 시 미리보기가 빈 화면으로 뜨던 문제 수정 — Next.js App Router에는 Pages Router 전용 `#__next` 래퍼가 없어 인쇄 wrapper가 상위 트리와 함께 숨겨졌음. `createPortal`로 `document.body` 직속 렌더링으로 변경
+- Sprint 18 후속: 학사 일정 변경 시 출결 자동 동기화(`sync_attendance_on_schedule_change`)가 공휴일(OFF)과 공휴수업일(ON) 이벤트가 같은 날짜에 공존할 때 무조건 OFF로 판정해 출결이 생성되지 않던 버그 수정 — ON 이벤트 존재 시 우선하도록 변경, 회귀 테스트 추가
 
 ### Changed
 - Sprint 17: hourly 백업 생성 간격 3600초 → 7200초 (MYBOX 부하 절감)

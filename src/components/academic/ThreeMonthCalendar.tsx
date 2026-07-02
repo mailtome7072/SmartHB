@@ -66,10 +66,9 @@ function isoDayOfWeek(date: string): number {
   return jsDay === 0 ? 7 : jsDay
 }
 
-/** JS getDay(): 0=일, 1=월…6=토 → 월요일 시작 그리드 leading 칸 수 (0~6). */
+/** JS getDay(): 0=일, 1=월…6=토 → 일요일 시작 그리드 leading 칸 수 (0~6). */
 function leadingBlankCount(year: number, month: number): number {
-  const jsDay = new Date(year, month - 1, 1).getDay()
-  return (jsDay + 6) % 7
+  return new Date(year, month - 1, 1).getDay()
 }
 
 function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
@@ -87,7 +86,7 @@ function currentYearMonth(): { year: number; month: number } {
   return { year: d.getFullYear(), month: d.getMonth() + 1 }
 }
 
-const WEEKDAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
+const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토']
 
 interface MonthCell {
   date: string             // "YYYY-MM-DD"
@@ -285,7 +284,7 @@ function MonthGrid({
         {WEEKDAY_LABELS.map((d, i) => (
           <div
             key={d}
-            className={['py-1', i === 5 ? 'text-blue-700' : i === 6 ? 'text-red-700' : ''].join(' ')}
+            className={['py-1', i === 0 ? 'text-red-700' : i === 6 ? 'text-blue-700' : ''].join(' ')}
           >
             {d}
           </div>

@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -281,15 +282,15 @@ export default function AcademicPage() {
               교습기간 설정 / 학사 일정 코드 관리 / 일정 배치 — 좌·중·우 3개월을 한 화면에서.
             </p>
           </div>
-          {confirmedPeriod !== null && (
-            <button
-              type="button"
-              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 print:hidden"
-              onClick={() => setPrintMode(true)}
-            >
-              교습일정 인쇄
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={confirmedPeriod === null}
+            title={confirmedPeriod === null ? '이 달의 교습기간을 먼저 등록해주세요' : undefined}
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-gray-100 print:hidden"
+            onClick={() => setPrintMode(true)}
+          >
+            교습일정 인쇄
+          </button>
         </header>
 
         {/* V11 (Sprint 7 post-review): 교습기간 + 일정 배치 코드를 단일 컨트롤 바로 통합.
@@ -399,15 +400,22 @@ export default function AcademicPage() {
           </AlertDialogContent>
         </AlertDialog>
       </main>
-      {/* T9: 인쇄 전용 컴포넌트 — @media print 에서만 표시 */}
-      {printMode && confirmedPeriod !== null && (
-        <div className="academic-print-wrapper" style={{ display: 'none' }}>
-          <AcademicSchedulePrint
-            period={confirmedPeriod}
-            events={printEventsQuery.data ?? []}
-          />
-        </div>
-      )}
+      {/* T9: 인쇄 전용 컴포넌트 — @media print 에서만 표시.
+          document.body 에 직접 portal — App Router 에는 Pages Router 의 #__next 가 없어
+          AppShell 내부에 두면 인쇄 시 조상(App 루트)이 display:none 처리되어 후손인
+          이 wrapper 가 !important 를 걸어도 함께 가려지는(빈 인쇄) 문제가 있었다. */}
+      {printMode &&
+        confirmedPeriod !== null &&
+        typeof window !== 'undefined' &&
+        createPortal(
+          <div className="academic-print-wrapper" style={{ display: 'none' }}>
+            <AcademicSchedulePrint
+              period={confirmedPeriod}
+              events={printEventsQuery.data ?? []}
+            />
+          </div>,
+          document.body,
+        )}
     </AppShell>
   )
 }

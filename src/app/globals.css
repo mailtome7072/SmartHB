@@ -207,31 +207,55 @@ h6 { font-size: 18px; }
 }
 
 @media print {
-  /* 화면 전용 요소 숨김 */
-  body > *:not(#__next) { display: none; }
-  #__next > *:not(.academic-print-wrapper) { display: none; }
+  /* 화면 전용 요소 숨김 — App Router 는 #__next 래퍼가 없으므로 body 직속 자식 기준으로 판정.
+     인쇄 wrapper 는 createPortal 로 document.body 에 직접 렌더링되어 여기 매칭된다. */
+  body > *:not(.academic-print-wrapper) { display: none; }
   .academic-print-wrapper { display: block !important; }
-  .academic-print-root { display: block; }
 
-  @page { size: A4 portrait; margin: 15mm; }
+  /* margin: 0 — 브라우저 기본 머리글/바닥글(출력일시·페이지수 등)은 여백 공간에 그려지므로
+     여백을 없애면 대부분 함께 사라진다(완전 제어는 인쇄 대화상자 "머리글/바닥글" 옵션 몫). */
+  @page { size: A4 landscape; margin: 0; }
+
+  .academic-print-root {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100vh;
+    padding: 8mm;
+    box-sizing: border-box;
+  }
 
   .print-title {
+    flex: 0 0 auto;
     font-size: 18pt;
     font-weight: bold;
     text-align: center;
-    margin-bottom: 12pt;
+    margin-bottom: 8pt;
   }
-  .print-month { margin-bottom: 16pt; }
+  /* 여러 달이 걸친 교습기간이면 페이지 높이를 달 수만큼 균등 분할. */
+  .print-month {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 8pt;
+  }
+  .print-month:last-child { margin-bottom: 0; }
   .print-month-heading {
+    flex: 0 0 auto;
     font-size: 14pt;
     font-weight: 600;
-    margin-bottom: 6pt;
+    margin-bottom: 4pt;
   }
   .print-cal-table {
+    flex: 1 1 auto;
     width: 100%;
+    height: 100%;
     border-collapse: collapse;
     table-layout: fixed;
   }
+  /* 출력 가능 영역을 모두 채우도록 헤더 포함 7행(요일 1 + 주 6)을 균등 분배. */
+  .print-cal-table tr { height: calc(100% / 7); }
   .print-cal-table th,
   .print-cal-table td {
     border: 0.5pt solid #aaa;
@@ -244,7 +268,6 @@ h6 { font-size: 18px; }
     font-weight: 600;
     background: #f0f0f0;
   }
-  .print-cell { min-height: 40pt; }
   .print-outside { color: #bbb; background: #fafafa; }
   .print-in-period { background: #fff8e1; }
   .print-day-num {

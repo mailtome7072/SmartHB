@@ -1455,7 +1455,21 @@ async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
     .await
     .map_err(|e| format!("날짜 상태 조회 실패: {}", e))?;
 
-    if off_count > 0 {
+    // allows_regular_class=1 인 이벤트가 같은 날짜에 공존하면(예: 공휴일 + 공휴수업일, V309 로
+    // 중복 배치 허용) ON 이 우선한다 — off_count > 0 이라고 무조건 OFF 로 판정하면 안 됨.
+    let on_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM schedule_events e \
+         JOIN schedule_codes c ON c.id = e.code_id \
+         WHERE c.allows_regular_class = 1 \
+           AND e.event_date <= ? AND COALESCE(e.period_end_date, e.event_date) >= ?",
+    )
+    .bind(date)
+    .bind(date)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("날짜 상태 조회 실패: {}", e))?;
+
+    if off_count > 0 && on_count == 0 {
         // OFF 이벤트 존재 → 자동 생성된 출석(present) 행만 삭제.
         // 결석(absent) 또는 보강 매칭된 행(makeup_attendance_id IS NOT NULL)은 보존.
         sqlx::query(
@@ -2738,5 +2752,44 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(after, 0, "ON→OFF: 출결 DELETE 기대, 실제 {}", after);
+    }
+
+    /// T8 AC-3 (회귀): 공휴일(OFF) 이벤트가 남아있는 상태에서 공휴수업일(ON) 이벤트가
+    /// 같은 날짜에 추가로 배치되면(V309 중복 배치 허용) OFF 이벤트가 공존하더라도 ON 이
+    /// 우선하여 출결 INSERT 되어야 한다. 실사용 버그: off_count>0 만으로 OFF 판정 시 미생성.
+    #[tokio::test]
+    async fn sync_attendance_inserts_when_on_event_coexists_with_off_event() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        let _sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+
+        // 공휴일(OFF) 이벤트 먼저 배치
+        let holiday_id = schedule_code_id(&pool, "공휴일임시3").await;
+        add_schedule_event(&pool, holiday_id, "2026-06-01", None).await;
+
+        // 공휴수업일(ON, allows_regular_class=1) 코드를 같은 날짜에 추가 배치 (공휴일과 공존)
+        let makeup_class_id: i64 = sqlx::query(
+            "INSERT INTO schedule_codes \
+             (code_name, is_system_reserved, allows_regular_class, allows_makeup_class, \
+              is_duplicate_blocked, is_period_type) \
+             VALUES ('공휴수업일임시', 0, 1, 1, 0, 0) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("공휴수업일 코드 INSERT")
+        .try_get("id")
+        .expect("code id");
+        add_schedule_event(&pool, makeup_class_id, "2026-06-01", None).await;
+
+        sync_attendance_on_schedule_change(&pool, "2026-06-01", None)
+            .await
+            .expect("sync ok");
+        let cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE event_date = '2026-06-01'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(cnt >= 1, "OFF+ON 공존 시 ON 우선 INSERT 기대, 실제 {}", cnt);
     }
 }

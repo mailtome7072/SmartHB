@@ -63,6 +63,10 @@ export function BillingSummaryView({ defaultYearMonth }: Props) {
 
   const period = mode === 'year' ? selectedYear : selectedMonth
 
+  // monthOptions/yearOptions 는 최신순 정렬(desc) — index 0 이 최신, 마지막이 최과거.
+  const monthIdx = monthOptions.indexOf(selectedMonth)
+  const yearIdx = yearOptions.indexOf(selectedYear)
+
   const statsQuery = useQuery({
     queryKey: ['billing-period-stats', period],
     queryFn: () => getBillingPeriodStats(period),
@@ -97,36 +101,67 @@ export function BillingSummaryView({ defaultYearMonth }: Props) {
           ))}
         </div>
 
+        {/* 일정 관리 메뉴의 교습년월 선택 UI(◀ 이전 / 년월 / 다음 ▶)와 통일. */}
         {mode === 'month' ? (
-          <label className="text-base font-medium">
-            년월
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="이전 달"
+              disabled={monthIdx >= monthOptions.length - 1}
+              onClick={() => {
+                const prev = monthOptions[monthIdx + 1]
+                if (prev !== undefined) setSelectedMonth(prev)
+              }}
+              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {monthOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
+              ← 이전
+            </button>
+            <span className="min-w-[7rem] text-center text-lg font-bold text-[var(--foreground)]">
+              {selectedMonth.slice(0, 4)}년 {Number(selectedMonth.slice(5, 7))}월
+            </span>
+            <button
+              type="button"
+              aria-label="다음 달"
+              disabled={monthIdx <= 0}
+              onClick={() => {
+                const next = monthOptions[monthIdx - 1]
+                if (next !== undefined) setSelectedMonth(next)
+              }}
+              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              다음 →
+            </button>
+          </div>
         ) : (
-          <label className="text-base font-medium">
-            연도
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="이전 연도"
+              disabled={yearIdx >= yearOptions.length - 1}
+              onClick={() => {
+                const prev = yearOptions[yearIdx + 1]
+                if (prev !== undefined) setSelectedYear(prev)
+              }}
+              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {yearOptions.map((y) => (
-                <option key={y} value={y}>
-                  {y}년
-                </option>
-              ))}
-            </select>
-          </label>
+              ← 이전
+            </button>
+            <span className="min-w-[7rem] text-center text-lg font-bold text-[var(--foreground)]">
+              {selectedYear}년
+            </span>
+            <button
+              type="button"
+              aria-label="다음 연도"
+              disabled={yearIdx <= 0}
+              onClick={() => {
+                const next = yearOptions[yearIdx - 1]
+                if (next !== undefined) setSelectedYear(next)
+              }}
+              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              다음 →
+            </button>
+          </div>
         )}
       </div>
 

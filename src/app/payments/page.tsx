@@ -64,6 +64,8 @@ function PaymentsContent() {
     searchResults,
     summary,
   } = useBillingShared()
+  // monthOptions 는 최신순 정렬(sort b>a) — index 0 이 최신월, 마지막이 최과거월.
+  const monthIdx = monthOptions.indexOf(effectiveYearMonth)
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
@@ -97,27 +99,41 @@ function PaymentsContent() {
         {/* 툴바 — 수납 탭만 (월별 집계는 자체 기간 선택 사용) */}
         {tab === 'payments' && (
           <div className="mb-4 flex flex-wrap items-center gap-3">
-            <label className="text-base font-medium">
-              청구년월
-              <select
-                value={effectiveYearMonth}
-                onChange={(e) => {
-                  if (guarded({ kind: 'month', value: e.target.value })) {
-                    setYearMonth(e.target.value)
+            {/* 일정 관리 메뉴의 교습년월 선택 UI(◀ 이전 / 년월 / 다음 ▶)와 통일 — monthOptions
+                (교습기간 등록 월) 범위 내에서만 이동. */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="이전 달"
+                disabled={monthIdx >= monthOptions.length - 1}
+                onClick={() => {
+                  const prevYm = monthOptions[monthIdx + 1]
+                  if (prevYm !== undefined && guarded({ kind: 'month', value: prevYm })) {
+                    setYearMonth(prevYm)
                   }
                 }}
-                className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
+                className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {monthOptions.includes(effectiveYearMonth) ? null : (
-                  <option value={effectiveYearMonth}>{effectiveYearMonth}</option>
-                )}
-                {monthOptions.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
+                ← 이전
+              </button>
+              <span className="min-w-[7rem] text-center text-lg font-bold text-[var(--foreground)]">
+                {effectiveYearMonth.slice(0, 4)}년 {Number(effectiveYearMonth.slice(5, 7))}월
+              </span>
+              <button
+                type="button"
+                aria-label="다음 달"
+                disabled={monthIdx <= 0}
+                onClick={() => {
+                  const nextYm = monthOptions[monthIdx - 1]
+                  if (nextYm !== undefined && guarded({ kind: 'month', value: nextYm })) {
+                    setYearMonth(nextYm)
+                  }
+                }}
+                className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                다음 →
+              </button>
+            </div>
 
             <BillingSearchBar
               searchInput={searchInput}

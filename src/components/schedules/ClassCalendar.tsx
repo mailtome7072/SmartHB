@@ -38,10 +38,18 @@ function toIsoTime(t: string | null | undefined): string {
 }
 
 /** "HH:MM[:SS]" + 분 → "HH:MM:00". */
-function addMinutes(startTime: string, addMin: number): string {
-  const [h, m] = startTime.split(':').map(Number)
-  const total = h * 60 + m + addMin
+function addMinutes(startTime: string | null | undefined, addMin: number): string {
+  const [h, m] = (startTime ?? '').split(':').map(Number)
+  const total = (h || 0) * 60 + (m || 0) + addMin
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:00`
+}
+
+/** ISO local datetime("YYYY-MM-DDTHH:mm:ss") + 분 → 동일 형식 문자열. 겹침 재배치용. */
+function shiftIso(iso: string, minutes: number): string {
+  const d = new Date(iso)
+  d.setMinutes(d.getMinutes() + minutes)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 /** "HH:MM[:SS]" → "오전/오후 N시[ M분]". 비시각 라벨은 그대로. */
@@ -87,13 +95,44 @@ const VIEWS: Array<[string, string]> = [
 const DURATION_COLORS: Record<number, { bg: string; border: string; text: string }> = {
   60:  { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' }, // 1h — blue
   120: { bg: '#dcfce7', border: '#22c55e', text: '#14532d' }, // 2h — green
-  180: { bg: '#fef9c3', border: '#ca8a04', text: '#713f12' }, // 3h — amber
+  180: { bg: '#ede9fe', border: '#7c3aed', text: '#4c1d95' }, // 3h — violet (교습일 셀배경 amber와 명확히 구분)
   240: { bg: '#fee2e2', border: '#ef4444', text: '#7f1d1d' }, // 4h — red
 }
 
 /** 수업 시간(분) → 색상. 미등록 시간은 blue 기본. */
 function colorForDuration(classMinutes: number): { bg: string; border: string; text: string } {
   return DURATION_COLORS[classMinutes] ?? DURATION_COLORS[60]
+}
+
+/**
+ * 하루 기준 겹치는 시간대 열 배정 — Google Calendar 식 greedy interval packing.
+ * 같은 열은 서로 시간이 겹치지 않도록 보장 → 한 원생의 여러 시간대 조각(다중 슬롯 칩)이
+ * 항상 동일한 열에 배치되어 주/일 보기에서 세로로 이어지는 시각적 일관성을 유지한다.
+ * overlapTotal: 이 항목과 직접 겹치는 항목들 중 사용된 최대 열 수(+1) — 2 초과 시 2열×N행 재배치 필요.
+ */
+function assignColumns(items: { startMs: number; endMs: number }[]): Array<{
+  column: number
+  overlapTotal: number
+}> {
+  const order = items.map((_, i) => i).sort((a, b) => items[a].startMs - items[b].startMs || a - b)
+  const columnEndMs: number[] = []
+  const column: number[] = new Array(items.length).fill(0)
+  for (const i of order) {
+    const it = items[i]
+    let col = 0
+    while (columnEndMs[col] !== undefined && columnEndMs[col] > it.startMs) col++
+    column[i] = col
+    columnEndMs[col] = it.endMs
+  }
+  return items.map((it, i) => {
+    let maxCol = column[i]
+    for (let j = 0; j < items.length; j++) {
+      if (j === i) continue
+      const o = items[j]
+      if (it.startMs < o.endMs && o.startMs < it.endMs) maxCol = Math.max(maxCol, column[j])
+    }
+    return { column: column[i], overlapTotal: maxCol + 1 }
+  })
 }
 
 export default function ClassCalendar({
@@ -180,23 +219,45 @@ export default function ClassCalendar({
     classMinutes: number
   } | null>(null)
 
-  // 주 보기: 원생별 1시간 슬롯 이벤트 — 2h+ 수업은 슬롯마다 칩 생성(동일 색상).
-  //   FullCalendar가 겹치는 이벤트를 자동으로 균등 폭 열로 배분 → 이슈 3 해소.
-  // 일 보기: 원생별 전체 시간 블록 (1h/2h/3h/4h 높이 시각 구분).
+  // 주/일 보기 공통: 원생별 1시간 슬롯 이벤트 — 2h+ 수업은 슬롯마다 칩 생성(동일 색상, 이슈 4).
+  //   하루 단위로 겹치는 시간대의 열을 미리 배정(assignColumns)해 다중 슬롯 원생이 항상
+  //   동일한 열에 표시되도록 보장한다. 겹침 2명까지는 FullCalendar 자동 균등 폭 배분(이슈 3)에
+  //   맡기고, 3명 이상이면 30분 단위로 나눠 2열×N행으로 재배치한다.
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
+    // 일 보기는 하루 전체 폭을 쓸 수 있어 2열×N행 재배치가 불필요 — 겹쳐도 한 행에 모두 표시.
     const isDay = viewType === 'timeGridDay'
     const result: EventInput[] = []
     for (const day of data.days) {
       // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
       const valid = day.regularSessions.filter((s) => s.startTime && s.startTime.includes(':'))
-      for (const s of valid) {
+      if (valid.length === 0) continue
+      const items = valid.map((s) => {
+        const startMs = new Date(`${day.eventDate}T${toIsoTime(s.startTime)}`).getTime()
+        return { s, startMs, endMs: startMs + s.classMinutes * 60000 }
+      })
+      const layout = assignColumns(items)
+      // 열 배정 순서 고정(열 → 원생ID) — FullCalendar가 매 시간대마다 항상 동일한 좌우 순서로 렌더링.
+      const ordered = items
+        .map((it, i) => ({ ...it, ...layout[i] }))
+        .sort((a, b) => a.column - b.column || a.s.studentId - b.s.studentId)
+      for (const { s, column, overlapTotal } of ordered) {
         const c = colorForDuration(s.classMinutes)
-        if (isDay) {
-          // 일 보기: 전체 기간 하나의 블록
+        const totalSlots = Math.max(1, Math.ceil(s.classMinutes / 60))
+        const needSplit = !isDay && overlapTotal > 2
+        const rowGroup = needSplit ? Math.floor(column / 2) : 0
+        for (let h = 0; h < totalSlots; h++) {
+          const slotStart = addMinutes(s.startTime!, h * 60)
+          const slotEnd = addMinutes(s.startTime!, (h + 1) * 60)
+          let startIso = `${day.eventDate}T${toIsoTime(slotStart)}`
+          let endIso = `${day.eventDate}T${toIsoTime(slotEnd)}`
+          if (needSplit) {
+            endIso = shiftIso(startIso, rowGroup * 30 + 30)
+            startIso = shiftIso(startIso, rowGroup * 30)
+          }
           result.push({
-            start: `${day.eventDate}T${toIsoTime(s.startTime)}`,
-            end: `${day.eventDate}T${addMinutes(s.startTime!, s.classMinutes)}`,
+            start: startIso,
+            end: endIso,
             backgroundColor: c.bg,
             borderColor: c.border,
             textColor: c.text,
@@ -206,35 +267,11 @@ export default function ClassCalendar({
               studentId: s.studentId,
               studentName: s.studentName,
               classMinutes: s.classMinutes,
-              slotIndex: 0,
-              totalSlots: 1,
+              slotIndex: h,
+              totalSlots,
               classStartTime: s.startTime!,
             },
           })
-        } else {
-          // 주 보기: 1시간 단위 슬롯으로 분할 — 이슈 4
-          const totalSlots = Math.max(1, Math.ceil(s.classMinutes / 60))
-          for (let h = 0; h < totalSlots; h++) {
-            const slotStart = addMinutes(s.startTime!, h * 60)
-            const slotEnd = addMinutes(s.startTime!, (h + 1) * 60)
-            result.push({
-              start: `${day.eventDate}T${toIsoTime(slotStart)}`,
-              end: `${day.eventDate}T${toIsoTime(slotEnd)}`,
-              backgroundColor: c.bg,
-              borderColor: c.border,
-              textColor: c.text,
-              editable: false,
-              extendedProps: {
-                kind: 'class',
-                studentId: s.studentId,
-                studentName: s.studentName,
-                classMinutes: s.classMinutes,
-                slotIndex: h,
-                totalSlots,
-                classStartTime: s.startTime!,
-              },
-            })
-          }
         }
       }
     }
@@ -280,16 +317,17 @@ export default function ClassCalendar({
       const container = document.createElement('div')
       container.className = 'shb-count-badge'
       container.style.cssText =
-        'display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:2px 4px 4px;' +
+        'display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;padding:2px 4px 4px;' +
         'width:100%;box-sizing:border-box;z-index:5;pointer-events:auto;'
       for (const st of info.students) {
         const chip = document.createElement('span')
-        const color = (DURATION_COLORS[st.classMinutes] ?? DURATION_COLORS[60]).border
+        // 주/일 보기 칩과 동일한 색상 기준(수업 시간별 배경+글자색, colorForDuration SSOT).
+        const color = colorForDuration(st.classMinutes)
         const label = st.isMakeup ? `${st.name}(보강)` : st.name
         chip.textContent = label
         chip.title = `${label} ${st.classMinutes / 60}시간`
         chip.style.cssText =
-          `display:block;font-size:13px;font-weight:600;color:${color};` +
+          `display:block;font-size:12px;font-weight:600;color:${color.text};background-color:${color.bg};` +
           'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;' +
           'border-radius:3px;padding:0 2px;'
         container.appendChild(chip)
@@ -503,6 +541,8 @@ export default function ClassCalendar({
           // 주 보기: 1시간 슬롯마다 칩. 2h+ 수업은 슬롯별로 연속 표시(→/←).
           // 일 보기: 전체 기간 블록, 폰트 확대.
           eventContent={(arg) => {
+            // hover 강조용 background 이벤트는 extendedProps가 없어 콘텐츠 렌더링 대상이 아님.
+            if (arg.event.display === 'background') return null
             const { studentName, classMinutes, slotIndex, totalSlots, classStartTime } =
               arg.event.extendedProps as {
                 studentName: string
@@ -538,17 +578,17 @@ export default function ClassCalendar({
                 onMouseLeave={() => setHovered(null)}
                 title={`${studentName} ${hoursLabel(classMinutes)}`}
               >
-                {multiSlot && !isFirst && (
-                  <span className="mr-0.5 shrink-0 text-xs opacity-60">↑</span>
-                )}
                 <span className="truncate">{studentName}</span>
+                {multiSlot && !isLast && (
+                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↓</span>
+                )}
+                {multiSlot && !isFirst && (
+                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↑</span>
+                )}
                 {isFirst && (
                   <span className="ml-0.5 shrink-0 text-xs font-normal opacity-70">
                     {hoursLabel(classMinutes)}
                   </span>
-                )}
-                {multiSlot && !isLast && (
-                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↓</span>
                 )}
               </div>
             )

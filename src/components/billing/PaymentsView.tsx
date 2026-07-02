@@ -136,8 +136,11 @@ export function PaymentsView({
     () => paymentMethods.find((p) => p.code === CARD_PAYMENT_CODE)?.id ?? null,
     [paymentMethods],
   )
+  // code 매칭 실패 대비(레거시 마이그레이션 잔존 데이터 등) label 폴백.
   const payTeacherMethodId = useMemo(
-    () => paymentMethods.find((p) => p.code === PAY_TEACHER_CODE)?.id ?? null,
+    () =>
+      paymentMethods.find((p) => p.code === PAY_TEACHER_CODE || p.label === '결제선생')?.id ??
+      null,
     [paymentMethods],
   )
 
