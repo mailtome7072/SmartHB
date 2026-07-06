@@ -6,7 +6,8 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src/components/academic/AcademicSchedulePrint.tsx | [0회] | T0(A116 동적 행수) + T4(Red 테두리/밴드/폰트) |
+| src/components/academic/AcademicSchedulePrint.tsx | [1회] | T0(A116 동적 행수, 완료) + T4(Red 테두리/밴드/폰트, 예정) |
+| .claude/rules/harness-engineering.md | [1회] | T0(A113 상수쌍 문서화, 완료) |
 | src/hooks/useTableSort.ts (신규) | [0회] | T1 공통 정렬 훅 |
 | src/app/students/page.tsx | [0회] | T1 정렬 훅 적용, 기본정렬 학년+이름 |
 | src-tauri/src/commands/students.rs | [0회] | T1 ORDER BY 보강, T8 승급 IPC 신규 |
@@ -35,7 +36,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [ ] 원생/스케줄/청구 등 기존 핵심 도메인 로직(계산/검증 규칙) — 이번 스프린트는 UI/UX+운영편의 기능이며 기존 비즈니스 계산 로직 변경 없음
 
 ## 완료 기준 (이번 세션)
-- [ ] T0: A113 상수쌍 문서화, A116 동적 행수 계산
+- [x] T0: A113 상수쌍 문서화, A116 동적 행수 계산
 - [ ] T1: 공통 정렬 훅 + 원생 목록 정렬 통일
 - [ ] T2: 출결 그리드 정렬 + 스크롤 개선
 - [ ] T3: 청구 그리드 정렬 + 스크롤 개선

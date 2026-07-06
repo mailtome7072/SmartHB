@@ -26,8 +26,8 @@
 
 ### T0: Sprint 18 회고 액션 반영 (A113, A116 선행) — 1.5h
 
-- ⬜ A113 — 백엔드-프론트엔드 상수 쌍 목록화. 현재 파악된 쌍: `STALE_THRESHOLD_SECONDS` (lock.rs ↔ LockWarning.tsx). scope.md 상수 동기화 체크리스트 섹션 신설
-- ⬜ A116 — `AcademicSchedulePrint.tsx` 6행 고정 → `Math.ceil(cells.length / 7)` 동적 행 수 계산. T4에서 함께 검증하되, 독립 커밋으로 선행 처리
+- ✅ A113 — 백엔드-프론트엔드 상수 쌍 목록화. `STALE_THRESHOLD_SECONDS`(lock.rs↔LockWarning.tsx) + `MEMO_DEFAULT_HEIGHT`(dashboard.rs↔DashboardView.tsx) 2쌍을 `.claude/rules/harness-engineering.md`에 문서화 (3ff4c68)
+- ✅ A116 — `AcademicSchedulePrint.tsx` 6행 고정 → `Math.ceil(cells.length / 7)` 동적 행 수 계산 (3ff4c68)
 
 **관련 파일**: `src/components/academic/AcademicSchedulePrint.tsx`
 
