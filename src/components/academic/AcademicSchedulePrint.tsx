@@ -33,7 +33,9 @@ function buildCalendarGrid(
   for (let d = 1; d <= daysInMonth; d++) {
     cells.push({ day: d, outsideMonth: false, dow: (firstDow + d - 1) % 7 })
   }
-  const remaining = 42 - cells.length
+  // A116: 필요한 주(week) 수만큼만 채운다 — 5주로 끝나는 달에서 빈 6번째 행 제거
+  const totalCells = Math.ceil(cells.length / 7) * 7
+  const remaining = totalCells - cells.length
   for (let i = 1; i <= remaining; i++) {
     cells.push({ day: i, outsideMonth: true, dow: (firstDow + daysInMonth + i - 1) % 7 })
   }
@@ -102,7 +104,7 @@ export function AcademicSchedulePrint({ period, events }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: 6 }, (_, row) => (
+                {Array.from({ length: grid.length / 7 }, (_, row) => (
                   <tr key={row}>
                     {grid.slice(row * 7, row * 7 + 7).map((cell, col) => {
                       const ds = cell.outsideMonth
