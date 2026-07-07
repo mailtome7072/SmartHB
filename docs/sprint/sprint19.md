@@ -117,10 +117,7 @@
 사용자 요구 6번(일보기 10xN) + 7번(캘린더 라인 진하게) 통합.
 
 - ✅ 일보기 10xN 규칙 — T5에서 `perRow` 변수(주보기=2, 일보기=10)로 통합 구현 완료 (ea85074). 별도 작업 불필요, 아래 CSS만 남음
-- ⬜ 월/주/일보기 캘린더 grid border 진하게:
-  - FullCalendar CSS 커스터마이징: `.fc .fc-scrollgrid`, `.fc td`, `.fc th` 등의 `border-color` / `border-width` 조정
-  - 현재 기본 `border-color`(연한 회색) → 진한 회색(`#6b7280` 또는 `border-gray-400` 수준)으로 변경
-  - `ClassCalendar.tsx` 내 `<style>` 블록 또는 `globals.css` FullCalendar override 섹션에 추가
+- ✅ 월/주/일보기 캘린더 grid border 진하게 (3754e92): `--fc-border-color: #9ca3af` + `.fc-theme-standard td/th { border-width: 1.5px }` 로 globals.css에 추가
 
 **관련 파일**:
 - `src/components/schedules/ClassCalendar.tsx` (라인 247, 432, 446 + CSS 스타일 블록)
