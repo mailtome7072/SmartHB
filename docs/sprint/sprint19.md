@@ -158,20 +158,10 @@
 
 학교 등록 시 `school_type` 입력 UI 추가 + 원생 폼 학교 드롭다운을 `school_type` 기반 필터로 교체 + 기존 데이터 자동 보정 마이그레이션.
 
-- ⬜ DB 마이그레이션 V310: 기존 학교 데이터 `school_type` 자동 보정
-  - `name LIKE '%초등학교%'` → `school_type = 'elementary'`
-  - `name LIKE '%중학교%'` → `school_type = 'middle'`
-  - 나머지는 `etc` 유지 (현재 전부 `etc`)
-  - 파일명: `310__auto_correct_school_type.sql`
-- ⬜ 설정 > 코드 테이블 > 학교 등록/수정 화면에 `school_type` 선택 UI 추가
-  - `src/app/settings/codes/page.tsx`에 라디오 또는 셀렉트 (elementary/middle/high/etc)
-  - 백엔드 `codes.rs`의 `NewCode.extra` 필드는 이미 학교 확장 속성 지원 → 프론트에서 `school_type` 값을 `extra`에 포함하여 전송
-  - 기존 학교 수정 시에도 `school_type` 변경 가능
-- ⬜ 원생 등록/수정 폼 학교 드롭다운 필터링 교체
-  - `src/components/students/student-form.tsx`(라인 180-193)의 `.includes('중학교')` 텍스트 매칭 → 실제 `school_type` 컬럼 기반 필터링으로 교체
-  - 학생의 `school_level` 선택값(`elementary`/`middle`)과 일치하는 `school_type`의 학교만 드롭다운에 노출
-  - `school_level` 변경 시 드롭다운 목록 자동 갱신 + 기존 선택값 초기화
-  - `school_type='etc'`는 모든 학교급에서 표시 (기타 학교)
+- ✅ DB 마이그레이션 V310 (0f31272): 기존 학교 `school_type` 이름패턴 자동 보정. 실제 개발 DB 적용 검증 완료
+- ✅ 백엔드 `codes.rs` (0f31272): `CodeEntry`/`CodeUpdate`에 `extra` 필드 추가, list/insert/update SQL 연동. 단위 테스트 4건
+- ✅ 설정 > 코드 테이블 > 학교 화면 (0f31272): 등록/수정 모두 school_type 셀렉트 UI 추가
+- ✅ 원생 등록/수정 폼 (0f31272): 텍스트 매칭 임시방편 → `school_type` 컬럼 기반 필터링 교체, `etc`/null은 항상 노출, 학교급 변경 시 선택값 자동 초기화(로딩 가드 포함)
 
 **관련 파일**:
 - `src-tauri/migrations/310__auto_correct_school_type.sql` (신규)

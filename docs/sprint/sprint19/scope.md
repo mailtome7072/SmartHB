@@ -30,9 +30,11 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | src/lib/tauri/index.ts | [1회] | T8 IPC 래퍼 (완료) |
 | src/components/layout/app-shell.tsx | [1회] | T8 GradePromotionDialog 마운트 (완료) |
 | src/components/layout/GradePromotionDialog.tsx (신규) | [1회] | T8 확인 다이얼로그 (완료) |
-| src-tauri/migrations/310__auto_correct_school_type.sql (신규) | [0회] | T9 school_type 자동 보정 |
-| src/app/settings/codes/page.tsx | [0회] | T9 school_type 선택 UI |
-| src/components/students/student-form.tsx | [0회] | T9 학교 드롭다운 필터링 교체 |
+| src-tauri/migrations/310__auto_correct_school_type.sql (신규) | [1회] | T9 school_type 자동 보정 (완료, 실DB 검증됨) |
+| src-tauri/src/commands/codes.rs | [1회] | T9 extra 필드 연동 (완료) |
+| src/app/settings/codes/page.tsx | [1회] | T9 school_type 선택 UI (완료) |
+| src/components/students/student-form.tsx | [1회] | T9 학교 드롭다운 필터링 교체 (완료) |
+| src/types/code.ts | [1회] | T9 SchoolType 타입 신규 (완료) |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)
@@ -51,5 +53,5 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [x] T6: 일보기 10xN(T5에서 선완료) + 캘린더 라인 진하게
 - [x] T7: 대시보드 레이아웃 변경
 - [x] T8: 학년 자동 승급
-- [ ] T9: 학교급 기반 학교 선택 필터링
+- [x] T9: 학교급 기반 학교 선택 필터링
 - [ ] T10: 통합 검증 (cargo test/clippy, pnpm lint/tsc/build, sqlx migrate run, 시각 검증)
