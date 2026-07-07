@@ -181,12 +181,24 @@ pub fn run() {
             startup::app_startup_sequence,
             startup::auto_unlock_with_keychain,
         ])
-        .on_window_event(|_window, event| {
+        .on_window_event(|window, event| {
             // V24 (Sprint 7 post-review): macOS 빨간 X / Windows 윈도우 닫기 시점에도 exit_hook
             // 보장 호출 — RunEvent::ExitRequested 가 dock-resident 환경에서 즉시 발생 안 할 수
             // 있어 이중 핸들. idempotent (AtomicBool RAN) 가드로 중복 실행 방지.
+            //
+            // Sprint 19 후속수정: 교습일정 인쇄 창(academic-print) 도입 후, 이 핸들러가 어떤
+            // 창의 CloseRequested 든 구분 없이 exit_hook(DB pool 종료 등)을 실행해 인쇄 창만
+            // 닫아도 앱 전체 백엔드가 종료되는 버그가 있었다. "main" 창 종료 시에만 앱을 종료
+            // 하고, 이때 남아있는 보조 창들도 함께 정리한다.
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                tauri::async_runtime::block_on(startup::exit_hook());
+                if window.label() == "main" {
+                    for (label, w) in window.webview_windows() {
+                        if label != "main" {
+                            let _ = w.close();
+                        }
+                    }
+                    tauri::async_runtime::block_on(startup::exit_hook());
+                }
             }
         })
         .build(tauri::generate_context!())
