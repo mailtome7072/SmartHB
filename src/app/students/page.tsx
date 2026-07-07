@@ -269,7 +269,7 @@ export default function StudentsPage() {
           <table className="w-full">
             <thead className="bg-[var(--background)]">
               <tr className="text-left">
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'serial'))}
@@ -279,7 +279,7 @@ export default function StudentsPage() {
                     번호{sortIndicator(sort, 'serial')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'name'))}
@@ -289,8 +289,8 @@ export default function StudentsPage() {
                     이름{sortIndicator(sort, 'name')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">학교급</th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">학교급</th>
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'grade'))}
@@ -300,7 +300,7 @@ export default function StudentsPage() {
                     학년{sortIndicator(sort, 'grade')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'gender'))}
@@ -310,7 +310,7 @@ export default function StudentsPage() {
                     성별{sortIndicator(sort, 'gender')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'hours'))}
@@ -320,7 +320,7 @@ export default function StudentsPage() {
                     수업 시간/요일{sortIndicator(sort, 'hours')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'enroll'))}
@@ -330,7 +330,7 @@ export default function StudentsPage() {
                     입교일{sortIndicator(sort, 'enroll')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">생년월일</th>
+                <th className="px-3 py-2 text-sm font-bold">생년월일</th>
               </tr>
             </thead>
             <tbody>
@@ -347,8 +347,8 @@ export default function StudentsPage() {
                   onClick={() => router.push(`/students/edit?id=${s.id}`)}
                   className="cursor-pointer border-t border-[var(--border)] hover:bg-[var(--background)]"
                 >
-                  <td className="min-h-[44px] px-3 py-3 text-base">{s.serial_no}</td>
-                  <td className="px-3 py-3 text-base">
+                  <td className="min-h-[44px] px-3 py-2 text-base">{s.serial_no}</td>
+                  <td className="px-3 py-2 text-base">
                     {s.name}
                     {s.withdraw_date !== null && (
                       <span className="ml-2 text-sm text-muted-foreground">(퇴교)</span>
@@ -362,16 +362,16 @@ export default function StudentsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-base">{LEVEL_LABEL[s.school_level]}</td>
-                  <td className="px-3 py-3 text-base">{s.grade}</td>
-                  <td className="px-3 py-3 text-base">{GENDER_LABEL[s.gender]}</td>
-                  <td className="px-3 py-3 text-base text-gray-700">
+                  <td className="px-3 py-2 text-base">{LEVEL_LABEL[s.school_level]}</td>
+                  <td className="px-3 py-2 text-base">{s.grade}</td>
+                  <td className="px-3 py-2 text-base">{GENDER_LABEL[s.gender]}</td>
+                  <td className="px-3 py-2 text-base text-gray-700">
                     {s.weekly_hours !== null && s.weekly_hours !== undefined && s.weekly_hours > 0
                       ? `주 ${s.weekly_hours}시간 · ${formatScheduleDays(s.schedule_days_csv)}`
                       : '-'}
                   </td>
-                  <td className="px-3 py-3 text-base">{s.enroll_date}</td>
-                  <td className="px-3 py-3 text-base text-gray-700">{s.birth_date ?? '-'}</td>
+                  <td className="px-3 py-2 text-base">{s.enroll_date}</td>
+                  <td className="px-3 py-2 text-base text-gray-700">{s.birth_date ?? '-'}</td>
                 </tr>
               ))}
             </tbody>
