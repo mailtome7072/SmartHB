@@ -6,7 +6,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
-| src/components/academic/AcademicSchedulePrint.tsx | [1회] | T0(A116 동적 행수, 완료) + T4(Red 테두리/밴드/폰트, 예정) |
+| src/components/academic/AcademicSchedulePrint.tsx | [2회] | T0(A116 동적 행수) + T4(Red 테두리/밴드/폰트) 모두 완료 |
 | .claude/rules/harness-engineering.md | [1회] | T0(A113 상수쌍 문서화, 완료) |
 | src/hooks/useTableSort.ts (신규) | [1회] | T1 공통 정렬 훅 (완료, T2/T3에서 소비 예정) |
 | src/app/students/page.tsx | [1회] | T1 정렬 훅 적용, 기본정렬 학년+이름 (완료) |
@@ -19,10 +19,11 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | src/components/billing/BillingGrid.tsx | [1회] | T3 정렬+스크롤 (완료) |
 | src-tauri/src/commands/billing.rs | [1회] | T3 3차 정렬키 학년+이름 (완료) |
 | src/types/billing.ts | [1회] | T3 SchoolLevel 공유 타입 교체 (완료) |
-| src/lib/calendar-image.ts | [0회] | T4 참조용(수정 없을 수 있음) |
-| src/components/academic/CalendarCell.tsx | [0회] | T4 참조용(수정 없을 수 있음) |
+| src/lib/calendar-image.ts | [1회] | T4 날짜유틸 공용화 리팩터 (완료) |
+| src/lib/time.ts | [1회] | T4 isoDayOfWeek/isWeekday/nextIsoDate/prevIsoDate 공용화 (완료) |
+| src/components/academic/ThreeMonthCalendar.tsx | [1회] | T4 날짜유틸 공용화 리팩터 (완료) |
 | src/components/schedules/ClassCalendar.tsx | [0회] | T5 화살표 제거+2xN 수정, T6 10xN+라인 |
-| src/app/globals.css | [0회] | T6 FullCalendar CSS override |
+| src/app/globals.css | [1회] | T4 인쇄 CSS(완료) + T6 FullCalendar CSS override(예정) |
 | src/components/dashboard/DashboardView.tsx | [0회] | T7 레이아웃 상하 배치 |
 | src-tauri/src/commands/mod.rs | [0회] | T8 invoke_handler 등록 |
 | src-tauri/src/lib.rs | [0회] | T8 invoke_handler 등록 |
@@ -44,7 +45,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [x] T1: 공통 정렬 훅 + 원생 목록 정렬 통일
 - [x] T2: 출결 그리드 정렬 + 스크롤 개선
 - [x] T3: 청구 그리드 정렬 + 스크롤 개선 (billing/page.tsx는 이중 스크롤 구조 없어 수정 불필요로 확인됨)
-- [ ] T4: 교습일정 인쇄 캘린더 개선 (Red 테두리, 밴드, 폰트)
+- [x] T4: 교습일정 인쇄 캘린더 개선 (Red 테두리, 밴드, 폰트) — 인쇄 시각 확인은 T10으로 이연
 - [ ] T5: 주보기 화살표 제거 + 2xN 버그 수정
 - [ ] T6: 일보기 10xN + 캘린더 라인 진하게
 - [ ] T7: 대시보드 레이아웃 변경

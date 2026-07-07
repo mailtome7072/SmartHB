@@ -83,19 +83,11 @@
 
 사용자 요구 4번. 인쇄용 `AcademicSchedulePrint.tsx`의 캘린더를 공지문 생성(`calendar-image.ts`)과 동등한 수준으로 시각 개선한다.
 
-- ⬜ 교습일 Red 테두리 표시: 교습기간 내 수업 가능일(공휴일/보강불가 코드 미등록일)의 `<td>` 셀에 `border: 2px solid #E03131` 적용
-  - 판별 로직: `calendar-image.ts:352-419` `drawTeachingOutline()` 참조 — regionStart~regionEnd 내 `allows_regular_class=true` 일자
-  - 인쇄(`@media print`) 환경에서 테두리 렌더링 확인 필수
-- ⬜ 기간성 학사일정 밴드(막대) 표현:
-  - `schedule_codes.is_period_type=1`인 코드가 등록된 경우, 시작일~종료일을 걸치는 오버레이 밴드 배치
-  - 구현 방식: table 위에 `position: absolute` 밴드 요소 배치 (부모 `position: relative`), 셀 좌표 계산으로 시작/종료 위치 결정
-  - 라벨은 밴드 중앙에 1회만 표시 (기존 각 셀 반복 렌더링 폐기)
-  - 셀 구분선(border)은 밴드 아래에 그대로 유지
-  - 밴드 높이/너비 내에서 라벨 폰트 자동 조절 (`overflow: hidden`, `text-overflow: ellipsis`)
-  - `calendar-image.ts:265-277` bandEvents/inBand 패턴 참조하되, CSS/HTML로 이식
-- ⬜ 캘린더 내 일정 정보 폰트 크기 확대: 셀 너비를 넘지 않는 범위에서 최대한 크게 (`font-size: clamp(...)` 또는 셀 크기 대비 상대 단위)
-- ⬜ A116 반영: 동적 행 수 계산 (`Math.ceil(cells.length / 7)`) — 5행 달에서 빈 6번째 행 제거
-- ⬜ 인쇄(`@media print`) 렌더링 호환성 테스트: Chrome/Edge WebView 기준 오버레이 밴드+테두리 정상 출력 확인
+- ✅ 교습일 Red 테두리 표시 (fe228a0): calendar-image.ts의 hasClassOnDate + regionStart/regionEnd 트림 규칙을 그대로 이식, row/col 좌표 기반 이웃 판정(인덱스 랩어라운드 방지)으로 4방향 테두리 적용
+- ✅ 기간성 학사일정 밴드 (fe228a0): `is_period_type` 코드를 셀 위 오버레이(`position:absolute`, 부모 `<td> position:relative`)로 표현, 라벨은 기간 중앙 날짜 셀에 1회만 표시, 셀 구분선 유지
+- ✅ 폰트 확대 (fe228a0): 날짜 11pt→12pt, 일정 라벨 9pt→10.5pt, overflow-ellipsis 유지로 셀 너비 초과 방지
+- ✅ A116 잔여 버그 수정 (fe228a0): CSS가 고정 7행 기준이던 것을 `--print-rows` 변수로 실제 행 수 반영하도록 수정 (T0에서 JS 로직만 고치고 CSS를 놓쳤던 부분)
+- ⬜ 인쇄(`@media print`) 렌더링 호환성 시각 확인 — T10 통합 검증에서 수행 (개발 서버 재기동 필요)
 
 **관련 파일**:
 - `src/components/academic/AcademicSchedulePrint.tsx` (라인 65-79, 105, 117, 124-131)
