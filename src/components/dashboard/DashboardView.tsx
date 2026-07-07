@@ -122,15 +122,16 @@ export function DashboardView() {
           )}
         </Widget>
 
-        {/* 오른쪽 열: (당일 수업 | 이달의 생일) 50/50 행 + 월별 청구총액 추이 스택.
+        {/* 오른쪽 열: 당일 수업(위) + 이달의 생일(아래) 상하 배치, 당일수업 정보량이 많아
+            높이 2:1 비율 + 월별 청구총액 추이 스택 (Sprint 19 T7, 사용자 요청 8번).
             grid stretch 로 컬럼 높이 = 교습소 현황 높이. */}
         <div className="flex flex-col gap-6 lg:h-full">
-          <div className="flex flex-col gap-6 sm:flex-row lg:flex-1 lg:min-h-0">
+          <div className="flex flex-col gap-6 lg:flex-1 lg:min-h-0">
             <Widget
               title={
                 <span className="text-[22px]">{`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}</span>
               }
-              className="sm:w-1/2 sm:min-h-0"
+              className="min-h-0 flex-[2]"
             >
               {today.isLoading || today.data === undefined ? (
                 <Loading />
@@ -152,7 +153,7 @@ export function DashboardView() {
               )}
             </Widget>
 
-            <Widget title={<span className="text-[22px]">이달의 생일</span>} className="sm:w-1/2 sm:min-h-0">
+            <Widget title={<span className="text-[22px]">이달의 생일</span>} className="min-h-0 flex-[1]">
               {birthdays.isLoading || birthdays.data === undefined ? (
                 <Loading />
               ) : birthdays.data.length === 0 ? (
