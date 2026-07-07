@@ -120,6 +120,15 @@ h6 { font-size: 18px; }
 /* ── 수업 관리 FullCalendar 커스터마이징 (Sprint 10 T11 시각 검증) ── */
 /* 툴바는 커스텀 React 로 구현 (headerToolbar=false) — FC 버튼 스타일 불필요. */
 
+/* 월/주/일보기 공통 그리드 라인 — 기본 연한 회색보다 진하게 (Sprint 19 T6, 사용자 요청 7번). */
+.fc {
+  --fc-border-color: #9ca3af;
+}
+.fc-theme-standard td,
+.fc-theme-standard th {
+  border-width: 1.5px;
+}
+
 /* 셀 배경: 학사 캘린더와 동일 — 수업 있는 날 amber-100 / 없는 날 gray-100 */
 .shb-has-class {
   background-color: #fef3c7;
