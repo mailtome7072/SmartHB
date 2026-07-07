@@ -108,12 +108,17 @@ function colorForDuration(classMinutes: number): { bg: string; border: string; t
  * 하루 기준 겹치는 시간대 열 배정 — Google Calendar 식 greedy interval packing.
  * 같은 열은 서로 시간이 겹치지 않도록 보장 → 한 원생의 여러 시간대 조각(다중 슬롯 칩)이
  * 항상 동일한 열에 배치되어 주/일 보기에서 세로로 이어지는 시각적 일관성을 유지한다.
- * overlapTotal: 이 항목과 직접 겹치는 항목들 중 사용된 최대 열 수(+1) — 2 초과 시 2열×N행 재배치 필요.
+ *
+ * Sprint 19 T5(2xN 버그 근본 수정): 이전에는 이 함수가 "이 항목과 직접 겹치는 항목들 중
+ * 최대 열 번호"로 `overlapTotal`을 계산해 2열×N행 재배치 여부를 결정했으나, 이 값은
+ * 아이템별 pairwise 최대치라 실제 "같은 시(hour) 안에 동시에 존재하는 인원 수"와
+ * 다를 수 있었다(체인형 겹침에서 값이 부풀려짐). 그 결과 시간대별 실제 밀집도를 초과하는
+ * 행(row) 수가 계산되어, 30분 고정 오프셋이 60분을 넘어가면서 실제 다음 시간대의
+ * 이벤트와 충돌했다(다수 원생 시 3명+ 동시 노출). 이제 이 함수는 순수하게 column만
+ * 반환하고, 실제 2xN 재배치에 필요한 "시간대(hour)별 사용 컬럼 수"는 호출부에서
+ * 별도로 hour 단위 집계로 계산한다 — 근본 원인 제거.
  */
-function assignColumns(items: { startMs: number; endMs: number }[]): Array<{
-  column: number
-  overlapTotal: number
-}> {
+function assignColumns(items: { startMs: number; endMs: number }[]): Array<{ column: number }> {
   const order = items.map((_, i) => i).sort((a, b) => items[a].startMs - items[b].startMs || a - b)
   const columnEndMs: number[] = []
   const column: number[] = new Array(items.length).fill(0)
@@ -124,15 +129,7 @@ function assignColumns(items: { startMs: number; endMs: number }[]): Array<{
     column[i] = col
     columnEndMs[col] = it.endMs
   }
-  return items.map((it, i) => {
-    let maxCol = column[i]
-    for (let j = 0; j < items.length; j++) {
-      if (j === i) continue
-      const o = items[j]
-      if (it.startMs < o.endMs && o.startMs < it.endMs) maxCol = Math.max(maxCol, column[j])
-    }
-    return { column: column[i], overlapTotal: maxCol + 1 }
-  })
+  return items.map((_, i) => ({ column: column[i] }))
 }
 
 export default function ClassCalendar({
@@ -221,12 +218,16 @@ export default function ClassCalendar({
 
   // 주/일 보기 공통: 원생별 1시간 슬롯 이벤트 — 2h+ 수업은 슬롯마다 칩 생성(동일 색상, 이슈 4).
   //   하루 단위로 겹치는 시간대의 열을 미리 배정(assignColumns)해 다중 슬롯 원생이 항상
-  //   동일한 열에 표시되도록 보장한다. 겹침 2명까지는 FullCalendar 자동 균등 폭 배분(이슈 3)에
-  //   맡기고, 3명 이상이면 30분 단위로 나눠 2열×N행으로 재배치한다.
+  //   동일한 열에 표시되도록 보장한다. 한 시간(hour) 안에 실제 사용 중인 컬럼 수가
+  //   기준(주보기 2, 일보기 10)을 넘으면 그 시간을 N등분해 2/10열×N행으로 재배치한다
+  //   (사용자 요청 5·6번). 등분 폭은 항상 "그 시간대 안"에서만 계산 — 다중 시간 수업이
+  //   여러 시간에 걸쳐도 특정 시간대의 밀집도가 다른 시간대로 새어나가 충돌하지 않는다
+  //   (Sprint 19 T5 근본 수정, 상세는 assignColumns 주석 참조).
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
-    // 일 보기는 하루 전체 폭을 쓸 수 있어 2열×N행 재배치가 불필요 — 겹쳐도 한 행에 모두 표시.
+    // 일 보기는 하루 전체 폭이 넓어 10명까지는 재배치 불필요 — 사용자 요청 6번(10xN).
     const isDay = viewType === 'timeGridDay'
+    const perRow = isDay ? 10 : 2
     const result: EventInput[] = []
     for (const day of data.days) {
       // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
@@ -238,23 +239,41 @@ export default function ClassCalendar({
       })
       const layout = assignColumns(items)
       // 열 배정 순서 고정(열 → 원생ID) — FullCalendar가 매 시간대마다 항상 동일한 좌우 순서로 렌더링.
+      // startHour/totalSlots를 한 번만 계산해 이후 두 순회(hour별 집계 + 렌더링)가 공유.
       const ordered = items
         .map((it, i) => ({ ...it, ...layout[i] }))
         .sort((a, b) => a.column - b.column || a.s.studentId - b.s.studentId)
-      for (const { s, column, overlapTotal } of ordered) {
-        const c = colorForDuration(s.classMinutes)
-        const totalSlots = Math.max(1, Math.ceil(s.classMinutes / 60))
-        const needSplit = !isDay && overlapTotal > 2
-        const rowGroup = needSplit ? Math.floor(column / 2) : 0
+        .map((it) => ({
+          ...it,
+          startHour: Number(it.s.startTime!.slice(0, 2)),
+          totalSlots: Math.max(1, Math.ceil(it.s.classMinutes / 60)),
+        }))
+
+      // 시간(hour, 0~23)별 실제 사용 중인 최대 column — 2xN/10xN 재배치의 행 수 산정 기준.
+      const maxColumnByHour = new Map<number, number>()
+      for (const { column, startHour, totalSlots } of ordered) {
         for (let h = 0; h < totalSlots; h++) {
+          const hour = startHour + h
+          maxColumnByHour.set(hour, Math.max(maxColumnByHour.get(hour) ?? 0, column))
+        }
+      }
+
+      for (const { s, column, startHour, totalSlots } of ordered) {
+        const c = colorForDuration(s.classMinutes)
+        for (let h = 0; h < totalSlots; h++) {
+          const hour = startHour + h
+          const columnsInHour = (maxColumnByHour.get(hour) ?? 0) + 1
+          // 행 높이를 60분/필요행수로 나눠 몇 명이 겹치든 실제 시(hour) 경계를 넘지 않는다.
+          // columnsInHour<=perRow(분할 불필요)면 rowsNeeded=1, rowGroup=0, rowHeightMin=60로
+          // 자연히 수렴해 "분할 없음"이 별도 분기 없이 이 공식의 특수 경우가 된다.
+          const rowsNeeded = Math.max(1, Math.ceil(columnsInHour / perRow))
+          const rowGroup = Math.floor(column / perRow)
+          const rowHeightMin = 60 / rowsNeeded
+
           const slotStart = addMinutes(s.startTime!, h * 60)
-          const slotEnd = addMinutes(s.startTime!, (h + 1) * 60)
-          let startIso = `${day.eventDate}T${toIsoTime(slotStart)}`
-          let endIso = `${day.eventDate}T${toIsoTime(slotEnd)}`
-          if (needSplit) {
-            endIso = shiftIso(startIso, rowGroup * 30 + 30)
-            startIso = shiftIso(startIso, rowGroup * 30)
-          }
+          const startIsoBase = `${day.eventDate}T${toIsoTime(slotStart)}`
+          const startIso = shiftIso(startIsoBase, rowGroup * rowHeightMin)
+          const endIso = shiftIso(startIsoBase, rowGroup * rowHeightMin + rowHeightMin)
           result.push({
             start: startIso,
             end: endIso,
@@ -578,14 +597,16 @@ export default function ClassCalendar({
                 onMouseLeave={() => setHovered(null)}
                 title={`${studentName} ${hoursLabel(classMinutes)}`}
               >
+                {/* Sprint 19 T5(사용자 요청 5번): 주보기는 이름만 표시 — 다중슬롯 연결
+                    화살표(↓/↑)와 시간 라벨을 제거. 일보기는 공간이 넉넉해 기존대로 유지. */}
                 <span className="truncate">{studentName}</span>
-                {multiSlot && !isLast && (
+                {isDay && multiSlot && !isLast && (
                   <span className="ml-0.5 shrink-0 text-xs opacity-60">↓</span>
                 )}
-                {multiSlot && !isFirst && (
+                {isDay && multiSlot && !isFirst && (
                   <span className="ml-0.5 shrink-0 text-xs opacity-60">↑</span>
                 )}
-                {isFirst && (
+                {isDay && isFirst && (
                   <span className="ml-0.5 shrink-0 text-xs font-normal opacity-70">
                     {hoursLabel(classMinutes)}
                   </span>
