@@ -128,9 +128,7 @@ export function DashboardView() {
         <div className="flex flex-col gap-6 lg:h-full">
           <div className="flex flex-col gap-6 lg:flex-1 lg:min-h-0">
             <Widget
-              title={
-                <span className="text-[22px]">{`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}</span>
-              }
+              title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}
               className="min-h-0 flex-[2]"
             >
               {today.isLoading || today.data === undefined ? (
@@ -153,7 +151,7 @@ export function DashboardView() {
               )}
             </Widget>
 
-            <Widget title={<span className="text-[22px]">이달의 생일</span>} className="min-h-0 flex-[1]">
+            <Widget title="이달의 생일" className="min-h-0 flex-[1]">
               {birthdays.isLoading || birthdays.data === undefined ? (
                 <Loading />
               ) : birthdays.data.length === 0 ? (
@@ -217,7 +215,7 @@ function MonthlySummaryWidget() {
   )
 
   return (
-    <Widget title={<span className="text-[22px]">{`${month} 월 요약`}</span>} action={action}>
+    <Widget title={`${month} 월 요약`} action={action}>
       {monthly.isLoading || monthly.data === undefined ? (
         <Loading />
       ) : (
@@ -379,7 +377,8 @@ function Widget({
     >
       <div className="mb-4 flex items-center gap-2">
         {action}
-        <h2 className="text-lg font-bold text-[var(--foreground)]">{title}</h2>
+        {/* Sprint 19 사용자 요청 — 패널 타이틀 폰트 두 단계 축소 (text-lg → text-sm). */}
+        <h2 className="text-sm font-bold text-[var(--foreground)]">{title}</h2>
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>

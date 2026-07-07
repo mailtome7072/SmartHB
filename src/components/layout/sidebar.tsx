@@ -79,7 +79,7 @@ export function Sidebar() {
               <span
                 aria-disabled="true"
                 title={item.disabledHint}
-                className="flex min-h-[44px] cursor-not-allowed items-center border-l-4 border-transparent px-4 py-3 text-gray-600"
+                className="flex min-h-[44px] cursor-not-allowed items-center border-l-4 border-transparent px-4 py-3 text-sm text-gray-600"
               >
                 {item.label}
               </span>
@@ -95,7 +95,7 @@ export function Sidebar() {
                       const guard = useAppStore.getState().unsavedGuard
                       if (guard && !guard(item.href)) e.preventDefault()
                     }}
-                    className={`flex min-h-[44px] items-center border-l-4 px-4 py-3 ${
+                    className={`flex min-h-[44px] items-center border-l-4 px-4 py-3 text-sm ${
                       active
                         ? 'border-[var(--accent)] bg-[var(--background)] font-semibold text-[var(--accent)]'
                         : 'border-transparent text-[var(--foreground)] hover:bg-[var(--background)]'
@@ -112,7 +112,7 @@ export function Sidebar() {
           <AlertDialog>
             <AlertDialogTrigger
               type="button"
-              className="flex min-h-[44px] w-full items-center justify-between border-l-4 border-transparent px-4 py-3 text-left text-[var(--foreground)] hover:bg-[var(--background)]"
+              className="flex min-h-[44px] w-full items-center justify-between border-l-4 border-transparent px-4 py-3 text-left text-sm text-[var(--foreground)] hover:bg-[var(--background)]"
             >
               <span>종료</span>
             </AlertDialogTrigger>
