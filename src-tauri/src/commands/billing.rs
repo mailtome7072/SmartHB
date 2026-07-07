@@ -193,7 +193,8 @@ pub(crate) async fn generate_bills_impl(
 /// 정렬 우선순위:
 ///   1. 미확정(`draft`) 먼저, 확정(`confirmed`) 다음
 ///   2. 월중입퇴교(`is_mid_month=1`) 가 같은 상태 내 우선
-///   3. 학생 이름 ASC
+///   3. 학생 학년별(school_level→grade)+이름 ASC — Sprint 19 T3(사용자 요청 1번). 확정/미확정
+///      워크플로우 그룹핑(1·2)은 업무상 우선순위라 유지하고, 그 안에서만 학년+이름 정렬 적용
 #[tauri::command]
 pub async fn list_bills(year_month: String) -> Result<Vec<Bill>, String> {
     let pool = db::pool().map_err(String::from)?;
@@ -217,7 +218,7 @@ pub(crate) async fn list_bills_impl(
          ORDER BY \
             CASE b.status WHEN 'draft' THEN 0 ELSE 1 END ASC, \
             b.is_mid_month DESC, \
-            s.name ASC",
+            s.school_level ASC, s.grade ASC, s.name ASC",
     )
     .bind(year_month)
     .fetch_all(pool)
@@ -1387,6 +1388,32 @@ mod tests {
         assert_eq!(bills[1].student_id, a);
         // confirmed → 마지막 (C)
         assert_eq!(bills[2].student_id, c);
+    }
+
+    #[tokio::test]
+    async fn list_bills_orders_by_grade_then_name_within_same_group() {
+        // Sprint 19 T3(사용자 요청 1번): 동일 status+mid_month 그룹 내에서는
+        // school_level→grade→name 순서 — 이름만으로는 구분 안 되는 경우도 검증.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "학생가", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "학생나", "2026-01-01", None).await;
+        for s in [a, b] {
+            seed_schedule(&pool, s, 1, 1).await;
+        }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        // a 를 중학생으로 승격 — 이름순(가→나)과 반대로 나와야 school_level 이 실제
+        // 정렬 기준임을 증명 (elementary 인 b 가 middle 인 a 보다 먼저).
+        sqlx::query("UPDATE students SET school_level='middle', grade=2 WHERE id=?")
+            .bind(a)
+            .execute(&pool)
+            .await
+            .expect("학생 학교급 갱신");
+
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bills = list_bills_impl(&pool, "2026-05").await.expect("list");
+        assert_eq!(bills.len(), 2);
+        assert_eq!(bills[0].student_id, b, "elementary 가 middle 보다 먼저");
+        assert_eq!(bills[1].student_id, a);
     }
 
     #[tokio::test]
