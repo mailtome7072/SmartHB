@@ -75,22 +75,47 @@ function escapeHtml(text: string): string {
 
 const STYLE = `
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
     font-family: Pretendard, -apple-system, sans-serif;
     background: #e5e7eb;
   }
-  .print-root { padding: 8mm; }
-  .print-title { font-size: 20pt; font-weight: bold; text-align: center; margin-bottom: 10pt; }
-  .print-month { margin-bottom: 10pt; background: #fff; padding: 4mm; border-radius: 4px; }
-  .print-month-heading { font-size: 15pt; font-weight: 600; margin-bottom: 6pt; }
-  .print-cal-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  /* 항상 1페이지에 맞춘다 — 전체를 뷰포트/페이지 높이(100vh)에 맞춰 flex 로 눌러 담고,
+     교습기간이 두 달에 걸치면 두 달 표가 그 안에서 공간을 나눠 가진다(행 수만큼 축소). */
+  .print-root {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100vh;
+    padding: 8mm;
+  }
+  .print-title { flex: 0 0 auto; font-size: 20pt; font-weight: bold; text-align: center; margin-bottom: 8pt; }
+  .print-month {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    margin-bottom: 8pt;
+  }
+  .print-month:last-child { margin-bottom: 0; }
+  .print-month-heading { flex: 0 0 auto; font-size: 15pt; font-weight: 600; margin-bottom: 4pt; }
+  .print-cal-table {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    --print-rows: 7;
+  }
+  .print-cal-table tr { height: calc(100% / var(--print-rows)); }
   .print-cal-table th, .print-cal-table td {
     border: 0.5pt solid #aaa;
-    padding: 4pt 5pt;
+    padding: 3pt 5pt;
     vertical-align: top;
     position: relative;
-    height: 26mm;
+    overflow: hidden;
   }
   .print-dow { text-align: center; font-size: 13pt; font-weight: 600; background: #f0f0f0; }
   .print-outside { color: #bbb; background: #fafafa; }
@@ -118,7 +143,7 @@ const STYLE = `
   @media print {
     body { background: #fff; }
     @page { size: A4 landscape; margin: 8mm; }
-    .print-month { box-shadow: none; padding: 0; page-break-inside: avoid; }
+    .print-month { page-break-inside: avoid; }
   }
 `
 
@@ -254,7 +279,7 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
       return `
         <div class="print-month">
           <h3 class="print-month-heading">${year}년 ${month}월</h3>
-          <table class="print-cal-table">
+          <table class="print-cal-table" style="--print-rows:${rowCount + 1}">
             <thead><tr>${headerHtml}</tr></thead>
             <tbody>${rowsHtml}</tbody>
           </table>
