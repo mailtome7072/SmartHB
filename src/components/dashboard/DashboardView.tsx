@@ -377,8 +377,8 @@ function Widget({
     >
       <div className="mb-4 flex items-center gap-2">
         {action}
-        {/* Sprint 19 사용자 요청 — 패널 타이틀 폰트 두 단계 축소 (text-lg → text-sm). */}
-        <h2 className="text-sm font-bold text-[var(--foreground)]">{title}</h2>
+        {/* Sprint 19 사용자 요청 — 패널 타이틀 폰트 17px 지정. */}
+        <h2 className="text-[17px] font-bold text-[var(--foreground)]">{title}</h2>
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>
