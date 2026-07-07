@@ -46,21 +46,33 @@ function formatScheduleDays(csv: string | null | undefined): string {
   return uniq.map((d) => DAY_LABEL_SHORT[d]).join('/')
 }
 const SORT_OPTIONS: { value: StudentSort; label: string }[] = [
+  { value: 'grade-asc', label: '학년순 (기본)' },
+  { value: 'grade-desc', label: '학년 역순' },
   { value: 'serial-asc', label: '번호순' },
   { value: 'serial-desc', label: '번호 역순' },
   { value: 'name-asc', label: '이름순' },
   { value: 'name-desc', label: '이름 역순' },
-  { value: 'grade-asc', label: '학년순' },
-  { value: 'grade-desc', label: '학년 역순' },
+  { value: 'gender-asc', label: '성별순' },
+  { value: 'gender-desc', label: '성별 역순' },
+  { value: 'weekly-hours-asc', label: '수업시간 적은순' },
+  { value: 'weekly-hours-desc', label: '수업시간 많은순' },
   { value: 'enroll-date-asc', label: '오래된 입교순' },
   { value: 'enroll-date-desc', label: '최근 입교순' },
 ]
 
-/** 헤더 클릭으로 정렬 가능한 컬럼 매핑 (T11 사용자 요청 #3). */
+/**
+ * 헤더 클릭으로 정렬 가능한 컬럼 매핑 (T11 사용자 요청 #3, Sprint 19 T1 확장).
+ *
+ * 학교급은 별도 정렬 버튼을 두지 않는다 — `grade-asc/desc` SQL이 이미
+ * `school_level ASC/DESC, grade ASC, name ASC`로 학교급을 1차 키로 포함하므로
+ * "학교급만 단독 정렬"은 존재하지 않는 개념이다(학년 정렬을 누르면 학교급도 함께 정렬됨).
+ */
 const SORTABLE_COLUMNS: Record<string, { asc: StudentSort; desc: StudentSort }> = {
   serial: { asc: 'serial-asc', desc: 'serial-desc' },
   name: { asc: 'name-asc', desc: 'name-desc' },
   grade: { asc: 'grade-asc', desc: 'grade-desc' },
+  gender: { asc: 'gender-asc', desc: 'gender-desc' },
+  hours: { asc: 'weekly-hours-asc', desc: 'weekly-hours-desc' },
   enroll: { asc: 'enroll-date-asc', desc: 'enroll-date-desc' },
 }
 
@@ -84,7 +96,7 @@ export default function StudentsPage() {
   const [grade, setGrade] = useState<string>('')
   const [gender, setGender] = useState<Gender | ''>('')
   const [activeOnly, setActiveOnly] = useState(true)
-  const [sort, setSort] = useState<StudentSort>('serial-asc')
+  const [sort, setSort] = useState<StudentSort>('grade-asc')
   const [page, setPage] = useState(0)
   // T4 (이슈 #3): 학교명 필터
   const [schoolId, setSchoolId] = useState<string>('')
@@ -287,8 +299,26 @@ export default function StudentsPage() {
                     학년{sortIndicator(sort, 'grade')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">성별</th>
-                <th className="px-3 py-3 text-sm font-bold">수업 시간/요일</th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'gender'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="성별 정렬 토글"
+                  >
+                    성별{sortIndicator(sort, 'gender')}
+                  </button>
+                </th>
+                <th className="px-3 py-3 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'hours'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="수업시간 정렬 토글"
+                  >
+                    수업 시간/요일{sortIndicator(sort, 'hours')}
+                  </button>
+                </th>
                 <th className="px-3 py-3 text-sm font-bold">
                   <button
                     type="button"

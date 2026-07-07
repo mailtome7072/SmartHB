@@ -15,6 +15,10 @@ export type StudentSort =
   | 'grade-desc'
   | 'enroll-date-asc'
   | 'enroll-date-desc'
+  | 'gender-asc'
+  | 'gender-desc'
+  | 'weekly-hours-asc'
+  | 'weekly-hours-desc'
 
 export interface Student {
   id: number

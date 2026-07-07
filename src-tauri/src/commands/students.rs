@@ -88,19 +88,28 @@ impl SchoolLevel {
 }
 
 /// 정렬 옵션 — PRD §4.1 화면 요구사항 (이름순/입교일 역순/학년순).
+///
+/// Sprint 19 T1(사용자 요청 1,2번): 기본 정렬을 학년별+이름 가나다순(`GradeAsc`)으로 통일.
+/// 모든 정렬 기준은 동일 값 tie-break 로 `name ASC` 를 포함해 "동일 학년(또는 동일 값) 정렬 시
+/// 이름 가나다순 2차 정렬 자동 적용"을 만족한다.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum StudentSort {
-    /// PI-05 자동 채번 일련번호 오름차순 — T11 사용자 요청 디폴트
-    #[default]
     SerialAsc,
     SerialDesc,
     NameAsc,
     NameDesc,
+    /// 학년(학교급 포함) 오름차순 — Sprint 19 T1 신규 디폴트
+    #[default]
     GradeAsc,
     GradeDesc,
     EnrollDateAsc,
     EnrollDateDesc,
+    GenderAsc,
+    GenderDesc,
+    /// 주간 수업시간 오름차순 — `list_students` 의 `weekly_hours` correlated subquery 별칭 참조
+    WeeklyHoursAsc,
+    WeeklyHoursDesc,
 }
 
 impl StudentSort {
@@ -121,6 +130,10 @@ impl StudentSort {
             Self::GradeDesc => "ORDER BY school_level DESC, grade DESC, name ASC",
             Self::EnrollDateAsc => "ORDER BY enroll_date ASC, id ASC",
             Self::EnrollDateDesc => "ORDER BY enroll_date DESC, id DESC",
+            Self::GenderAsc => "ORDER BY gender ASC, name ASC",
+            Self::GenderDesc => "ORDER BY gender DESC, name ASC",
+            Self::WeeklyHoursAsc => "ORDER BY weekly_hours ASC, name ASC",
+            Self::WeeklyHoursDesc => "ORDER BY weekly_hours DESC, name ASC",
         }
     }
 }
@@ -697,9 +710,9 @@ mod tests {
     }
 
     #[test]
-    fn student_sort_default_is_serial_asc() {
-        // T11 사용자 요청: 원생 목록 디폴트 정렬은 번호순.
-        assert_eq!(StudentSort::default(), StudentSort::SerialAsc);
+    fn student_sort_default_is_grade_asc() {
+        // Sprint 19 T1 사용자 요청: 원생 목록 디폴트 정렬은 학년별+이름 가나다순.
+        assert_eq!(StudentSort::default(), StudentSort::GradeAsc);
     }
 
     #[test]
@@ -708,6 +721,26 @@ mod tests {
         let sql = StudentSort::SerialAsc.order_by_sql();
         assert!(sql.contains("CAST(serial_no AS INTEGER)"));
         assert!(sql.contains("ASC"));
+    }
+
+    #[test]
+    fn grade_asc_sorts_school_level_then_grade_then_name() {
+        // Sprint 19 T1: 학년 정렬은 학교급(초→중) 우선, 동일 학년 내 이름 가나다순 tie-break.
+        let sql = StudentSort::GradeAsc.order_by_sql();
+        assert_eq!(sql, "ORDER BY school_level ASC, grade ASC, name ASC");
+    }
+
+    #[test]
+    fn gender_and_weekly_hours_sort_have_name_tiebreak() {
+        // Sprint 19 T1(사용자 요청 2번): 모든 정렬 기준은 동일 값 tie-break 로 이름순을 포함한다.
+        for sql in [
+            StudentSort::GenderAsc.order_by_sql(),
+            StudentSort::GenderDesc.order_by_sql(),
+            StudentSort::WeeklyHoursAsc.order_by_sql(),
+            StudentSort::WeeklyHoursDesc.order_by_sql(),
+        ] {
+            assert!(sql.ends_with("name ASC"), "tie-break 누락: {sql}");
+        }
     }
 
     #[tokio::test]
