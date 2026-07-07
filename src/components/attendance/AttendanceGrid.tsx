@@ -28,9 +28,56 @@ import type {
   DaySchedule,
   GridMakeupCell,
 } from '@/types/attendance'
+import type { SchoolLevel } from '@/types/student'
 import { minutesToHoursText } from '@/lib/time'
 import { isEditableTarget } from '@/components/layout/GlobalShortcuts'
+import { compareKorean, useTableSort, withTiebreak } from '@/hooks/useTableSort'
 import { AbsenceMemoDialog } from './AbsenceMemoDialog'
+
+/**
+ * 정렬 가능 컬럼 (Sprint 19 T2, 사용자 요청 2번) — 그리드에 실제로 표시되는 좌측 고정
+ * 컬럼만 대상. 모든 comparator는 동일 값일 때 이름 가나다순으로 tie-break한다.
+ *
+ * `comparators`는 컴포넌트 밖 모듈 상수로 선언 — useTableSort의 useMemo가 매 렌더
+ * 무효화되지 않도록 안정된 참조를 유지한다.
+ */
+type AttendanceSortKey = 'student' | 'present' | 'absent' | 'needed' | 'completed'
+
+const SCHOOL_LEVEL_ORDER: Record<SchoolLevel, number> = {
+  elementary: 0,
+  middle: 1,
+}
+
+function compareStudentDefault(a: AttendanceGridStudent, b: AttendanceGridStudent): number {
+  return (
+    SCHOOL_LEVEL_ORDER[a.schoolLevel] - SCHOOL_LEVEL_ORDER[b.schoolLevel] ||
+    a.grade - b.grade ||
+    compareKorean(a.name, b.name)
+  )
+}
+
+const ATTENDANCE_SORT_COMPARATORS: Record<
+  AttendanceSortKey,
+  (a: AttendanceGridStudent, b: AttendanceGridStudent) => number
+> = {
+  student: compareStudentDefault,
+  present: withTiebreak(
+    (a, b) => a.summary.presentCount - b.summary.presentCount,
+    (a, b) => compareKorean(a.name, b.name),
+  ),
+  absent: withTiebreak(
+    (a, b) => a.summary.absentCount - b.summary.absentCount,
+    (a, b) => compareKorean(a.name, b.name),
+  ),
+  needed: withTiebreak(
+    (a, b) => a.summary.makeupNeededMinutes - b.summary.makeupNeededMinutes,
+    (a, b) => compareKorean(a.name, b.name),
+  ),
+  completed: withTiebreak(
+    (a, b) => a.summary.makeupCompletedMinutes - b.summary.makeupCompletedMinutes,
+    (a, b) => compareKorean(a.name, b.name),
+  ),
+}
 
 /**
  * 비수업일 셀의 "+" 표시 여부 — Sprint 9 Session #10 I8.
@@ -134,6 +181,12 @@ export function AttendanceGrid({
     return map
   }, [grid.daySchedules])
 
+  // Sprint 19 T2(사용자 요청 1·2번) — 기본 정렬 학년별+이름, 헤더 클릭으로 재정렬.
+  const { sorted: sortedStudents, toggleSort, indicator } = useTableSort<
+    AttendanceGridStudent,
+    AttendanceSortKey
+  >(grid.students, ATTENDANCE_SORT_COMPARATORS, { key: 'student', direction: 'asc' })
+
   const toggleMutation = useMutation({
     mutationFn: async ({
       attendanceId,
@@ -220,17 +273,23 @@ export function AttendanceGrid({
   }
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       {error !== null && (
         <div
           role="alert"
-          className="mb-3 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-base text-[var(--danger)]"
+          className="mb-3 shrink-0 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-base text-[var(--danger)]"
         >
           {error}
         </div>
       )}
 
-      <div ref={scrollRef} className="overflow-auto rounded-lg border border-[var(--border)]">
+      {/* Sprint 19 T2: 이 div가 유일한 스크롤 컨테이너(상하+좌우) — 부모(attendance/page.tsx
+          section)는 overflow-hidden으로 바뀌어 더 이상 독립적으로 스크롤하지 않는다.
+          그 결과 가로 스크롤바가 항상 이 박스 하단(뷰포트 내 고정 위치)에서 즉시 접근 가능하다. */}
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--border)]"
+      >
         <table className="border-collapse text-base">
           <thead className="sticky top-0 z-10 bg-gray-100">
             {/* Sprint 8 T9 follow-up: 원생 + 요약 4컬럼 모두 sticky left 누적.
@@ -242,13 +301,27 @@ export function AttendanceGrid({
                 rowSpan={2}
                 className="sticky left-0 z-20 w-[140px] min-w-[140px] border-b border-r border-[var(--border)] bg-amber-100 px-3 py-2 text-left"
               >
-                원생
+                <button
+                  type="button"
+                  onClick={() => toggleSort('student')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="원생(학년+이름) 정렬 토글"
+                >
+                  원생{indicator('student')}
+                </button>
               </th>
               <th
                 rowSpan={2}
                 className="sticky left-[140px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
-                출석
+                <button
+                  type="button"
+                  onClick={() => toggleSort('present')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="출석 일수 정렬 토글"
+                >
+                  출석{indicator('present')}
+                </button>
                 <div className="text-sm text-gray-600">(일)</div>
               </th>
               {/* Sprint 9 T7 (A41 흡수): absent_count 는 status='absent' AND makeup_attendance_id IS NULL
@@ -258,7 +331,14 @@ export function AttendanceGrid({
                 className="sticky left-[202px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
                 title="status='absent' AND makeup_attendance_id IS NULL — 보강완료·소멸 결석은 제외"
               >
-                미처리
+                <button
+                  type="button"
+                  onClick={() => toggleSort('absent')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="미처리 결석 정렬 토글"
+                >
+                  미처리{indicator('absent')}
+                </button>
                 <div>결석</div>
                 <div className="text-sm text-gray-600">(일)</div>
               </th>
@@ -266,14 +346,28 @@ export function AttendanceGrid({
                 rowSpan={2}
                 className="sticky left-[264px] z-20 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
-                보강필요
+                <button
+                  type="button"
+                  onClick={() => toggleSort('needed')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="보강필요 시간 정렬 토글"
+                >
+                  보강필요{indicator('needed')}
+                </button>
                 <div className="text-sm text-gray-600">(시간)</div>
               </th>
               <th
                 rowSpan={2}
                 className="sticky left-[348px] z-20 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
-                보강완료
+                <button
+                  type="button"
+                  onClick={() => toggleSort('completed')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="보강완료 시간 정렬 토글"
+                >
+                  보강완료{indicator('completed')}
+                </button>
                 <div className="text-sm text-gray-600">(시간)</div>
               </th>
               {days.map((d) => {
@@ -339,7 +433,7 @@ export function AttendanceGrid({
             </tr>
           </thead>
           <tbody>
-            {grid.students.map((student) => (
+            {sortedStudents.map((student) => (
               <StudentRow
                 key={student.studentId}
                 student={student}
@@ -368,7 +462,7 @@ export function AttendanceGrid({
         </table>
       </div>
 
-      <p className="mt-3 text-sm text-gray-600">
+      <p className="mt-3 shrink-0 text-sm text-gray-600">
         셀 클릭 = 출석↔결석 토글 · 결석 셀 우클릭 = 사유 메모 · 출석 셀 우클릭 = 수업일 이동/보강 등록 · 보강완료 셀 우클릭 = 보강 등록 · Ctrl+Z (또는 Cmd+Z) = 마지막 토글 취소
       </p>
 
@@ -389,7 +483,7 @@ export function AttendanceGrid({
           onClose={() => setMemoDialogCell(null)}
         />
       )}
-    </>
+    </div>
   )
 }
 

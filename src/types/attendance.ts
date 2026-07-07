@@ -5,6 +5,8 @@
  * camelCase serde rename 적용된 형태.
  */
 
+import type { SchoolLevel } from '@/types/student'
+
 /** 정규 출결 상태. */
 export type AttendanceStatus =
   | 'present'
@@ -58,6 +60,9 @@ export interface AttendanceGridStudent {
   studentId: number
   name: string
   serialNo: string
+  /** Sprint 19 T2 — 그리드 기본 정렬(학년별+이름) 및 정렬 UI용. */
+  schoolLevel: SchoolLevel
+  grade: number
   scheduleDays: number[] // ISO 요일 1=월~7=일
   enrollDate: string // YYYY-MM-DD — Sprint 9 Session #10 I8
   withdrawDate: string | null // Sprint 9 Session #10 I8
