@@ -54,4 +54,4 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [x] T7: 대시보드 레이아웃 변경
 - [x] T8: 학년 자동 승급
 - [x] T9: 학교급 기반 학교 선택 필터링
-- [ ] T10: 통합 검증 (cargo test/clippy, pnpm lint/tsc/build, sqlx migrate run, 시각 검증)
+- [x] T10: 자동 검증 완료(cargo test 428 passed/clippy/lint/tsc/build/sqlx migrate run). 시각 검증은 사용자 확인 필요(브라우저 도구 없음)

@@ -173,23 +173,23 @@
 
 ### T10: 통합 검증 — 2.5h
 
-- ⬜ `cargo test --manifest-path src-tauri/Cargo.toml` 전체 통과 (T8 신규 단위 테스트 4건 포함)
-- ⬜ `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` clean
-- ⬜ `pnpm lint` clean
-- ⬜ `pnpm tsc --noEmit` clean
-- ⬜ `pnpm build` (static export) 성공
-- ⬜ `sqlx migrate run` 정상 (V310 적용 확인)
-- ⬜ 시각 검증: 각 요구사항별 Before/After 확인
-  - 원생 목록 기본 정렬 학년+이름순 확인
+- ✅ `cargo test --manifest-path src-tauri/Cargo.toml` 전체 통과 — 428 passed (T5~T9 신규 테스트 14건 포함, 0 failed)
+- ✅ `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` clean
+- ✅ `pnpm lint` clean
+- ✅ `pnpm tsc --noEmit` clean
+- ✅ `pnpm build` (static export) 성공 — 26개 페이지 정상 생성
+- ✅ `sqlx migrate run` 정상 (V310 적용 확인) — 실제 개발 DB에 적용해 school_type 자동 보정 결과 직접 확인
+- ⬜ 시각 검증: 개발 서버는 기동 완료(`GET / 200`)했으나, 본 세션은 브라우저/스크린샷 도구가 없어 아래 항목은 **사용자 육안 확인이 필요**:
+  - 원생 목록 기본 정렬 학년+이름순
   - 출결/청구 그리드 컬럼 클릭 정렬 동작
   - 출결 그리드 가로 스크롤 즉시 접근 가능
-  - 교습일정 인쇄: Red 테두리 + 밴드 + 폰트 확대 + 동적 행 수
-  - 주보기: 이름만 표시, 2xN 규칙 준수
+  - 교습일정 인쇄: Red 테두리 + 밴드 + 폰트 확대 + 동적 행 수 (인쇄 미리보기 필요)
+  - 주보기: 이름만 표시, 2xN 규칙 준수 (2026-06 데이터로 확인 권장)
   - 일보기: 10명 초과 시 행 분할
   - 캘린더 라인 진한 테두리
   - 대시보드 상하 배치 + 2:1 비율
-  - 학년 승급: 1월 이후 첫 실행 시 확인 다이얼로그 → 승인 시 일괄 승급 → 재실행 시 미표시
-  - 학교 필터: 설정 > 학교 등록에 school_type 선택 → 원생 폼에서 학교급에 맞는 학교만 드롭다운 노출
+  - 학년 승급: 확인 다이얼로그 표시 여부 (연도가 바뀌지 않는 한 재현 어려움 — 코드/테스트로 로직 검증 완료)
+  - 학교 필터: 설정 > 학교 등록에 school_type 선택 → 원생 폼에서 학교급에 맞는 학교만 노출
 
 ## 완료 기준 (Definition of Done)
 
