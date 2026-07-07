@@ -228,7 +228,8 @@ export function StudentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    // 사용자 요청 — 폼 여백 축소로 간결하게 정리 (space-y-4→3, 필드 grid gap-4→3).
+    <form onSubmit={handleSubmit} className="space-y-3">
       {/* P0-5: 임시저장본 발견 — 사용자 선택 (이어서 작성 / 새로 시작) */}
       {pendingDraft !== null && (
         <div
@@ -263,7 +264,7 @@ export function StudentForm({
           ✓ 작성 중인 내용은 자동으로 임시저장됩니다. 중간에 나가더라도 다시 들어오면 이어서 작성할 수 있어요.
         </p>
       )}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field
           label={
             isEdit
