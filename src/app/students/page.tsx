@@ -169,9 +169,11 @@ export default function StudentsPage() {
           </Link>
         </header>
 
+        {/* 사용자 요청 — 필터 영역이 아래 그리드 대비 너무 크게 보여 여백 축소(입력 높이 44px는
+            클릭 영역 접근성 하한이라 유지, 패딩/간격만 축소: p-4→p-3, gap-3→gap-2, mb-4→mb-3). */}
         <section
           aria-label="필터"
-          className="mb-4 grid grid-cols-1 gap-3 rounded-md border border-[var(--border)] bg-white p-4 sm:grid-cols-3"
+          className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-[var(--border)] bg-white p-3 sm:grid-cols-3"
         >
           <input
             type="search"
