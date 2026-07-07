@@ -129,12 +129,7 @@
 
 사용자 요구 8번. 당일 수업 + 이달의 생일 위젯을 좌우 배치에서 상하 배치로 변경.
 
-- ⬜ `DashboardView.tsx`(라인 125-171) 레이아웃 변경:
-  - 현재: `flex-row` (sm 이상에서 좌우) + 각 위젯 `sm:w-1/2`
-  - 변경: `flex-col` (항상 상하) + 당일 수업 `flex-[2]` / 이달의 생일 `flex-[1]` 비율
-  - `sm:flex-row` 제거, `sm:w-1/2` 제거
-- ⬜ 당일 수업 위젯 높이가 이달의 생일 위젯의 2배가 되도록 `flex-grow` 비율 조정
-- ⬜ 위젯 내부 콘텐츠가 늘어난 높이에 자연스럽게 채워지는지 확인 (overflow 처리)
+- ✅ `DashboardView.tsx` 레이아웃 변경 (5a50046): `sm:flex-row`/`sm:w-1/2` 제거, 항상 상하 배치 + 당일수업 `flex-[2]` / 생일 `flex-[1]` 비율 적용
 
 **관련 파일**:
 - `src/components/dashboard/DashboardView.tsx` (라인 125-171)

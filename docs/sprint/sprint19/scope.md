@@ -24,7 +24,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | src/components/academic/ThreeMonthCalendar.tsx | [1회] | T4 날짜유틸 공용화 리팩터 (완료) |
 | src/components/schedules/ClassCalendar.tsx | [1회] | T5 화살표 제거+2xN 근본수정(완료, 10xN도 통합됨). T6는 라인만 남음 |
 | src/app/globals.css | [2회] | T4 인쇄 CSS + T6 FullCalendar 라인 진하게 모두 완료 |
-| src/components/dashboard/DashboardView.tsx | [0회] | T7 레이아웃 상하 배치 |
+| src/components/dashboard/DashboardView.tsx | [1회] | T7 레이아웃 상하 배치 (완료) |
 | src-tauri/src/commands/mod.rs | [0회] | T8 invoke_handler 등록 |
 | src-tauri/src/lib.rs | [0회] | T8 invoke_handler 등록 |
 | src/lib/tauri/index.ts | [0회] | T8 IPC 래퍼 |
@@ -48,7 +48,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [x] T4: 교습일정 인쇄 캘린더 개선 (Red 테두리, 밴드, 폰트) — 인쇄 시각 확인은 T10으로 이연
 - [x] T5: 주보기 화살표 제거 + 2xN 버그 수정 (10xN도 함께 구현됨, T6는 CSS 라인만 남음)
 - [x] T6: 일보기 10xN(T5에서 선완료) + 캘린더 라인 진하게
-- [ ] T7: 대시보드 레이아웃 변경
+- [x] T7: 대시보드 레이아웃 변경
 - [ ] T8: 학년 자동 승급
 - [ ] T9: 학교급 기반 학교 선택 필터링
 - [ ] T10: 통합 검증 (cargo test/clippy, pnpm lint/tsc/build, sqlx migrate run, 시각 검증)
