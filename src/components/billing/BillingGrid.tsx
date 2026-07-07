@@ -139,8 +139,9 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
   }
 
   return (
-    <>
-      <div className="overflow-x-auto rounded-md border border-[var(--border)]">
+    // 사용자 요청 — 청구/수납 그리드 모두 좌우+상하 스크롤 가능하도록(출결관리와 동일 패턴).
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-[var(--border)]">
         <table className="w-full text-base">
           <thead className="sticky top-0 z-10 bg-gray-100 text-left">
             <tr>
@@ -326,6 +327,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
           onCancel={() => setPendingUpdate(null)}
         />
       )}
-    </>
+    </div>
   )
 }

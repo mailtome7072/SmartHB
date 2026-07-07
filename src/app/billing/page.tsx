@@ -90,12 +90,13 @@ function BillingContent() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
-      <div className="mx-auto max-w-6xl leading-tight">
-        <h1 className="mb-4 text-2xl font-bold">청구 관리</h1>
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일 + 그리드 좌우/상하 스크롤 지원을
+          위해 flex h-full flex-col로 변경(출결/원생관리와 동일 패턴). 그리드 외 요소는 shrink-0. */}
+      <div className="mx-auto flex h-full max-w-6xl flex-col leading-tight">
+        <h1 className="mb-4 shrink-0 text-2xl font-bold">청구 관리</h1>
 
         {/* 툴바 — 월 선택 + 검색 + 상태 필터 + 액션 버튼 */}
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -187,31 +188,37 @@ function BillingContent() {
         {draftCount > 0 && (
           <div
             role="status"
-            className="mb-3 rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900"
+            className="mb-3 shrink-0 rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900"
           >
             미확정 청구가 <strong>{draftCount}건</strong> 있습니다. 검토 후 확정해 주세요.
           </div>
         )}
 
-        {summary && <BillingSummaryBar summary={summary} />}
+        {summary && (
+          <div className="shrink-0">
+            <BillingSummaryBar summary={summary} />
+          </div>
+        )}
 
-        {billsQuery.isLoading && <p>불러오는 중...</p>}
+        {billsQuery.isLoading && <p className="shrink-0">불러오는 중...</p>}
 
         {!billsQuery.isLoading && bills.length === 0 && !showGenerateButton && (
-          <p className="text-gray-600">청구 데이터가 없습니다.</p>
+          <p className="shrink-0 text-gray-600">청구 데이터가 없습니다.</p>
         )}
 
         {bills.length > 0 && (
-          <BillingGrid
-            bills={bills.filter((b) => {
-              if (matchedStudentIds !== null && !matchedStudentIds.has(b.studentId)) return false
-              if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
-              if (billFilter === 'draft' && b.status !== 'draft') return false
-              return true
-            })}
-            yearMonth={effectiveYearMonth}
-            onError={(msg) => setError(msg)}
-          />
+          <div className="min-h-0 flex-1">
+            <BillingGrid
+              bills={bills.filter((b) => {
+                if (matchedStudentIds !== null && !matchedStudentIds.has(b.studentId)) return false
+                if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
+                if (billFilter === 'draft' && b.status !== 'draft') return false
+                return true
+              })}
+              yearMonth={effectiveYearMonth}
+              onError={(msg) => setError(msg)}
+            />
+          </div>
         )}
       </div>
 

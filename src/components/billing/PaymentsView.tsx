@@ -274,8 +274,9 @@ export function PaymentsView({
   const unpaidCount = rows.length - paidCount
 
   return (
-    <>
-      <div className="mb-3 flex items-center justify-between">
+    // 사용자 요청 — 청구/수납 그리드 모두 좌우+상하 스크롤 가능하도록(출결관리와 동일 패턴).
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-3 flex shrink-0 items-center justify-between">
         <p className="text-base">
           청구 <strong>{rows.length}건</strong> · 수납완료 {paidCount} · 미수납 {unpaidCount}
           {dirtyEntries.length > 0 && (
@@ -294,8 +295,9 @@ export function PaymentsView({
         </button>
       </div>
 
-      {/* AC-4.9-6: 한 화면 최소 20행 — max-h 로 스크롤 가능 (20행 분량 ≈ 800px) */}
-      <div className="max-h-[800px] overflow-y-auto rounded-md border border-[var(--border)]">
+      {/* AC-4.9-6: 한 화면 최소 20행 — 부모(payments/page.tsx)가 flex-1로 남은 세로 공간을
+          주고, 이 div가 유일한 스크롤 컨테이너(좌우+상하)가 된다. */}
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-[var(--border)]">
         <table className="w-full text-base">
           <thead className="sticky top-0 bg-gray-100 text-left">
             <tr>
@@ -475,6 +477,6 @@ export function PaymentsView({
           </tbody>
         </table>
       </div>
-    </>
+    </div>
   )
 }
