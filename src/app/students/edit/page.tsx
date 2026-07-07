@@ -148,7 +148,8 @@ function StudentDetailContent() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-3xl">
+      {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-3xl leading-tight">
         <Link
           href="/students"
           className="mb-4 inline-flex min-h-[44px] items-center gap-1 rounded-md border border-[var(--border)] bg-white px-3 py-2 text-base text-[var(--foreground)] hover:bg-gray-50"

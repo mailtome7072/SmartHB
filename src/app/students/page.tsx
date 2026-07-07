@@ -151,7 +151,8 @@ export default function StudentsPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-5xl">
+      {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-5xl leading-tight">
         <header className="mb-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold">원생 관리</h1>
           <Link
