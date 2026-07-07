@@ -140,17 +140,9 @@
 
 연초 학년 자동 승급 기능. `diagnosis.rs`의 "매월 1일 자동 진단" 패턴과 동일한 트리거 구조.
 
-- ⬜ 백엔드 IPC 커맨드 신규: `students.rs`에 `check_grade_promotion` + `promote_grades` 2종
-  - `check_grade_promotion`: `app_settings`에서 `last_grade_promotion_year` 조회 → 현재 연도와 비교 → 대상 존재 여부 + 인원수 반환
-    - 대상: `withdraw_date IS NULL` (재원생만) AND `school_level IN ('elementary', 'middle')` AND 최대 학년 미만 (초등 grade < 6, 중등 grade < 3)
-    - 최대 학년(초6/중3) 도달 시 승급 대상에서 제외
-  - `promote_grades`: 대상 일괄 `UPDATE students SET grade = grade + 1` + `app_settings` `last_grade_promotion_year` 현재 연도로 갱신 + audit 로그
-  - 단위 테스트: 정상 승급 / 최대 학년 미승급 / 퇴교생 제외 / 이미 처리된 연도 스킵 — 4건
-- ⬜ 프론트엔드 확인 다이얼로그: `app-shell.tsx`의 세션당 1회 체크 플래그 패턴 재사용
-  - 앱 시작 시 `check_grade_promotion` 호출 → 대상 N명 존재 시 "올해 N명의 학년이 자동 상향됩니다. 진행하시겠습니까?" 확인 다이얼로그 표시
-  - 사용자 승인 시에만 `promote_grades` 호출, 거부 시 다음 세션까지 재확인 없음 (세션당 1회)
-  - "자동 조용히 적용 금지" 원칙 준수 (frontend.md 위험 동작 확인 다이얼로그)
-- ⬜ TypeScript IPC 래퍼 2종 (`src/lib/tauri/index.ts`)
+- ✅ 백엔드 IPC 커맨드 신규 (7ea1e6f): `students.rs`에 `check_grade_promotion` + `promote_grades` 2종. 단위 테스트 5건(정상 승급/최대학년 제외/퇴교생 제외/연도 중복 스킵/대상 0명)
+- ✅ 프론트엔드 확인 다이얼로그 (7ea1e6f): `GradePromotionDialog.tsx` 신규 컴포넌트(UnsavedNavDialog 선례 따라 AppShell에서 분리) — 세션당 1회 확인, 사용자 승인 시에만 실행
+- ✅ TypeScript IPC 래퍼 2종 + `GradePromotionCheck` 타입 (`src/lib/tauri/index.ts`, `src/types/student.ts`)
 
 **관련 파일**:
 - `src-tauri/src/commands/students.rs` (IPC 신규)

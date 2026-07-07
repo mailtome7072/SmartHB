@@ -10,7 +10,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | .claude/rules/harness-engineering.md | [1회] | T0(A113 상수쌍 문서화, 완료) |
 | src/hooks/useTableSort.ts (신규) | [1회] | T1 공통 정렬 훅 (완료, T2/T3에서 소비 예정) |
 | src/app/students/page.tsx | [1회] | T1 정렬 훅 적용, 기본정렬 학년+이름 (완료) |
-| src-tauri/src/commands/students.rs | [1회] | T1 ORDER BY 보강(완료), T8 승급 IPC 신규(예정) |
+| src-tauri/src/commands/students.rs | [2회] | T1 ORDER BY 보강 + T8 승급 IPC 신규 모두 완료 |
 | src/types/student.ts | [1회] | T1 StudentSort 타입 확장 (완료) |
 | src/components/attendance/AttendanceGrid.tsx | [1회] | T2 정렬+스크롤 (완료) |
 | src/app/attendance/page.tsx | [1회] | T2 스크롤 컨테이너 정리 (완료) |
@@ -25,10 +25,11 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | src/components/schedules/ClassCalendar.tsx | [1회] | T5 화살표 제거+2xN 근본수정(완료, 10xN도 통합됨). T6는 라인만 남음 |
 | src/app/globals.css | [2회] | T4 인쇄 CSS + T6 FullCalendar 라인 진하게 모두 완료 |
 | src/components/dashboard/DashboardView.tsx | [1회] | T7 레이아웃 상하 배치 (완료) |
-| src-tauri/src/commands/mod.rs | [0회] | T8 invoke_handler 등록 |
-| src-tauri/src/lib.rs | [0회] | T8 invoke_handler 등록 |
-| src/lib/tauri/index.ts | [0회] | T8 IPC 래퍼 |
-| src/components/layout/app-shell.tsx | [0회] | T8 세션당 1회 체크 |
+| src-tauri/src/lib.rs | [1회] | T8 invoke_handler 등록 (완료) |
+| src-tauri/src/commands/audit.rs | [1회] | T8 GradesPromoted 이벤트 추가 (완료) |
+| src/lib/tauri/index.ts | [1회] | T8 IPC 래퍼 (완료) |
+| src/components/layout/app-shell.tsx | [1회] | T8 GradePromotionDialog 마운트 (완료) |
+| src/components/layout/GradePromotionDialog.tsx (신규) | [1회] | T8 확인 다이얼로그 (완료) |
 | src-tauri/migrations/310__auto_correct_school_type.sql (신규) | [0회] | T9 school_type 자동 보정 |
 | src/app/settings/codes/page.tsx | [0회] | T9 school_type 선택 UI |
 | src/components/students/student-form.tsx | [0회] | T9 학교 드롭다운 필터링 교체 |
@@ -49,6 +50,6 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [x] T5: 주보기 화살표 제거 + 2xN 버그 수정 (10xN도 함께 구현됨, T6는 CSS 라인만 남음)
 - [x] T6: 일보기 10xN(T5에서 선완료) + 캘린더 라인 진하게
 - [x] T7: 대시보드 레이아웃 변경
-- [ ] T8: 학년 자동 승급
+- [x] T8: 학년 자동 승급
 - [ ] T9: 학교급 기반 학교 선택 필터링
 - [ ] T10: 통합 검증 (cargo test/clippy, pnpm lint/tsc/build, sqlx migrate run, 시각 검증)
