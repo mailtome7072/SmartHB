@@ -12,8 +12,10 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | src/app/students/page.tsx | [1회] | T1 정렬 훅 적용, 기본정렬 학년+이름 (완료) |
 | src-tauri/src/commands/students.rs | [1회] | T1 ORDER BY 보강(완료), T8 승급 IPC 신규(예정) |
 | src/types/student.ts | [1회] | T1 StudentSort 타입 확장 (완료) |
-| src/components/attendance/AttendanceGrid.tsx | [0회] | T2 정렬+스크롤 |
-| src/app/attendance/page.tsx | [0회] | T2 스크롤 컨테이너 정리 |
+| src/components/attendance/AttendanceGrid.tsx | [1회] | T2 정렬+스크롤 (완료) |
+| src/app/attendance/page.tsx | [1회] | T2 스크롤 컨테이너 정리 (완료) |
+| src-tauri/src/commands/attendance.rs | [1회] | T2 school_level/grade 추가 + 정렬 (완료) |
+| src/types/attendance.ts | [1회] | T2 schoolLevel/grade 필드 추가 (완료) |
 | src/components/billing/BillingGrid.tsx | [0회] | T3 정렬+스크롤 |
 | src/app/billing/page.tsx | [0회] | T3 스크롤 점검 |
 | src/lib/calendar-image.ts | [0회] | T4 참조용(수정 없을 수 있음) |
@@ -39,7 +41,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 ## 완료 기준 (이번 세션)
 - [x] T0: A113 상수쌍 문서화, A116 동적 행수 계산
 - [x] T1: 공통 정렬 훅 + 원생 목록 정렬 통일
-- [ ] T2: 출결 그리드 정렬 + 스크롤 개선
+- [x] T2: 출결 그리드 정렬 + 스크롤 개선
 - [ ] T3: 청구 그리드 정렬 + 스크롤 개선
 - [ ] T4: 교습일정 인쇄 캘린더 개선 (Red 테두리, 밴드, 폰트)
 - [ ] T5: 주보기 화살표 제거 + 2xN 버그 수정

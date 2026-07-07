@@ -50,14 +50,13 @@
 
 사용자 요구 2번(출결 그리드 컬럼 정렬) + 3번(스크롤 접근성) 해결.
 
-- ⬜ `AttendanceGrid.tsx` 헤더 클릭 정렬 신규 구현 — T1 공통 훅 적용
-  - 정렬 가능 컬럼: 이름, 학년, 학교급, 수업시간 등 좌측 고정 컬럼
-  - 기본 정렬: 학년별+이름 가나다순
+- ✅ `AttendanceGrid.tsx` 헤더 클릭 정렬 신규 구현 — T1 공통 훅(useTableSort) 적용 (10e485e)
+  - 정렬 가능 컬럼: 원생(학년+이름), 출석, 미처리결석, 보강필요, 보강완료 — 실제 표시되는 좌측 고정 컬럼 기준(학교급/수업시간 컬럼 자체가 이 그리드엔 없어 계획 대비 조정)
+  - 기본 정렬: 학년별+이름 가나다순 (백엔드 ORDER BY 변경 + 프론트 기본 comparator)
   - 날짜 셀은 정렬 대상 아님 (셀 데이터 특성상)
-- ⬜ 이중 스크롤 컨테이너 해소: `attendance/page.tsx`(라인 350) 부모 `<section overflow-auto>` + `AttendanceGrid.tsx`(라인 233) 자식 `<div overflow-auto>` 중첩 구조 정리
-  - 해결 방향: 단일 스크롤 컨테이너로 통합 + `thead sticky top-0` 유지 (헤더 틀고정)
-  - 좌측 4컬럼 sticky(라인 240-274)는 유지
-  - 가로 스크롤바가 뷰포트 하단에 항상 접근 가능하도록 보장
+- ✅ 이중 스크롤 컨테이너 해소 (10e485e): `attendance/page.tsx` section을 `overflow-hidden`으로, `AttendanceGrid.tsx` 내부 div가 유일한 스크롤 컨테이너가 되도록 flex 재구성
+  - `thead sticky top-0` + 좌측 4컬럼 sticky 유지
+  - 가로 스크롤바가 뷰포트 내 고정 위치에서 항상 접근 가능
 
 **관련 파일**:
 - `src/components/attendance/AttendanceGrid.tsx` (라인 233-274)
