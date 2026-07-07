@@ -22,7 +22,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | src/lib/calendar-image.ts | [1회] | T4 날짜유틸 공용화 리팩터 (완료) |
 | src/lib/time.ts | [1회] | T4 isoDayOfWeek/isWeekday/nextIsoDate/prevIsoDate 공용화 (완료) |
 | src/components/academic/ThreeMonthCalendar.tsx | [1회] | T4 날짜유틸 공용화 리팩터 (완료) |
-| src/components/schedules/ClassCalendar.tsx | [0회] | T5 화살표 제거+2xN 수정, T6 10xN+라인 |
+| src/components/schedules/ClassCalendar.tsx | [1회] | T5 화살표 제거+2xN 근본수정(완료, 10xN도 통합됨). T6는 라인만 남음 |
 | src/app/globals.css | [1회] | T4 인쇄 CSS(완료) + T6 FullCalendar CSS override(예정) |
 | src/components/dashboard/DashboardView.tsx | [0회] | T7 레이아웃 상하 배치 |
 | src-tauri/src/commands/mod.rs | [0회] | T8 invoke_handler 등록 |
@@ -46,7 +46,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [x] T2: 출결 그리드 정렬 + 스크롤 개선
 - [x] T3: 청구 그리드 정렬 + 스크롤 개선 (billing/page.tsx는 이중 스크롤 구조 없어 수정 불필요로 확인됨)
 - [x] T4: 교습일정 인쇄 캘린더 개선 (Red 테두리, 밴드, 폰트) — 인쇄 시각 확인은 T10으로 이연
-- [ ] T5: 주보기 화살표 제거 + 2xN 버그 수정
+- [x] T5: 주보기 화살표 제거 + 2xN 버그 수정 (10xN도 함께 구현됨, T6는 CSS 라인만 남음)
 - [ ] T6: 일보기 10xN + 캘린더 라인 진하게
 - [ ] T7: 대시보드 레이아웃 변경
 - [ ] T8: 학년 자동 승급

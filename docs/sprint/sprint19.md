@@ -100,14 +100,12 @@
 
 사용자 요구 5번. 원인 미확정 상태의 2xN 규칙 위반 버그 포함.
 
-- ⬜ 화살표(↓/↑) 완전 제거: `ClassCalendar.tsx` 라인 582-587의 `multiSlot && !isLast` / `!isFirst` 조건부 아이콘 렌더링 삭제. 이름만 표시
-- ⬜ 2xN 규칙 위반 버그 디버깅 + 수정:
-  - **현상**: 4명 초과 시 한 셀에 2xN 규칙이 지켜지지 않음 (2026-06 데이터에서 대부분 재현)
-  - **조사 대상**: `assignColumns()` (라인 113-136, greedy interval packing) + 2열 재배치 로직 (라인 226-279)
-  - `needSplit` 트리거 조건(라인 247: `overlapTotal > 2`, 즉 3명 이상) + `rowGroup = Math.floor(column / 2)` (라인 248) 30분 단위 행 분할 로직 정밀 분석
-  - 개발 PC 앱 데이터 DB(`C:\개인폴더\스마트해법\smarthb\app.db`)의 2026-06 월 데이터에서 다수 원생 겹치는 요일/시간대로 재현 후 근본 원인 규명
-  - 수정 후 2명, 4명, 6명, 8명 등 다양한 겹침 시나리오에서 2xN 규칙 준수 확인
-- ⬜ 주보기에서 원생 이름만 표시 (시간 정보 등 부가 정보 표시 여부 점검)
+- ✅ 화살표(↓/↑) + 시간 라벨 제거 (ea85074): 주보기만 이름 단독 표시, 일보기는 공간 여유로 기존 유지
+- ✅ 2xN 규칙 위반 버그 근본 수정 (ea85074):
+  - **근본 원인 확정**: `assignColumns()`의 `overlapTotal`(pairwise 최대값 방식)이 실제 "그 시(hour)에 동시 존재하는 인원 수"와 달라, 5명 이상 겹치면 30분 고정 오프셋이 60분을 넘어가며 실제 다음 시간대 이벤트와 충돌
+  - **재현**: 2026-06 시드 데이터(월요일 16시 19명 등 다수 클러스터)로 Node 스크립트 재현 — 3명+ 동시노출 확인
+  - **수정**: `overlapTotal` 제거, 시간(hour)별 실사용 최대 column을 별도 집계해 `rowsNeeded = ceil(columnsInHour/perRow)`에 맞춰 60분을 동적 등분(`rowHeightMin = 60/rowsNeeded`) — 몇 명이 겹치든 실제 시간 경계를 넘지 않음을 보장
+  - **검증**: 실제 시드 데이터 전체 겹침 클러스터(19/21/10명, 혼합 시간대 포함)에서 동시노출 인원이 기준 이하임을 확인
 
 **관련 파일**:
 - `src/components/schedules/ClassCalendar.tsx` (라인 113-136, 226-279, 247-248, 582-587)
@@ -118,11 +116,7 @@
 
 사용자 요구 6번(일보기 10xN) + 7번(캘린더 라인 진하게) 통합.
 
-- ⬜ 일보기 10xN 규칙 구현:
-  - 현재: `isDay`일 때 `needSplit=false` 강제(라인 247) → FullCalendar 자동 폭 분배만 사용
-  - 변경: 한 시간대에 10명 초과 시, 주보기의 2xN과 동일 원리로 행 분할 적용 (10명 단위)
-  - `assignColumns()` 결과의 `overlapTotal > 10` 시 `needSplit=true`, `rowGroup = Math.floor(column / 10)` 패턴
-  - 10명 이하는 기존 FullCalendar 자동 배치 유지
+- ✅ 일보기 10xN 규칙 — T5에서 `perRow` 변수(주보기=2, 일보기=10)로 통합 구현 완료 (ea85074). 별도 작업 불필요, 아래 CSS만 남음
 - ⬜ 월/주/일보기 캘린더 grid border 진하게:
   - FullCalendar CSS 커스터마이징: `.fc .fc-scrollgrid`, `.fc td`, `.fc th` 등의 `border-color` / `border-width` 조정
   - 현재 기본 `border-color`(연한 회색) → 진한 회색(`#6b7280` 또는 `border-gray-400` 수준)으로 변경
