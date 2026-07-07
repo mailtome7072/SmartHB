@@ -151,9 +151,11 @@ export default function StudentsPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일. */}
-      <div className="mx-auto max-w-5xl leading-tight">
-        <header className="mb-4 flex items-center justify-between">
+      {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일.
+          flex h-full flex-col — 그리드가 남은 세로 공간을 채우고 자체적으로
+          좌우+상하 스크롤하도록(출결관리와 동일 패턴, 이중 스크롤 컨테이너 방지). */}
+      <div className="mx-auto flex h-full max-w-5xl flex-col leading-tight">
+        <header className="mb-4 flex shrink-0 items-center justify-between">
           <h1 className="text-2xl font-bold">원생 관리</h1>
           <Link
             href="/students/new"
@@ -173,7 +175,7 @@ export default function StudentsPage() {
             클릭 영역 접근성 하한이라 유지, 패딩/간격만 축소: p-4→p-3, gap-3→gap-2, mb-4→mb-3). */}
         <section
           aria-label="필터"
-          className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-[var(--border)] bg-white p-3 sm:grid-cols-3"
+          className="mb-3 grid shrink-0 grid-cols-1 gap-2 rounded-md border border-[var(--border)] bg-white p-3 sm:grid-cols-3"
         >
           <input
             type="search"
@@ -267,9 +269,10 @@ export default function StudentsPage() {
           </label>
         </section>
 
-        <section className="overflow-hidden rounded-md border border-[var(--border)] bg-white">
+        {/* 사용자 요청 — 출결관리와 동일하게 이 div가 유일한 스크롤 컨테이너(좌우+상하). */}
+        <section className="min-h-0 flex-1 overflow-auto rounded-md border border-[var(--border)] bg-white">
           <table className="w-full">
-            <thead className="bg-[var(--background)]">
+            <thead className="sticky top-0 z-10 bg-[var(--background)]">
               <tr className="text-left">
                 <th className="px-3 py-2 text-sm font-bold">
                   <button
@@ -380,7 +383,7 @@ export default function StudentsPage() {
           </table>
         </section>
 
-        <nav aria-label="페이지네이션" className="mt-4 flex items-center justify-between">
+        <nav aria-label="페이지네이션" className="mt-4 flex shrink-0 items-center justify-between">
           <p className="text-sm text-gray-600">
             총 {total} 명 / {page + 1} / {totalPages} 페이지
           </p>
