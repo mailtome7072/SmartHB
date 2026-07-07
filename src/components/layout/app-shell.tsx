@@ -15,14 +15,10 @@ import { TopBar } from './top-bar'
 import { GlobalTooltip } from './GlobalTooltip'
 import { GlobalShortcuts } from './GlobalShortcuts'
 import { UnsavedNavDialog } from './UnsavedNavDialog'
+import { GradePromotionDialog } from './GradePromotionDialog'
 import { useAppStore } from '@/stores/app-store'
 import { useSessionStore } from '@/stores/session-store'
-import {
-  checkAutoDiagnosisNeeded,
-  checkLockStatus,
-  listBackups,
-  runDiagnosis,
-} from '@/lib/tauri'
+import { checkAutoDiagnosisNeeded, checkLockStatus, listBackups, runDiagnosis } from '@/lib/tauri'
 
 const POLLING_INTERVAL_MS = 60_000
 
@@ -96,6 +92,7 @@ export function AppShell({
       <GlobalTooltip />
       <GlobalShortcuts />
       <UnsavedNavDialog />
+      <GradePromotionDialog />
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar latestBackupAt={latestBackupAt}>

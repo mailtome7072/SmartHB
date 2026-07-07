@@ -666,6 +666,114 @@ pub async fn count_students(filter: StudentFilter) -> Result<i64, String> {
         .map_err(String::from)
 }
 
+// ============================================================================
+// Sprint 19 T8 — 학년 자동 승급 (매년 1월 이후 최초 실행, 사용자 확인 후 일괄 적용)
+// ============================================================================
+
+/// `app_settings` 키 — 마지막으로 학년 승급을 적용한 연도(YYYY). `diagnosis.rs`의
+/// `LAST_AUTO_DIAGNOSIS_KEY` 패턴과 동일 — 값은 실제 승급을 실행했을 때만 갱신한다
+/// (조회만 하는 `check_grade_promotion`은 이 키를 쓰지 않음).
+const LAST_GRADE_PROMOTION_KEY: &str = "last_grade_promotion_year";
+
+/// 학년 승급 대상 WHERE 절 — 재원생(withdraw_date IS NULL) 중 학교급별 최대 학년
+/// 미만(초등 <6, 중등 <3)만 대상. `check_grade_promotion`/`promote_grades` 공유.
+const GRADE_PROMOTION_WHERE: &str = "withdraw_date IS NULL \
+     AND ((school_level = 'elementary' AND grade < 6) \
+          OR (school_level = 'middle' AND grade < 3))";
+
+fn current_year() -> String {
+    chrono::Local::now().format("%Y").to_string()
+}
+
+/// 학년 승급 필요 여부 조회 결과.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GradePromotionCheck {
+    /// 올해 아직 승급을 실행하지 않았고, 대상 원생이 1명 이상 존재하면 true.
+    pub needed: bool,
+    /// 승급 대상 원생 수 (재원생 + 학교급별 최대 학년 미만).
+    pub count: i64,
+}
+
+async fn check_grade_promotion_impl(
+    pool: &sqlx::SqlitePool,
+) -> Result<GradePromotionCheck, AppError> {
+    let year = current_year();
+
+    let last: Option<String> = sqlx::query_scalar("SELECT value FROM app_settings WHERE key = ?")
+        .bind(LAST_GRADE_PROMOTION_KEY)
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::Db)?;
+    if last.as_deref() == Some(year.as_str()) {
+        return Ok(GradePromotionCheck { needed: false, count: 0 });
+    }
+
+    let count: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM students WHERE {GRADE_PROMOTION_WHERE}"
+    ))
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::Db)?;
+
+    Ok(GradePromotionCheck { needed: count > 0, count })
+}
+
+/// 올해 학년 승급이 필요한지 조회한다 (IPC — 조회 전용, DB 변경 없음).
+///
+/// 이미 올해 승급을 실행했으면(`last_grade_promotion_year`=올해) 대상이 있어도 `needed=false`.
+/// 프론트엔드는 `needed && count > 0` 일 때만 확인 다이얼로그를 표시한다.
+#[tauri::command]
+pub async fn check_grade_promotion() -> Result<GradePromotionCheck, String> {
+    let pool = db::pool().map_err(String::from)?;
+    check_grade_promotion_impl(pool).await.map_err(String::from)
+}
+
+async fn promote_grades_impl(pool: &sqlx::SqlitePool) -> Result<i64, AppError> {
+    let year = current_year();
+    let mut tx = pool.begin().await.map_err(AppError::Db)?;
+
+    let result = sqlx::query(&format!(
+        "UPDATE students SET grade = grade + 1 WHERE {GRADE_PROMOTION_WHERE}"
+    ))
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::Db)?;
+    let promoted = result.rows_affected() as i64;
+
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+    )
+    .bind(LAST_GRADE_PROMOTION_KEY)
+    .bind(&year)
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::Db)?;
+
+    tx.commit().await.map_err(AppError::Db)?;
+
+    audit::try_record(
+        AuditEventType::GradesPromoted,
+        Some(&year),
+        Some(&format!(r#"{{"promoted_count":{promoted}}}"#)),
+    )
+    .await;
+
+    Ok(promoted)
+}
+
+/// 학년 승급을 일괄 실행한다 (사용자가 확인 다이얼로그에서 승인한 후에만 호출).
+///
+/// 재원생 중 학교급별 최대 학년 미만인 원생 전원의 `grade`를 1 증가시키고,
+/// `last_grade_promotion_year`를 올해로 기록해 같은 해 중복 승급을 방지한다.
+#[tauri::command]
+pub async fn promote_grades() -> Result<i64, String> {
+    let pool = db::pool().map_err(String::from)?;
+    promote_grades_impl(pool).await.map_err(String::from)
+}
+
 #[cfg(all(test, not(feature = "cipher")))]
 mod tests {
     use super::*;
@@ -1103,5 +1211,112 @@ mod tests {
         .await
         .unwrap();
         assert!(withdraw_date.is_none(), "withdraw_date 도 NULL 로 복귀");
+    }
+
+    // ─────── Sprint 19 T8 — 학년 자동 승급 ───────
+
+    #[cfg(not(feature = "cipher"))]
+    async fn seed_grade_student(
+        pool: &sqlx::SqlitePool,
+        serial: &str,
+        school_level: &str,
+        grade: i64,
+        withdraw_date: Option<&str>,
+    ) {
+        sqlx::query(
+            "INSERT INTO students (serial_no, name, gender, school_level, grade, \
+             enroll_date, withdraw_date) VALUES (?, ?, 'male', ?, ?, '2026-01-01', ?)",
+        )
+        .bind(serial)
+        .bind(format!("학생{}", serial))
+        .bind(school_level)
+        .bind(grade)
+        .bind(withdraw_date)
+        .execute(pool)
+        .await
+        .expect("학생 INSERT");
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn promote_grades_increments_elementary_and_middle() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        seed_grade_student(&pool, "1", "elementary", 3, None).await;
+        seed_grade_student(&pool, "2", "middle", 1, None).await;
+
+        let promoted = promote_grades_impl(&pool).await.expect("승급");
+        assert_eq!(promoted, 2);
+
+        let grades: Vec<(i64,)> =
+            sqlx::query_as("SELECT grade FROM students ORDER BY serial_no")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(grades[0].0, 4, "초등 3→4학년");
+        assert_eq!(grades[1].0, 2, "중등 1→2학년");
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn promote_grades_excludes_max_grade() {
+        // 초6/중3(각 학교급 최대 학년)은 승급 대상에서 제외.
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        seed_grade_student(&pool, "1", "elementary", 6, None).await;
+        seed_grade_student(&pool, "2", "middle", 3, None).await;
+
+        let promoted = promote_grades_impl(&pool).await.expect("승급");
+        assert_eq!(promoted, 0, "최대 학년은 승급 대상 아님");
+
+        let grades: Vec<(i64,)> =
+            sqlx::query_as("SELECT grade FROM students ORDER BY serial_no")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(grades[0].0, 6);
+        assert_eq!(grades[1].0, 3);
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn promote_grades_excludes_withdrawn_students() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        seed_grade_student(&pool, "1", "elementary", 3, Some("2026-02-01")).await;
+
+        let promoted = promote_grades_impl(&pool).await.expect("승급");
+        assert_eq!(promoted, 0, "퇴교생은 승급 대상 아님");
+
+        let grade: i64 = sqlx::query_scalar("SELECT grade FROM students WHERE serial_no = '1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(grade, 3, "퇴교생 학년 불변");
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn check_grade_promotion_skips_already_processed_year() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        seed_grade_student(&pool, "1", "elementary", 3, None).await;
+
+        let before = check_grade_promotion_impl(&pool).await.expect("조회");
+        assert!(before.needed, "처음엔 대상 존재 → 승급 필요");
+        assert_eq!(before.count, 1);
+
+        promote_grades_impl(&pool).await.expect("승급 실행");
+
+        let after = check_grade_promotion_impl(&pool).await.expect("재조회");
+        assert!(!after.needed, "같은 해 재실행 후에는 스킵");
+        assert_eq!(after.count, 0);
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn check_grade_promotion_needed_false_when_no_eligible_students() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        seed_grade_student(&pool, "1", "elementary", 6, None).await;
+
+        let result = check_grade_promotion_impl(&pool).await.expect("조회");
+        assert!(!result.needed, "대상 없으면 needed=false");
+        assert_eq!(result.count, 0);
     }
 }

@@ -84,6 +84,7 @@ import type {
   StudentSchedule,
 } from '@/types/schedule'
 import type {
+  GradePromotionCheck,
   NewStudent,
   Student,
   StudentFilter,
@@ -616,6 +617,20 @@ export async function countStudents(filter: StudentFilter = {}): Promise<number>
   const inv = await getInvoke()
   if (!inv) return 0
   return inv('count_students', { filter }) as Promise<number>
+}
+
+/** Sprint 19 T8 — 올해 학년 자동 승급이 필요한지 조회 (조회 전용, DB 변경 없음). */
+export async function checkGradePromotion(): Promise<GradePromotionCheck> {
+  const inv = await getInvoke()
+  if (!inv) return { needed: false, count: 0 }
+  return inv('check_grade_promotion') as Promise<GradePromotionCheck>
+}
+
+/** Sprint 19 T8 — 학년 승급 일괄 실행 (사용자 확인 다이얼로그 승인 후에만 호출). 승급된 인원수 반환. */
+export async function promoteGrades(): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('promote_grades') as Promise<number>
 }
 
 // ----------------------------------------------------------------------------

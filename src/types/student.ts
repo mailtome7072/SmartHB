@@ -80,6 +80,12 @@ export interface StudentUpdate {
  * R14 페이지네이션: `limit` 미지정 시 백엔드 기본값 100 (상한 1000), `offset` 기본 0.
  * `countStudents` 는 동일 필터(`limit`/`offset` 제외)로 총 건수를 반환.
  */
+/** Sprint 19 T8 — 학년 자동 승급 필요 여부 조회 결과. */
+export interface GradePromotionCheck {
+  needed: boolean
+  count: number
+}
+
 export interface StudentFilter {
   active_only?: boolean
   name_query?: string
