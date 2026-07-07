@@ -35,14 +35,9 @@
 
 사용자 요구 1, 2번의 기반. 모든 그리드에 재사용할 정렬 로직을 구축하고 원생 목록에 먼저 적용한다.
 
-- ⬜ 공통 정렬 훅/유틸리티 구현 (`src/hooks/useTableSort.ts` 또는 `src/lib/sort.ts` 신규)
-  - 컬럼 클릭 ASC/DESC 토글 + 정렬 인디케이터 UI
-  - 학년 정렬 복합키: `school_level ASC → grade ASC → name 가나다순` (초1~초6 → 중1~중3 순서)
-  - 임의 컬럼 정렬 시 동일 값 내에서 이름 가나다순 2차 정렬 자동 적용
-- ⬜ 원생 목록(`src/app/students/page.tsx`) 기존 부분 정렬 로직(`SORTABLE_COLUMNS`, `toggleSort`, `sortIndicator`) 공통 훅으로 교체
-  - 기본 정렬: 학년별+이름 가나다순 (school_level ASC, grade ASC, name ASC)
-  - 현재 정렬 불가 컬럼(학교급/성별/수업시간) 정렬 활성화
-- ⬜ 백엔드 `list_students` 정렬 파라미터에 `school_level` 복합 정렬 지원 확인. 필요 시 `students.rs` 쿼리 ORDER BY 보강
+- ✅ 공통 정렬 훅/유틸리티 구현 (`src/hooks/useTableSort.ts` 신규) — 출결/청구(T2/T3)용, `withTiebreak`로 "동일 값 정렬 시 이름 2차 정렬" 일반화 (bfc8725)
+- ✅ 원생 목록(`src/app/students/page.tsx`) 기본 정렬을 학년별+이름 가나다순(GradeAsc)으로 변경. 성별/수업시간 헤더 클릭 정렬 신규 추가. 학교급은 학년과 동일 기준이라 별도 버튼 없이 유지(중복 하이라이트 UX 방지) (bfc8725)
+- ✅ 백엔드 `students.rs` StudentSort에 GenderAsc/Desc, WeeklyHoursAsc/Desc 추가, 디폴트를 GradeAsc로 변경, 단위 테스트 3건 추가 (bfc8725)
 
 **관련 파일**:
 - `src/hooks/useTableSort.ts` (신규)
