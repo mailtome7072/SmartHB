@@ -44,7 +44,7 @@
 - Windows 10/11, macOS 12+ 동작
 - 양 PC 간 데이터 일관성 보장 (시점 분리 사용 + OS 클라우드 동기화 폴더)
 - 인터넷 단절 시에도 로컬 작업 가능 (연결 복구 시 OS 클라이언트가 자동 동기화)
-- 50대 사용자 접근성: Pretendard 본문 18pt 권장(16pt 하한), 명도 대비 WCAG AA 이상
+- 50대 사용자 접근성: Pretendard 본문 16pt 권장(14pt 하한), 명도 대비 WCAG AA 이상
 
 ### 2.3 성공 기준(측정 가능)
 - 미납 발생률 ≤ 5% (전년 대비 -50%)
@@ -743,7 +743,7 @@
 - 프론트엔드: React 18 + TypeScript 5
 - UI 컴포넌트: shadcn/ui + Tailwind CSS
 - 상태 관리: Zustand + TanStack Query
-- 폰트: Pretendard(본문 18pt 권장, 16pt 하한)
+- 폰트: Pretendard(본문 16pt 권장, 14pt 하한)
 - **데이터 저장(단일 소스 오브 트루스)**: **로컬 SQLite + SQLCipher(AES-256 암호화)**
 - **데이터 공유**: OS 레벨 **클라우드 동기화 폴더**(네이버 MYBOX 우선, 미지원 환경 대비 iCloud Drive / Dropbox 대체)
 - 캘린더 뷰: FullCalendar 또는 React Big Calendar
@@ -855,7 +855,7 @@
 ### 5.7 접근성·UX 표준(50대 사용자 친화)
 
 **시각·조작 접근성**
-- 기본 폰트: Pretendard 18pt(헤더 24pt+), 행간 1.5
+- 기본 폰트: Pretendard 16pt(헤더 24pt+), 행간 1.5
 - 색상: 저자극 톤(차분한 베이지/연그레이 배경, 강조색은 무채도 기반)
 - 명도 대비 ≥ 4.5:1(WCAG AA)
 - 클릭 가능 영역 최소 44×44px

@@ -66,7 +66,7 @@
   /* PRD §5.7 접근성 토큰 — 모든 컴포넌트의 SSOT */
   --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI",
     "Malgun Gothic", "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif;
-  --font-size-body: 18px;        /* 본문 18pt 권장 (16pt 하한) */
+  --font-size-body: 16px;        /* 본문 16pt 권장 (14pt 하한) — 2026-07 접근성 기준 개정(이전 18/16pt) */
   --line-height-base: 1.5;
 }
 
@@ -110,12 +110,13 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.4;
 }
 
-h1 { font-size: 32px; }
-h2 { font-size: 28px; }
+/* 2026-07 접근성 기준 개정(본문 18→16pt) 비례 축소 — h3(헤더 24pt+ 하한, PRD §5.7)는 유지. */
+h1 { font-size: 28px; }
+h2 { font-size: 26px; }
 h3 { font-size: 24px; } /* PRD §5.7 헤더 24pt+ 하한 */
-h4 { font-size: 22px; }
-h5 { font-size: 20px; }
-h6 { font-size: 18px; }
+h4 { font-size: 20px; }
+h5 { font-size: 18px; }
+h6 { font-size: 16px; }
 
 /* ── 수업 관리 FullCalendar 커스터마이징 (Sprint 10 T11 시각 검증) ── */
 /* 툴바는 커스텀 React 로 구현 (headerToolbar=false) — FC 버튼 스타일 불필요. */

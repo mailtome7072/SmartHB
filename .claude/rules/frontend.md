@@ -51,7 +51,7 @@ globs: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "next.config.*", "tailwin
 - 컴포넌트 내부 상태는 React `useState`로 충분 — 무리한 전역화 금지
 
 ### 접근성 — 50대 사용자 친화 (PRD §5.7)
-- **폰트**: Pretendard 본문 18pt 권장(16pt 하한), 헤더 24pt+, 행간 1.5 — `src/app/globals.css` 또는 Tailwind config에 통일
+- **폰트**: Pretendard 본문 16pt 권장(14pt 하한), 헤더 24pt+, 행간 1.5 — `src/app/globals.css` 또는 Tailwind config에 통일 (2026-07 기준 개정 — 이전 18pt/16pt에서 하향)
 - **색상**: 저자극 톤(차분한 베이지/연그레이 배경, 강조색은 무채도 기반)
 - **명도 대비**: ≥ 4.5:1 (WCAG AA 준수)
 - **클릭 영역**: 최소 44×44px — 버튼/체크박스 패딩 명시
@@ -84,5 +84,5 @@ globs: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "next.config.*", "tailwin
 상세 체크리스트: `.claude/skills/code-review.md` — **보안**, **코드 품질**, **패턴 준수** 섹션 우선 확인
 
 - **Critical**: XSS (dangerouslySetInnerHTML, 사용자 입력 직접 렌더링), `invoke()` 직접 호출, SQLCipher 키나 사용자 비밀번호를 프론트엔드 메모리에 보관
-- **High**: TypeScript any 남용, SSR 가드 누락 (typeof window 미확인), `'use client'` 과다 사용, 글로벌 검색바 누락, Pretendard/18pt/44×44px 접근성 기준 위반, **학습보고서 월 단위 UI 신설** (분기 단위 위반)
+- **High**: TypeScript any 남용, SSR 가드 누락 (typeof window 미확인), `'use client'` 과다 사용, 글로벌 검색바 누락, Pretendard/16pt/44×44px 접근성 기준 위반, **학습보고서 월 단위 UI 신설** (분기 단위 위반)
 - **Medium**: Zustand/TanStack Query 적용 누락 (불필요한 props drilling), 임시저장/Undo 미적용, 단축키 미바인딩, **학습보고서 A4 4분할 인쇄 레이아웃 미적용** (AC-4.8-4 위반), **분기 마지막 월 2차 점수 미입력 시 입력 버튼 비활성화 미적용** (AC-4.8-6 위반)

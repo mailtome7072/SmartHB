@@ -106,4 +106,4 @@ project-root/
 | **글로벌 검색** | 모든 화면 상단 상시 노출 — 원생/학교/메뉴 즉시 이동 | §4.14 |
 | **외부 통신** | 앱 자체는 외부 네트워크 없음 — 클라우드 동기화는 OS 클라이언트 위임 | §5.5, §8.1 |
 | **배포** | GitHub Releases 인스톨러 — Windows `.msi`/`.exe`, macOS `.dmg` | (배포부) |
-| **UI 접근성** | Pretendard 18pt+, WCAG AA, 클릭 영역 ≥ 44×44px, F1/Ctrl+F/N/S/Z/P/ESC 단축키 | §5.7 |
+| **UI 접근성** | Pretendard 16pt+, WCAG AA, 클릭 영역 ≥ 44×44px, F1/Ctrl+F/N/S/Z/P/ESC 단축키 | §5.7 |
