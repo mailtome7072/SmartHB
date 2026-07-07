@@ -91,7 +91,8 @@ export default function DataExportPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-2xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-2xl leading-tight">
         <div className="mb-4">
           <Link href="/settings" className="text-sm text-muted-foreground hover:text-[var(--accent)]">
             ← 설정

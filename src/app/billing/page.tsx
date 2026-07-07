@@ -87,7 +87,8 @@ function BillingContent() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-6xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-6xl leading-tight">
         <h1 className="mb-4 text-2xl font-bold">청구 관리</h1>
 
         {/* 툴바 — 월 선택 + 검색 + 상태 필터 + 액션 버튼 */}

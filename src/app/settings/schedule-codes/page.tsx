@@ -18,7 +18,8 @@ import { SettingsHomeLink } from '@/components/settings/SettingsHomeLink'
 export default function ScheduleCodesSettingsPage() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-4xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-4xl leading-tight">
         <SettingsHomeLink />
         <h1 className="mb-2 text-2xl font-bold">학사 일정 코드 관리</h1>
         <p className="mb-6 text-base text-gray-600">

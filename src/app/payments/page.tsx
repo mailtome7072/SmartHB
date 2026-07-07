@@ -69,7 +69,8 @@ function PaymentsContent() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-6xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-6xl leading-tight">
         <h1 className="mb-4 text-2xl font-bold">수납 관리</h1>
 
         {/* 탭 */}

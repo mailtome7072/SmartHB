@@ -97,7 +97,8 @@ export default function SchedulesPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <main className="flex h-full flex-col">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <main className="flex h-full flex-col leading-tight">
         <header className="flex flex-wrap items-center gap-4 border-b border-[var(--border)] py-4">
           <h1 className="text-2xl font-bold">수업 관리</h1>
           <div className="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist">

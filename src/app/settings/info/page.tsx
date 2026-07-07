@@ -147,7 +147,8 @@ export default function AcademyInfoPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-3xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-3xl leading-tight">
         <SettingsHomeLink />
         <div className="mb-6">
           <h1 className="text-2xl font-bold">교습소 정보</h1>

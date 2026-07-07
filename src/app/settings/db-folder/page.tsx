@@ -59,7 +59,8 @@ export default function DbFolderPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-2xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-2xl leading-tight">
         <SettingsHomeLink />
         <h1 className="mb-2 text-2xl font-bold">DB 폴더 변경</h1>
         <p className="mb-6 text-base text-gray-600">

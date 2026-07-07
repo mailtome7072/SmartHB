@@ -274,7 +274,8 @@ export default function AcademicPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <main className="flex flex-col gap-4 p-4">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <main className="flex flex-col gap-4 p-4 leading-tight">
         <header className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[var(--foreground)]">일정 관리</h1>
