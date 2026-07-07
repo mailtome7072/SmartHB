@@ -12,7 +12,7 @@
  * 빼서 신규/수정/모달 등 다양한 호출 패턴을 단순화한다.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listCodes } from '@/lib/tauri'
 import { formatPhone, todayLocalISO } from '@/lib/format'
@@ -108,7 +108,7 @@ export function StudentForm({
 }) {
   const storageKey = `${STUDENT_DRAFT_PREFIX}${draftKey}`
   const isEdit = initial !== undefined
-  const { data: schools = [] } = useQuery<CodeEntry[]>({
+  const { data: schools = [], isLoading: schoolsLoading } = useQuery<CodeEntry[]>({
     queryKey: ['codes', 'schools'],
     queryFn: () => listCodes('schools'),
   })
@@ -124,6 +124,25 @@ export function StudentForm({
   const [error, setError] = useState<string | null>(null)
   const formRef = useRef(form)
   formRef.current = form
+
+  // Sprint 19 T9(사용자 요청) — 학교급(school_level)에 맞는 학교만 드롭다운에 노출.
+  // school_type='etc'(미분류) 또는 null 인 학교는 학교급 무관하게 항상 노출(기타 학교).
+  const filteredSchools = useMemo(
+    () =>
+      schools.filter(
+        (s) => s.is_active && (s.extra === form.school_level || s.extra === 'etc' || s.extra === null),
+      ),
+    [schools, form.school_level],
+  )
+  // 학교급 변경으로 현재 선택된 학교가 목록에서 사라지면 선택값 초기화 — 학교급과 안 맞는
+  // 학교가 그대로 남아있는 채 저장되는 것을 방지 (기존 텍스트 매칭 경고 로직을 대체).
+  // schoolsLoading 가드 필수 — 목록 로딩 완료 전(schools=[]) 에는 기존 선택값을
+  // "목록에 없음"으로 오판해 수정 모드 진입 직후 school_id 를 지워버리는 사고를 방지.
+  useEffect(() => {
+    if (schoolsLoading || form.school_id === null) return
+    if (filteredSchools.some((s) => s.id === form.school_id)) return
+    setForm((f) => ({ ...f, school_id: null }))
+  }, [schoolsLoading, filteredSchools, form.school_id])
 
   // mount 시 1회 draft 탐지 — 파싱 실패본은 즉시 폐기.
   useEffect(() => {
@@ -176,20 +195,6 @@ export function StudentForm({
     if (f.school_id === null) {
       setError('학교를 선택해주세요.')
       return
-    }
-    // 학교급 ↔ 학교명 정합성 — 초등인데 '중학교' / 중등인데 '초등학교' 선택 시 확인 유도.
-    {
-      const school = schools.find((s) => s.id === f.school_id)
-      if (school) {
-        if (f.school_level === 'elementary' && school.label.includes('중학교')) {
-          setError(`학교급이 '초등'인데 학교가 '${school.label}'입니다. 학교급 또는 학교를 확인해주세요.`)
-          return
-        }
-        if (f.school_level === 'middle' && school.label.includes('초등학교')) {
-          setError(`학교급이 '중등'인데 학교가 '${school.label}'입니다. 학교급 또는 학교를 확인해주세요.`)
-          return
-        }
-      }
     }
     setSubmitting(true)
     try {
@@ -329,7 +334,7 @@ export function StudentForm({
             className="h-11 w-full rounded-md border border-[var(--border)] bg-white px-3"
           >
             <option value="">(미지정)</option>
-            {schools.filter((s) => s.is_active).map((s) => (
+            {filteredSchools.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.label}
               </option>

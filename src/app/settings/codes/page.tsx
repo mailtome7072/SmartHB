@@ -44,10 +44,18 @@ import {
   updateFee,
 } from '@/lib/tauri'
 import { formatCurrency } from '@/lib/format'
-import type { CodeEntry, CodeTable } from '@/types/code'
+import type { CodeEntry, CodeTable, SchoolType } from '@/types/code'
 import type { StandardFee } from '@/types/fee'
 
 type ActiveFilter = 'all' | 'active' | 'inactive'
+
+/** Sprint 19 T9(사용자 요청) — 학교급 선택지. schools.school_type CHECK 제약과 정합. */
+const SCHOOL_TYPE_OPTIONS: { value: SchoolType; label: string }[] = [
+  { value: 'elementary', label: '초등학교' },
+  { value: 'middle', label: '중학교' },
+  { value: 'high', label: '고등학교' },
+  { value: 'etc', label: '기타' },
+]
 
 function ActiveFilterRadio({
   value,
@@ -143,6 +151,7 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
 
   const [newCode, setNewCode] = useState('')
   const [newLabel, setNewLabel] = useState('')
+  const [newSchoolType, setNewSchoolType] = useState<SchoolType>('etc')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
 
   const sensors = useSensors(
@@ -156,12 +165,14 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
       await createCode(codeTable, {
         code: newCode.trim(),
         label: newLabel.trim() || newCode.trim(),
+        extra: table === 'schools' ? newSchoolType : undefined,
         sort_order: nextOrder,
       })
     },
     onSuccess: () => {
       setNewCode('')
       setNewLabel('')
+      setNewSchoolType('etc')
       qc.invalidateQueries({ queryKey: ['codes', codeTable] })
     },
   })
@@ -170,6 +181,7 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
     mutationFn: async (entry: CodeEntry) => {
       await updateCode(codeTable, entry.id, {
         label: entry.label,
+        extra: entry.extra,
         sort_order: entry.sort_order,
         is_active: entry.is_active,
       })
@@ -237,6 +249,20 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
             className="h-11 flex-1 rounded-md border border-[var(--border)] px-3"
           />
         )}
+        {table === 'schools' && (
+          <select
+            value={newSchoolType}
+            onChange={(e) => setNewSchoolType(e.target.value as SchoolType)}
+            aria-label="학교급"
+            className="h-11 rounded-md border border-[var(--border)] px-3"
+          >
+            {SCHOOL_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
         <button
           type="submit"
           disabled={create.isPending}
@@ -269,6 +295,7 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
               <SortableCodeRow
                 key={c.id}
                 entry={c}
+                showSchoolType={table === 'schools'}
                 onSave={(updated) => update.mutate(updated)}
               />
             ))}
@@ -287,9 +314,12 @@ function CodePanel({ table }: { table: Exclude<TabId, 'fees'> }) {
  */
 function SortableCodeRow({
   entry,
+  showSchoolType,
   onSave,
 }: {
   entry: CodeEntry
+  /** Sprint 19 T9 — 학교 탭에서만 학교급 셀렉트 노출. */
+  showSchoolType: boolean
   onSave: (next: CodeEntry) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -327,6 +357,20 @@ function SortableCodeRow({
         onBlur={() => label !== entry.label && onSave({ ...entry, label })}
         className="h-10 flex-1 rounded-md border border-[var(--border)] px-3"
       />
+      {showSchoolType && (
+        <select
+          value={entry.extra ?? 'etc'}
+          onChange={(e) => onSave({ ...entry, extra: e.target.value })}
+          aria-label="학교급"
+          className="h-10 rounded-md border border-[var(--border)] px-2 text-sm"
+        >
+          {SCHOOL_TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      )}
       <span className="w-12 text-right text-sm text-gray-600" title="정렬순서">
         {entry.sort_order}
       </span>

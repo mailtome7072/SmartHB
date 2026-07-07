@@ -801,6 +801,7 @@ export async function createCode(table: CodeTable, payload: NewCode): Promise<Co
       id: 0,
       code: payload.code,
       label: payload.label ?? payload.code,
+      extra: payload.extra ?? null,
       sort_order: payload.sort_order ?? 0,
       is_active: true,
     }
@@ -819,6 +820,7 @@ export async function updateCode(
       id,
       code: payload.label,
       label: payload.label,
+      extra: payload.extra ?? null,
       sort_order: payload.sort_order,
       is_active: payload.is_active,
     }
