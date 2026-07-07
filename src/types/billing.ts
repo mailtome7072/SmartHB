@@ -35,6 +35,9 @@ export interface PaymentViewRow {
   studentId: number
   studentName: string
   studentSerialNo: string
+  /** Sprint 19 사용자 요청 — 기본 정렬(학년별+이름) 및 화면 표시용. */
+  studentGrade: number
+  studentSchoolLevel: SchoolLevel
   adjustedAmount: number
   isMidMonth: boolean
   midMonthType: MidMonthType | null
@@ -79,6 +82,9 @@ export interface UnpaidBill {
   studentId: number
   studentName: string
   studentSerialNo: string
+  /** Sprint 19 사용자 요청 — 기본 정렬(학년별+이름) 및 화면 표시용. */
+  studentGrade: number
+  studentSchoolLevel: SchoolLevel
   adjustedAmount: number
   isMidMonth: boolean
   midMonthType: MidMonthType | null
