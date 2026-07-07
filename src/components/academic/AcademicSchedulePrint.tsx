@@ -10,17 +10,22 @@
  * 규칙으로 수업 가능일 red 외곽선 + 기간성 학사일정 밴드 오버레이를 추가한다. 두 컴포넌트는
  * 렌더링 기술(canvas vs HTML table)이 달라 로직을 공유하지 못하지만, "수업 가능일 판정"과
  * "외곽선 트림 규칙"은 의도적으로 동일하게 포팅했다 — 정책이 바뀌면 두 곳 모두 확인 필요.
+ *
+ * 버그수정(2026-07): operatingHours를 이 컴포넌트가 직접 fetch하면, 부모의
+ * printEventsQuery만 보고 window.print()가 먼저 실행되는 레이스 컨디션으로 red
+ * 외곽선이 아예 안 그려지는 문제가 있었다. 부모(academic/page.tsx)가 두 쿼리를 모두
+ * 기다린 후 operatingHours를 prop으로 내려준다 — 이 컴포넌트는 더 이상 자체 fetch 안 함.
  */
 
-import { useQuery } from '@tanstack/react-query'
 import type { StudyPeriod, ScheduleEventListItem } from '@/types/academic'
 import { codeColor } from '@/lib/schedule-code-colors'
-import { getOperatingHours } from '@/lib/tauri'
+import type { DayHours } from '@/lib/tauri'
 import { isWeekday, isoDayOfWeek, nextIsoDate, prevIsoDate } from '@/lib/time'
 
 interface Props {
   period: StudyPeriod
   events: ScheduleEventListItem[]
+  operatingHours: DayHours[]
 }
 
 const DOW_LABELS = ['일', '월', '화', '수', '목', '금', '토']
@@ -69,12 +74,7 @@ function isBandEvent(e: ScheduleEventListItem): boolean {
   return e.is_period_type && e.period_end_date !== null && e.period_end_date !== e.event_date
 }
 
-export function AcademicSchedulePrint({ period, events }: Props) {
-  const { data: operatingHours = [] } = useQuery({
-    queryKey: ['operating-hours'],
-    queryFn: getOperatingHours,
-  })
-
+export function AcademicSchedulePrint({ period, events, operatingHours }: Props) {
   const [sy, sm] = period.start_date.split('-').map(Number)
   const [ey, em] = period.end_date.split('-').map(Number)
 

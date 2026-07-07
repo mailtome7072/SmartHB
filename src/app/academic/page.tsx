@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkAuthStatus,
   deleteScheduleEvent,
+  getOperatingHours,
   getStudyPeriod,
   listScheduleEvents,
   listStudyPeriods,
@@ -157,13 +158,23 @@ export default function AcademicPage() {
     enabled: printMode && confirmedPeriod !== null,
     staleTime: 30_000,
   })
+  // Sprint 19 버그수정: operatingHours를 AcademicSchedulePrint 내부에서 독립적으로
+  // fetch하면, 이 쿼리가 끝나기 전에 printEventsQuery만 보고 window.print()가 먼저
+  // 실행돼(레이스 컨디션) 인쇄 결과에 red 외곽선이 전혀 안 그려지는 버그가 있었다.
+  // 부모(이 컴포넌트)에서 함께 fetch해 두 쿼리 모두 완료된 후에만 인쇄를 트리거한다.
+  const printOperatingHoursQuery = useQuery({
+    queryKey: ['operating-hours'],
+    queryFn: getOperatingHours,
+    enabled: printMode,
+    staleTime: 30_000,
+  })
   // T9: 쿼리 완료 후 인쇄 다이얼로그 — setTimeout 대신 쿼리 상태 감지로 race condition 방지
   useEffect(() => {
-    if (printMode && printEventsQuery.isSuccess) {
+    if (printMode && printEventsQuery.isSuccess && printOperatingHoursQuery.isSuccess) {
       window.print()
       setPrintMode(false)
     }
-  }, [printMode, printEventsQuery.isSuccess])
+  }, [printMode, printEventsQuery.isSuccess, printOperatingHoursQuery.isSuccess])
 
   // V12 (Sprint 7 post-review): 인접 3개월 교습기간 조회 — selection 단계에서 다른 교습기간
   // 일자 포함 차단. ThreeMonthCalendar 와 동일 쿼리 키로 캐시 공유.
@@ -413,6 +424,7 @@ export default function AcademicPage() {
             <AcademicSchedulePrint
               period={confirmedPeriod}
               events={printEventsQuery.data ?? []}
+              operatingHours={printOperatingHoursQuery.data ?? []}
             />
           </div>,
           document.body,

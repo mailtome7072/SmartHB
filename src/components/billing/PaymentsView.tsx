@@ -15,12 +15,33 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { batchUpdatePayments, listCodes, listPaymentView } from '@/lib/tauri'
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes'
+import { compareKorean, useTableSort, withTiebreak } from '@/hooks/useTableSort'
 import type {
   BillingSearchResult,
   PaymentInput,
   PaymentViewRow,
 } from '@/types/billing'
 import type { CodeEntry } from '@/types/code'
+
+/**
+ * 정렬 가능 컬럼 (사용자 요청 — 청구관리 그리드와 동일하게 컬럼 헤더 클릭 정렬 지원).
+ * 기본(default)은 identity comparator로 백엔드 원본 순서(미수납 우선→월중입퇴교→
+ * 학년+이름)를 그대로 유지하고, 헤더 클릭 시에만 그 기준으로 전체 재정렬한다.
+ */
+type PaymentSortKey = 'default' | 'name' | 'amount' | 'status'
+
+const nameTiebreak = (a: PaymentViewRow, b: PaymentViewRow) =>
+  compareKorean(a.studentName, b.studentName)
+
+const PAYMENT_SORT_COMPARATORS: Record<
+  PaymentSortKey,
+  (a: PaymentViewRow, b: PaymentViewRow) => number
+> = {
+  default: () => 0, // Array.sort는 stable — 백엔드 원본 순서 유지
+  name: (a, b) => compareKorean(a.studentName, b.studentName),
+  amount: withTiebreak((a, b) => a.adjustedAmount - b.adjustedAmount, nameTiebreak),
+  status: withTiebreak((a, b) => Number(a.isPaid) - Number(b.isPaid), nameTiebreak),
+}
 
 interface Props {
   yearMonth: string
@@ -116,7 +137,7 @@ export function PaymentsView({
 
   const allRows: PaymentViewRow[] = useMemo(() => viewQuery.data ?? [], [viewQuery.data])
   // 검색 + 수납 상태 필터 동시 적용. P2-14: 매 렌더 새 배열 생성 방지 (자동 채움 effect 의존성 안정화).
-  const rows: PaymentViewRow[] = useMemo(
+  const filteredRows: PaymentViewRow[] = useMemo(
     () =>
       allRows.filter((r) => {
         if (matchedStudentIds !== null && !matchedStudentIds.has(r.studentId)) return false
@@ -125,6 +146,13 @@ export function PaymentsView({
         return true
       }),
     [allRows, matchedStudentIds, paymentFilter],
+  )
+  // 사용자 요청 — 청구관리 그리드와 동일하게 컬럼 헤더 클릭 정렬 지원.
+  // 기본(default)은 백엔드 순서(미수납 우선→월중입퇴교→학년+이름) 그대로 유지.
+  const { sorted: rows, toggleSort, indicator } = useTableSort<PaymentViewRow, PaymentSortKey>(
+    filteredRows,
+    PAYMENT_SORT_COMPARATORS,
+    { key: 'default', direction: 'asc' },
   )
   const paymentMethods: CodeEntry[] = (paymentMethodsQuery.data ?? []).filter(
     (c) => c.is_active,
@@ -302,9 +330,36 @@ export function PaymentsView({
           <thead className="sticky top-0 bg-gray-100 text-left">
             <tr>
               <th className="px-3 py-2">번호</th>
-              <th className="px-3 py-2">원생명</th>
-              <th className="px-3 py-2 text-right">청구액</th>
-              <th className="px-3 py-2">완료</th>
+              <th className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('name')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="원생명 정렬 토글"
+                >
+                  원생명{indicator('name')}
+                </button>
+              </th>
+              <th className="px-3 py-2 text-right">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('amount')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="청구액 정렬 토글"
+                >
+                  청구액{indicator('amount')}
+                </button>
+              </th>
+              <th className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('status')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="완료 여부 정렬 토글"
+                >
+                  완료{indicator('status')}
+                </button>
+              </th>
               <th className="px-3 py-2">입금일</th>
               <th className="px-3 py-2">입금자</th>
               <th className="px-3 py-2">결제수단</th>
