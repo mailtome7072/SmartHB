@@ -29,8 +29,6 @@ import type {
   StudentSort,
 } from '@/types/student'
 
-const PAGE_SIZE = 50
-
 const GENDER_LABEL: Record<Gender, string> = { male: '남', female: '여' }
 const LEVEL_LABEL: Record<SchoolLevel, string> = { elementary: '초', middle: '중' }
 
@@ -97,7 +95,6 @@ export default function StudentsPage() {
   const [gender, setGender] = useState<Gender | ''>('')
   const [activeOnly, setActiveOnly] = useState(true)
   const [sort, setSort] = useState<StudentSort>('grade-asc')
-  const [page, setPage] = useState(0)
   // T4 (이슈 #3): 학교명 필터
   const [schoolId, setSchoolId] = useState<string>('')
   const { data: schools = [] } = useQuery<CodeEntry[]>({
@@ -114,19 +111,18 @@ export default function StudentsPage() {
     active_only: activeOnly,
     sort,
   }
-  const listFilter: StudentFilter = { ...baseFilter, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  // 사용자 요청 — 페이지네이션 제거, 전체 원생을 한 번에 로드(백엔드 MAX_LIST_LIMIT=1000 상한).
+  const listFilter: StudentFilter = { ...baseFilter, limit: 1000 }
   const baseKey = JSON.stringify(baseFilter)
 
   const { data: students = [], isFetching } = useQuery<Student[]>({
-    queryKey: ['students', 'list', baseKey, page],
+    queryKey: ['students', 'list', baseKey],
     queryFn: () => listStudents(listFilter),
   })
   const { data: total = 0 } = useQuery<number>({
     queryKey: ['students', 'count', baseKey],
     queryFn: () => countStudents(baseFilter),
   })
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   // 수정 중 임시저장(localStorage draft)이 있는 원생 id 집합 — 그리드에 배지 표시.
   // localStorage 는 리액티브하지 않으므로 목록(students)이 갱신될 때 + 창 포커스 복귀 시 재계산
@@ -180,20 +176,14 @@ export default function StudentsPage() {
           <input
             type="search"
             value={nameInput}
-            onChange={(e) => {
-              setNameInput(e.target.value)
-              setPage(0)
-            }}
+            onChange={(e) => setNameInput(e.target.value)}
             placeholder="이름 검색"
             aria-label="이름 검색"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           />
           <select
             value={schoolLevel}
-            onChange={(e) => {
-              setSchoolLevel(e.target.value as SchoolLevel | '')
-              setPage(0)
-            }}
+            onChange={(e) => setSchoolLevel(e.target.value as SchoolLevel | '')}
             aria-label="학교급"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           >
@@ -204,10 +194,7 @@ export default function StudentsPage() {
           <input
             type="number"
             value={grade}
-            onChange={(e) => {
-              setGrade(e.target.value)
-              setPage(0)
-            }}
+            onChange={(e) => setGrade(e.target.value)}
             placeholder="학년"
             aria-label="학년"
             min={1}
@@ -216,10 +203,7 @@ export default function StudentsPage() {
           />
           <select
             value={gender}
-            onChange={(e) => {
-              setGender(e.target.value as Gender | '')
-              setPage(0)
-            }}
+            onChange={(e) => setGender(e.target.value as Gender | '')}
             aria-label="성별"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           >
@@ -229,10 +213,7 @@ export default function StudentsPage() {
           </select>
           <select
             value={schoolId}
-            onChange={(e) => {
-              setSchoolId(e.target.value)
-              setPage(0)
-            }}
+            onChange={(e) => setSchoolId(e.target.value)}
             aria-label="학교"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           >
@@ -259,10 +240,7 @@ export default function StudentsPage() {
             <input
               type="checkbox"
               checked={activeOnly}
-              onChange={(e) => {
-                setActiveOnly(e.target.checked)
-                setPage(0)
-              }}
+              onChange={(e) => setActiveOnly(e.target.checked)}
               className="h-5 w-5"
             />
             재원 중만
@@ -383,29 +361,9 @@ export default function StudentsPage() {
           </table>
         </section>
 
-        <nav aria-label="페이지네이션" className="mt-4 flex shrink-0 items-center justify-between">
-          <p className="text-sm text-gray-600">
-            총 {total} 명 / {page + 1} / {totalPages} 페이지
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="h-11 rounded-md border border-[var(--border)] px-4 disabled:opacity-50"
-            >
-              이전
-            </button>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-              className="h-11 rounded-md border border-[var(--border)] px-4 disabled:opacity-50"
-            >
-              다음
-            </button>
-          </div>
-        </nav>
+        {/* 사용자 요청 — 페이지네이션(이전/다음, N/N 페이지) 제거. 전체 원생을 한 번에 로드하므로
+            더 이상 필요 없음. 총원 수만 남김. */}
+        <p className="mt-3 shrink-0 text-sm text-gray-600">총 {total} 명</p>
       </div>
     </AppShell>
   )
