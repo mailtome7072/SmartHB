@@ -74,7 +74,15 @@ function escapeHtml(text: string): string {
 }
 
 const STYLE = `
-  * { box-sizing: border-box; }
+  /* 인쇄 시 배경색이 기본적으로 생략되는 Chromium 동작(인쇄 대화상자 "배경 그래픽"
+     옵션이 꺼져 있으면 배경색/이미지가 통째로 빠짐) 을 강제로 우회 — 이 옵션 때문에
+     기간 밴드(단원평가 응시일 등) 배경색이 사용자 설정과 무관하게 항상 인쇄되도록 한다. */
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color-adjust: exact;
+  }
   html, body { height: 100%; }
   body {
     margin: 0;
