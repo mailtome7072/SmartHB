@@ -13,7 +13,6 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -39,7 +38,7 @@ import {
   EventPlacer,
   useEventPlaceCellHandler,
 } from '@/components/academic/EventPlacer'
-import { AcademicSchedulePrint } from '@/components/academic/AcademicSchedulePrint'
+import { buildAcademicPrintHtml } from '@/lib/academic-print-html'
 import type { ScheduleCode, ScheduleEventListItem } from '@/types/academic'
 import {
   AlertDialog,
@@ -73,9 +72,6 @@ export default function AcademicPage() {
   // T11 일정 삭제 다이얼로그
   const [eventToDelete, setEventToDelete] = useState<ScheduleEventListItem | null>(null)
   const [eventErrorMessage, setEventErrorMessage] = useState<string | null>(null)
-
-  // T9: 교습일정 인쇄
-  const [printMode, setPrintMode] = useState(false)
 
   useEffect(() => {
     if (unlocked) {
@@ -149,32 +145,32 @@ export default function AcademicPage() {
     !centerPeriodQuery.isLoading &&
     centerPeriodQuery.data === null
   const studyPeriodMode = isCenterUnconfirmed && selectedCode === null
-  // T9: 확정 교습기간 이벤트 — 인쇄용 (printMode=true 일 때만 fetch)
   const confirmedPeriod = centerPeriodQuery.data ?? null
-  const printEventsQuery = useQuery({
-    queryKey: ['schedule-events-print', confirmedPeriod?.start_date, confirmedPeriod?.end_date],
-    queryFn: () =>
-      listScheduleEvents(confirmedPeriod!.start_date, confirmedPeriod!.end_date),
-    enabled: printMode && confirmedPeriod !== null,
-    staleTime: 30_000,
-  })
-  // Sprint 19 버그수정: operatingHours를 AcademicSchedulePrint 내부에서 독립적으로
-  // fetch하면, 이 쿼리가 끝나기 전에 printEventsQuery만 보고 window.print()가 먼저
-  // 실행돼(레이스 컨디션) 인쇄 결과에 red 외곽선이 전혀 안 그려지는 버그가 있었다.
-  // 부모(이 컴포넌트)에서 함께 fetch해 두 쿼리 모두 완료된 후에만 인쇄를 트리거한다.
-  const printOperatingHoursQuery = useQuery({
-    queryKey: ['operating-hours'],
-    queryFn: getOperatingHours,
-    enabled: printMode,
-    staleTime: 30_000,
-  })
-  // T9: 쿼리 완료 후 인쇄 다이얼로그 — setTimeout 대신 쿼리 상태 감지로 race condition 방지
-  useEffect(() => {
-    if (printMode && printEventsQuery.isSuccess && printOperatingHoursQuery.isSuccess) {
-      window.print()
-      setPrintMode(false)
+
+  // T9: 교습일정 인쇄 — 별도 팝업창에 독립 HTML 문서를 작성해 인쇄(Sprint 19 후속수정).
+  // 팝업은 클릭 핸들러 안에서 동기적으로 먼저 열어야 브라우저 팝업 차단을 피할 수 있어,
+  // 데이터 fetch(비동기) 완료 후 그 팝업에 내용을 써넣는 순서로 진행한다.
+  async function handlePrintClick() {
+    if (confirmedPeriod === null) return
+    const popup = window.open('', '_blank', 'width=1400,height=1000')
+    if (popup === null) {
+      setEventErrorMessage('팝업이 차단되었습니다. 브라우저(웹뷰) 팝업 차단 설정을 확인해주세요.')
+      return
     }
-  }, [printMode, printEventsQuery.isSuccess, printOperatingHoursQuery.isSuccess])
+    try {
+      const [events, operatingHours] = await Promise.all([
+        listScheduleEvents(confirmedPeriod.start_date, confirmedPeriod.end_date),
+        getOperatingHours(),
+      ])
+      const html = buildAcademicPrintHtml({ period: confirmedPeriod, events, operatingHours })
+      popup.document.open()
+      popup.document.write(html)
+      popup.document.close()
+    } catch (err) {
+      popup.close()
+      setEventErrorMessage(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   // V12 (Sprint 7 post-review): 인접 3개월 교습기간 조회 — selection 단계에서 다른 교습기간
   // 일자 포함 차단. ThreeMonthCalendar 와 동일 쿼리 키로 캐시 공유.
@@ -298,8 +294,8 @@ export default function AcademicPage() {
             type="button"
             disabled={confirmedPeriod === null}
             title={confirmedPeriod === null ? '이 달의 교습기간을 먼저 등록해주세요' : undefined}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-gray-100 print:hidden"
-            onClick={() => setPrintMode(true)}
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-gray-100"
+            onClick={() => void handlePrintClick()}
           >
             교습일정 인쇄
           </button>
@@ -412,23 +408,6 @@ export default function AcademicPage() {
           </AlertDialogContent>
         </AlertDialog>
       </main>
-      {/* T9: 인쇄 전용 컴포넌트 — @media print 에서만 표시.
-          document.body 에 직접 portal — App Router 에는 Pages Router 의 #__next 가 없어
-          AppShell 내부에 두면 인쇄 시 조상(App 루트)이 display:none 처리되어 후손인
-          이 wrapper 가 !important 를 걸어도 함께 가려지는(빈 인쇄) 문제가 있었다. */}
-      {printMode &&
-        confirmedPeriod !== null &&
-        typeof window !== 'undefined' &&
-        createPortal(
-          <div className="academic-print-wrapper" style={{ display: 'none' }}>
-            <AcademicSchedulePrint
-              period={confirmedPeriod}
-              events={printEventsQuery.data ?? []}
-              operatingHours={printOperatingHoursQuery.data ?? []}
-            />
-          </div>,
-          document.body,
-        )}
     </AppShell>
   )
 }
