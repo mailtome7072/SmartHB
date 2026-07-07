@@ -18,9 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkAuthStatus,
   deleteScheduleEvent,
-  getOperatingHours,
   getStudyPeriod,
-  listScheduleEvents,
   listStudyPeriods,
   updateScheduleEvent,
 } from '@/lib/tauri'
@@ -38,7 +36,6 @@ import {
   EventPlacer,
   useEventPlaceCellHandler,
 } from '@/components/academic/EventPlacer'
-import { buildAcademicPrintHtml } from '@/lib/academic-print-html'
 import type { ScheduleCode, ScheduleEventListItem } from '@/types/academic'
 import {
   AlertDialog,
@@ -147,27 +144,32 @@ export default function AcademicPage() {
   const studyPeriodMode = isCenterUnconfirmed && selectedCode === null
   const confirmedPeriod = centerPeriodQuery.data ?? null
 
-  // T9: 교습일정 인쇄 — 별도 팝업창에 독립 HTML 문서를 작성해 인쇄(Sprint 19 후속수정).
-  // 팝업은 클릭 핸들러 안에서 동기적으로 먼저 열어야 브라우저 팝업 차단을 피할 수 있어,
-  // 데이터 fetch(비동기) 완료 후 그 팝업에 내용을 써넣는 순서로 진행한다.
+  // T9: 교습일정 인쇄 — Tauri 네이티브 창(WebviewWindow)으로 인쇄 전용 페이지를 연다
+  // (Sprint 19 후속수정). window.open() 팝업은 WebView2 팝업 차단(사용자가 수동으로
+  // 설정을 풀어줘야 함) 대상이 될 수 있어, 브라우저 팝업이 아닌 앱 자체 창 생성 API를
+  // 사용한다 — 사용자 쪽 설정 변경이 전혀 필요 없다. 실제 데이터 조회/HTML 생성은
+  // academic/print 페이지(새 창)가 스스로 수행한다.
   async function handlePrintClick() {
     if (confirmedPeriod === null) return
-    const popup = window.open('', '_blank', 'width=1400,height=1000')
-    if (popup === null) {
-      setEventErrorMessage('팝업이 차단되었습니다. 브라우저(웹뷰) 팝업 차단 설정을 확인해주세요.')
-      return
-    }
     try {
-      const [events, operatingHours] = await Promise.all([
-        listScheduleEvents(confirmedPeriod.start_date, confirmedPeriod.end_date),
-        getOperatingHours(),
-      ])
-      const html = buildAcademicPrintHtml({ period: confirmedPeriod, events, operatingHours })
-      popup.document.open()
-      popup.document.write(html)
-      popup.document.close()
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      const existing = await WebviewWindow.getByLabel('academic-print')
+      if (existing !== null) await existing.close()
+      const params = new URLSearchParams({
+        start: confirmedPeriod.start_date,
+        end: confirmedPeriod.end_date,
+        ym: confirmedPeriod.year_month,
+      })
+      const printWindow = new WebviewWindow('academic-print', {
+        url: `academic/print?${params.toString()}`,
+        title: '교습일정 인쇄',
+        width: 1400,
+        height: 1000,
+      })
+      printWindow.once('tauri://error', (event) => {
+        setEventErrorMessage(`인쇄 창을 여는 중 오류가 발생했습니다: ${String(event.payload)}`)
+      })
     } catch (err) {
-      popup.close()
       setEventErrorMessage(err instanceof Error ? err.message : String(err))
     }
   }
