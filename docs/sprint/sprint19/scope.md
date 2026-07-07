@@ -16,8 +16,9 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 | src/app/attendance/page.tsx | [1회] | T2 스크롤 컨테이너 정리 (완료) |
 | src-tauri/src/commands/attendance.rs | [1회] | T2 school_level/grade 추가 + 정렬 (완료) |
 | src/types/attendance.ts | [1회] | T2 schoolLevel/grade 필드 추가 (완료) |
-| src/components/billing/BillingGrid.tsx | [0회] | T3 정렬+스크롤 |
-| src/app/billing/page.tsx | [0회] | T3 스크롤 점검 |
+| src/components/billing/BillingGrid.tsx | [1회] | T3 정렬+스크롤 (완료) |
+| src-tauri/src/commands/billing.rs | [1회] | T3 3차 정렬키 학년+이름 (완료) |
+| src/types/billing.ts | [1회] | T3 SchoolLevel 공유 타입 교체 (완료) |
 | src/lib/calendar-image.ts | [0회] | T4 참조용(수정 없을 수 있음) |
 | src/components/academic/CalendarCell.tsx | [0회] | T4 참조용(수정 없을 수 있음) |
 | src/components/schedules/ClassCalendar.tsx | [0회] | T5 화살표 제거+2xN 수정, T6 10xN+라인 |
@@ -42,7 +43,7 @@ Sprint: 19  |  Date: 2026-07-07  |  Session: #1
 - [x] T0: A113 상수쌍 문서화, A116 동적 행수 계산
 - [x] T1: 공통 정렬 훅 + 원생 목록 정렬 통일
 - [x] T2: 출결 그리드 정렬 + 스크롤 개선
-- [ ] T3: 청구 그리드 정렬 + 스크롤 개선
+- [x] T3: 청구 그리드 정렬 + 스크롤 개선 (billing/page.tsx는 이중 스크롤 구조 없어 수정 불필요로 확인됨)
 - [ ] T4: 교습일정 인쇄 캘린더 개선 (Red 테두리, 밴드, 폰트)
 - [ ] T5: 주보기 화살표 제거 + 2xN 버그 수정
 - [ ] T6: 일보기 10xN + 캘린더 라인 진하게
