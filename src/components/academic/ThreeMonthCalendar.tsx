@@ -35,6 +35,7 @@ import {
   type DayHours,
 } from '@/lib/tauri'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
+import { isoDayOfWeek, nextIsoDate } from '@/lib/time'
 import { CalendarCell, cellDroppableId } from './CalendarCell'
 
 // ─── 날짜 유틸 (라이브러리 무의존) ─────────────────────────────────────────
@@ -52,20 +53,6 @@ function daysInMonth(year: number, month: number): number {
 }
 
 /** "YYYY-MM-DD" → 다음 날짜 "YYYY-MM-DD" (V20). UTC 명시로 timezone 영향 회피. */
-function nextIsoDate(date: string): string {
-  const [y, m, d] = date.split('-').map(Number)
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  dt.setUTCDate(dt.getUTCDate() + 1)
-  return dt.toISOString().slice(0, 10)
-}
-
-/** "YYYY-MM-DD" → ISO 요일 (1=월 ~ 7=일). V23 — 운영 시간 매칭에 사용. */
-function isoDayOfWeek(date: string): number {
-  const [y, m, d] = date.split('-').map(Number)
-  const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0=일~6=토
-  return jsDay === 0 ? 7 : jsDay
-}
-
 /** JS getDay(): 0=일, 1=월…6=토 → 일요일 시작 그리드 leading 칸 수 (0~6). */
 function leadingBlankCount(year: number, month: number): number {
   return new Date(year, month - 1, 1).getDay()
