@@ -97,26 +97,34 @@
   --font-sans: var(--font-sans);
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-sans);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-base);
-}
+/* Tailwind v4는 CSS Cascade Layers를 사용 — 유틸리티 클래스(text-sm 등)는 `@layer utilities`에
+   속한다. 이 기본 스타일들을 레이어 밖에 두면 특이도와 무관하게 항상 유틸리티 클래스를
+   이겨버려(레이어 없는 CSS가 항상 최우선), 컴포넌트에서 text-sm/text-lg로 h2/h3 크기를
+   바꿔도 무시되는 버그가 있었다(2026-07 발견). `@layer base`로 감싸 Tailwind 표준 순서
+   (base < components < utilities)를 따르게 해 유틸리티 클래스가 정상적으로 덮어쓰게 한다. */
+@layer base {
+  body {
+    color: var(--foreground);
+    background: var(--background);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-base);
+  }
 
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 700;
-  line-height: 1.4;
-}
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    line-height: 1.4;
+  }
 
-/* 2026-07 접근성 기준 개정(본문 18→16pt) 비례 축소 — h3(헤더 24pt+ 하한, PRD §5.7)는 유지. */
-h1 { font-size: 28px; }
-h2 { font-size: 26px; }
-h3 { font-size: 24px; } /* PRD §5.7 헤더 24pt+ 하한 */
-h4 { font-size: 20px; }
-h5 { font-size: 18px; }
-h6 { font-size: 16px; }
+  /* 2026-07 접근성 기준 개정(본문 18→16pt) 비례 축소 — h3(헤더 24pt+ 하한, PRD §5.7)는 유지.
+     컴포넌트가 text-sm 등으로 명시 지정하지 않은 h1~h6 기본값(예: 순수 <h3> 태그)에만 적용됨. */
+  h1 { font-size: 28px; }
+  h2 { font-size: 26px; }
+  h3 { font-size: 24px; } /* PRD §5.7 헤더 24pt+ 하한 */
+  h4 { font-size: 20px; }
+  h5 { font-size: 18px; }
+  h6 { font-size: 16px; }
+}
 
 /* ── 수업 관리 FullCalendar 커스터마이징 (Sprint 10 T11 시각 검증) ── */
 /* 툴바는 커스텀 React 로 구현 (headerToolbar=false) — FC 버튼 스타일 불필요. */
