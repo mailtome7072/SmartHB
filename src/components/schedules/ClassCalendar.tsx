@@ -228,7 +228,6 @@ export default function ClassCalendar({
     if (!isTimeGrid) return []
     // 일 보기는 하루 전체 폭이 넓어 10명까지는 재배치 불필요 — 사용자 요청 6번(10xN).
     const isDay = viewType === 'timeGridDay'
-    const perRow = isDay ? 10 : 2
     const result: EventInput[] = []
     for (const day of data.days) {
       // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
@@ -275,6 +274,19 @@ export default function ClassCalendar({
         const sorted = [...new Set(cols)].sort((a, b) => a - b)
         rankByHour.set(hour, new Map(sorted.map((col, rank) => [col, rank])))
       }
+
+      // 주보기 perRow 동적 확장 — 사용자 요청. 고정 perRow=2는 하루 중 가장 붐비는 시간대의
+      // 동시 인원이 많아지면(예: 특강으로 31명이 한 시간에 몰림) 행 수가 과도하게 늘어나
+      // (ceil(31/2)=16행 → 한 행 3.75분) 글자가 다 안 들어가는 문제가 있었다. 그 날 가장
+      // 붐비는 시간대 인원(peakConcurrency)을 기준으로, 한 시간을 WEEK_MAX_ROWS 행 이내로
+      // 유지할 수 있는 최소 perRow를 역산한다 — 붐빌수록 한 행에 더 많이(가로로) 배치하고
+      // 대신 행(세로) 수는 낮게 유지해 각 행의 세로 공간을 확보한다. 일 보기는 기존 10 고정.
+      const WEEK_MAX_ROWS = 4
+      const WEEK_BASE_PER_ROW = 2
+      const peakConcurrency = Math.max(0, ...[...rankByHour.values()].map((m) => m.size))
+      const perRow = isDay
+        ? 10
+        : Math.max(WEEK_BASE_PER_ROW, Math.ceil(peakConcurrency / WEEK_MAX_ROWS))
 
       // FullCalendar 는 같은 시작/종료 시각을 갖는 이벤트들의 좌우 배치 순서를 eventOrder
       // prop(아래 JSX, extendedProps.order 기준)으로 결정한다 — 그 시간대의 압축된
