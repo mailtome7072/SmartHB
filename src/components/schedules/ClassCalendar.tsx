@@ -143,7 +143,7 @@ export default function ClassCalendar({
   const calendarRef = useRef<FullCalendar>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [viewType, setViewType] = useState('timeGridWeek')
+  const [viewType, setViewType] = useState('dayGridMonth')
   const [title, setTitle] = useState('')
 
   const isTimeGrid = viewType.startsWith('timeGrid')
@@ -526,7 +526,7 @@ export default function ClassCalendar({
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin]}
-          initialView="timeGridWeek"
+          initialView="dayGridMonth"
           initialDate={`${data.yearMonth}-01`}
           locale={koLocale}
           firstDay={0}
