@@ -48,8 +48,11 @@ const STYLE = `
   tr { page-break-inside: avoid; }
   @media print {
     body { background: #fff; }
-    @page { size: A4 portrait; margin: 12mm; }
-    .print-root { padding: 0; }
+    /* margin: 0 — 브라우저 기본 머리글/바닥글(출력일시·페이지 제목 등)은 여백 공간에
+       그려지므로 여백을 없애면 함께 사라진다. 대신 .print-root 자체 padding으로
+       여백을 재현한다(완전 제어는 인쇄 대화상자 "머리글/바닥글" 옵션 몫). */
+    @page { size: A4 portrait; margin: 0; }
+    .print-root { padding: 12mm; }
   }
 `
 
