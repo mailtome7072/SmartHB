@@ -34,16 +34,17 @@ const STYLE = `
   .print-header { display: flex; align-items: baseline; justify-content: flex-end; margin-bottom: 4mm; }
   .print-academy { font-size: 12pt; color: #333; }
   .print-title { text-align: center; font-size: 22pt; font-weight: bold; letter-spacing: 4px; margin-bottom: 10mm; }
-  table { width: 100%; border-collapse: collapse; }
+  table { width: 100%; border-collapse: collapse; table-layout: auto; }
   th, td {
     border: 1pt solid #333;
-    padding: 5pt 8pt;
+    padding: 5pt 6pt;
     text-align: center;
-    font-size: 12pt;
+    font-size: 11pt;
+    white-space: nowrap;
   }
-  thead th { background: #f0f0f0; font-weight: 700; }
+  thead th { background: #f0f0f0; font-weight: 700; font-size: 10.5pt; }
   td.roster-name { text-align: center; font-weight: 600; }
-  td.roster-remark { text-align: left; }
+  td.roster-remark { text-align: left; white-space: normal; }
   tr { page-break-inside: avoid; }
   @media print {
     body { background: #fff; }
