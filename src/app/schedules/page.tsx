@@ -161,7 +161,7 @@ export default function SchedulesPage() {
           )}
 
           {tab === 'makeup' && (
-            <div className="h-full overflow-auto">
+            <div className="h-full">
               <MakeupManagementView
                 yearMonth={yearMonth}
                 search=""

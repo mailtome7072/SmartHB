@@ -49,8 +49,8 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
   }
 
   return (
-    <section className="py-4">
-      <p className="mb-3 text-base text-gray-700">
+    <section className="flex h-full flex-col py-4">
+      <p className="mb-3 shrink-0 text-base text-gray-700">
         보강이 필요한 원생을 소멸기한이 임박한 순으로 표시합니다. 실제 보강 등록은
         &ldquo;출결관리 이동&rdquo; 버튼으로 이동해 진행하세요.
       </p>
@@ -64,16 +64,16 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
       )}
 
       {students.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--border)]">
           <table className="w-full text-left text-base">
-            <thead className="bg-gray-50 text-sm text-gray-600">
+            <thead className="sticky top-0 bg-gray-50 text-sm text-gray-600">
               <tr>
-                <th className="px-4 py-3">원생</th>
-                <th className="px-4 py-3">일련번호</th>
-                <th className="px-4 py-3">잔여 보강필요시간</th>
-                <th className="px-4 py-3">소멸기한</th>
-                <th className="px-4 py-3">상태</th>
-                <th className="px-4 py-3">관리</th>
+                <th className="px-4 py-2">원생</th>
+                <th className="px-4 py-2">일련번호</th>
+                <th className="px-4 py-2">잔여 보강필요시간</th>
+                <th className="px-4 py-2">소멸기한</th>
+                <th className="px-4 py-2">상태</th>
+                <th className="px-4 py-2">관리</th>
               </tr>
             </thead>
             <tbody>
@@ -86,16 +86,16 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
                       : 'border-t border-gray-100'
                   }
                 >
-                  <td className="px-4 py-3 font-medium">
+                  <td className="px-4 py-2 font-medium">
                     {s.studentName}
                     {s.withdrawDate !== null && (
                       <span className="ml-1 text-xs text-muted-foreground">(퇴교)</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{s.serialNo}</td>
-                  <td className="px-4 py-3">{minutesToHoursText(s.remainingMinutes)}시간</td>
-                  <td className="px-4 py-3 text-gray-700">{s.earliestDeadline ?? '미확정'}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2 text-gray-600">{s.serialNo}</td>
+                  <td className="px-4 py-2">{minutesToHoursText(s.remainingMinutes)}시간</td>
+                  <td className="px-4 py-2 text-gray-700">{s.earliestDeadline ?? '미확정'}</td>
+                  <td className="px-4 py-2">
                     {s.isImminent ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-1 text-sm font-semibold text-amber-900">
                         ⚠ 소멸 임박
@@ -104,11 +104,11 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
                       <span className="text-sm text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2">
                     <button
                       type="button"
                       onClick={() => goToAttendance(s.studentName)}
-                      className="min-h-[44px] rounded-md border-2 border-[var(--accent)] px-3 text-base font-semibold text-[var(--accent)] hover:bg-blue-50"
+                      className="min-h-[40px] rounded-md border-2 border-[var(--accent)] px-3 text-base font-semibold text-[var(--accent)] hover:bg-blue-50"
                     >
                       출결관리 이동
                     </button>
