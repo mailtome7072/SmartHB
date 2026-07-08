@@ -128,6 +128,9 @@ const STYLE = `
   .print-dow { text-align: center; font-size: 13pt; font-weight: 600; background: #f0f0f0; }
   .print-outside { color: #bbb; background: #fafafa; }
   .print-in-period { background: #fff8e1; }
+  /* 기간성 학사일정 밴드 — 셀 위에 패널을 덧대면 셀 사이 테두리에 틈이 보여, 대신 해당
+     기간에 속한 셀들의 배경색 자체를 칠해 인접 셀 사이 이질감 없이 이어져 보이게 한다. */
+  .print-band { background: rgba(173, 214, 240, 0.45); }
   .print-day-num { display: block; position: relative; z-index: 1; font-size: 15pt; font-weight: 700; margin-bottom: 2pt; }
   .print-sun { color: #dc2626; }
   .print-sat { color: #2563eb; }
@@ -139,14 +142,11 @@ const STYLE = `
   .print-teach-r { border-right: 2.5pt solid #E03131 !important; }
   .print-teach-b { border-bottom: 2.5pt solid #E03131 !important; }
   .print-teach-l { border-left: 2.5pt solid #E03131 !important; }
-  .print-band-fill {
-    position: absolute; inset: 1pt; z-index: 0;
-    background: rgba(173, 214, 240, 0.45);
-    display: flex; align-items: center; justify-content: center;
-  }
   .print-band-label {
+    display: flex; position: absolute; inset: 0; z-index: 0;
+    align-items: center; justify-content: center;
     font-size: 13pt; font-weight: 700; color: #1e3a8a;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   @media print {
     body { background: #fff; }
@@ -260,11 +260,8 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
 
             const dowClass = cell.dow === 0 ? 'print-sun' : cell.dow === 6 ? 'print-sat' : ''
             const bandsHtml = cellBands
-              .map((band) => {
-                const showLabel = bandLabelDate.get(band.id) === ds
-                const label = escapeHtml(band.display_name ?? band.code_name)
-                return `<div class="print-band-fill">${showLabel ? `<span class="print-band-label">${label}</span>` : ''}</div>`
-              })
+              .filter((band) => bandLabelDate.get(band.id) === ds)
+              .map((band) => `<span class="print-band-label">${escapeHtml(band.display_name ?? band.code_name)}</span>`)
               .join('')
             const eventsHtml = dayEvents
               .map((ev) => {
@@ -274,7 +271,8 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
               })
               .join('')
 
-            return `<td class="print-cell ${cell.outsideMonth ? 'print-outside' : ''} ${inPeriod ? 'print-in-period' : ''} ${outlineClasses}">${bandsHtml}<span class="print-day-num ${dowClass}">${cell.day}</span>${eventsHtml}</td>`
+            const bandClass = cellBands.length > 0 ? 'print-band' : ''
+            return `<td class="print-cell ${cell.outsideMonth ? 'print-outside' : ''} ${inPeriod ? 'print-in-period' : ''} ${bandClass} ${outlineClasses}">${bandsHtml}<span class="print-day-num ${dowClass}">${cell.day}</span>${eventsHtml}</td>`
           })
           .join('')
         return `<tr>${cellsHtml}</tr>`
@@ -309,6 +307,20 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
     ${monthsHtml}
   </div>
   <script>
+    // 인쇄/취소와 무관하게 대화상자가 닫히면(afterprint) 이 창은 용도를 다했으므로 스스로 닫는다.
+    // 일반 window.close()는 window.open()으로 연 창에만 허용되는 브라우저 정책 때문에 이 창
+    // (Tauri WebviewWindow로 생성)에는 통하지 않아, tauri.conf.json의 withGlobalTauri로 노출된
+    // window.__TAURI__ 를 통해 Tauri 창 자체를 직접 닫는다.
+    function closeThisWindow() {
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window) {
+          window.__TAURI__.window.getCurrentWindow().close()
+          return
+        }
+      } catch (e) {}
+      window.close()
+    }
+    window.addEventListener('afterprint', closeThisWindow)
     window.addEventListener('load', function () {
       if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(function () { window.print() })
