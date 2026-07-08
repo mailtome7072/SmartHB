@@ -300,6 +300,35 @@ export default function ClassCalendar({
           })
         }
       }
+
+      // 사용자 요청 — 동시 인원이 perRow(주 2/일 10) 미만이어도 FullCalendar가 겹치는
+      // 이벤트 수만큼 폭을 균등분할해버려 매 시간대마다 칩 너비가 들쭉날쭉했다. 항상
+      // perRow 칸 기준으로 앞에서부터 채우고 나머지는 빈 칸으로 남도록, 부족한 칸 수만큼
+      // 투명한 필러 이벤트를 같은 시간대에 추가해 FullCalendar의 겹침 분할 폭을 고정한다.
+      // 앞선 실제 이벤트들 뒤에 push 되므로(동일 시작/종료 시 배열 순서가 tie-break)
+      // 항상 맨 뒤(오른쪽) 칸에 배치된다.
+      for (const [hour, maxCol] of maxColumnByHour) {
+        const columnsInHour = maxCol + 1
+        const rowsNeeded = Math.max(1, Math.ceil(columnsInHour / perRow))
+        const rowHeightMin = 60 / rowsNeeded
+        const lastRowGroup = rowsNeeded - 1
+        const colsInLastRowGroup = columnsInHour - lastRowGroup * perRow
+        const fillerCount = perRow - colsInLastRowGroup
+        if (fillerCount <= 0) continue
+        const hourIso = `${day.eventDate}T${String(hour).padStart(2, '0')}:00:00`
+        const startIso = shiftIso(hourIso, lastRowGroup * rowHeightMin)
+        const endIso = shiftIso(hourIso, lastRowGroup * rowHeightMin + rowHeightMin)
+        for (let i = 0; i < fillerCount; i++) {
+          result.push({
+            start: startIso,
+            end: endIso,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            editable: false,
+            extendedProps: { kind: 'filler' },
+          })
+        }
+      }
     }
     return result
   }, [data, isTimeGrid, viewType])
@@ -451,6 +480,13 @@ export default function ClassCalendar({
               arg.el.style.borderRadius = '0'
               arg.el.style.boxSizing = 'border-box'
             }
+            // 폭 고정용 필러 — 완전히 투명·비인터랙티브 처리(빈 칸처럼 보이게).
+            if (arg.event.extendedProps.kind === 'filler') {
+              arg.el.style.backgroundColor = 'transparent'
+              arg.el.style.border = 'none'
+              arg.el.style.boxShadow = 'none'
+              arg.el.style.pointerEvents = 'none'
+            }
           }}
           height="100%"
           expandRows
@@ -569,6 +605,8 @@ export default function ClassCalendar({
           eventContent={(arg) => {
             // hover 강조용 background 이벤트는 extendedProps가 없어 콘텐츠 렌더링 대상이 아님.
             if (arg.event.display === 'background') return null
+            // 폭 고정용 필러 — 빈 칸으로 보이도록 콘텐츠 없음.
+            if (arg.event.extendedProps.kind === 'filler') return null
             const { studentName, classMinutes, slotIndex, totalSlots, classStartTime } =
               arg.event.extendedProps as {
                 studentName: string
