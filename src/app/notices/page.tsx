@@ -1167,7 +1167,7 @@ function NoticesContent() {
                 <ul className="min-h-0 flex-1 overflow-y-auto">
                   {bills.map((b) => (
                     <li key={b.id}>
-                      <label className="flex min-h-[32px] cursor-pointer items-center gap-2 py-0.5 pr-6 text-base">
+                      <label className="flex min-h-[32px] cursor-pointer items-center gap-2 py-0.5 pr-6 text-sm">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(b.id)}
@@ -1175,7 +1175,7 @@ function NoticesContent() {
                           className="h-5 w-5"
                         />
                         <span className="font-medium">{b.studentName}</span>
-                        <span className="ml-auto text-sm text-gray-600">
+                        <span className="ml-auto text-xs text-gray-600">
                           {b.adjustedAmount.toLocaleString()}원
                         </span>
                       </label>
