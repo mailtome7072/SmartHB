@@ -535,7 +535,7 @@ export default function ClassCalendar({
             if (arg.event.extendedProps.kind === 'group') {
               const students = (arg.event.extendedProps as { students: unknown[] }).students
               const rows = Math.ceil(students.length / 3)
-              const neededPx = Math.max(0, rows * 18 + 4)
+              const neededPx = Math.max(0, rows * 22 + 8)
               arg.el.style.height = `max(100%, ${neededPx}px)`
               arg.el.style.overflow = 'visible'
               arg.el.style.zIndex = '3'
@@ -692,7 +692,7 @@ export default function ClassCalendar({
                         key={`${st.studentId}-${i}`}
                         role="button"
                         tabIndex={0}
-                        className="cursor-pointer truncate rounded px-1 text-center text-[12px] font-semibold hover:underline"
+                        className="block cursor-pointer truncate rounded px-1 text-center text-[12px] font-semibold leading-[20px] hover:underline"
                         style={{ backgroundColor: c.bg, color: c.text }}
                         onClick={(ev) => {
                           ev.stopPropagation()
