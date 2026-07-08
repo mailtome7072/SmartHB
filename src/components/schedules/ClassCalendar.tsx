@@ -425,7 +425,7 @@ export default function ClassCalendar({
         chip.title = `${label} ${st.classMinutes / 60}시간`
         chip.style.cssText =
           `display:block;font-size:12px;font-weight:600;color:${color.text};background-color:${color.bg};` +
-          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;' +
+          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;text-align:center;' +
           'border-radius:3px;padding:0 2px;'
         container.appendChild(chip)
       }
