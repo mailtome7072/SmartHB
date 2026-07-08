@@ -75,7 +75,7 @@ impl SchoolLevel {
         }
     }
 
-    fn from_db_code(s: &str) -> Result<Self, AppError> {
+    pub(crate) fn from_db_code(s: &str) -> Result<Self, AppError> {
         match s {
             "elementary" => Ok(Self::Elementary),
             "middle" => Ok(Self::Middle),
@@ -128,8 +128,8 @@ impl StudentSort {
             Self::NameDesc => "ORDER BY name DESC",
             Self::GradeAsc => "ORDER BY school_level ASC, grade ASC, name ASC",
             Self::GradeDesc => "ORDER BY school_level DESC, grade DESC, name ASC",
-            Self::EnrollDateAsc => "ORDER BY enroll_date ASC, id ASC",
-            Self::EnrollDateDesc => "ORDER BY enroll_date DESC, id DESC",
+            Self::EnrollDateAsc => "ORDER BY enroll_date ASC, name ASC",
+            Self::EnrollDateDesc => "ORDER BY enroll_date DESC, name ASC",
             Self::GenderAsc => "ORDER BY gender ASC, name ASC",
             Self::GenderDesc => "ORDER BY gender DESC, name ASC",
             Self::WeeklyHoursAsc => "ORDER BY weekly_hours ASC, name ASC",
@@ -860,6 +860,9 @@ mod tests {
             StudentSort::GenderDesc.order_by_sql(),
             StudentSort::WeeklyHoursAsc.order_by_sql(),
             StudentSort::WeeklyHoursDesc.order_by_sql(),
+            // Sprint 19 sprint-review F3: 등록일자 정렬도 id 순이 아닌 이름순 tie-break.
+            StudentSort::EnrollDateAsc.order_by_sql(),
+            StudentSort::EnrollDateDesc.order_by_sql(),
         ] {
             assert!(sql.ends_with("name ASC"), "tie-break 누락: {sql}");
         }

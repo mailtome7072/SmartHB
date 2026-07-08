@@ -430,7 +430,9 @@ pub struct AttendanceGridStudent {
     pub name: String,
     pub serial_no: String,
     /// Sprint 19 T2(사용자 요청 1번) — 그리드 기본 정렬(학년별+이름) 판단 및 프론트 표시용.
-    pub school_level: String,
+    /// Sprint 19 sprint-review F4: 검증되지 않은 raw String 대신 `SchoolLevel` enum으로
+    /// 파싱해, DB에 예기치 못한 값이 들어와도 조용히 통과시키지 않고 에러로 드러낸다.
+    pub school_level: crate::commands::students::SchoolLevel,
     pub grade: i64,
     pub schedule_days: Vec<i64>,
     /// Sprint 9 Session #10 I8 — 클라이언트가 비수업일 셀 "+" 표시 조건 판단에 사용.
@@ -604,7 +606,9 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
         let student_id: i64 = srow.try_get("id").map_err(|e| e.to_string())?;
         let name: String = srow.try_get("name").map_err(|e| e.to_string())?;
         let serial_no: String = srow.try_get("serial_no").map_err(|e| e.to_string())?;
-        let school_level: String = srow.try_get("school_level").map_err(|e| e.to_string())?;
+        let school_level_raw: String = srow.try_get("school_level").map_err(|e| e.to_string())?;
+        let school_level = crate::commands::students::SchoolLevel::from_db_code(&school_level_raw)
+            .map_err(|e| e.to_string())?;
         let grade: i64 = srow.try_get("grade").map_err(|e| e.to_string())?;
         let enroll_date: String = srow.try_get("enroll_date").map_err(|e| e.to_string())?;
         let withdraw_date: Option<String> =
@@ -1981,7 +1985,7 @@ mod tests {
         let s = &grid.students[0];
         assert_eq!(s.student_id, sid);
         assert_eq!(s.serial_no, "S001");
-        assert_eq!(s.school_level, "elementary");
+        assert_eq!(s.school_level, crate::commands::students::SchoolLevel::Elementary);
         assert_eq!(s.grade, 3);
         assert_eq!(s.schedule_days, vec![1, 3]);
         assert!(!s.attendances.is_empty());
@@ -2018,9 +2022,15 @@ mod tests {
         // 먼저 등록됐지만 중학생인 sid_first 가 뒤로, 나중에 등록됐지만 초등학생인
         // sid_second 가 앞으로 — 등록순이 아닌 school_level 기준 정렬 증명.
         assert_eq!(grid.students[0].student_id, sid_second);
-        assert_eq!(grid.students[0].school_level, "elementary");
+        assert_eq!(
+            grid.students[0].school_level,
+            crate::commands::students::SchoolLevel::Elementary
+        );
         assert_eq!(grid.students[1].student_id, sid_first);
-        assert_eq!(grid.students[1].school_level, "middle");
+        assert_eq!(
+            grid.students[1].school_level,
+            crate::commands::students::SchoolLevel::Middle
+        );
     }
 
     // ─────── Session #12 K1' — earliest_pending_absence_date ───────

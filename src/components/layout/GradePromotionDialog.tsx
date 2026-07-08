@@ -25,6 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { ErrorDialog } from '@/components/ui/error-dialog'
 
 let gradePromotionAttempted = false
 
@@ -32,6 +33,7 @@ export function GradePromotionDialog() {
   const unlocked = useSessionStore((s) => s.unlocked)
   const [prompt, setPrompt] = useState<{ count: number } | null>(null)
   const [promoting, setPromoting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!unlocked || gradePromotionAttempted) return
@@ -49,41 +51,51 @@ export function GradePromotionDialog() {
   }, [unlocked])
 
   return (
-    <AlertDialog
-      open={prompt !== null}
-      onOpenChange={(open) => {
-        if (!open) setPrompt(null)
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>학년 자동 승급</AlertDialogTitle>
-          <AlertDialogDescription>
-            올해 <strong>{prompt?.count}명</strong>의 학년이 자동으로 상향됩니다
-            (초등학교 6학년, 중학교 3학년은 제외).
-            <br />
-            진행하시겠습니까?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={promoting}>취소</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={async (e) => {
-              e.preventDefault()
-              setPromoting(true)
-              try {
-                await promoteGrades()
-                setPrompt(null)
-              } finally {
-                setPromoting(false)
-              }
-            }}
-            disabled={promoting}
-          >
-            {promoting ? '처리 중...' : '진행'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <>
+      <AlertDialog
+        open={prompt !== null}
+        onOpenChange={(open) => {
+          if (!open) setPrompt(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>학년 자동 승급</AlertDialogTitle>
+            <AlertDialogDescription>
+              올해 <strong>{prompt?.count}명</strong>의 학년이 자동으로 상향됩니다
+              (초등학교 6학년, 중학교 3학년은 제외).
+              <br />
+              진행하시겠습니까?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={promoting}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault()
+                setPromoting(true)
+                try {
+                  await promoteGrades()
+                  setPrompt(null)
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : String(err))
+                } finally {
+                  setPromoting(false)
+                }
+              }}
+              disabled={promoting}
+            >
+              {promoting ? '처리 중...' : '진행'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <ErrorDialog
+        open={error !== null && error !== ''}
+        title="학년 승급 실패"
+        message={error ?? ''}
+        onClose={() => setError(null)}
+      />
+    </>
   )
 }
