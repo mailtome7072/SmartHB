@@ -256,15 +256,29 @@ export default function ClassCalendar({
           totalSlots: Math.max(1, Math.ceil(it.s.classMinutes / 60)),
         }))
 
-      // 시간(hour, 0~23)별 실제 사용 중인 최대 column — 2xN/10xN 재배치의 행 수 산정 기준.
+      // 시간(hour, 0~23)별 실제 사용 중인 최대 column·점유된 column 집합.
+      // maxColumnByHour: 2xN/10xN 재배치 행 수 산정 기준.
+      // occupiedByHour: 그 시간대에 실제로 어떤 column 이 채워져 있는지 — 다른 시간대엔
+      // 사용되지만 이 시간대엔 비어있는 "중간에 뜬 칸"(예: 3~5시 원생이 끝나고 5~6시엔
+      // 그 칸이 비는 경우)까지 필러로 정확히 메우기 위해 필요하다(단순히 "부족한 개수"만
+      // 세면 뒤쪽에만 채워져 중간 빈 칸이 있는 시간대에서 칩들이 왼쪽으로 쏠려버린다).
       const maxColumnByHour = new Map<number, number>()
+      const occupiedByHour = new Map<number, Set<number>>()
       for (const { column, startHour, totalSlots } of ordered) {
         for (let h = 0; h < totalSlots; h++) {
           const hour = startHour + h
           maxColumnByHour.set(hour, Math.max(maxColumnByHour.get(hour) ?? 0, column))
+          const set = occupiedByHour.get(hour) ?? new Set<number>()
+          set.add(column)
+          occupiedByHour.set(hour, set)
         }
       }
 
+      // FullCalendar 는 같은 시작/종료 시각을 갖는 이벤트들의 좌우 배치 순서를 eventOrder
+      // prop(아래 JSX, extendedProps.order 기준)으로 결정한다 — column 값을 그대로 넘겨
+      // "몇 번째 칸에 실제로 무엇이 있는가"와 무관하게 항상 동일한 칸이 동일한 위치에
+      // 오도록 고정한다(배열 push 순서에 의존하던 이전 방식은 시간대별로 실제 점유 column
+      // 이 들쭉날쭉하면 상대 순서가 밀려 칩이 잘못된 칸에 표시되는 문제가 있었다).
       for (const { s, column, startHour, totalSlots } of ordered) {
         const c = colorForDuration(s.classMinutes)
         for (let h = 0; h < totalSlots; h++) {
@@ -296,36 +310,36 @@ export default function ClassCalendar({
               slotIndex: h,
               totalSlots,
               classStartTime: s.startTime!,
+              order: column,
             },
           })
         }
       }
 
       // 사용자 요청 — 동시 인원이 perRow(주 2/일 10) 미만이어도 FullCalendar가 겹치는
-      // 이벤트 수만큼 폭을 균등분할해버려 매 시간대마다 칩 너비가 들쭉날쭉했다. 항상
-      // perRow 칸 기준으로 앞에서부터 채우고 나머지는 빈 칸으로 남도록, 부족한 칸 수만큼
-      // 투명한 필러 이벤트를 같은 시간대에 추가해 FullCalendar의 겹침 분할 폭을 고정한다.
-      // 앞선 실제 이벤트들 뒤에 push 되므로(동일 시작/종료 시 배열 순서가 tie-break)
-      // 항상 맨 뒤(오른쪽) 칸에 배치된다.
+      // 이벤트 수만큼 폭을 균등분할해버려 매 시간대마다 칩 너비가 들쭉날쭉했다. 이 시간대에
+      // 비어있는 모든 column(중간에 뜬 칸 포함)마다 정확히 그 위치에 투명 필러를 채워
+      // 넣어 항상 perRow 칸 기준의 고정 폭이 되도록 한다.
       for (const [hour, maxCol] of maxColumnByHour) {
         const columnsInHour = maxCol + 1
         const rowsNeeded = Math.max(1, Math.ceil(columnsInHour / perRow))
         const rowHeightMin = 60 / rowsNeeded
-        const lastRowGroup = rowsNeeded - 1
-        const colsInLastRowGroup = columnsInHour - lastRowGroup * perRow
-        const fillerCount = perRow - colsInLastRowGroup
-        if (fillerCount <= 0) continue
+        const occupied = occupiedByHour.get(hour) ?? new Set<number>()
         const hourIso = `${day.eventDate}T${String(hour).padStart(2, '0')}:00:00`
-        const startIso = shiftIso(hourIso, lastRowGroup * rowHeightMin)
-        const endIso = shiftIso(hourIso, lastRowGroup * rowHeightMin + rowHeightMin)
-        for (let i = 0; i < fillerCount; i++) {
+        // rowsNeeded*perRow 칸 전부를 훑어 비어있는 칸(중간에 뜬 칸 + 마지막 행의 꼬리)마다
+        // 필러를 채운다 — 실제 사용 범위(columnsInHour) 밖의 칸도 마지막 행의 나머지로 포함.
+        for (let col = 0; col < rowsNeeded * perRow; col++) {
+          if (col < columnsInHour && occupied.has(col)) continue
+          const rowGroup = Math.floor(col / perRow)
+          const startIso = shiftIso(hourIso, rowGroup * rowHeightMin)
+          const endIso = shiftIso(hourIso, rowGroup * rowHeightMin + rowHeightMin)
           result.push({
             start: startIso,
             end: endIso,
             backgroundColor: 'transparent',
             borderColor: 'transparent',
             editable: false,
-            extendedProps: { kind: 'filler' },
+            extendedProps: { kind: 'filler', order: col },
           })
         }
       }
@@ -492,6 +506,14 @@ export default function ClassCalendar({
           expandRows
           // 일 보기 개별 블록을 겹치지 않고 나란히 배치(같은 시간대 여러 원생).
           slotEventOverlap={false}
+          // 같은 시작/종료 시각을 갖는 이벤트들의 좌우 배치 순서 — 배열 push 순서 대신
+          // extendedProps.order(=column, events useMemo 참조)로 고정해, 시간대마다 실제
+          // 점유 column 이 달라도 항상 같은 column 이 같은 위치에 오게 한다.
+          eventOrder={(a: unknown, b: unknown) => {
+            const oa = (a as { extendedProps: { order?: number } }).extendedProps.order ?? -1
+            const ob = (b as { extendedProps: { order?: number } }).extendedProps.order ?? -1
+            return oa - ob
+          }}
           slotDuration="01:00:00"
           slotLabelInterval="01:00:00"
           slotLabelContent={(arg) => {
