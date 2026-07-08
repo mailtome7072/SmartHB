@@ -256,39 +256,40 @@ export default function ClassCalendar({
           totalSlots: Math.max(1, Math.ceil(it.s.classMinutes / 60)),
         }))
 
-      // 시간(hour, 0~23)별 실제 사용 중인 최대 column·점유된 column 집합.
-      // maxColumnByHour: 2xN/10xN 재배치 행 수 산정 기준.
-      // occupiedByHour: 그 시간대에 실제로 어떤 column 이 채워져 있는지 — 다른 시간대엔
-      // 사용되지만 이 시간대엔 비어있는 "중간에 뜬 칸"(예: 3~5시 원생이 끝나고 5~6시엔
-      // 그 칸이 비는 경우)까지 필러로 정확히 메우기 위해 필요하다(단순히 "부족한 개수"만
-      // 세면 뒤쪽에만 채워져 중간 빈 칸이 있는 시간대에서 칩들이 왼쪽으로 쏠려버린다).
-      const maxColumnByHour = new Map<number, number>()
-      const occupiedByHour = new Map<number, Set<number>>()
+      // 시간(hour, 0~23)별 실제 참여 중인 column 목록 — 오름차순 정렬 후 그 안에서의
+      // 순번(rank)을 그 시간대의 실제 렌더링 위치로 쓴다. 원래 column 값(하루 전체 기준
+      // greedy 배정, 값이 듬성듬성할 수 있음)을 그대로 쓰면 다른 원생이 먼저 끝나 빈
+      // column 이 생겼을 때 그 자리가 필러로 남아 "중간에 뜬 칸"이 생긴다 — 사용자 요청:
+      // 이전 시간대 위치는 고려하지 말고 그 시간대 실제 인원만으로 앞에서부터 채운다.
+      const columnsByHour = new Map<number, number[]>()
       for (const { column, startHour, totalSlots } of ordered) {
         for (let h = 0; h < totalSlots; h++) {
           const hour = startHour + h
-          maxColumnByHour.set(hour, Math.max(maxColumnByHour.get(hour) ?? 0, column))
-          const set = occupiedByHour.get(hour) ?? new Set<number>()
-          set.add(column)
-          occupiedByHour.set(hour, set)
+          const arr = columnsByHour.get(hour) ?? []
+          arr.push(column)
+          columnsByHour.set(hour, arr)
         }
+      }
+      const rankByHour = new Map<number, Map<number, number>>()
+      for (const [hour, cols] of columnsByHour) {
+        const sorted = [...new Set(cols)].sort((a, b) => a - b)
+        rankByHour.set(hour, new Map(sorted.map((col, rank) => [col, rank])))
       }
 
       // FullCalendar 는 같은 시작/종료 시각을 갖는 이벤트들의 좌우 배치 순서를 eventOrder
-      // prop(아래 JSX, extendedProps.order 기준)으로 결정한다 — column 값을 그대로 넘겨
-      // "몇 번째 칸에 실제로 무엇이 있는가"와 무관하게 항상 동일한 칸이 동일한 위치에
-      // 오도록 고정한다(배열 push 순서에 의존하던 이전 방식은 시간대별로 실제 점유 column
-      // 이 들쭉날쭉하면 상대 순서가 밀려 칩이 잘못된 칸에 표시되는 문제가 있었다).
+      // prop(아래 JSX, extendedProps.order 기준)으로 결정한다 — 그 시간대의 압축된
+      // rank(위 rankByHour)를 넘겨 항상 앞에서부터 빈틈없이 채워지도록 한다.
       for (const { s, column, startHour, totalSlots } of ordered) {
         const c = colorForDuration(s.classMinutes)
         for (let h = 0; h < totalSlots; h++) {
           const hour = startHour + h
-          const columnsInHour = (maxColumnByHour.get(hour) ?? 0) + 1
+          const rank = rankByHour.get(hour)!.get(column)!
+          const countInHour = rankByHour.get(hour)!.size
           // 행 높이를 60분/필요행수로 나눠 몇 명이 겹치든 실제 시(hour) 경계를 넘지 않는다.
-          // columnsInHour<=perRow(분할 불필요)면 rowsNeeded=1, rowGroup=0, rowHeightMin=60로
+          // countInHour<=perRow(분할 불필요)면 rowsNeeded=1, rowGroup=0, rowHeightMin=60로
           // 자연히 수렴해 "분할 없음"이 별도 분기 없이 이 공식의 특수 경우가 된다.
-          const rowsNeeded = Math.max(1, Math.ceil(columnsInHour / perRow))
-          const rowGroup = Math.floor(column / perRow)
+          const rowsNeeded = Math.max(1, Math.ceil(countInHour / perRow))
+          const rowGroup = Math.floor(rank / perRow)
           const rowHeightMin = 60 / rowsNeeded
 
           const slotStart = addMinutes(s.startTime!, h * 60)
@@ -310,27 +311,23 @@ export default function ClassCalendar({
               slotIndex: h,
               totalSlots,
               classStartTime: s.startTime!,
-              order: column,
+              order: rank,
             },
           })
         }
       }
 
       // 사용자 요청 — 동시 인원이 perRow(주 2/일 10) 미만이어도 FullCalendar가 겹치는
-      // 이벤트 수만큼 폭을 균등분할해버려 매 시간대마다 칩 너비가 들쭉날쭉했다. 이 시간대에
-      // 비어있는 모든 column(중간에 뜬 칸 포함)마다 정확히 그 위치에 투명 필러를 채워
-      // 넣어 항상 perRow 칸 기준의 고정 폭이 되도록 한다.
-      for (const [hour, maxCol] of maxColumnByHour) {
-        const columnsInHour = maxCol + 1
-        const rowsNeeded = Math.max(1, Math.ceil(columnsInHour / perRow))
+      // 이벤트 수만큼 폭을 균등분할해버려 매 시간대마다 칩 너비가 들쭉날쭉했다. 실제 인원
+      // (앞에서부터 압축 배치)만큼만 채우고 나머지 뒤쪽 칸은 투명 필러로 채워 항상 perRow
+      // 칸 기준의 고정 폭이 되도록 한다 — 필러는 항상 맨 뒤(중간에 끼지 않음).
+      for (const [hour, rankMap] of rankByHour) {
+        const countInHour = rankMap.size
+        const rowsNeeded = Math.max(1, Math.ceil(countInHour / perRow))
         const rowHeightMin = 60 / rowsNeeded
-        const occupied = occupiedByHour.get(hour) ?? new Set<number>()
         const hourIso = `${day.eventDate}T${String(hour).padStart(2, '0')}:00:00`
-        // rowsNeeded*perRow 칸 전부를 훑어 비어있는 칸(중간에 뜬 칸 + 마지막 행의 꼬리)마다
-        // 필러를 채운다 — 실제 사용 범위(columnsInHour) 밖의 칸도 마지막 행의 나머지로 포함.
-        for (let col = 0; col < rowsNeeded * perRow; col++) {
-          if (col < columnsInHour && occupied.has(col)) continue
-          const rowGroup = Math.floor(col / perRow)
+        for (let rank = countInHour; rank < rowsNeeded * perRow; rank++) {
+          const rowGroup = Math.floor(rank / perRow)
           const startIso = shiftIso(hourIso, rowGroup * rowHeightMin)
           const endIso = shiftIso(hourIso, rowGroup * rowHeightMin + rowHeightMin)
           result.push({
@@ -339,7 +336,7 @@ export default function ClassCalendar({
             backgroundColor: 'transparent',
             borderColor: 'transparent',
             editable: false,
-            extendedProps: { kind: 'filler', order: col },
+            extendedProps: { kind: 'filler', order: rank },
           })
         }
       }
