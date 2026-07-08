@@ -692,7 +692,7 @@ export default function ClassCalendar({
                         key={`${st.studentId}-${i}`}
                         role="button"
                         tabIndex={0}
-                        className="cursor-pointer truncate rounded px-1 text-[11px] font-semibold hover:underline"
+                        className="cursor-pointer truncate rounded px-1 text-center text-[11px] font-semibold hover:underline"
                         style={{ backgroundColor: c.bg, color: c.text }}
                         onClick={(ev) => {
                           ev.stopPropagation()
