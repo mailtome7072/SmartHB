@@ -1167,7 +1167,7 @@ function NoticesContent() {
                 <ul className="min-h-0 flex-1 overflow-y-auto">
                   {bills.map((b) => (
                     <li key={b.id}>
-                      <label className="flex min-h-[32px] cursor-pointer items-center gap-2 py-0.5 text-base">
+                      <label className="flex min-h-[32px] cursor-pointer items-center gap-2 py-0.5 pr-3 text-base">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(b.id)}
