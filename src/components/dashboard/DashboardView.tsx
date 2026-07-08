@@ -130,13 +130,14 @@ export function DashboardView() {
             <Widget
               title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}
               className="min-h-0 flex-[2]"
+              compact
             >
               {today.isLoading || today.data === undefined ? (
                 <Loading />
               ) : today.data.slots.length === 0 ? (
                 <Empty>오늘은 예정된 수업이 없습니다.</Empty>
               ) : (
-                <ul className="h-full space-y-3 overflow-y-auto">
+                <ul className="h-full space-y-1 overflow-y-auto text-sm">
                   {today.data.slots.map((slot) => (
                     <li key={slot.start_time} className="text-gray-700">
                       <span className="font-bold text-[var(--accent)]">
@@ -151,13 +152,13 @@ export function DashboardView() {
               )}
             </Widget>
 
-            <Widget title="이달의 생일" className="min-h-0 flex-[1]">
+            <Widget title="이달의 생일" className="min-h-0 flex-[1]" compact>
               {birthdays.isLoading || birthdays.data === undefined ? (
                 <Loading />
               ) : birthdays.data.length === 0 ? (
                 <Empty>이달 생일인 원생이 없습니다.</Empty>
               ) : (
-                <div className="flex h-full flex-wrap content-start gap-x-4 gap-y-2 overflow-y-auto text-base text-[var(--foreground)]">
+                <div className="flex h-full flex-wrap content-start gap-x-4 gap-y-1 overflow-y-auto text-sm text-[var(--foreground)]">
                   {birthdays.data.map((b, i) => (
                     <span key={`${b.name}-${b.day}-${i}`}>
                       {b.name}
@@ -365,17 +366,21 @@ function Widget({
   action,
   children,
   className,
+  compact,
 }: {
   title: React.ReactNode
   action?: React.ReactNode
   children: React.ReactNode
   className?: string
+  /** 사용자 요청 — 당일 수업/이달의 생일처럼 데이터가 많은 위젯은 타이틀 밑 여백을 좁혀
+   *  본문 표시 공간을 늘린다. */
+  compact?: boolean
 }) {
   return (
     <section
       className={`flex flex-col rounded-lg border border-[var(--border)] bg-white p-5 ${className ?? ''}`}
     >
-      <div className="mb-4 flex items-center gap-2">
+      <div className={`flex items-center gap-2 ${compact ? 'mb-1' : 'mb-4'}`}>
         {action}
         {/* Sprint 19 사용자 요청 — 패널 타이틀 폰트 17px 지정. */}
         <h2 className="text-[17px] font-bold text-[var(--foreground)]">{title}</h2>
