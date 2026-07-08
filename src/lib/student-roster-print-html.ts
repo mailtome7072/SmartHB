@@ -31,9 +31,6 @@ const STYLE = `
   html, body { height: 100%; }
   body { margin: 0; font-family: Pretendard, -apple-system, sans-serif; background: #e5e7eb; }
   .print-root { padding: 15mm 12mm; background: #fff; }
-  .print-header { display: flex; align-items: baseline; justify-content: flex-end; margin-bottom: 4mm; }
-  .print-academy { font-size: 12pt; color: #333; }
-  .print-title { text-align: center; font-size: 22pt; font-weight: bold; letter-spacing: 4px; margin-bottom: 10mm; }
   table { width: 100%; border-collapse: collapse; table-layout: auto; }
   th, td {
     border: 1pt solid #333;
@@ -42,17 +39,25 @@ const STYLE = `
     font-size: 11pt;
     white-space: nowrap;
   }
-  thead th { background: #f0f0f0; font-weight: 700; font-size: 10.5pt; }
+  /* 사용자 요청 — 학원명·제목을 표 thead 안에 넣어 여러 페이지에 걸쳐 인쇄돼도
+     매 페이지 상단에 동일하게 반복되도록 한다(thead는 페이지가 나뉠 때마다 반복
+     출력되는 표준 인쇄 동작 — 본문 밖에 두면 첫 페이지에만 표시됨). */
+  .print-header-row th { border: none; padding: 0 0 2mm; text-align: right; font-size: 12pt; font-weight: 400; color: #333; }
+  .print-title-row th { border: none; padding: 0 0 6mm; text-align: center; font-size: 22pt; font-weight: bold; letter-spacing: 4px; }
+  thead .print-columns th { background: #f0f0f0; font-weight: 700; font-size: 10.5pt; border: 1pt solid #333; }
   td.roster-name { text-align: center; font-weight: 600; }
   td.roster-remark { text-align: left; white-space: normal; }
   tr { page-break-inside: avoid; }
   @media print {
     body { background: #fff; }
-    /* margin: 0 — 브라우저 기본 머리글/바닥글(출력일시·페이지 제목 등)은 여백 공간에
-       그려지므로 여백을 없애면 함께 사라진다. 대신 .print-root 자체 padding으로
-       여백을 재현한다(완전 제어는 인쇄 대화상자 "머리글/바닥글" 옵션 몫). */
-    @page { size: A4 portrait; margin: 0; }
-    .print-root { padding: 12mm; }
+    /* margin-bottom 여백에 페이지 번호 표시 — 지원 브라우저(Chromium 최신)에서만
+       렌더링되고, 미지원 환경에서는 조용히 무시된다(레이아웃에 영향 없음). */
+    @page {
+      size: A4 portrait;
+      margin: 0 0 14mm 0;
+      @bottom-center { content: "페이지 " counter(page) " / " counter(pages); font-size: 10pt; color: #555; }
+    }
+    .print-root { padding: 12mm 12mm 0; }
   }
 `
 
@@ -85,11 +90,11 @@ export function buildStudentRosterHtml({ students, academyName }: BuildParams): 
 </head>
 <body>
   <div class="print-root">
-    <div class="print-header"><span class="print-academy">${escapeHtml(academyName)}</span></div>
-    <h1 class="print-title">${escapeHtml(title)}</h1>
     <table>
       <thead>
-        <tr>
+        <tr class="print-header-row"><th colspan="6">${escapeHtml(academyName)}</th></tr>
+        <tr class="print-title-row"><th colspan="6">${escapeHtml(title)}</th></tr>
+        <tr class="print-columns">
           <th style="width:7%">번호</th>
           <th style="width:14%">등록일자</th>
           <th style="width:14%">퇴교일자</th>
