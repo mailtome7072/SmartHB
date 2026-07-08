@@ -20,6 +20,7 @@ import { countStudents, listCodes, listStudents } from '@/lib/tauri'
 import type { CodeEntry } from '@/types/code'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { ErrorDialog } from '@/components/ui/error-dialog'
 import { STUDENT_DRAFT_PREFIX } from '@/components/students/student-form'
 import type {
   Gender,
@@ -145,6 +146,28 @@ export default function StudentsPage() {
     return () => window.removeEventListener('focus', recompute)
   }, [students])
 
+  // 수강대장 출력 — 교습일정 인쇄와 동일하게 Tauri 네이티브 창(WebviewWindow)으로
+  // 인쇄 전용 페이지를 연다(브라우저 팝업 차단과 무관, 사용자 설정 변경 불필요).
+  const [printError, setPrintError] = useState<string | null>(null)
+  async function handleRosterPrintClick() {
+    try {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      const existing = await WebviewWindow.getByLabel('roster-print')
+      if (existing !== null) await existing.close()
+      const printWindow = new WebviewWindow('roster-print', {
+        url: 'students/roster-print',
+        title: '수강생대장 인쇄',
+        width: 900,
+        height: 1100,
+      })
+      printWindow.once('tauri://error', (event) => {
+        setPrintError(`인쇄 창을 여는 중 오류가 발생했습니다: ${String(event.payload)}`)
+      })
+    } catch (err) {
+      setPrintError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
       {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일.
@@ -153,18 +176,27 @@ export default function StudentsPage() {
       <div className="mx-auto flex h-full max-w-5xl flex-col leading-tight">
         <header className="mb-4 flex shrink-0 items-center justify-between">
           <h1 className="text-2xl font-bold">원생 관리</h1>
-          <Link
-            href="/students/new"
-            title={hasNewDraft ? '작성하다 만 신규 원생이 있습니다 — 이어서 작성할 수 있어요.' : undefined}
-            className="relative inline-flex h-11 items-center rounded-md bg-[var(--accent)] px-4 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
-          >
-            신규 등록
-            {hasNewDraft && (
-              <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-800">
-                ✎ 작성 중
-              </span>
-            )}
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRosterPrintClick()}
+              className="inline-flex h-11 items-center rounded-md border border-[var(--border)] bg-white px-4 text-base font-medium hover:bg-gray-50"
+            >
+              수강대장 출력
+            </button>
+            <Link
+              href="/students/new"
+              title={hasNewDraft ? '작성하다 만 신규 원생이 있습니다 — 이어서 작성할 수 있어요.' : undefined}
+              className="relative inline-flex h-11 items-center rounded-md bg-[var(--accent)] px-4 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
+            >
+              신규 등록
+              {hasNewDraft && (
+                <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-800">
+                  ✎ 작성 중
+                </span>
+              )}
+            </Link>
+          </div>
         </header>
 
         {/* 사용자 요청 — 필터 영역이 아래 그리드 대비 너무 크게 보여 여백 축소(입력 높이 44px는
@@ -365,6 +397,11 @@ export default function StudentsPage() {
             더 이상 필요 없음. 총원 수만 남김. */}
         <p className="mt-3 shrink-0 text-sm text-gray-600">총 {total} 명</p>
       </div>
+      <ErrorDialog
+        open={printError !== null && printError !== ''}
+        message={printError ?? ''}
+        onClose={() => setPrintError(null)}
+      />
     </AppShell>
   )
 }
