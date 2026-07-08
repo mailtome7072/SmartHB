@@ -45,6 +45,7 @@ import {
   saveNoticePreview,
   showSaveDialog,
 } from '@/lib/tauri'
+import { compareKorean } from '@/hooks/useTableSort'
 import { errMsg } from '@/lib/errors'
 import { renderCalendarImageDataUrl } from '@/lib/calendar-image'
 import {
@@ -65,6 +66,7 @@ import type {
   TextboxConfig,
 } from '@/types/notice'
 import type { Bill } from '@/types/billing'
+import type { SchoolLevel } from '@/types/student'
 
 const FIELD_LABEL: Record<NoticeFieldType, string> = {
   bill_month: '청구월',
@@ -233,6 +235,7 @@ const COLOR_PRESETS: { hex: string; label: string }[] = [
 
 const STUDENT_PANEL_WIDTH = 240 // 원생 패널(청구년월 + 원생 리스트) 고정 너비
 const TEMPLATE_PANEL_WIDTH = 220 // 저장 패널(공지문 이름 + 템플릿 목록) 고정 너비
+const NOTICE_SCHOOL_LEVEL_ORDER: Record<SchoolLevel, number> = { elementary: 0, middle: 1 }
 
 function currentYearMonth(): string {
   const d = new Date()
@@ -296,10 +299,18 @@ function NoticesContent() {
     if (monthOptions.length > 0 && !monthOptions.includes(yearMonth)) setYearMonth(monthOptions[0])
   }, [monthOptions, yearMonth])
 
-  // 청구 원생 (confirmed)
+  // 청구 원생 (confirmed) — 사용자 요청: 학년(학교급 포함)+이름 가나다순 기본 정렬
   const billsQuery = useQuery({ queryKey: ['bills', yearMonth], queryFn: () => listBills(yearMonth) })
   const bills = useMemo(
-    () => (billsQuery.data ?? []).filter((b) => b.status === 'confirmed'),
+    () =>
+      (billsQuery.data ?? [])
+        .filter((b) => b.status === 'confirmed')
+        .sort(
+          (a, b) =>
+            NOTICE_SCHOOL_LEVEL_ORDER[a.studentSchoolLevel] - NOTICE_SCHOOL_LEVEL_ORDER[b.studentSchoolLevel] ||
+            a.studentGrade - b.studentGrade ||
+            compareKorean(a.studentName, b.studentName),
+        ),
     [billsQuery.data],
   )
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -1149,14 +1160,14 @@ function NoticesContent() {
               </p>
             ) : (
               <>
-                <label className="mb-2 flex min-h-[40px] cursor-pointer items-center gap-2 border-b border-[var(--border)] text-base font-medium">
+                <label className="mb-1 flex min-h-[32px] cursor-pointer items-center gap-2 border-b border-[var(--border)] text-base font-medium">
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-5 w-5" />
                   전체 선택 ({selectedIds.size}/{bills.length})
                 </label>
                 <ul className="min-h-0 flex-1 overflow-y-auto">
                   {bills.map((b) => (
                     <li key={b.id}>
-                      <label className="flex min-h-[40px] cursor-pointer items-center gap-2 py-1 text-base">
+                      <label className="flex min-h-[32px] cursor-pointer items-center gap-2 py-0.5 text-base">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(b.id)}
