@@ -239,6 +239,35 @@ export default function ClassCalendar({
         .filter((s) => s.startTime && s.startTime.includes(':'))
         .sort((a, b) => compareKorean(a.studentName, b.studentName))
       if (valid.length === 0) continue
+
+      // 사용자 요청 — 주보기는 월보기와 동일하게 시간 셀 안에서 이름을 3열로 줄바꿈
+      // 표시하고, 인원이 많으면 그 시간(hour) 셀의 높이만 늘어나도록 한다(다른 시간대
+      // 폭은 그대로, 시간을 잘게 쪼개는 방식 대신 셀 높이 확장으로 대응). 일보기는 폭이
+      // 넓어 기존 10xN 열 배치 방식을 그대로 유지한다.
+      if (!isDay) {
+        const byHour = new Map<number, { studentId: number; studentName: string; classMinutes: number }[]>()
+        for (const s of valid) {
+          const startHour = Number(s.startTime!.slice(0, 2))
+          const totalSlots = Math.max(1, Math.ceil(s.classMinutes / 60))
+          for (let h = 0; h < totalSlots; h++) {
+            const hour = startHour + h
+            const arr = byHour.get(hour) ?? []
+            arr.push({ studentId: s.studentId, studentName: s.studentName, classMinutes: s.classMinutes })
+            byHour.set(hour, arr)
+          }
+        }
+        for (const [hour, students] of byHour) {
+          const hourIso = `${day.eventDate}T${String(hour).padStart(2, '0')}:00:00`
+          result.push({
+            start: hourIso,
+            end: shiftIso(hourIso, 60),
+            editable: false,
+            extendedProps: { kind: 'group', students },
+          })
+        }
+        continue
+      }
+
       const items = valid.map((s) => {
         const startMs = new Date(`${day.eventDate}T${toIsoTime(s.startTime)}`).getTime()
         return { s, startMs, endMs: startMs + s.classMinutes * 60000 }
@@ -275,18 +304,8 @@ export default function ClassCalendar({
         rankByHour.set(hour, new Map(sorted.map((col, rank) => [col, rank])))
       }
 
-      // 주보기 perRow 동적 확장 — 사용자 요청. 고정 perRow=2는 하루 중 가장 붐비는 시간대의
-      // 동시 인원이 많아지면(예: 특강으로 31명이 한 시간에 몰림) 행 수가 과도하게 늘어나
-      // (ceil(31/2)=16행 → 한 행 3.75분) 글자가 다 안 들어가는 문제가 있었다. 그 날 가장
-      // 붐비는 시간대 인원(peakConcurrency)을 기준으로, 한 시간을 WEEK_MAX_ROWS 행 이내로
-      // 유지할 수 있는 최소 perRow를 역산한다 — 붐빌수록 한 행에 더 많이(가로로) 배치하고
-      // 대신 행(세로) 수는 낮게 유지해 각 행의 세로 공간을 확보한다. 일 보기는 기존 10 고정.
-      const WEEK_MAX_ROWS = 4
-      const WEEK_BASE_PER_ROW = 2
-      const peakConcurrency = Math.max(0, ...[...rankByHour.values()].map((m) => m.size))
-      const perRow = isDay
-        ? 10
-        : Math.max(WEEK_BASE_PER_ROW, Math.ceil(peakConcurrency / WEEK_MAX_ROWS))
+      // 이 지점 이후로는 항상 일보기(isDay) — 주보기는 위에서 그룹 청크로 처리 후 continue.
+      const perRow = 10
 
       // FullCalendar 는 같은 시작/종료 시각을 갖는 이벤트들의 좌우 배치 순서를 eventOrder
       // prop(아래 JSX, extendedProps.order 기준)으로 결정한다 — 그 시간대의 압축된
@@ -510,6 +529,27 @@ export default function ClassCalendar({
               arg.el.style.boxShadow = 'none'
               arg.el.style.pointerEvents = 'none'
             }
+            // 사용자 요청 — 주보기 시간 셀: 인원이 많으면 그 시간(hour) 셀만 높이가
+            // 늘어나야 하므로, FullCalendar가 강제하는 60분 고정 높이를 벗어나 내용만큼
+            // 자라도록 한다(overflow visible + z-index로 아래 시간대 위에 겹쳐 그림).
+            if (arg.event.extendedProps.kind === 'group') {
+              const students = (arg.event.extendedProps as { students: unknown[] }).students
+              const rows = Math.ceil(students.length / 3)
+              const neededPx = Math.max(0, rows * 18 + 4)
+              arg.el.style.height = `max(100%, ${neededPx}px)`
+              arg.el.style.overflow = 'visible'
+              arg.el.style.zIndex = '3'
+              arg.el.style.backgroundColor = '#ffffff'
+              arg.el.style.border = '1px solid #e5e7eb'
+              arg.el.style.boxShadow = '0 1px 2px rgba(0,0,0,0.08)'
+              // FullCalendar가 시간(hour) 높이만큼만 잘라내는 바깥 harness 래퍼도 함께
+              // 풀어줘야 실제로 셀 밖(아래 시간대 위)으로 자라 보인다.
+              const harness = arg.el.closest<HTMLElement>('.fc-timegrid-event-harness')
+              if (harness) {
+                harness.style.overflow = 'visible'
+                harness.style.zIndex = '3'
+              }
+            }
           }}
           height="100%"
           expandRows
@@ -638,6 +678,35 @@ export default function ClassCalendar({
             if (arg.event.display === 'background') return null
             // 폭 고정용 필러 — 빈 칸으로 보이도록 콘텐츠 없음.
             if (arg.event.extendedProps.kind === 'filler') return null
+            // 사용자 요청 — 주보기: 월보기와 동일하게 이름을 3열 그리드로 줄바꿈 표시.
+            if (arg.event.extendedProps.kind === 'group') {
+              const students = (arg.event.extendedProps as {
+                students: { studentId: number; studentName: string; classMinutes: number }[]
+              }).students
+              return (
+                <div className="grid w-full grid-cols-3 items-start gap-x-1 gap-y-0.5 p-0.5">
+                  {students.map((st, i) => {
+                    const c = colorForDuration(st.classMinutes)
+                    return (
+                      <span
+                        key={`${st.studentId}-${i}`}
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer truncate rounded px-1 text-[11px] font-semibold hover:underline"
+                        style={{ backgroundColor: c.bg, color: c.text }}
+                        onClick={(ev) => {
+                          ev.stopPropagation()
+                          onStudentNameClick(st.studentName)
+                        }}
+                        title={`${st.studentName} ${st.classMinutes / 60}시간`}
+                      >
+                        {st.studentName}
+                      </span>
+                    )
+                  })}
+                </div>
+              )
+            }
             const { studentName, classMinutes, classStartTime } = arg.event.extendedProps as {
               studentName: string
               classMinutes: number
