@@ -9,6 +9,7 @@
     "frontendDist": "../out"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "스마트해법수학",
