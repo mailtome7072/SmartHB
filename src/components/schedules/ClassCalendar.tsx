@@ -626,27 +626,21 @@ export default function ClassCalendar({
             if (arg.event.display === 'background') return null
             // 폭 고정용 필러 — 빈 칸으로 보이도록 콘텐츠 없음.
             if (arg.event.extendedProps.kind === 'filler') return null
-            const { studentName, classMinutes, slotIndex, totalSlots, classStartTime } =
-              arg.event.extendedProps as {
-                studentName: string
-                classMinutes: number
-                slotIndex: number
-                totalSlots: number
-                classStartTime: string
-              }
+            const { studentName, classMinutes, classStartTime } = arg.event.extendedProps as {
+              studentName: string
+              classMinutes: number
+              classStartTime: string
+            }
             const isDay = viewType === 'timeGridDay'
             const hoursLabel = (min: number): string => {
               const h = min / 60
               return Number.isInteger(h) ? `${h}시간` : `${h.toFixed(1)}시간`
             }
-            const isFirst = slotIndex === 0
-            const isLast = slotIndex === totalSlots - 1
-            const multiSlot = totalSlots > 1
             return (
               <div
                 role="button"
                 tabIndex={0}
-                className={`flex h-full cursor-pointer items-center overflow-hidden px-1 py-0.5 font-semibold hover:underline ${isDay ? 'text-base' : 'text-sm'}`}
+                className={`flex h-full cursor-pointer items-center justify-center overflow-hidden px-1 py-0.5 font-semibold hover:underline ${isDay ? 'text-base' : 'text-sm'}`}
                 onClick={(ev) => {
                   ev.stopPropagation()
                   onStudentNameClick(studentName)
@@ -661,20 +655,8 @@ export default function ClassCalendar({
                 onMouseLeave={() => setHovered(null)}
                 title={`${studentName} ${hoursLabel(classMinutes)}`}
               >
-                {/* Sprint 19 T5(사용자 요청 5번): 주보기는 이름만 표시 — 다중슬롯 연결
-                    화살표(↓/↑)와 시간 라벨을 제거. 일보기는 공간이 넉넉해 기존대로 유지. */}
+                {/* 사용자 요청 — 다중슬롯 연결 화살표(↓/↑)·수업시간 라벨 제거, 이름 중앙정렬. */}
                 <span className="truncate">{studentName}</span>
-                {isDay && multiSlot && !isLast && (
-                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↓</span>
-                )}
-                {isDay && multiSlot && !isFirst && (
-                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↑</span>
-                )}
-                {isDay && isFirst && (
-                  <span className="ml-0.5 shrink-0 text-xs font-normal opacity-70">
-                    {hoursLabel(classMinutes)}
-                  </span>
-                )}
               </div>
             )
           }}
