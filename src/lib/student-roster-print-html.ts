@@ -42,6 +42,11 @@ const STYLE = `
   /* 사용자 요청 — 학원명·제목을 표 thead 안에 넣어 여러 페이지에 걸쳐 인쇄돼도
      매 페이지 상단에 동일하게 반복되도록 한다(thead는 페이지가 나뉠 때마다 반복
      출력되는 표준 인쇄 동작 — 본문 밖에 두면 첫 페이지에만 표시됨). */
+  /* 사용자 요청 — 학원명·제목·표 시작 위치가 모든 페이지에서 첫 페이지와 동일해야
+     한다. .print-root의 padding-top은 박스 시작(첫 페이지)에만 적용되고 이후
+     페이지에는 재적용되지 않으므로(CSS 표준 동작), 대신 thead 안의 스페이서 행으로
+     상단 여백을 표현한다 — thead는 페이지마다 그대로 반복되므로 여백도 함께 반복된다. */
+  .print-spacer-row th { border: none; padding: 0; height: 12mm; }
   .print-header-row th { border: none; padding: 0 0 2mm; text-align: right; font-size: 12pt; font-weight: 400; color: #333; }
   .print-title-row th { border: none; padding: 0 0 6mm; text-align: center; font-size: 22pt; font-weight: bold; letter-spacing: 4px; }
   thead .print-columns th { background: #f0f0f0; font-weight: 700; font-size: 10.5pt; border: 1pt solid #333; }
@@ -57,7 +62,7 @@ const STYLE = `
       margin: 0 0 14mm 0;
       @bottom-center { content: "페이지 " counter(page) " / " counter(pages); font-size: 10pt; color: #555; }
     }
-    .print-root { padding: 12mm 12mm 0; }
+    .print-root { padding: 0 12mm; }
   }
 `
 
@@ -92,6 +97,7 @@ export function buildStudentRosterHtml({ students, academyName }: BuildParams): 
   <div class="print-root">
     <table>
       <thead>
+        <tr class="print-spacer-row"><th colspan="6"></th></tr>
         <tr class="print-header-row"><th colspan="6">${escapeHtml(academyName)}</th></tr>
         <tr class="print-title-row"><th colspan="6">${escapeHtml(title)}</th></tr>
         <tr class="print-columns">
