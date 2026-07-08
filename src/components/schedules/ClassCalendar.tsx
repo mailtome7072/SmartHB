@@ -19,6 +19,7 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import koLocale from '@fullcalendar/core/locales/ko'
 import type { DatesSetArg, EventInput } from '@fullcalendar/core'
 import { codeColor } from '@/lib/schedule-code-colors'
+import { compareKorean } from '@/hooks/useTableSort'
 import type { CalendarMonth } from '@/types/calendar'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 
@@ -231,7 +232,13 @@ export default function ClassCalendar({
     const result: EventInput[] = []
     for (const day of data.days) {
       // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
-      const valid = day.regularSessions.filter((s) => s.startTime && s.startTime.includes(':'))
+      // 사용자 요청 — 동시 시작(같은 시각) 원생이 여러 명일 때 열(column) 배정 순서가
+      // 원본 데이터 순서에 좌우되지 않도록 이름 가나다순으로 먼저 정렬한다. assignColumns
+      // 의 동시각 tie-break가 배열 순서를 그대로 쓰므로, 여기서 정렬해두면 열이 항상
+      // 이름순으로 좌→우 배치된다.
+      const valid = day.regularSessions
+        .filter((s) => s.startTime && s.startTime.includes(':'))
+        .sort((a, b) => compareKorean(a.studentName, b.studentName))
       if (valid.length === 0) continue
       const items = valid.map((s) => {
         const startMs = new Date(`${day.eventDate}T${toIsoTime(s.startTime)}`).getTime()
