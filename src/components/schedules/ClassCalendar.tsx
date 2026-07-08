@@ -375,6 +375,27 @@ export default function ClassCalendar({
     return result
   }, [data, isTimeGrid, viewType])
 
+  // 주보기 시간 슬롯(행) 높이 — 사용자 요청: 특정 칸만 넘치게 하지 않고, 그 주에서
+  // 가장 붐비는 시간대(가장 많은 줄이 필요한 셀) 기준으로 모든 요일·시간이 공유하는
+  // 행 높이 자체를 키운다(월보기에서 한 주 전체 행이 함께 늘어나는 것과 동일 원리).
+  // globals.css 의 --shb-week-slot-height 변수를 통해 .fc-timegrid-slot 에 적용된다.
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root) return
+    if (viewType !== 'timeGridWeek') {
+      root.style.removeProperty('--shb-week-slot-height')
+      return
+    }
+    const maxRows = events.reduce((max, e) => {
+      const students = (e.extendedProps as { students?: unknown[] } | undefined)?.students
+      if (!students) return max
+      return Math.max(max, Math.ceil(students.length / 3))
+    }, 1)
+    const ROW_PX = 22
+    const BASE_PX = 8
+    root.style.setProperty('--shb-week-slot-height', `${Math.max(80, maxRows * ROW_PX + BASE_PX)}px`)
+  }, [events, viewType])
+
   // hover 강조용 background 이벤트를 합쳐서 전달.
   const allEvents = useMemo<EventInput[]>(() => {
     if (hovered === null) return events
@@ -529,26 +550,13 @@ export default function ClassCalendar({
               arg.el.style.boxShadow = 'none'
               arg.el.style.pointerEvents = 'none'
             }
-            // 사용자 요청 — 주보기 시간 셀: 인원이 많으면 그 시간(hour) 셀만 높이가
-            // 늘어나야 하므로, FullCalendar가 강제하는 60분 고정 높이를 벗어나 내용만큼
-            // 자라도록 한다(overflow visible + z-index로 아래 시간대 위에 겹쳐 그림).
+            // 주보기 인원 표시 칩 — 셀(시간 행) 자체 높이는 아래 useEffect가 그 주 전체
+            // 기준으로 통일해서 늘려주므로, 여기서는 카드 스타일만 입힌다(경계를 넘는
+            // 강제 높이 override는 다음 시간대와 겹쳐 보이는 문제가 있어 제거함).
             if (arg.event.extendedProps.kind === 'group') {
-              const students = (arg.event.extendedProps as { students: unknown[] }).students
-              const rows = Math.ceil(students.length / 3)
-              const neededPx = Math.max(0, rows * 22 + 8)
-              arg.el.style.height = `max(100%, ${neededPx}px)`
-              arg.el.style.overflow = 'visible'
-              arg.el.style.zIndex = '3'
               arg.el.style.backgroundColor = '#ffffff'
               arg.el.style.border = '1px solid #e5e7eb'
               arg.el.style.boxShadow = '0 1px 2px rgba(0,0,0,0.08)'
-              // FullCalendar가 시간(hour) 높이만큼만 잘라내는 바깥 harness 래퍼도 함께
-              // 풀어줘야 실제로 셀 밖(아래 시간대 위)으로 자라 보인다.
-              const harness = arg.el.closest<HTMLElement>('.fc-timegrid-event-harness')
-              if (harness) {
-                harness.style.overflow = 'visible'
-                harness.style.zIndex = '3'
-              }
             }
           }}
           height="100%"

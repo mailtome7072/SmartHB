@@ -214,9 +214,13 @@
   font-size: 12px;
 }
 
-/* 주 보기 시간 슬롯 높이 — 한 셀에 최대 6명(2열×3행)이 표기되도록 확보. */
+/* 주 보기 시간 슬롯 높이 — 사용자 요청(월보기처럼 셀이 넘치지 않게): 그 주(week)에서
+   가장 붐비는 시간대 기준으로 ClassCalendar.tsx가 --shb-week-slot-height 를 계산해
+   주입한다. 시간그리드는 모든 요일·시간이 같은 행 높이를 공유하므로(월보기의 "그 주
+   전체가 함께 늘어남"과 동일 원리), 특정 칸만 강제로 키워 다음 시간대 위로 넘치게
+   하는 방식(이전 시도) 대신 행 자체를 다같이 키워 경계선을 넘지 않게 한다. */
 .fc-timeGridWeek-view .fc-timegrid-slot {
-  height: 5rem;
+  height: var(--shb-week-slot-height, 5rem);
 }
 
 /* 교습일정 인쇄는 별도 팝업창(src/lib/academic-print-html.ts)에서 독립 문서로 처리 —
