@@ -329,8 +329,8 @@ export function PaymentsView({
         <table className="w-full text-base">
           <thead className="sticky top-0 bg-gray-100 text-left">
             <tr>
-              <th className="px-3 py-2">번호</th>
-              <th className="px-3 py-2">
+              <th className="px-3 py-1">번호</th>
+              <th className="px-3 py-1">
                 <button
                   type="button"
                   onClick={() => toggleSort('name')}
@@ -340,7 +340,7 @@ export function PaymentsView({
                   원생명{indicator('name')}
                 </button>
               </th>
-              <th className="px-3 py-2 text-right">
+              <th className="px-3 py-1 text-right">
                 <button
                   type="button"
                   onClick={() => toggleSort('amount')}
@@ -350,7 +350,7 @@ export function PaymentsView({
                   청구액{indicator('amount')}
                 </button>
               </th>
-              <th className="px-3 py-2">
+              <th className="px-3 py-1">
                 <button
                   type="button"
                   onClick={() => toggleSort('status')}
@@ -360,10 +360,10 @@ export function PaymentsView({
                   완료{indicator('status')}
                 </button>
               </th>
-              <th className="px-3 py-2">입금일</th>
-              <th className="px-3 py-2">입금자</th>
-              <th className="px-3 py-2">결제수단</th>
-              <th className="px-3 py-2">카드사</th>
+              <th className="px-3 py-1">입금일</th>
+              <th className="px-3 py-1">입금자</th>
+              <th className="px-3 py-1">결제수단</th>
+              <th className="px-3 py-1">카드사</th>
             </tr>
           </thead>
           <tbody>
@@ -380,8 +380,8 @@ export function PaymentsView({
                   : ''
               return (
                 <tr key={b.billId} className={`border-t border-[var(--border)] ${rowBg}`}>
-                  <td className="px-3 py-2">{b.studentSerialNo}</td>
-                  <td className="px-3 py-2 font-medium">
+                  <td className="px-3 py-1">{b.studentSerialNo}</td>
+                  <td className="px-3 py-1 font-medium">
                     {b.studentName}
                     {b.midMonthType !== null && (
                       <span className="ml-1 text-xs text-amber-900">
@@ -394,10 +394,10 @@ export function PaymentsView({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-semibold">
+                  <td className="px-3 py-1 text-right font-semibold">
                     {b.adjustedAmount.toLocaleString()}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
                       d.cancel ? (
                         <div className="flex items-center gap-1">
@@ -405,7 +405,7 @@ export function PaymentsView({
                           <button
                             type="button"
                             onClick={() => toggleCancel(b.billId, false)}
-                            className="h-8 rounded border border-[var(--border)] px-2 text-xs text-gray-700 hover:bg-gray-50"
+                            className="h-7 rounded border border-[var(--border)] px-2 text-xs text-gray-700 hover:bg-gray-50"
                           >
                             되돌리기
                           </button>
@@ -416,7 +416,7 @@ export function PaymentsView({
                           <button
                             type="button"
                             onClick={() => toggleCancel(b.billId, true)}
-                            className="h-8 rounded border border-[var(--danger)] px-2 text-xs text-[var(--danger)] hover:bg-red-50"
+                            className="h-7 rounded border border-[var(--danger)] px-2 text-xs text-[var(--danger)] hover:bg-red-50"
                           >
                             수납취소
                           </button>
@@ -432,7 +432,7 @@ export function PaymentsView({
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
                       <span className="text-sm text-gray-700">{b.paidDate ?? '—'}</span>
                     ) : (
@@ -447,11 +447,11 @@ export function PaymentsView({
                           }
                         }}
                         disabled={!d.isPaid}
-                        className="h-9 w-36 rounded border border-[var(--border)] px-2 disabled:bg-gray-100"
+                        className="h-8 w-36 rounded border border-[var(--border)] px-2 disabled:bg-gray-100"
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
                       <span className="text-sm text-gray-700">{b.payerName ?? '—'}</span>
                     ) : (
@@ -461,11 +461,11 @@ export function PaymentsView({
                         value={d.payerName}
                         onChange={(e) => updateDraft(b.billId, { payerName: e.target.value })}
                         placeholder="이름"
-                        className="h-9 w-28 rounded border border-[var(--border)] px-2"
+                        className="h-8 w-28 rounded border border-[var(--border)] px-2"
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
                       <span className="text-sm text-gray-700">{b.paymentMethodLabel ?? '—'}</span>
                     ) : (
@@ -482,7 +482,7 @@ export function PaymentsView({
                                 : d.cardCompanyId,
                           })
                         }
-                        className={`h-9 w-28 rounded border px-2 ${
+                        className={`h-8 w-28 rounded border px-2 ${
                           d.isPaid && d.paymentMethodId === null
                             ? 'border-[var(--danger)]'
                             : 'border-[var(--border)]'
@@ -498,7 +498,7 @@ export function PaymentsView({
                       </select>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
                       <span className="text-sm text-gray-700">{b.cardCompanyLabel ?? '—'}</span>
                     ) : (
@@ -510,7 +510,7 @@ export function PaymentsView({
                           })
                         }
                         disabled={!showCardCompany}
-                        className={`h-9 w-32 rounded border px-2 disabled:bg-gray-100 ${
+                        className={`h-8 w-32 rounded border px-2 disabled:bg-gray-100 ${
                           isCard && d.cardCompanyId === null
                             ? 'border-[var(--danger)]'
                             : 'border-[var(--border)]'
