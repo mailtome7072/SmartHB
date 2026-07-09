@@ -44,6 +44,7 @@
 - Sprint 19: **학년 자동 승급** — 매년 1월 이후 최초 실행 시 확인 다이얼로그 + 전체 원생 일괄 학년 UP. 2026년은 이미 수동 처리 완료로 제외
 - Sprint 19: **학교급 기반 학교 선택 필터링** — 원생 등록/수정 폼에서 학교급 선택 시 해당 학교급의 학교만 드롭다운에 표시. 코드 관리 화면에 `school_type` 편집 UI 추가
 - Sprint 19: **V310 마이그레이션** — `schools.school_type` 텍스트 패턴 기반 자동 보정(초등학교→elementary, 중학교→middle)
+- Sprint 19: **사용 매뉴얼** — 화면별 사용법을 담은 HTML 매뉴얼을 앱 리소스로 번들, 사이드바 "설정"↔"종료" 사이 "매뉴얼" 메뉴 클릭 시 시스템 기본 브라우저로 열람. `src-tauri/resources/manual/`, `tauri.conf.json` bundle.resources 등록
 
 ### Changed
 - Sprint 19: 모든 원생 관련 그리드 기본 정렬을 학년+이름순으로 통일 (원생 목록, 출결, 청구, 수납, 공지문)
