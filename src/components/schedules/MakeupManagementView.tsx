@@ -15,6 +15,34 @@ import { useQuery } from '@tanstack/react-query'
 import { getMakeupManagementData } from '@/lib/tauri'
 import { minutesToHoursText } from '@/lib/time'
 import { useAppStore } from '@/stores/app-store'
+import { compareKorean, useTableSort, withTiebreak } from '@/hooks/useTableSort'
+import type { MakeupManagementStudent } from '@/types/calendar'
+import type { SchoolLevel } from '@/types/student'
+
+type MakeupSortKey = 'name' | 'grade' | 'remaining' | 'deadline' | 'imminent'
+
+const SCHOOL_LEVEL_ORDER: Record<SchoolLevel, number> = { elementary: 0, middle: 1 }
+const LEVEL_LABEL: Record<SchoolLevel, string> = { elementary: '초', middle: '중' }
+
+const nameTiebreak = (a: MakeupManagementStudent, b: MakeupManagementStudent) =>
+  compareKorean(a.studentName, b.studentName)
+
+const MAKEUP_SORT_COMPARATORS: Record<
+  MakeupSortKey,
+  (a: MakeupManagementStudent, b: MakeupManagementStudent) => number
+> = {
+  name: (a, b) => compareKorean(a.studentName, b.studentName),
+  grade: withTiebreak(
+    (a, b) => SCHOOL_LEVEL_ORDER[a.schoolLevel] - SCHOOL_LEVEL_ORDER[b.schoolLevel] || a.grade - b.grade,
+    nameTiebreak,
+  ),
+  remaining: withTiebreak((a, b) => a.remainingMinutes - b.remainingMinutes, nameTiebreak),
+  deadline: withTiebreak(
+    (a, b) => (a.earliestDeadline ?? '9999-99').localeCompare(b.earliestDeadline ?? '9999-99'),
+    nameTiebreak,
+  ),
+  imminent: withTiebreak((a, b) => Number(b.isImminent) - Number(a.isImminent), nameTiebreak),
+}
 
 interface Props {
   yearMonth: string
@@ -33,7 +61,7 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
     queryFn: () => getMakeupManagementData(yearMonth),
   })
 
-  const students = useMemo(() => {
+  const filteredStudents = useMemo(() => {
     const list = query.data ?? []
     const q = search.trim().toLowerCase()
     return list.filter((s) => {
@@ -42,6 +70,12 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
       return true
     })
   }, [query.data, search, enrolledOnly])
+
+  // 사용자 요청 — 컬럼 타이틀 클릭 시 정렬, 기본 정렬은 학년+이름 가나다순.
+  const { sorted: students, toggleSort, indicator } = useTableSort<
+    MakeupManagementStudent,
+    MakeupSortKey
+  >(filteredStudents, MAKEUP_SORT_COMPARATORS, { key: 'grade', direction: 'asc' })
 
   function goToAttendance(studentName: string) {
     setAttendanceSearchPreset(studentName)
@@ -68,11 +102,44 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
           <table className="w-full text-left text-base">
             <thead className="sticky top-0 bg-gray-50 text-sm text-gray-600">
               <tr>
-                <th className="px-4 py-2">원생</th>
+                <th className="px-4 py-2">
+                  <button type="button" onClick={() => toggleSort('name')} className="hover:text-[var(--foreground)]">
+                    원생{indicator('name')}
+                  </button>
+                </th>
                 <th className="px-4 py-2">일련번호</th>
-                <th className="px-4 py-2">잔여 보강필요시간</th>
-                <th className="px-4 py-2">소멸기한</th>
-                <th className="px-4 py-2">상태</th>
+                <th className="px-4 py-2">
+                  <button type="button" onClick={() => toggleSort('grade')} className="hover:text-[var(--foreground)]">
+                    학년{indicator('grade')}
+                  </button>
+                </th>
+                <th className="px-4 py-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('remaining')}
+                    className="hover:text-[var(--foreground)]"
+                  >
+                    잔여 보강필요시간{indicator('remaining')}
+                  </button>
+                </th>
+                <th className="px-4 py-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('deadline')}
+                    className="hover:text-[var(--foreground)]"
+                  >
+                    소멸기한{indicator('deadline')}
+                  </button>
+                </th>
+                <th className="px-4 py-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('imminent')}
+                    className="hover:text-[var(--foreground)]"
+                  >
+                    상태{indicator('imminent')}
+                  </button>
+                </th>
                 <th className="px-4 py-2">관리</th>
               </tr>
             </thead>
@@ -93,6 +160,9 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
                     )}
                   </td>
                   <td className="px-4 py-1 text-gray-600">{s.serialNo}</td>
+                  <td className="px-4 py-1 text-gray-700">
+                    {LEVEL_LABEL[s.schoolLevel]}{s.grade}
+                  </td>
                   <td className="px-4 py-1">{minutesToHoursText(s.remainingMinutes)}시간</td>
                   <td className="px-4 py-1 text-gray-700">{s.earliestDeadline ?? '미확정'}</td>
                   <td className="px-4 py-1">

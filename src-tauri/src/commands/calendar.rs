@@ -58,6 +58,9 @@ pub struct MakeupManagementStudent {
     pub student_id: i64,
     pub student_name: String,
     pub serial_no: String,
+    /// 사용자 요청 — 그리드 기본 정렬(학년+이름) 판단 및 컬럼 표시용.
+    pub grade: i64,
+    pub school_level: crate::commands::students::SchoolLevel,
     /// 잔여 보강필요시간 (분 단위).
     pub remaining_minutes: i64,
     /// 가장 임박한 makeup_deadline (YYYY-MM) — 없으면 None.
@@ -201,12 +204,14 @@ pub(crate) async fn get_makeup_management_data_impl(
             s.name AS student_name, \
             s.serial_no, \
             s.withdraw_date, \
+            s.grade, \
+            s.school_level, \
             COALESCE(SUM(ra.class_minutes), 0) AS remaining_minutes, \
             MIN(ra.makeup_deadline) AS earliest_deadline \
          FROM students s \
          JOIN regular_attendances ra ON ra.student_id = s.id \
          WHERE ra.status = 'absent' AND ra.makeup_attendance_id IS NULL \
-         GROUP BY s.id, s.name, s.serial_no, s.withdraw_date \
+         GROUP BY s.id, s.name, s.serial_no, s.withdraw_date, s.grade, s.school_level \
          HAVING remaining_minutes > 0 \
          ORDER BY earliest_deadline IS NULL, earliest_deadline ASC, s.name",
     )
@@ -263,10 +268,14 @@ pub(crate) async fn get_makeup_management_data_impl(
             false
         };
 
+        let school_level_raw: String = r.try_get("school_level").map_err(|e| e.to_string())?;
         result.push(MakeupManagementStudent {
             student_id: r.try_get("student_id").map_err(|e| e.to_string())?,
             student_name: r.try_get("student_name").map_err(|e| e.to_string())?,
             serial_no: r.try_get("serial_no").map_err(|e| e.to_string())?,
+            grade: r.try_get("grade").map_err(|e| e.to_string())?,
+            school_level: crate::commands::students::SchoolLevel::from_db_code(&school_level_raw)
+                .map_err(|e| e.to_string())?,
             remaining_minutes: r.try_get("remaining_minutes").map_err(|e| e.to_string())?,
             earliest_deadline,
             is_imminent,

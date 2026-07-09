@@ -4,6 +4,8 @@
  * `src-tauri/src/commands/calendar.rs` 와 1:1 정합. camelCase serde rename 적용됨.
  */
 
+import type { SchoolLevel } from '@/types/student'
+
 /** 캘린더 한 달 데이터 — 일자별 수업 목록. */
 export interface CalendarMonth {
   yearMonth: string
@@ -30,6 +32,9 @@ export interface MakeupManagementStudent {
   studentId: number
   studentName: string
   serialNo: string
+  /** 사용자 요청 — 그리드 기본 정렬(학년+이름) 판단 및 컬럼 표시용. */
+  grade: number
+  schoolLevel: SchoolLevel
   /** 잔여 보강필요시간 (분 단위). */
   remainingMinutes: number
   /** 가장 임박한 makeup_deadline (YYYY-MM) — 없으면 null. */
