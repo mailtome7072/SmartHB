@@ -770,9 +770,12 @@ function CellView({
   }
 
   const cls = statusCellClass(cell.status)
+  // 사용자 요청 — 같은 날 보강도 진행된 정규수업 셀은 보강완료(결석)일과 동일한
+  // emerald 배경으로 통일해 다른 정규수업 완료 셀과 구분되게 한다.
+  const cellClass = sameDayMakeup !== undefined ? 'bg-emerald-100 text-emerald-800 font-bold' : cls.cell
   return (
     <td
-      className={`min-w-[44px] cursor-pointer border-b border-r border-[var(--border)] p-0 text-center align-middle ${cls.cell}`}
+      className={`min-w-[44px] cursor-pointer border-b border-r border-[var(--border)] p-0 text-center align-middle ${cellClass}`}
       onClick={() => onClick(cell)}
       onContextMenu={(e) => {
         e.preventDefault()
