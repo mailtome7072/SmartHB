@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] - 2026-07-09
+
 ### Added
 - Sprint 19: **수강생대장 출력** — 원생관리 화면에서 전체 원생 수강 현황을 A4 표 형식으로 인쇄. 매 페이지 반복 헤더 + 페이지 번호, 브라우저 기본 머리글/바닥글 제거. `src/lib/student-roster-print-html.ts` 신규, `src/app/students/roster-print` 신규 라우트
 - Sprint 19: **인쇄 팝업 아키텍처 전환** — 교습일정 인쇄를 기존 같은 창 인쇄 방식에서 Tauri 네이티브 창(`WebviewWindow`) 기반 독립 팝업 인쇄 방식으로 전면 재설계. `src/lib/academic-print-html.ts` 신규, `src/app/academic/print` 신규 라우트, `capabilities/default.json` 권한 추가. 수강생대장 출력도 동일 아키텍처 재사용
