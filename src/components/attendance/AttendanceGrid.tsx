@@ -612,6 +612,9 @@ const StudentRow = memo(function StudentRow({
         const eventDate = `${yearMonth}-${dayKey}`
         // J4: 비수업일 셀에 보강 진행 정보 (해당 일자 makeup 등록 시).
         const makeupOnThisDay = cell === undefined ? makeupsByDay.get(dayKey) : undefined
+        // 사용자 요청 — 정규수업일에 같은 날 보강도 진행된 경우(예: 결석 발생일과 다른
+        // 정규수업일에 보강) 다른 정규수업 완료 셀과 구분되도록 "+보강" 배지 표시.
+        const sameDayMakeup = cell !== undefined ? makeupsByDay.get(dayKey) : undefined
         // I8: 비수업일 셀 사전 판단 — 보강 불가 일자는 "+" 자체 비표시.
         // J4 보강이 있는 비수업일에는 "+" 대신 보강 표기.
         // K1' (Session #12): 만기 미도래 미보강 결석이 이 일자 이전에 있을 때만 "+" 표시.
@@ -638,6 +641,8 @@ const StudentRow = memo(function StudentRow({
           makeupOnThisDay !== undefined
             ? absenceDatesByMakeupId.get(makeupOnThisDay.id)
             : undefined
+        const sameDayMakeupAbsenceHintDates =
+          sameDayMakeup !== undefined ? absenceDatesByMakeupId.get(sameDayMakeup.id) : undefined
         return (
           <CellView
             key={day}
@@ -645,6 +650,8 @@ const StudentRow = memo(function StudentRow({
             makeup={makeupOnThisDay}
             cellMakeupHintDate={cellMakeupHintDate}
             makeupAbsenceHintDates={makeupAbsenceHintDates}
+            sameDayMakeup={sameDayMakeup}
+            sameDayMakeupAbsenceHintDates={sameDayMakeupAbsenceHintDates}
             onClick={handleCellClick}
             onContextMenu={(c) => onCellContextMenu(c, student.studentId)}
             onEmptyCellClick={
@@ -672,6 +679,10 @@ interface CellViewProps {
   cellMakeupHintDate?: string
   /** Sprint 9 Session #10 J8 — 보강 셀 hover 시 충당 결석 일자 목록. */
   makeupAbsenceHintDates?: string[]
+  /** 사용자 요청 — 정규수업일에 같은 날 보강도 진행된 경우의 보강 정보("+보강" 배지). */
+  sameDayMakeup?: GridMakeupCell
+  /** 같은 날 보강 배지 hover 시 충당 결석 일자 목록. */
+  sameDayMakeupAbsenceHintDates?: string[]
   onClick: (cell: AttendanceCell) => void
   onContextMenu: (cell: AttendanceCell) => void
   /** Sprint 9 T6 — 비수업일(=cell null) 클릭 시 호출 (보강 등록 진입). */
@@ -689,6 +700,8 @@ function CellView({
   makeup,
   cellMakeupHintDate,
   makeupAbsenceHintDates,
+  sameDayMakeup,
+  sameDayMakeupAbsenceHintDates,
   onClick,
   onContextMenu,
   onEmptyCellClick,
@@ -765,16 +778,23 @@ function CellView({
         e.preventDefault()
         onContextMenu(cell)
       }}
-      title={cellTooltip(cell, cellMakeupHintDate)}
+      title={cellTooltip(cell, cellMakeupHintDate, sameDayMakeup, sameDayMakeupAbsenceHintDates)}
     >
       <button
         type="button"
-        aria-label={`${cell.eventDate} ${cls.label}`}
-        className="block h-[44px] w-full min-w-[44px] text-base"
+        aria-label={`${cell.eventDate} ${cls.label}${sameDayMakeup !== undefined ? ' + 보강 진행' : ''}`}
+        className="block h-[44px] w-full min-w-[44px] leading-tight text-base"
       >
         {cls.label}
         {cell.absenceMemo !== null && cell.status === 'absent' && (
           <span className="ml-0.5 text-xs">*</span>
+        )}
+        {/* 사용자 요청 — 정규수업일에 같은 날 보강도 진행된 경우 다른 정규수업 완료
+            셀과 구분되도록 작은 배지 표시. */}
+        {sameDayMakeup !== undefined && (
+          <span className="block text-[10px] font-semibold leading-tight text-emerald-700">
+            +보강
+          </span>
         )}
       </button>
     </td>
@@ -824,7 +844,12 @@ function completedTooltip(student: AttendanceGridStudent): string | undefined {
   return lines.join('\n')
 }
 
-function cellTooltip(cell: AttendanceCell, makeupHintDate?: string): string {
+function cellTooltip(
+  cell: AttendanceCell,
+  makeupHintDate?: string,
+  sameDayMakeup?: GridMakeupCell,
+  sameDayMakeupAbsenceHintDates?: string[],
+): string {
   // Session #10 J5/J8 — makeup_done 셀은 "결석" 표시 + hover 시 매칭 보강일자 노출.
   // Session #10 J9 — 줄바꿈으로 가독성 향상.
   const parts: string[] = [cell.eventDate]
@@ -844,5 +869,17 @@ function cellTooltip(cell: AttendanceCell, makeupHintDate?: string): string {
   if (cell.note !== null) parts.push(cell.note)
   if (cell.absenceMemo !== null) parts.push(`메모: ${cell.absenceMemo}`)
   if (cell.makeupDeadline !== null) parts.push(`소멸기한: ${cell.makeupDeadline}`)
+  // 사용자 요청 — 같은 날 정규수업 + 보강이 함께 진행된 경우 "+보강" 배지의 상세 설명.
+  if (sameDayMakeup !== undefined) {
+    parts.push(`보강 진행 (${minutesToHoursText(sameDayMakeup.classMinutes)}시간)`)
+    if (sameDayMakeupAbsenceHintDates !== undefined && sameDayMakeupAbsenceHintDates.length > 0) {
+      if (sameDayMakeupAbsenceHintDates.length === 1) {
+        parts.push(`충당 결석: ${sameDayMakeupAbsenceHintDates[0]}`)
+      } else {
+        parts.push('충당 결석:')
+        for (const d of sameDayMakeupAbsenceHintDates) parts.push(`  ${d}`)
+      }
+    }
+  }
   return parts.join('\n')
 }
