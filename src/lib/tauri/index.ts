@@ -84,6 +84,7 @@ import type {
   StudentSchedule,
 } from '@/types/schedule'
 import type {
+  GradePromotionCheck,
   NewStudent,
   Student,
   StudentFilter,
@@ -203,6 +204,24 @@ export async function quitApp(): Promise<void> {
   const inv = await getInvoke()
   if (!inv) return
   await inv('quit_app')
+}
+
+/**
+ * 앱에 번들된 사용 매뉴얼(HTML)을 시스템 기본 브라우저로 연다.
+ *
+ * 사이드바 "매뉴얼" 메뉴가 호출. 개발 모드(Tauri 없이 브라우저 실행)에서는
+ * 리소스 경로 해석이 불가능하므로 동작하지 않는다.
+ */
+export async function openManual(): Promise<void> {
+  if (typeof window === 'undefined') return
+  try {
+    const { resolveResource } = await import('@tauri-apps/api/path')
+    const { open } = await import('@tauri-apps/plugin-shell')
+    const path = await resolveResource('resources/manual/index.html')
+    await open(path)
+  } catch {
+    // 브라우저 환경 (Tauri 없이 실행 시) — 동작하지 않음
+  }
 }
 
 /**
@@ -618,6 +637,20 @@ export async function countStudents(filter: StudentFilter = {}): Promise<number>
   return inv('count_students', { filter }) as Promise<number>
 }
 
+/** Sprint 19 T8 — 올해 학년 자동 승급이 필요한지 조회 (조회 전용, DB 변경 없음). */
+export async function checkGradePromotion(): Promise<GradePromotionCheck> {
+  const inv = await getInvoke()
+  if (!inv) return { needed: false, count: 0 }
+  return inv('check_grade_promotion') as Promise<GradePromotionCheck>
+}
+
+/** Sprint 19 T8 — 학년 승급 일괄 실행 (사용자 확인 다이얼로그 승인 후에만 호출). 승급된 인원수 반환. */
+export async function promoteGrades(): Promise<number> {
+  const inv = await getInvoke()
+  if (!inv) return 0
+  return inv('promote_grades') as Promise<number>
+}
+
 // ----------------------------------------------------------------------------
 // Sprint 2 — 수업 스케줄
 // ----------------------------------------------------------------------------
@@ -786,6 +819,7 @@ export async function createCode(table: CodeTable, payload: NewCode): Promise<Co
       id: 0,
       code: payload.code,
       label: payload.label ?? payload.code,
+      extra: payload.extra ?? null,
       sort_order: payload.sort_order ?? 0,
       is_active: true,
     }
@@ -804,6 +838,7 @@ export async function updateCode(
       id,
       code: payload.label,
       label: payload.label,
+      extra: payload.extra ?? null,
       sort_order: payload.sort_order,
       is_active: payload.is_active,
     }

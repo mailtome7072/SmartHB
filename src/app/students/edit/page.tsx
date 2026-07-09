@@ -148,14 +148,16 @@ function StudentDetailContent() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-3xl">
+      {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-3xl leading-tight">
+        {/* 사용자 요청 — 여백 축소로 간결하게 정리 (mb-4→mb-3, mb-6→mb-4). */}
         <Link
           href="/students"
-          className="mb-4 inline-flex min-h-[44px] items-center gap-1 rounded-md border border-[var(--border)] bg-white px-3 py-2 text-base text-[var(--foreground)] hover:bg-gray-50"
+          className="mb-3 inline-flex min-h-[44px] items-center gap-1 rounded-md border border-[var(--border)] bg-white px-3 py-2 text-base text-[var(--foreground)] hover:bg-gray-50"
         >
           ← 원생관리 메인
         </Link>
-        <h1 className="mb-6 text-2xl font-bold">원생 상세 / 수정</h1>
+        <h1 className="mb-4 text-2xl font-bold">원생 상세 / 수정</h1>
 
         {justCreated && student !== undefined && student.withdraw_date === null && (
           <p

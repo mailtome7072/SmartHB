@@ -50,6 +50,9 @@ function BillingContent() {
     searchResults,
     summary,
   } = useBillingShared()
+  // 사용자 요청 — 수납관리와 동일한 ← 이전/다음 → 년월 네비게이터로 통일.
+  // monthOptions 는 최신순 정렬(sort b>a) — index 0 이 최신월, 마지막이 최과거월.
+  const monthIdx = monthOptions.indexOf(effectiveYearMonth)
 
   const billsQuery = useQuery({
     queryKey: ['bills', effectiveYearMonth],
@@ -87,28 +90,42 @@ function BillingContent() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-6xl">
-        <h1 className="mb-4 text-2xl font-bold">청구 관리</h1>
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일 + 그리드 좌우/상하 스크롤 지원을
+          위해 flex h-full flex-col로 변경(출결/원생관리와 동일 패턴). 그리드 외 요소는 shrink-0. */}
+      <div className="mx-auto flex h-full max-w-6xl flex-col leading-tight">
+        <h1 className="mb-4 shrink-0 text-2xl font-bold">청구 관리</h1>
 
         {/* 툴바 — 월 선택 + 검색 + 상태 필터 + 액션 버튼 */}
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <label className="text-base font-medium">
-            청구년월
-            <select
-              value={effectiveYearMonth}
-              onChange={(e) => setYearMonth(e.target.value)}
-              className="ml-2 h-11 rounded-md border border-[var(--border)] px-3 text-base"
+        <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="이전 달"
+              disabled={monthIdx >= monthOptions.length - 1}
+              onClick={() => {
+                const prevYm = monthOptions[monthIdx + 1]
+                if (prevYm !== undefined) setYearMonth(prevYm)
+              }}
+              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {monthOptions.includes(effectiveYearMonth) ? null : (
-                <option value={effectiveYearMonth}>{effectiveYearMonth}</option>
-              )}
-              {monthOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
+              ← 이전
+            </button>
+            <span className="min-w-[7rem] text-center text-lg font-bold text-[var(--foreground)]">
+              {effectiveYearMonth.slice(0, 4)}년 {Number(effectiveYearMonth.slice(5, 7))}월
+            </span>
+            <button
+              type="button"
+              aria-label="다음 달"
+              disabled={monthIdx <= 0}
+              onClick={() => {
+                const nextYm = monthOptions[monthIdx - 1]
+                if (nextYm !== undefined) setYearMonth(nextYm)
+              }}
+              className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-3 py-2 text-base hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              다음 →
+            </button>
+          </div>
 
           <BillingSearchBar
             searchInput={searchInput}
@@ -171,31 +188,37 @@ function BillingContent() {
         {draftCount > 0 && (
           <div
             role="status"
-            className="mb-3 rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900"
+            className="mb-3 shrink-0 rounded-md border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900"
           >
             미확정 청구가 <strong>{draftCount}건</strong> 있습니다. 검토 후 확정해 주세요.
           </div>
         )}
 
-        {summary && <BillingSummaryBar summary={summary} />}
+        {summary && (
+          <div className="shrink-0">
+            <BillingSummaryBar summary={summary} />
+          </div>
+        )}
 
-        {billsQuery.isLoading && <p>불러오는 중...</p>}
+        {billsQuery.isLoading && <p className="shrink-0">불러오는 중...</p>}
 
         {!billsQuery.isLoading && bills.length === 0 && !showGenerateButton && (
-          <p className="text-gray-600">청구 데이터가 없습니다.</p>
+          <p className="shrink-0 text-gray-600">청구 데이터가 없습니다.</p>
         )}
 
         {bills.length > 0 && (
-          <BillingGrid
-            bills={bills.filter((b) => {
-              if (matchedStudentIds !== null && !matchedStudentIds.has(b.studentId)) return false
-              if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
-              if (billFilter === 'draft' && b.status !== 'draft') return false
-              return true
-            })}
-            yearMonth={effectiveYearMonth}
-            onError={(msg) => setError(msg)}
-          />
+          <div className="min-h-0 flex-1">
+            <BillingGrid
+              bills={bills.filter((b) => {
+                if (matchedStudentIds !== null && !matchedStudentIds.has(b.studentId)) return false
+                if (billFilter === 'confirmed' && b.status !== 'confirmed') return false
+                if (billFilter === 'draft' && b.status !== 'draft') return false
+                return true
+              })}
+              yearMonth={effectiveYearMonth}
+              onError={(msg) => setError(msg)}
+            />
+          </div>
         )}
       </div>
 

@@ -50,7 +50,8 @@ impl CodeTable {
     fn list_sql(self) -> &'static str {
         match self {
             Self::Schools => {
-                "SELECT id, name AS code, name AS label, sort_order, is_active \
+                // Sprint 19 T9: school_type 을 extra 로 노출 — 원생 폼의 학교급 필터링에 사용.
+                "SELECT id, name AS code, name AS label, school_type AS extra, sort_order, is_active \
                  FROM schools ORDER BY sort_order ASC, name ASC LIMIT ? OFFSET ?"
             }
             Self::PaymentMethods => {
@@ -78,7 +79,7 @@ impl CodeTable {
             Self::Schools => {
                 "INSERT INTO schools (name, school_type, sort_order, is_active) \
                  VALUES (?, COALESCE(?, 'etc'), ?, 1) \
-                 RETURNING id, name AS code, name AS label, sort_order, is_active"
+                 RETURNING id, name AS code, name AS label, school_type AS extra, sort_order, is_active"
             }
             Self::PaymentMethods => {
                 "INSERT INTO payment_methods (code, label, display_order, is_active) \
@@ -96,10 +97,12 @@ impl CodeTable {
     fn update_sql(self) -> &'static str {
         match self {
             Self::Schools => {
-                "UPDATE schools SET name = ?, sort_order = ?, is_active = ?, \
+                // Sprint 19 T9: school_type 도 수정 가능 — NULL(미지정) 이면 기존 값 유지.
+                "UPDATE schools SET name = ?, school_type = COALESCE(?, school_type), \
+                    sort_order = ?, is_active = ?, \
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
                  WHERE id = ? \
-                 RETURNING id, name AS code, name AS label, sort_order, is_active"
+                 RETURNING id, name AS code, name AS label, school_type AS extra, sort_order, is_active"
             }
             Self::PaymentMethods => {
                 "UPDATE payment_methods SET label = ?, display_order = ?, is_active = ? \
@@ -121,6 +124,9 @@ pub struct CodeEntry {
     pub id: i64,
     pub code: String,
     pub label: String,
+    /// Sprint 19 T9: schools 는 school_type. payment_methods/card_companies 는
+    /// 해당 컬럼이 SELECT 절에 없어 항상 None.
+    pub extra: Option<String>,
     pub sort_order: i64,
     pub is_active: bool,
 }
@@ -132,6 +138,7 @@ impl CodeEntry {
             id: row.try_get("id")?,
             code: row.try_get("code")?,
             label: row.try_get("label")?,
+            extra: row.try_get("extra").ok(),
             sort_order: row.try_get("sort_order")?,
             is_active: is_active != 0,
         })
@@ -152,11 +159,13 @@ pub struct NewCode {
 
 /// 수정 payload — PUT-like.
 ///
-/// - schools: `label` 이 학교명으로 사용됨 (code 변경 없음 — schools.name 이 UNIQUE PK 역할)
-/// - payment_methods / card_companies: code 는 변경 불가 (UNIQUE), label/sort_order/is_active 만 수정
+/// - schools: `label` 이 학교명으로 사용됨 (code 변경 없음 — schools.name 이 UNIQUE PK 역할).
+///   `extra` = school_type 변경값(Sprint 19 T9), None 이면 기존 값 유지
+/// - payment_methods / card_companies: code 는 변경 불가 (UNIQUE), label/sort_order/is_active 만 수정 (`extra` 무시)
 #[derive(Debug, Deserialize)]
 pub struct CodeUpdate {
     pub label: String,
+    pub extra: Option<String>,
     pub sort_order: i64,
     pub is_active: bool,
 }
@@ -249,11 +258,17 @@ pub async fn update_code(
     payload: CodeUpdate,
 ) -> Result<CodeEntry, String> {
     let pool = db::pool().map_err(String::from)?;
-    let row = sqlx::query(table.update_sql())
-        .bind(&payload.label)
+    // bind 순서는 각 테이블 update_sql() 의 `?` 순서와 대응: schools 만 `extra`(school_type)
+    // 파라미터가 label 다음에 하나 더 끼어든다 — label, [extra], sort_order, is_active, id.
+    let mut q = sqlx::query(table.update_sql()).bind(&payload.label);
+    if table == CodeTable::Schools {
+        q = q.bind(payload.extra.as_deref());
+    }
+    q = q
         .bind(payload.sort_order)
         .bind(if payload.is_active { 1 } else { 0 })
-        .bind(id)
+        .bind(id);
+    let row = q
         .fetch_optional(pool)
         .await
         .map_err(|e| map_code_unique(&payload.label, table, e))
@@ -367,6 +382,99 @@ mod tests {
         assert_eq!(entry.code, "테스트초");
         assert_eq!(entry.sort_order, 5);
         assert!(entry.is_active);
+    }
+
+    // ------------------------------------------------------------------------
+    // Sprint 19 T9 — school_type(extra) 조회/생성/수정
+    // ------------------------------------------------------------------------
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn list_schools_exposes_school_type_as_extra() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        sqlx::query(
+            "INSERT INTO schools (name, school_type, sort_order, is_active) \
+             VALUES ('테스트중', 'middle', 1, 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let rows = sqlx::query(CodeTable::Schools.list_sql())
+            .bind(DEFAULT_LIST_LIMIT)
+            .bind(0u32)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let entry = CodeEntry::from_row(rows.last().unwrap()).unwrap();
+        assert_eq!(entry.extra.as_deref(), Some("middle"));
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn create_school_stores_school_type_from_extra() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let row = sqlx::query(CodeTable::Schools.insert_sql())
+            .bind("신규초등학교")
+            .bind(Some("elementary"))
+            .bind(1i64)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let entry = CodeEntry::from_row(&row).unwrap();
+        assert_eq!(entry.extra.as_deref(), Some("elementary"));
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn update_school_changes_school_type() {
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let created = sqlx::query(CodeTable::Schools.insert_sql())
+            .bind("이전학교")
+            .bind(Some("etc"))
+            .bind(1i64)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let id: i64 = created.try_get("id").unwrap();
+
+        let updated = sqlx::query(CodeTable::Schools.update_sql())
+            .bind("이전학교")
+            .bind(Some("middle"))
+            .bind(2i64)
+            .bind(1i64)
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let entry = CodeEntry::from_row(&updated).unwrap();
+        assert_eq!(entry.extra.as_deref(), Some("middle"));
+    }
+
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn update_school_keeps_school_type_when_extra_is_none() {
+        // COALESCE(?, school_type) — extra 미지정(None) 시 기존 값 유지.
+        let pool = db::test_pool_in_memory().await.expect("인메모리 pool");
+        let created = sqlx::query(CodeTable::Schools.insert_sql())
+            .bind("유지학교")
+            .bind(Some("elementary"))
+            .bind(1i64)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let id: i64 = created.try_get("id").unwrap();
+
+        let updated = sqlx::query(CodeTable::Schools.update_sql())
+            .bind("유지학교")
+            .bind(None::<String>)
+            .bind(3i64)
+            .bind(1i64)
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let entry = CodeEntry::from_row(&updated).unwrap();
+        assert_eq!(entry.extra.as_deref(), Some("elementary"), "extra=None 이면 기존 유지");
     }
 
     // ------------------------------------------------------------------------

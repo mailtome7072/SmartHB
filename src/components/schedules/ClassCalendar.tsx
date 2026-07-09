@@ -19,6 +19,7 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import koLocale from '@fullcalendar/core/locales/ko'
 import type { DatesSetArg, EventInput } from '@fullcalendar/core'
 import { codeColor } from '@/lib/schedule-code-colors'
+import { compareKorean } from '@/hooks/useTableSort'
 import type { CalendarMonth } from '@/types/calendar'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 
@@ -108,12 +109,17 @@ function colorForDuration(classMinutes: number): { bg: string; border: string; t
  * 하루 기준 겹치는 시간대 열 배정 — Google Calendar 식 greedy interval packing.
  * 같은 열은 서로 시간이 겹치지 않도록 보장 → 한 원생의 여러 시간대 조각(다중 슬롯 칩)이
  * 항상 동일한 열에 배치되어 주/일 보기에서 세로로 이어지는 시각적 일관성을 유지한다.
- * overlapTotal: 이 항목과 직접 겹치는 항목들 중 사용된 최대 열 수(+1) — 2 초과 시 2열×N행 재배치 필요.
+ *
+ * Sprint 19 T5(2xN 버그 근본 수정): 이전에는 이 함수가 "이 항목과 직접 겹치는 항목들 중
+ * 최대 열 번호"로 `overlapTotal`을 계산해 2열×N행 재배치 여부를 결정했으나, 이 값은
+ * 아이템별 pairwise 최대치라 실제 "같은 시(hour) 안에 동시에 존재하는 인원 수"와
+ * 다를 수 있었다(체인형 겹침에서 값이 부풀려짐). 그 결과 시간대별 실제 밀집도를 초과하는
+ * 행(row) 수가 계산되어, 30분 고정 오프셋이 60분을 넘어가면서 실제 다음 시간대의
+ * 이벤트와 충돌했다(다수 원생 시 3명+ 동시 노출). 이제 이 함수는 순수하게 column만
+ * 반환하고, 실제 2xN 재배치에 필요한 "시간대(hour)별 사용 컬럼 수"는 호출부에서
+ * 별도로 hour 단위 집계로 계산한다 — 근본 원인 제거.
  */
-function assignColumns(items: { startMs: number; endMs: number }[]): Array<{
-  column: number
-  overlapTotal: number
-}> {
+function assignColumns(items: { startMs: number; endMs: number }[]): Array<{ column: number }> {
   const order = items.map((_, i) => i).sort((a, b) => items[a].startMs - items[b].startMs || a - b)
   const columnEndMs: number[] = []
   const column: number[] = new Array(items.length).fill(0)
@@ -124,15 +130,7 @@ function assignColumns(items: { startMs: number; endMs: number }[]): Array<{
     column[i] = col
     columnEndMs[col] = it.endMs
   }
-  return items.map((it, i) => {
-    let maxCol = column[i]
-    for (let j = 0; j < items.length; j++) {
-      if (j === i) continue
-      const o = items[j]
-      if (it.startMs < o.endMs && o.startMs < it.endMs) maxCol = Math.max(maxCol, column[j])
-    }
-    return { column: column[i], overlapTotal: maxCol + 1 }
-  })
+  return items.map((_, i) => ({ column: column[i] }))
 }
 
 export default function ClassCalendar({
@@ -145,7 +143,7 @@ export default function ClassCalendar({
   const calendarRef = useRef<FullCalendar>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [viewType, setViewType] = useState('timeGridWeek')
+  const [viewType, setViewType] = useState('dayGridMonth')
   const [title, setTitle] = useState('')
 
   const isTimeGrid = viewType.startsWith('timeGrid')
@@ -221,40 +219,114 @@ export default function ClassCalendar({
 
   // 주/일 보기 공통: 원생별 1시간 슬롯 이벤트 — 2h+ 수업은 슬롯마다 칩 생성(동일 색상, 이슈 4).
   //   하루 단위로 겹치는 시간대의 열을 미리 배정(assignColumns)해 다중 슬롯 원생이 항상
-  //   동일한 열에 표시되도록 보장한다. 겹침 2명까지는 FullCalendar 자동 균등 폭 배분(이슈 3)에
-  //   맡기고, 3명 이상이면 30분 단위로 나눠 2열×N행으로 재배치한다.
+  //   동일한 열에 표시되도록 보장한다. 한 시간(hour) 안에 실제 사용 중인 컬럼 수가
+  //   기준(주보기 2, 일보기 10)을 넘으면 그 시간을 N등분해 2/10열×N행으로 재배치한다
+  //   (사용자 요청 5·6번). 등분 폭은 항상 "그 시간대 안"에서만 계산 — 다중 시간 수업이
+  //   여러 시간에 걸쳐도 특정 시간대의 밀집도가 다른 시간대로 새어나가 충돌하지 않는다
+  //   (Sprint 19 T5 근본 수정, 상세는 assignColumns 주석 참조).
   const events = useMemo<EventInput[]>(() => {
     if (!isTimeGrid) return []
-    // 일 보기는 하루 전체 폭을 쓸 수 있어 2열×N행 재배치가 불필요 — 겹쳐도 한 행에 모두 표시.
+    // 일 보기는 하루 전체 폭이 넓어 10명까지는 재배치 불필요 — 사용자 요청 6번(10xN).
     const isDay = viewType === 'timeGridDay'
     const result: EventInput[] = []
     for (const day of data.days) {
       // 시작시간 미상(null/빈값/형식이상)은 시간 슬롯 배치 불가 → 주/일 뷰 생략(월 뷰 '시간미정').
-      const valid = day.regularSessions.filter((s) => s.startTime && s.startTime.includes(':'))
+      // 사용자 요청 — 동시 시작(같은 시각) 원생이 여러 명일 때 열(column) 배정 순서가
+      // 원본 데이터 순서에 좌우되지 않도록 이름 가나다순으로 먼저 정렬한다. assignColumns
+      // 의 동시각 tie-break가 배열 순서를 그대로 쓰므로, 여기서 정렬해두면 열이 항상
+      // 이름순으로 좌→우 배치된다.
+      const valid = day.regularSessions
+        .filter((s) => s.startTime && s.startTime.includes(':'))
+        .sort((a, b) => compareKorean(a.studentName, b.studentName))
       if (valid.length === 0) continue
+
+      // 사용자 요청 — 주보기는 월보기와 동일하게 시간 셀 안에서 이름을 3열로 줄바꿈
+      // 표시하고, 인원이 많으면 그 시간(hour) 셀의 높이만 늘어나도록 한다(다른 시간대
+      // 폭은 그대로, 시간을 잘게 쪼개는 방식 대신 셀 높이 확장으로 대응). 일보기는 폭이
+      // 넓어 기존 10xN 열 배치 방식을 그대로 유지한다.
+      if (!isDay) {
+        const byHour = new Map<number, { studentId: number; studentName: string; classMinutes: number }[]>()
+        for (const s of valid) {
+          const startHour = Number(s.startTime!.slice(0, 2))
+          const totalSlots = Math.max(1, Math.ceil(s.classMinutes / 60))
+          for (let h = 0; h < totalSlots; h++) {
+            const hour = startHour + h
+            const arr = byHour.get(hour) ?? []
+            arr.push({ studentId: s.studentId, studentName: s.studentName, classMinutes: s.classMinutes })
+            byHour.set(hour, arr)
+          }
+        }
+        for (const [hour, students] of byHour) {
+          const hourIso = `${day.eventDate}T${String(hour).padStart(2, '0')}:00:00`
+          result.push({
+            start: hourIso,
+            end: shiftIso(hourIso, 60),
+            editable: false,
+            extendedProps: { kind: 'group', students },
+          })
+        }
+        continue
+      }
+
       const items = valid.map((s) => {
         const startMs = new Date(`${day.eventDate}T${toIsoTime(s.startTime)}`).getTime()
         return { s, startMs, endMs: startMs + s.classMinutes * 60000 }
       })
       const layout = assignColumns(items)
       // 열 배정 순서 고정(열 → 원생ID) — FullCalendar가 매 시간대마다 항상 동일한 좌우 순서로 렌더링.
+      // startHour/totalSlots를 한 번만 계산해 이후 두 순회(hour별 집계 + 렌더링)가 공유.
       const ordered = items
         .map((it, i) => ({ ...it, ...layout[i] }))
         .sort((a, b) => a.column - b.column || a.s.studentId - b.s.studentId)
-      for (const { s, column, overlapTotal } of ordered) {
-        const c = colorForDuration(s.classMinutes)
-        const totalSlots = Math.max(1, Math.ceil(s.classMinutes / 60))
-        const needSplit = !isDay && overlapTotal > 2
-        const rowGroup = needSplit ? Math.floor(column / 2) : 0
+        .map((it) => ({
+          ...it,
+          startHour: Number(it.s.startTime!.slice(0, 2)),
+          totalSlots: Math.max(1, Math.ceil(it.s.classMinutes / 60)),
+        }))
+
+      // 시간(hour, 0~23)별 실제 참여 중인 column 목록 — 오름차순 정렬 후 그 안에서의
+      // 순번(rank)을 그 시간대의 실제 렌더링 위치로 쓴다. 원래 column 값(하루 전체 기준
+      // greedy 배정, 값이 듬성듬성할 수 있음)을 그대로 쓰면 다른 원생이 먼저 끝나 빈
+      // column 이 생겼을 때 그 자리가 필러로 남아 "중간에 뜬 칸"이 생긴다 — 사용자 요청:
+      // 이전 시간대 위치는 고려하지 말고 그 시간대 실제 인원만으로 앞에서부터 채운다.
+      const columnsByHour = new Map<number, number[]>()
+      for (const { column, startHour, totalSlots } of ordered) {
         for (let h = 0; h < totalSlots; h++) {
+          const hour = startHour + h
+          const arr = columnsByHour.get(hour) ?? []
+          arr.push(column)
+          columnsByHour.set(hour, arr)
+        }
+      }
+      const rankByHour = new Map<number, Map<number, number>>()
+      for (const [hour, cols] of columnsByHour) {
+        const sorted = [...new Set(cols)].sort((a, b) => a - b)
+        rankByHour.set(hour, new Map(sorted.map((col, rank) => [col, rank])))
+      }
+
+      // 이 지점 이후로는 항상 일보기(isDay) — 주보기는 위에서 그룹 청크로 처리 후 continue.
+      const perRow = 10
+
+      // FullCalendar 는 같은 시작/종료 시각을 갖는 이벤트들의 좌우 배치 순서를 eventOrder
+      // prop(아래 JSX, extendedProps.order 기준)으로 결정한다 — 그 시간대의 압축된
+      // rank(위 rankByHour)를 넘겨 항상 앞에서부터 빈틈없이 채워지도록 한다.
+      for (const { s, column, startHour, totalSlots } of ordered) {
+        const c = colorForDuration(s.classMinutes)
+        for (let h = 0; h < totalSlots; h++) {
+          const hour = startHour + h
+          const rank = rankByHour.get(hour)!.get(column)!
+          const countInHour = rankByHour.get(hour)!.size
+          // 행 높이를 60분/필요행수로 나눠 몇 명이 겹치든 실제 시(hour) 경계를 넘지 않는다.
+          // countInHour<=perRow(분할 불필요)면 rowsNeeded=1, rowGroup=0, rowHeightMin=60로
+          // 자연히 수렴해 "분할 없음"이 별도 분기 없이 이 공식의 특수 경우가 된다.
+          const rowsNeeded = Math.max(1, Math.ceil(countInHour / perRow))
+          const rowGroup = Math.floor(rank / perRow)
+          const rowHeightMin = 60 / rowsNeeded
+
           const slotStart = addMinutes(s.startTime!, h * 60)
-          const slotEnd = addMinutes(s.startTime!, (h + 1) * 60)
-          let startIso = `${day.eventDate}T${toIsoTime(slotStart)}`
-          let endIso = `${day.eventDate}T${toIsoTime(slotEnd)}`
-          if (needSplit) {
-            endIso = shiftIso(startIso, rowGroup * 30 + 30)
-            startIso = shiftIso(startIso, rowGroup * 30)
-          }
+          const startIsoBase = `${day.eventDate}T${toIsoTime(slotStart)}`
+          const startIso = shiftIso(startIsoBase, rowGroup * rowHeightMin)
+          const endIso = shiftIso(startIsoBase, rowGroup * rowHeightMin + rowHeightMin)
           result.push({
             start: startIso,
             end: endIso,
@@ -270,13 +342,59 @@ export default function ClassCalendar({
               slotIndex: h,
               totalSlots,
               classStartTime: s.startTime!,
+              order: rank,
             },
+          })
+        }
+      }
+
+      // 사용자 요청 — 동시 인원이 perRow(주 2/일 10) 미만이어도 FullCalendar가 겹치는
+      // 이벤트 수만큼 폭을 균등분할해버려 매 시간대마다 칩 너비가 들쭉날쭉했다. 실제 인원
+      // (앞에서부터 압축 배치)만큼만 채우고 나머지 뒤쪽 칸은 투명 필러로 채워 항상 perRow
+      // 칸 기준의 고정 폭이 되도록 한다 — 필러는 항상 맨 뒤(중간에 끼지 않음).
+      for (const [hour, rankMap] of rankByHour) {
+        const countInHour = rankMap.size
+        const rowsNeeded = Math.max(1, Math.ceil(countInHour / perRow))
+        const rowHeightMin = 60 / rowsNeeded
+        const hourIso = `${day.eventDate}T${String(hour).padStart(2, '0')}:00:00`
+        for (let rank = countInHour; rank < rowsNeeded * perRow; rank++) {
+          const rowGroup = Math.floor(rank / perRow)
+          const startIso = shiftIso(hourIso, rowGroup * rowHeightMin)
+          const endIso = shiftIso(hourIso, rowGroup * rowHeightMin + rowHeightMin)
+          result.push({
+            start: startIso,
+            end: endIso,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            editable: false,
+            extendedProps: { kind: 'filler', order: rank },
           })
         }
       }
     }
     return result
   }, [data, isTimeGrid, viewType])
+
+  // 주보기 시간 슬롯(행) 높이 — 사용자 요청: 특정 칸만 넘치게 하지 않고, 그 주에서
+  // 가장 붐비는 시간대(가장 많은 줄이 필요한 셀) 기준으로 모든 요일·시간이 공유하는
+  // 행 높이 자체를 키운다(월보기에서 한 주 전체 행이 함께 늘어나는 것과 동일 원리).
+  // globals.css 의 --shb-week-slot-height 변수를 통해 .fc-timegrid-slot 에 적용된다.
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root) return
+    if (viewType !== 'timeGridWeek') {
+      root.style.removeProperty('--shb-week-slot-height')
+      return
+    }
+    const maxRows = events.reduce((max, e) => {
+      const students = (e.extendedProps as { students?: unknown[] } | undefined)?.students
+      if (!students) return max
+      return Math.max(max, Math.ceil(students.length / 3))
+    }, 1)
+    const ROW_PX = 22
+    const BASE_PX = 8
+    root.style.setProperty('--shb-week-slot-height', `${Math.max(80, maxRows * ROW_PX + BASE_PX)}px`)
+  }, [events, viewType])
 
   // hover 강조용 background 이벤트를 합쳐서 전달.
   const allEvents = useMemo<EventInput[]>(() => {
@@ -328,7 +446,7 @@ export default function ClassCalendar({
         chip.title = `${label} ${st.classMinutes / 60}시간`
         chip.style.cssText =
           `display:block;font-size:12px;font-weight:600;color:${color.text};background-color:${color.bg};` +
-          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;' +
+          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;text-align:center;' +
           'border-radius:3px;padding:0 2px;'
         container.appendChild(chip)
       }
@@ -408,7 +526,7 @@ export default function ClassCalendar({
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin]}
-          initialView="timeGridWeek"
+          initialView="dayGridMonth"
           initialDate={`${data.yearMonth}-01`}
           locale={koLocale}
           firstDay={0}
@@ -425,11 +543,34 @@ export default function ClassCalendar({
               arg.el.style.borderRadius = '0'
               arg.el.style.boxSizing = 'border-box'
             }
+            // 폭 고정용 필러 — 완전히 투명·비인터랙티브 처리(빈 칸처럼 보이게).
+            if (arg.event.extendedProps.kind === 'filler') {
+              arg.el.style.backgroundColor = 'transparent'
+              arg.el.style.border = 'none'
+              arg.el.style.boxShadow = 'none'
+              arg.el.style.pointerEvents = 'none'
+            }
+            // 주보기 인원 표시 칩 — 셀(시간 행) 자체 높이는 아래 useEffect가 그 주 전체
+            // 기준으로 통일해서 늘려주므로, 여기서는 카드 스타일만 입힌다(경계를 넘는
+            // 강제 높이 override는 다음 시간대와 겹쳐 보이는 문제가 있어 제거함).
+            if (arg.event.extendedProps.kind === 'group') {
+              arg.el.style.backgroundColor = '#ffffff'
+              arg.el.style.border = '1px solid #e5e7eb'
+              arg.el.style.boxShadow = '0 1px 2px rgba(0,0,0,0.08)'
+            }
           }}
           height="100%"
           expandRows
           // 일 보기 개별 블록을 겹치지 않고 나란히 배치(같은 시간대 여러 원생).
           slotEventOverlap={false}
+          // 같은 시작/종료 시각을 갖는 이벤트들의 좌우 배치 순서 — 배열 push 순서 대신
+          // extendedProps.order(=column, events useMemo 참조)로 고정해, 시간대마다 실제
+          // 점유 column 이 달라도 항상 같은 column 이 같은 위치에 오게 한다.
+          eventOrder={(a: unknown, b: unknown) => {
+            const oa = (a as { extendedProps: { order?: number } }).extendedProps.order ?? -1
+            const ob = (b as { extendedProps: { order?: number } }).extendedProps.order ?? -1
+            return oa - ob
+          }}
           slotDuration="01:00:00"
           slotLabelInterval="01:00:00"
           slotLabelContent={(arg) => {
@@ -543,27 +684,52 @@ export default function ClassCalendar({
           eventContent={(arg) => {
             // hover 강조용 background 이벤트는 extendedProps가 없어 콘텐츠 렌더링 대상이 아님.
             if (arg.event.display === 'background') return null
-            const { studentName, classMinutes, slotIndex, totalSlots, classStartTime } =
-              arg.event.extendedProps as {
-                studentName: string
-                classMinutes: number
-                slotIndex: number
-                totalSlots: number
-                classStartTime: string
-              }
+            // 폭 고정용 필러 — 빈 칸으로 보이도록 콘텐츠 없음.
+            if (arg.event.extendedProps.kind === 'filler') return null
+            // 사용자 요청 — 주보기: 월보기와 동일하게 이름을 3열 그리드로 줄바꿈 표시.
+            if (arg.event.extendedProps.kind === 'group') {
+              const students = (arg.event.extendedProps as {
+                students: { studentId: number; studentName: string; classMinutes: number }[]
+              }).students
+              return (
+                <div className="grid w-full grid-cols-3 items-start gap-x-1 gap-y-0.5 p-0.5">
+                  {students.map((st, i) => {
+                    const c = colorForDuration(st.classMinutes)
+                    return (
+                      <span
+                        key={`${st.studentId}-${i}`}
+                        role="button"
+                        tabIndex={0}
+                        className="block cursor-pointer truncate rounded px-1 text-center text-[12px] font-semibold leading-[20px] hover:underline"
+                        style={{ backgroundColor: c.bg, color: c.text }}
+                        onClick={(ev) => {
+                          ev.stopPropagation()
+                          onStudentNameClick(st.studentName)
+                        }}
+                        title={`${st.studentName} ${st.classMinutes / 60}시간`}
+                      >
+                        {st.studentName}
+                      </span>
+                    )
+                  })}
+                </div>
+              )
+            }
+            const { studentName, classMinutes, classStartTime } = arg.event.extendedProps as {
+              studentName: string
+              classMinutes: number
+              classStartTime: string
+            }
             const isDay = viewType === 'timeGridDay'
             const hoursLabel = (min: number): string => {
               const h = min / 60
               return Number.isInteger(h) ? `${h}시간` : `${h.toFixed(1)}시간`
             }
-            const isFirst = slotIndex === 0
-            const isLast = slotIndex === totalSlots - 1
-            const multiSlot = totalSlots > 1
             return (
               <div
                 role="button"
                 tabIndex={0}
-                className={`flex h-full cursor-pointer items-center overflow-hidden px-1 py-0.5 font-semibold hover:underline ${isDay ? 'text-base' : 'text-sm'}`}
+                className={`flex h-full cursor-pointer items-center justify-center overflow-hidden px-1 py-0.5 font-semibold hover:underline ${isDay ? 'text-base' : 'text-sm'}`}
                 onClick={(ev) => {
                   ev.stopPropagation()
                   onStudentNameClick(studentName)
@@ -578,18 +744,8 @@ export default function ClassCalendar({
                 onMouseLeave={() => setHovered(null)}
                 title={`${studentName} ${hoursLabel(classMinutes)}`}
               >
+                {/* 사용자 요청 — 다중슬롯 연결 화살표(↓/↑)·수업시간 라벨 제거, 이름 중앙정렬. */}
                 <span className="truncate">{studentName}</span>
-                {multiSlot && !isLast && (
-                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↓</span>
-                )}
-                {multiSlot && !isFirst && (
-                  <span className="ml-0.5 shrink-0 text-xs opacity-60">↑</span>
-                )}
-                {isFirst && (
-                  <span className="ml-0.5 shrink-0 text-xs font-normal opacity-70">
-                    {hoursLabel(classMinutes)}
-                  </span>
-                )}
               </div>
             )
           }}

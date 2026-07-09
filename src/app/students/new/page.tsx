@@ -17,7 +17,8 @@ export default function NewStudentPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-3xl">
+      {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-3xl leading-tight">
         <h1 className="mb-6 text-2xl font-bold">신규 원생 등록</h1>
         <StudentForm
           draftKey="new"

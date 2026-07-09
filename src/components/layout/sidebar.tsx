@@ -24,7 +24,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAppStore } from '@/stores/app-store'
 import { MENU_ITEMS } from '@/lib/menu-config'
-import { quitApp } from '@/lib/tauri'
+import { openManual, quitApp } from '@/lib/tauri'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,7 +79,7 @@ export function Sidebar() {
               <span
                 aria-disabled="true"
                 title={item.disabledHint}
-                className="flex min-h-[44px] cursor-not-allowed items-center border-l-4 border-transparent px-4 py-3 text-gray-600"
+                className="flex min-h-[44px] cursor-not-allowed items-center border-l-4 border-transparent px-4 py-3 text-base text-gray-600"
               >
                 {item.label}
               </span>
@@ -95,7 +95,7 @@ export function Sidebar() {
                       const guard = useAppStore.getState().unsavedGuard
                       if (guard && !guard(item.href)) e.preventDefault()
                     }}
-                    className={`flex min-h-[44px] items-center border-l-4 px-4 py-3 ${
+                    className={`flex min-h-[44px] items-center border-l-4 px-4 py-3 text-base ${
                       active
                         ? 'border-[var(--accent)] bg-[var(--background)] font-semibold text-[var(--accent)]'
                         : 'border-transparent text-[var(--foreground)] hover:bg-[var(--background)]'
@@ -109,10 +109,19 @@ export function Sidebar() {
           </li>
         ))}
         <li>
+          <button
+            type="button"
+            onClick={() => void openManual()}
+            className="flex min-h-[44px] w-full items-center border-l-4 border-transparent px-4 py-3 text-left text-base text-[var(--foreground)] hover:bg-[var(--background)]"
+          >
+            매뉴얼
+          </button>
+        </li>
+        <li>
           <AlertDialog>
             <AlertDialogTrigger
               type="button"
-              className="flex min-h-[44px] w-full items-center justify-between border-l-4 border-transparent px-4 py-3 text-left text-[var(--foreground)] hover:bg-[var(--background)]"
+              className="flex min-h-[44px] w-full items-center justify-between border-l-4 border-transparent px-4 py-3 text-left text-base text-[var(--foreground)] hover:bg-[var(--background)]"
             >
               <span>종료</span>
             </AlertDialogTrigger>

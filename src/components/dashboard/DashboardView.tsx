@@ -122,22 +122,22 @@ export function DashboardView() {
           )}
         </Widget>
 
-        {/* 오른쪽 열: (당일 수업 | 이달의 생일) 50/50 행 + 월별 청구총액 추이 스택.
+        {/* 오른쪽 열: 당일 수업(위) + 이달의 생일(아래) 상하 배치, 당일수업 정보량이 많아
+            높이 2:1 비율 + 월별 청구총액 추이 스택 (Sprint 19 T7, 사용자 요청 8번).
             grid stretch 로 컬럼 높이 = 교습소 현황 높이. */}
         <div className="flex flex-col gap-6 lg:h-full">
-          <div className="flex flex-col gap-6 sm:flex-row lg:flex-1 lg:min-h-0">
+          <div className="flex flex-col gap-6 lg:flex-1 lg:min-h-0">
             <Widget
-              title={
-                <span className="text-[22px]">{`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}</span>
-              }
-              className="sm:w-1/2 sm:min-h-0"
+              title={`당일 수업 (${today.data ? WEEKDAY_LABEL[today.data.weekday] : ''}요일)`}
+              className="min-h-0 flex-[2]"
+              compact
             >
               {today.isLoading || today.data === undefined ? (
                 <Loading />
               ) : today.data.slots.length === 0 ? (
                 <Empty>오늘은 예정된 수업이 없습니다.</Empty>
               ) : (
-                <ul className="h-full space-y-3 overflow-y-auto">
+                <ul className="h-full space-y-1 overflow-y-auto text-sm">
                   {today.data.slots.map((slot) => (
                     <li key={slot.start_time} className="text-gray-700">
                       <span className="font-bold text-[var(--accent)]">
@@ -152,13 +152,13 @@ export function DashboardView() {
               )}
             </Widget>
 
-            <Widget title={<span className="text-[22px]">이달의 생일</span>} className="sm:w-1/2 sm:min-h-0">
+            <Widget title="이달의 생일" className="min-h-0 flex-[1]" compact>
               {birthdays.isLoading || birthdays.data === undefined ? (
                 <Loading />
               ) : birthdays.data.length === 0 ? (
                 <Empty>이달 생일인 원생이 없습니다.</Empty>
               ) : (
-                <div className="flex h-full flex-wrap content-start gap-x-4 gap-y-2 overflow-y-auto text-base text-[var(--foreground)]">
+                <div className="flex h-full flex-wrap content-start gap-x-4 gap-y-1 overflow-y-auto text-sm text-[var(--foreground)]">
                   {birthdays.data.map((b, i) => (
                     <span key={`${b.name}-${b.day}-${i}`}>
                       {b.name}
@@ -216,7 +216,7 @@ function MonthlySummaryWidget() {
   )
 
   return (
-    <Widget title={<span className="text-[22px]">{`${month} 월 요약`}</span>} action={action}>
+    <Widget title={`${month} 월 요약`} action={action}>
       {monthly.isLoading || monthly.data === undefined ? (
         <Loading />
       ) : (
@@ -366,19 +366,24 @@ function Widget({
   action,
   children,
   className,
+  compact,
 }: {
   title: React.ReactNode
   action?: React.ReactNode
   children: React.ReactNode
   className?: string
+  /** 사용자 요청 — 당일 수업/이달의 생일처럼 데이터가 많은 위젯은 타이틀 밑 여백을 좁혀
+   *  본문 표시 공간을 늘린다. */
+  compact?: boolean
 }) {
   return (
     <section
       className={`flex flex-col rounded-lg border border-[var(--border)] bg-white p-5 ${className ?? ''}`}
     >
-      <div className="mb-4 flex items-center gap-2">
+      <div className={`flex items-center gap-2 ${compact ? 'mb-1' : 'mb-4'}`}>
         {action}
-        <h2 className="text-lg font-bold text-[var(--foreground)]">{title}</h2>
+        {/* Sprint 19 사용자 요청 — 패널 타이틀 폰트 17px 지정. */}
+        <h2 className="text-[17px] font-bold text-[var(--foreground)]">{title}</h2>
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>

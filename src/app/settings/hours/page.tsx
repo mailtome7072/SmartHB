@@ -84,7 +84,8 @@ export default function OperatingHoursPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-3xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-3xl leading-tight">
         <SettingsHomeLink />
         <div className="mb-6">
           <h1 className="text-2xl font-bold">교습소 운영 시간</h1>
@@ -107,10 +108,10 @@ export default function OperatingHoursPage() {
             <table className="w-full border-collapse rounded-lg border border-[var(--border)] bg-white text-base">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="border-b border-[var(--border)] px-4 py-3 text-left">요일</th>
-                  <th className="border-b border-[var(--border)] px-4 py-3 text-left">운영 여부</th>
-                  <th className="border-b border-[var(--border)] px-4 py-3 text-left">시작</th>
-                  <th className="border-b border-[var(--border)] px-4 py-3 text-left">종료</th>
+                  <th className="border-b border-[var(--border)] px-4 py-2 text-left">요일</th>
+                  <th className="border-b border-[var(--border)] px-4 py-2 text-left">운영 여부</th>
+                  <th className="border-b border-[var(--border)] px-4 py-2 text-left">시작</th>
+                  <th className="border-b border-[var(--border)] px-4 py-2 text-left">종료</th>
                 </tr>
               </thead>
               <tbody>
@@ -118,8 +119,8 @@ export default function OperatingHoursPage() {
                   const closed = h.open_time === null
                   return (
                     <tr key={h.day_of_week} className="border-b border-[var(--border)] last:border-0">
-                      <td className="px-4 py-3 font-medium">{DAY_LABELS[h.day_of_week]}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2 font-medium">{DAY_LABELS[h.day_of_week]}</td>
+                      <td className="px-4 py-2">
                         <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2">
                           <input
                             type="checkbox"
@@ -130,7 +131,7 @@ export default function OperatingHoursPage() {
                           <span className="text-sm">{closed ? '미운영' : '운영'}</span>
                         </label>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2">
                         <select
                           value={h.open_time ?? ''}
                           onChange={(e) => updateDay(idx, { open_time: e.target.value })}
@@ -144,7 +145,7 @@ export default function OperatingHoursPage() {
                           ))}
                         </select>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2">
                         <select
                           value={h.close_time ?? ''}
                           onChange={(e) => updateDay(idx, { close_time: e.target.value })}

@@ -20,6 +20,7 @@ import { countStudents, listCodes, listStudents } from '@/lib/tauri'
 import type { CodeEntry } from '@/types/code'
 import { AppShell } from '@/components/layout/app-shell'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { ErrorDialog } from '@/components/ui/error-dialog'
 import { STUDENT_DRAFT_PREFIX } from '@/components/students/student-form'
 import type {
   Gender,
@@ -28,8 +29,6 @@ import type {
   StudentFilter,
   StudentSort,
 } from '@/types/student'
-
-const PAGE_SIZE = 50
 
 const GENDER_LABEL: Record<Gender, string> = { male: '남', female: '여' }
 const LEVEL_LABEL: Record<SchoolLevel, string> = { elementary: '초', middle: '중' }
@@ -46,21 +45,33 @@ function formatScheduleDays(csv: string | null | undefined): string {
   return uniq.map((d) => DAY_LABEL_SHORT[d]).join('/')
 }
 const SORT_OPTIONS: { value: StudentSort; label: string }[] = [
+  { value: 'grade-asc', label: '학년순 (기본)' },
+  { value: 'grade-desc', label: '학년 역순' },
   { value: 'serial-asc', label: '번호순' },
   { value: 'serial-desc', label: '번호 역순' },
   { value: 'name-asc', label: '이름순' },
   { value: 'name-desc', label: '이름 역순' },
-  { value: 'grade-asc', label: '학년순' },
-  { value: 'grade-desc', label: '학년 역순' },
+  { value: 'gender-asc', label: '성별순' },
+  { value: 'gender-desc', label: '성별 역순' },
+  { value: 'weekly-hours-asc', label: '수업시간 적은순' },
+  { value: 'weekly-hours-desc', label: '수업시간 많은순' },
   { value: 'enroll-date-asc', label: '오래된 입교순' },
   { value: 'enroll-date-desc', label: '최근 입교순' },
 ]
 
-/** 헤더 클릭으로 정렬 가능한 컬럼 매핑 (T11 사용자 요청 #3). */
+/**
+ * 헤더 클릭으로 정렬 가능한 컬럼 매핑 (T11 사용자 요청 #3, Sprint 19 T1 확장).
+ *
+ * 학교급은 별도 정렬 버튼을 두지 않는다 — `grade-asc/desc` SQL이 이미
+ * `school_level ASC/DESC, grade ASC, name ASC`로 학교급을 1차 키로 포함하므로
+ * "학교급만 단독 정렬"은 존재하지 않는 개념이다(학년 정렬을 누르면 학교급도 함께 정렬됨).
+ */
 const SORTABLE_COLUMNS: Record<string, { asc: StudentSort; desc: StudentSort }> = {
   serial: { asc: 'serial-asc', desc: 'serial-desc' },
   name: { asc: 'name-asc', desc: 'name-desc' },
   grade: { asc: 'grade-asc', desc: 'grade-desc' },
+  gender: { asc: 'gender-asc', desc: 'gender-desc' },
+  hours: { asc: 'weekly-hours-asc', desc: 'weekly-hours-desc' },
   enroll: { asc: 'enroll-date-asc', desc: 'enroll-date-desc' },
 }
 
@@ -84,8 +95,7 @@ export default function StudentsPage() {
   const [grade, setGrade] = useState<string>('')
   const [gender, setGender] = useState<Gender | ''>('')
   const [activeOnly, setActiveOnly] = useState(true)
-  const [sort, setSort] = useState<StudentSort>('serial-asc')
-  const [page, setPage] = useState(0)
+  const [sort, setSort] = useState<StudentSort>('grade-asc')
   // T4 (이슈 #3): 학교명 필터
   const [schoolId, setSchoolId] = useState<string>('')
   const { data: schools = [] } = useQuery<CodeEntry[]>({
@@ -102,19 +112,18 @@ export default function StudentsPage() {
     active_only: activeOnly,
     sort,
   }
-  const listFilter: StudentFilter = { ...baseFilter, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  // 사용자 요청 — 페이지네이션 제거, 전체 원생을 한 번에 로드(백엔드 MAX_LIST_LIMIT=1000 상한).
+  const listFilter: StudentFilter = { ...baseFilter, limit: 1000 }
   const baseKey = JSON.stringify(baseFilter)
 
   const { data: students = [], isFetching } = useQuery<Student[]>({
-    queryKey: ['students', 'list', baseKey, page],
+    queryKey: ['students', 'list', baseKey],
     queryFn: () => listStudents(listFilter),
   })
   const { data: total = 0 } = useQuery<number>({
     queryKey: ['students', 'count', baseKey],
     queryFn: () => countStudents(baseFilter),
   })
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   // 수정 중 임시저장(localStorage draft)이 있는 원생 id 집합 — 그리드에 배지 표시.
   // localStorage 는 리액티브하지 않으므로 목록(students)이 갱신될 때 + 창 포커스 복귀 시 재계산
@@ -137,46 +146,76 @@ export default function StudentsPage() {
     return () => window.removeEventListener('focus', recompute)
   }, [students])
 
+  // 수강대장 출력 — 교습일정 인쇄와 동일하게 Tauri 네이티브 창(WebviewWindow)으로
+  // 인쇄 전용 페이지를 연다(브라우저 팝업 차단과 무관, 사용자 설정 변경 불필요).
+  const [printError, setPrintError] = useState<string | null>(null)
+  async function handleRosterPrintClick() {
+    try {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      const existing = await WebviewWindow.getByLabel('roster-print')
+      if (existing !== null) await existing.close()
+      const printWindow = new WebviewWindow('roster-print', {
+        url: 'students/roster-print',
+        title: '수강생대장 인쇄',
+        width: 900,
+        height: 1100,
+      })
+      printWindow.once('tauri://error', (event) => {
+        setPrintError(`인쇄 창을 여는 중 오류가 발생했습니다: ${String(event.payload)}`)
+      })
+    } catch (err) {
+      setPrintError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-5xl">
-        <header className="mb-4 flex items-center justify-between">
+      {/* 사용자 요청 — 원생관리 전체 행간 1.25(leading-tight)로 통일.
+          flex h-full flex-col — 그리드가 남은 세로 공간을 채우고 자체적으로
+          좌우+상하 스크롤하도록(출결관리와 동일 패턴, 이중 스크롤 컨테이너 방지). */}
+      <div className="mx-auto flex h-full max-w-5xl flex-col leading-tight">
+        <header className="mb-4 flex shrink-0 items-center justify-between">
           <h1 className="text-2xl font-bold">원생 관리</h1>
-          <Link
-            href="/students/new"
-            title={hasNewDraft ? '작성하다 만 신규 원생이 있습니다 — 이어서 작성할 수 있어요.' : undefined}
-            className="relative inline-flex h-11 items-center rounded-md bg-[var(--accent)] px-4 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
-          >
-            신규 등록
-            {hasNewDraft && (
-              <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-800">
-                ✎ 작성 중
-              </span>
-            )}
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRosterPrintClick()}
+              className="inline-flex h-11 items-center rounded-md border border-[var(--border)] bg-white px-4 text-base font-medium hover:bg-gray-50"
+            >
+              수강대장 출력
+            </button>
+            <Link
+              href="/students/new"
+              title={hasNewDraft ? '작성하다 만 신규 원생이 있습니다 — 이어서 작성할 수 있어요.' : undefined}
+              className="relative inline-flex h-11 items-center rounded-md bg-[var(--accent)] px-4 text-base font-bold text-white hover:bg-[var(--accent-hover)]"
+            >
+              신규 등록
+              {hasNewDraft && (
+                <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-800">
+                  ✎ 작성 중
+                </span>
+              )}
+            </Link>
+          </div>
         </header>
 
+        {/* 사용자 요청 — 필터 영역이 아래 그리드 대비 너무 크게 보여 여백 축소(입력 높이 44px는
+            클릭 영역 접근성 하한이라 유지, 패딩/간격만 축소: p-4→p-3, gap-3→gap-2, mb-4→mb-3). */}
         <section
           aria-label="필터"
-          className="mb-4 grid grid-cols-1 gap-3 rounded-md border border-[var(--border)] bg-white p-4 sm:grid-cols-3"
+          className="mb-3 grid shrink-0 grid-cols-1 gap-2 rounded-md border border-[var(--border)] bg-white p-3 sm:grid-cols-3"
         >
           <input
             type="search"
             value={nameInput}
-            onChange={(e) => {
-              setNameInput(e.target.value)
-              setPage(0)
-            }}
+            onChange={(e) => setNameInput(e.target.value)}
             placeholder="이름 검색"
             aria-label="이름 검색"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           />
           <select
             value={schoolLevel}
-            onChange={(e) => {
-              setSchoolLevel(e.target.value as SchoolLevel | '')
-              setPage(0)
-            }}
+            onChange={(e) => setSchoolLevel(e.target.value as SchoolLevel | '')}
             aria-label="학교급"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           >
@@ -187,10 +226,7 @@ export default function StudentsPage() {
           <input
             type="number"
             value={grade}
-            onChange={(e) => {
-              setGrade(e.target.value)
-              setPage(0)
-            }}
+            onChange={(e) => setGrade(e.target.value)}
             placeholder="학년"
             aria-label="학년"
             min={1}
@@ -199,10 +235,7 @@ export default function StudentsPage() {
           />
           <select
             value={gender}
-            onChange={(e) => {
-              setGender(e.target.value as Gender | '')
-              setPage(0)
-            }}
+            onChange={(e) => setGender(e.target.value as Gender | '')}
             aria-label="성별"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           >
@@ -212,10 +245,7 @@ export default function StudentsPage() {
           </select>
           <select
             value={schoolId}
-            onChange={(e) => {
-              setSchoolId(e.target.value)
-              setPage(0)
-            }}
+            onChange={(e) => setSchoolId(e.target.value)}
             aria-label="학교"
             className="h-11 rounded-md border border-[var(--border)] px-3"
           >
@@ -242,21 +272,19 @@ export default function StudentsPage() {
             <input
               type="checkbox"
               checked={activeOnly}
-              onChange={(e) => {
-                setActiveOnly(e.target.checked)
-                setPage(0)
-              }}
+              onChange={(e) => setActiveOnly(e.target.checked)}
               className="h-5 w-5"
             />
             재원 중만
           </label>
         </section>
 
-        <section className="overflow-hidden rounded-md border border-[var(--border)] bg-white">
+        {/* 사용자 요청 — 출결관리와 동일하게 이 div가 유일한 스크롤 컨테이너(좌우+상하). */}
+        <section className="min-h-0 flex-1 overflow-auto rounded-md border border-[var(--border)] bg-white">
           <table className="w-full">
-            <thead className="bg-[var(--background)]">
+            <thead className="sticky top-0 z-10 bg-[var(--background)]">
               <tr className="text-left">
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'serial'))}
@@ -266,7 +294,7 @@ export default function StudentsPage() {
                     번호{sortIndicator(sort, 'serial')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'name'))}
@@ -276,8 +304,8 @@ export default function StudentsPage() {
                     이름{sortIndicator(sort, 'name')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">학교급</th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">학교급</th>
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'grade'))}
@@ -287,9 +315,27 @@ export default function StudentsPage() {
                     학년{sortIndicator(sort, 'grade')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">성별</th>
-                <th className="px-3 py-3 text-sm font-bold">수업 시간/요일</th>
-                <th className="px-3 py-3 text-sm font-bold">
+                <th className="px-3 py-2 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'gender'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="성별 정렬 토글"
+                  >
+                    성별{sortIndicator(sort, 'gender')}
+                  </button>
+                </th>
+                <th className="px-3 py-2 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSort((cur) => toggleSort(cur, 'hours'))}
+                    className="hover:text-[var(--accent)]"
+                    aria-label="수업시간 정렬 토글"
+                  >
+                    수업 시간/요일{sortIndicator(sort, 'hours')}
+                  </button>
+                </th>
+                <th className="px-3 py-2 text-sm font-bold">
                   <button
                     type="button"
                     onClick={() => setSort((cur) => toggleSort(cur, 'enroll'))}
@@ -299,7 +345,7 @@ export default function StudentsPage() {
                     입교일{sortIndicator(sort, 'enroll')}
                   </button>
                 </th>
-                <th className="px-3 py-3 text-sm font-bold">생년월일</th>
+                <th className="px-3 py-2 text-sm font-bold">생년월일</th>
               </tr>
             </thead>
             <tbody>
@@ -316,8 +362,8 @@ export default function StudentsPage() {
                   onClick={() => router.push(`/students/edit?id=${s.id}`)}
                   className="cursor-pointer border-t border-[var(--border)] hover:bg-[var(--background)]"
                 >
-                  <td className="min-h-[44px] px-3 py-3 text-base">{s.serial_no}</td>
-                  <td className="px-3 py-3 text-base">
+                  <td className="min-h-[44px] px-3 py-2 text-base">{s.serial_no}</td>
+                  <td className="px-3 py-2 text-base">
                     {s.name}
                     {s.withdraw_date !== null && (
                       <span className="ml-2 text-sm text-muted-foreground">(퇴교)</span>
@@ -331,46 +377,31 @@ export default function StudentsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-base">{LEVEL_LABEL[s.school_level]}</td>
-                  <td className="px-3 py-3 text-base">{s.grade}</td>
-                  <td className="px-3 py-3 text-base">{GENDER_LABEL[s.gender]}</td>
-                  <td className="px-3 py-3 text-base text-gray-700">
+                  <td className="px-3 py-2 text-base">{LEVEL_LABEL[s.school_level]}</td>
+                  <td className="px-3 py-2 text-base">{s.grade}</td>
+                  <td className="px-3 py-2 text-base">{GENDER_LABEL[s.gender]}</td>
+                  <td className="px-3 py-2 text-base text-gray-700">
                     {s.weekly_hours !== null && s.weekly_hours !== undefined && s.weekly_hours > 0
                       ? `주 ${s.weekly_hours}시간 · ${formatScheduleDays(s.schedule_days_csv)}`
                       : '-'}
                   </td>
-                  <td className="px-3 py-3 text-base">{s.enroll_date}</td>
-                  <td className="px-3 py-3 text-base text-gray-700">{s.birth_date ?? '-'}</td>
+                  <td className="px-3 py-2 text-base">{s.enroll_date}</td>
+                  <td className="px-3 py-2 text-base text-gray-700">{s.birth_date ?? '-'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
 
-        <nav aria-label="페이지네이션" className="mt-4 flex items-center justify-between">
-          <p className="text-sm text-gray-600">
-            총 {total} 명 / {page + 1} / {totalPages} 페이지
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="h-11 rounded-md border border-[var(--border)] px-4 disabled:opacity-50"
-            >
-              이전
-            </button>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-              className="h-11 rounded-md border border-[var(--border)] px-4 disabled:opacity-50"
-            >
-              다음
-            </button>
-          </div>
-        </nav>
+        {/* 사용자 요청 — 페이지네이션(이전/다음, N/N 페이지) 제거. 전체 원생을 한 번에 로드하므로
+            더 이상 필요 없음. 총원 수만 남김. */}
+        <p className="mt-3 shrink-0 text-sm text-gray-600">총 {total} 명</p>
       </div>
+      <ErrorDialog
+        open={printError !== null && printError !== ''}
+        message={printError ?? ''}
+        onClose={() => setPrintError(null)}
+      />
     </AppShell>
   )
 }

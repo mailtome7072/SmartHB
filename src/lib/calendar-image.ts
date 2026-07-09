@@ -17,6 +17,7 @@
  */
 
 import { codeColor } from '@/lib/schedule-code-colors'
+import { isoDayOfWeek, isWeekday, nextIsoDate, prevIsoDate } from '@/lib/time'
 import type { ScheduleEventListItem, StudyPeriod } from '@/types/academic'
 import type { DayHours } from '@/lib/tauri'
 
@@ -43,29 +44,6 @@ function ymd(year: number, month: number, day: number): string {
 
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate()
-}
-
-/** "YYYY-MM-DD" → 다음 날짜. UTC 명시로 timezone 영향 회피. */
-function nextIsoDate(date: string): string {
-  const [y, m, d] = date.split('-').map(Number)
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  dt.setUTCDate(dt.getUTCDate() + 1)
-  return dt.toISOString().slice(0, 10)
-}
-
-/** "YYYY-MM-DD" → 이전 날짜. UTC 명시로 timezone 영향 회피. */
-function prevIsoDate(date: string): string {
-  const [y, m, d] = date.split('-').map(Number)
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  dt.setUTCDate(dt.getUTCDate() - 1)
-  return dt.toISOString().slice(0, 10)
-}
-
-/** "YYYY-MM-DD" → ISO 요일 (1=월 ~ 7=일) — 운영시간 매칭. */
-function isoDayOfWeek(date: string): number {
-  const [y, m, d] = date.split('-').map(Number)
-  const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0=일~6=토
-  return jsDay === 0 ? 7 : jsDay
 }
 
 function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
@@ -206,10 +184,6 @@ export async function renderCalendarImageDataUrl(params: CalendarImageParams): P
   // - 시작~종료 사이(interior)의 평일 수업불가일(공휴일 등)은 영역에 포함(구멍 없음)
   // - **토·일요일은 항상 제외** (수업일 여부와 무관)
   // → "첫 평일 수업일 ~ 마지막 평일 수업일" 구간을 감싸되, 주말 열은 비워둔다.
-  const isWeekday = (date: string): boolean => {
-    const dow = isoDayOfWeek(date)
-    return dow >= 1 && dow <= 5
-  }
   let regionStart: string | null = null
   let regionEnd: string | null = null
   if (sp !== null) {

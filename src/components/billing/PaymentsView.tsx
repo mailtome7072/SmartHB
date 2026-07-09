@@ -15,12 +15,33 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { batchUpdatePayments, listCodes, listPaymentView } from '@/lib/tauri'
 import { useUnsavedChanges } from '@/lib/use-unsaved-changes'
+import { compareKorean, useTableSort, withTiebreak } from '@/hooks/useTableSort'
 import type {
   BillingSearchResult,
   PaymentInput,
   PaymentViewRow,
 } from '@/types/billing'
 import type { CodeEntry } from '@/types/code'
+
+/**
+ * 정렬 가능 컬럼 (사용자 요청 — 청구관리 그리드와 동일하게 컬럼 헤더 클릭 정렬 지원).
+ * 기본(default)은 identity comparator로 백엔드 원본 순서(미수납 우선→월중입퇴교→
+ * 학년+이름)를 그대로 유지하고, 헤더 클릭 시에만 그 기준으로 전체 재정렬한다.
+ */
+type PaymentSortKey = 'default' | 'name' | 'amount' | 'status'
+
+const nameTiebreak = (a: PaymentViewRow, b: PaymentViewRow) =>
+  compareKorean(a.studentName, b.studentName)
+
+const PAYMENT_SORT_COMPARATORS: Record<
+  PaymentSortKey,
+  (a: PaymentViewRow, b: PaymentViewRow) => number
+> = {
+  default: () => 0, // Array.sort는 stable — 백엔드 원본 순서 유지
+  name: (a, b) => compareKorean(a.studentName, b.studentName),
+  amount: withTiebreak((a, b) => a.adjustedAmount - b.adjustedAmount, nameTiebreak),
+  status: withTiebreak((a, b) => Number(a.isPaid) - Number(b.isPaid), nameTiebreak),
+}
 
 interface Props {
   yearMonth: string
@@ -31,6 +52,9 @@ interface Props {
   searchResults: BillingSearchResult[]
   /** 수납 상태 필터 — 'all' / 'paid' / 'unpaid'. */
   paymentFilter: 'all' | 'paid' | 'unpaid'
+  /** 사용자 요청 — 그리드 상단 건수 요약 옆에도 필터 라디오를 노출하기 위해 부모 상태를
+   *  직접 변경할 수 있도록 콜백을 받는다. */
+  onFilterChange: (filter: 'all' | 'paid' | 'unpaid') => void
   /** P0-4: 미저장 변경 건수 통지 — 부모가 탭/월 변경 가드에 사용. */
   onDirtyChange?: (count: number) => void
 }
@@ -71,6 +95,7 @@ export function PaymentsView({
   matchedStudentIds,
   searchResults,
   paymentFilter,
+  onFilterChange,
   onDirtyChange,
 }: Props) {
   const qc = useQueryClient()
@@ -116,7 +141,7 @@ export function PaymentsView({
 
   const allRows: PaymentViewRow[] = useMemo(() => viewQuery.data ?? [], [viewQuery.data])
   // 검색 + 수납 상태 필터 동시 적용. P2-14: 매 렌더 새 배열 생성 방지 (자동 채움 effect 의존성 안정화).
-  const rows: PaymentViewRow[] = useMemo(
+  const filteredRows: PaymentViewRow[] = useMemo(
     () =>
       allRows.filter((r) => {
         if (matchedStudentIds !== null && !matchedStudentIds.has(r.studentId)) return false
@@ -125,6 +150,13 @@ export function PaymentsView({
         return true
       }),
     [allRows, matchedStudentIds, paymentFilter],
+  )
+  // 사용자 요청 — 청구관리 그리드와 동일하게 컬럼 헤더 클릭 정렬 지원.
+  // 기본(default)은 백엔드 순서(미수납 우선→월중입퇴교→학년+이름) 그대로 유지.
+  const { sorted: rows, toggleSort, indicator } = useTableSort<PaymentViewRow, PaymentSortKey>(
+    filteredRows,
+    PAYMENT_SORT_COMPARATORS,
+    { key: 'default', direction: 'asc' },
   )
   const paymentMethods: CodeEntry[] = (paymentMethodsQuery.data ?? []).filter(
     (c) => c.is_active,
@@ -272,18 +304,54 @@ export function PaymentsView({
 
   const paidCount = rows.filter((r) => r.isPaid).length
   const unpaidCount = rows.length - paidCount
+  // 사용자 요청 — 라디오 라벨 건수는 현재 선택된 필터와 무관하게 검색 조건까지만 반영한
+  // 고정값(상단 툴바 필터와 동일 방식)이어야 "전체/수납완료/미수납" 각 옵션의 실제
+  // 건수를 항상 확인할 수 있다.
+  const searchFilteredRows = allRows.filter(
+    (r) => matchedStudentIds === null || matchedStudentIds.has(r.studentId),
+  )
+  const totalPaidCount = searchFilteredRows.filter((r) => r.isPaid).length
+  const totalUnpaidCount = searchFilteredRows.length - totalPaidCount
 
   return (
-    <>
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-base">
-          청구 <strong>{rows.length}건</strong> · 수납완료 {paidCount} · 미수납 {unpaidCount}
-          {dirtyEntries.length > 0 && (
-            <span className="ml-2 text-sm text-amber-700">
-              · 변경 {dirtyEntries.length}건
-            </span>
-          )}
-        </p>
+    // 사용자 요청 — 청구/수납 그리드 모두 좌우+상하 스크롤 가능하도록(출결관리와 동일 패턴).
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-base">
+            청구 <strong>{rows.length}건</strong> · 수납완료 {paidCount} · 미수납 {unpaidCount}
+            {dirtyEntries.length > 0 && (
+              <span className="ml-2 text-sm text-amber-700">
+                · 변경 {dirtyEntries.length}건
+              </span>
+            )}
+          </p>
+          {/* 사용자 요청 — 건수 요약 옆에도 수납 상태 필터 라디오 노출(디폴트 전체). */}
+          <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="수납 상태 필터">
+            {(
+              [
+                ['all', '전체', searchFilteredRows.length],
+                ['paid', '수납완료', totalPaidCount],
+                ['unpaid', '미수납', totalUnpaidCount],
+              ] as const
+            ).map(([key, label, count]) => (
+              <label
+                key={key}
+                className="flex min-h-[32px] cursor-pointer items-center gap-1 text-gray-700"
+              >
+                <input
+                  type="radio"
+                  name="payments-view-filter"
+                  value={key}
+                  checked={paymentFilter === key}
+                  onChange={() => onFilterChange(key)}
+                  className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
+                />
+                {label}({count})
+              </label>
+            ))}
+          </div>
+        </div>
         <button
           type="button"
           onClick={handleSave}
@@ -294,19 +362,47 @@ export function PaymentsView({
         </button>
       </div>
 
-      {/* AC-4.9-6: 한 화면 최소 20행 — max-h 로 스크롤 가능 (20행 분량 ≈ 800px) */}
-      <div className="max-h-[800px] overflow-y-auto rounded-md border border-[var(--border)]">
+      {/* AC-4.9-6: 한 화면 최소 20행 — 부모(payments/page.tsx)가 flex-1로 남은 세로 공간을
+          주고, 이 div가 유일한 스크롤 컨테이너(좌우+상하)가 된다. */}
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-[var(--border)]">
         <table className="w-full text-base">
           <thead className="sticky top-0 bg-gray-100 text-left">
             <tr>
-              <th className="px-3 py-2">번호</th>
-              <th className="px-3 py-2">원생명</th>
-              <th className="px-3 py-2 text-right">청구액</th>
-              <th className="px-3 py-2">완료</th>
-              <th className="px-3 py-2">입금일</th>
-              <th className="px-3 py-2">입금자</th>
-              <th className="px-3 py-2">결제수단</th>
-              <th className="px-3 py-2">카드사</th>
+              <th className="px-3 py-1">번호</th>
+              <th className="px-3 py-1">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('name')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="원생명 정렬 토글"
+                >
+                  원생명{indicator('name')}
+                </button>
+              </th>
+              <th className="px-3 py-1 text-right">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('amount')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="청구액 정렬 토글"
+                >
+                  청구액{indicator('amount')}
+                </button>
+              </th>
+              <th className="px-3 py-1">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('status')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="완료 여부 정렬 토글"
+                >
+                  완료{indicator('status')}
+                </button>
+              </th>
+              <th className="px-3 py-1">입금일</th>
+              <th className="px-3 py-1">입금자</th>
+              <th className="px-3 py-1">결제수단</th>
+              <th className="px-3 py-1">카드사</th>
             </tr>
           </thead>
           <tbody>
@@ -323,8 +419,8 @@ export function PaymentsView({
                   : ''
               return (
                 <tr key={b.billId} className={`border-t border-[var(--border)] ${rowBg}`}>
-                  <td className="px-3 py-2">{b.studentSerialNo}</td>
-                  <td className="px-3 py-2 font-medium">
+                  <td className="px-3 py-1">{b.studentSerialNo}</td>
+                  <td className="px-3 py-1 font-medium">
                     {b.studentName}
                     {b.midMonthType !== null && (
                       <span className="ml-1 text-xs text-amber-900">
@@ -337,10 +433,10 @@ export function PaymentsView({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-semibold">
+                  <td className="px-3 py-1 text-right font-semibold">
                     {b.adjustedAmount.toLocaleString()}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
                       d.cancel ? (
                         <div className="flex items-center gap-1">
@@ -348,7 +444,7 @@ export function PaymentsView({
                           <button
                             type="button"
                             onClick={() => toggleCancel(b.billId, false)}
-                            className="h-8 rounded border border-[var(--border)] px-2 text-xs text-gray-700 hover:bg-gray-50"
+                            className="h-7 rounded border border-[var(--border)] px-2 text-xs text-gray-700 hover:bg-gray-50"
                           >
                             되돌리기
                           </button>
@@ -359,7 +455,7 @@ export function PaymentsView({
                           <button
                             type="button"
                             onClick={() => toggleCancel(b.billId, true)}
-                            className="h-8 rounded border border-[var(--danger)] px-2 text-xs text-[var(--danger)] hover:bg-red-50"
+                            className="h-7 rounded border border-[var(--danger)] px-2 text-xs text-[var(--danger)] hover:bg-red-50"
                           >
                             수납취소
                           </button>
@@ -375,9 +471,11 @@ export function PaymentsView({
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.paidDate ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.paidDate ?? '—'}
+                      </span>
                     ) : (
                       <input
                         type="date"
@@ -390,13 +488,15 @@ export function PaymentsView({
                           }
                         }}
                         disabled={!d.isPaid}
-                        className="h-9 w-36 rounded border border-[var(--border)] px-2 disabled:bg-gray-100"
+                        className="h-7 w-36 rounded border border-[var(--border)] px-2 text-sm disabled:bg-gray-100"
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.payerName ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.payerName ?? '—'}
+                      </span>
                     ) : (
                       <input
                         id={`payer-${b.billId}`}
@@ -404,13 +504,15 @@ export function PaymentsView({
                         value={d.payerName}
                         onChange={(e) => updateDraft(b.billId, { payerName: e.target.value })}
                         placeholder="이름"
-                        className="h-9 w-28 rounded border border-[var(--border)] px-2"
+                        className="h-7 w-28 rounded border border-[var(--border)] px-2 text-sm"
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.paymentMethodLabel ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.paymentMethodLabel ?? '—'}
+                      </span>
                     ) : (
                       <select
                         value={d.paymentMethodId ?? ''}
@@ -425,7 +527,7 @@ export function PaymentsView({
                                 : d.cardCompanyId,
                           })
                         }
-                        className={`h-9 w-28 rounded border px-2 ${
+                        className={`h-7 w-28 rounded border px-2 text-sm ${
                           d.isPaid && d.paymentMethodId === null
                             ? 'border-[var(--danger)]'
                             : 'border-[var(--border)]'
@@ -441,9 +543,11 @@ export function PaymentsView({
                       </select>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.cardCompanyLabel ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.cardCompanyLabel ?? '—'}
+                      </span>
                     ) : (
                       <select
                         value={d.cardCompanyId ?? ''}
@@ -453,7 +557,7 @@ export function PaymentsView({
                           })
                         }
                         disabled={!showCardCompany}
-                        className={`h-9 w-32 rounded border px-2 disabled:bg-gray-100 ${
+                        className={`h-7 w-32 rounded border px-2 text-sm disabled:bg-gray-100 ${
                           isCard && d.cardCompanyId === null
                             ? 'border-[var(--danger)]'
                             : 'border-[var(--border)]'
@@ -475,6 +579,6 @@ export function PaymentsView({
           </tbody>
         </table>
       </div>
-    </>
+    </div>
   )
 }

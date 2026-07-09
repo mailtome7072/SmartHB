@@ -105,6 +105,17 @@ Edit/Write → posttooluse-code-validator (자동)
     → git commit → pre-commit hook (lint 재확인, 자동)
 ```
 
+### 백엔드-프론트엔드 상수 쌍 (A113, Sprint 19 T0)
+
+동일한 값을 백엔드(Rust)와 프론트엔드(TS)가 각자 상수로 중복 보유하는 경우, 한쪽만 수정하고 반대쪽을 누락하기 쉽다(Sprint 18 sprint-review에서 `STALE_THRESHOLD_SECONDS` 불일치로 실제 발견됨). 아래 목록에 있는 상수를 수정할 때는 반드시 짝 파일도 함께 확인·동기화한다.
+
+| 상수명 | 백엔드 | 프론트엔드 | 의미 |
+|--------|--------|-----------|------|
+| `STALE_THRESHOLD_SECONDS` | `src-tauri/src/commands/lock.rs:39` | `src/components/LockWarning.tsx:17` | 락 하트비트 정지 판단 임계값(초) |
+| `MEMO_DEFAULT_HEIGHT` | `src-tauri/src/commands/dashboard.rs:28` | `src/components/dashboard/DashboardView.tsx:70` | 대시보드 메모 포스트잇 기본 높이(px) |
+
+새로운 상수 쌍을 도입하는 경우 이 표에 추가한다. Edit 전 짝 파일에 동일 이름 상수가 있는지 `grep`으로 먼저 확인하는 습관을 권장한다.
+
 ---
 
 ## 원칙 4: Policy Enforcement (정책 강제)

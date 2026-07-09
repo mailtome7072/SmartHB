@@ -13,14 +13,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkAuthStatus,
   deleteScheduleEvent,
   getStudyPeriod,
-  listScheduleEvents,
   listStudyPeriods,
   updateScheduleEvent,
 } from '@/lib/tauri'
@@ -38,7 +36,6 @@ import {
   EventPlacer,
   useEventPlaceCellHandler,
 } from '@/components/academic/EventPlacer'
-import { AcademicSchedulePrint } from '@/components/academic/AcademicSchedulePrint'
 import type { ScheduleCode, ScheduleEventListItem } from '@/types/academic'
 import {
   AlertDialog,
@@ -72,9 +69,6 @@ export default function AcademicPage() {
   // T11 일정 삭제 다이얼로그
   const [eventToDelete, setEventToDelete] = useState<ScheduleEventListItem | null>(null)
   const [eventErrorMessage, setEventErrorMessage] = useState<string | null>(null)
-
-  // T9: 교습일정 인쇄
-  const [printMode, setPrintMode] = useState(false)
 
   useEffect(() => {
     if (unlocked) {
@@ -148,22 +142,37 @@ export default function AcademicPage() {
     !centerPeriodQuery.isLoading &&
     centerPeriodQuery.data === null
   const studyPeriodMode = isCenterUnconfirmed && selectedCode === null
-  // T9: 확정 교습기간 이벤트 — 인쇄용 (printMode=true 일 때만 fetch)
   const confirmedPeriod = centerPeriodQuery.data ?? null
-  const printEventsQuery = useQuery({
-    queryKey: ['schedule-events-print', confirmedPeriod?.start_date, confirmedPeriod?.end_date],
-    queryFn: () =>
-      listScheduleEvents(confirmedPeriod!.start_date, confirmedPeriod!.end_date),
-    enabled: printMode && confirmedPeriod !== null,
-    staleTime: 30_000,
-  })
-  // T9: 쿼리 완료 후 인쇄 다이얼로그 — setTimeout 대신 쿼리 상태 감지로 race condition 방지
-  useEffect(() => {
-    if (printMode && printEventsQuery.isSuccess) {
-      window.print()
-      setPrintMode(false)
+
+  // T9: 교습일정 인쇄 — Tauri 네이티브 창(WebviewWindow)으로 인쇄 전용 페이지를 연다
+  // (Sprint 19 후속수정). window.open() 팝업은 WebView2 팝업 차단(사용자가 수동으로
+  // 설정을 풀어줘야 함) 대상이 될 수 있어, 브라우저 팝업이 아닌 앱 자체 창 생성 API를
+  // 사용한다 — 사용자 쪽 설정 변경이 전혀 필요 없다. 실제 데이터 조회/HTML 생성은
+  // academic/print 페이지(새 창)가 스스로 수행한다.
+  async function handlePrintClick() {
+    if (confirmedPeriod === null) return
+    try {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      const existing = await WebviewWindow.getByLabel('academic-print')
+      if (existing !== null) await existing.close()
+      const params = new URLSearchParams({
+        start: confirmedPeriod.start_date,
+        end: confirmedPeriod.end_date,
+        ym: confirmedPeriod.year_month,
+      })
+      const printWindow = new WebviewWindow('academic-print', {
+        url: `academic/print?${params.toString()}`,
+        title: '교습일정 인쇄',
+        width: 1400,
+        height: 1000,
+      })
+      printWindow.once('tauri://error', (event) => {
+        setEventErrorMessage(`인쇄 창을 여는 중 오류가 발생했습니다: ${String(event.payload)}`)
+      })
+    } catch (err) {
+      setEventErrorMessage(err instanceof Error ? err.message : String(err))
     }
-  }, [printMode, printEventsQuery.isSuccess])
+  }
 
   // V12 (Sprint 7 post-review): 인접 3개월 교습기간 조회 — selection 단계에서 다른 교습기간
   // 일자 포함 차단. ThreeMonthCalendar 와 동일 쿼리 키로 캐시 공유.
@@ -274,7 +283,8 @@ export default function AcademicPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <main className="flex flex-col gap-4 p-4">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <main className="flex flex-col gap-4 p-4 leading-tight">
         <header className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[var(--foreground)]">일정 관리</h1>
@@ -286,8 +296,8 @@ export default function AcademicPage() {
             type="button"
             disabled={confirmedPeriod === null}
             title={confirmedPeriod === null ? '이 달의 교습기간을 먼저 등록해주세요' : undefined}
-            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-gray-100 print:hidden"
-            onClick={() => setPrintMode(true)}
+            className="min-h-[44px] min-w-[44px] rounded border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-gray-100"
+            onClick={() => void handlePrintClick()}
           >
             교습일정 인쇄
           </button>
@@ -400,22 +410,6 @@ export default function AcademicPage() {
           </AlertDialogContent>
         </AlertDialog>
       </main>
-      {/* T9: 인쇄 전용 컴포넌트 — @media print 에서만 표시.
-          document.body 에 직접 portal — App Router 에는 Pages Router 의 #__next 가 없어
-          AppShell 내부에 두면 인쇄 시 조상(App 루트)이 display:none 처리되어 후손인
-          이 wrapper 가 !important 를 걸어도 함께 가려지는(빈 인쇄) 문제가 있었다. */}
-      {printMode &&
-        confirmedPeriod !== null &&
-        typeof window !== 'undefined' &&
-        createPortal(
-          <div className="academic-print-wrapper" style={{ display: 'none' }}>
-            <AcademicSchedulePrint
-              period={confirmedPeriod}
-              events={printEventsQuery.data ?? []}
-            />
-          </div>,
-          document.body,
-        )}
     </AppShell>
   )
 }

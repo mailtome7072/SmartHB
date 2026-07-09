@@ -140,7 +140,8 @@ function PinAuthToggle() {
 export default function SettingsHubPage() {
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-4xl">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-4xl leading-tight">
         <h1 className="mb-2 text-2xl font-bold">설정</h1>
         <p className="mb-6 text-base text-gray-600">
           교습소 운영 환경을 설정합니다. 변경 즉시 저장되며 마법사 재실행 없이 반영됩니다.

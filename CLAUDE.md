@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **스마트해법수학 서현효자점** — 수학 교습소 단독 운영자(50대 원장 1인)용 데스크톱 관리 앱.
 - 원생 관리, 수업 스케줄, 출결·보강, 교습비 청구·수납, 카카오톡 공지문 이미지 생성, 대시보드를 통합 제공한다. (단원평가/학습보고서는 개발 취소)
 - Windows 10/11(교습소) + macOS 12+(자택) 동시 지원. 로컬 SQLite + OS 클라우드 동기화 폴더로 인터넷 없이도 작동.
-- UI 접근성 기준: Pretendard 본문 18pt 권장, WCAG AA 명도 대비 이상.
+- UI 접근성 기준: Pretendard 본문 16pt 권장(14pt 하한), WCAG AA 명도 대비 이상.
 
 ## 현재 상태
 

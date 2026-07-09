@@ -37,6 +37,39 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 19: **수강생대장 출력** — 원생관리 화면에서 전체 원생 수강 현황을 A4 표 형식으로 인쇄. 매 페이지 반복 헤더 + 페이지 번호, 브라우저 기본 머리글/바닥글 제거. `src/lib/student-roster-print-html.ts` 신규, `src/app/students/roster-print` 신규 라우트
+- Sprint 19: **인쇄 팝업 아키텍처 전환** — 교습일정 인쇄를 기존 같은 창 인쇄 방식에서 Tauri 네이티브 창(`WebviewWindow`) 기반 독립 팝업 인쇄 방식으로 전면 재설계. `src/lib/academic-print-html.ts` 신규, `src/app/academic/print` 신규 라우트, `capabilities/default.json` 권한 추가. 수강생대장 출력도 동일 아키텍처 재사용
+- Sprint 19: **공통 정렬 훅** (`useTableSort`) — 모든 그리드에서 재사용 가능한 클릭 정렬 인프라. `withTiebreak`로 동일 값 시 이름 2차 정렬 일반화
+- Sprint 19: **학년 자동 승급** — 매년 1월 이후 최초 실행 시 확인 다이얼로그 + 전체 원생 일괄 학년 UP. 2026년은 이미 수동 처리 완료로 제외
+- Sprint 19: **학교급 기반 학교 선택 필터링** — 원생 등록/수정 폼에서 학교급 선택 시 해당 학교급의 학교만 드롭다운에 표시. 코드 관리 화면에 `school_type` 편집 UI 추가
+- Sprint 19: **V310 마이그레이션** — `schools.school_type` 텍스트 패턴 기반 자동 보정(초등학교→elementary, 중학교→middle)
+- Sprint 19: **사용 매뉴얼** — 화면별 사용법을 담은 HTML 매뉴얼을 앱 리소스로 번들, 사이드바 "설정"↔"종료" 사이 "매뉴얼" 메뉴 클릭 시 시스템 기본 브라우저로 열람. `src-tauri/resources/manual/`, `tauri.conf.json` bundle.resources 등록
+
+### Changed
+- Sprint 19: 모든 원생 관련 그리드 기본 정렬을 학년+이름순으로 통일 (원생 목록, 출결, 청구, 수납, 공지문)
+- Sprint 19: 출결 그리드 이중 스크롤 컨테이너 해소 — 가로/세로 스크롤바가 뷰포트 내 항상 접근 가능한 위치에 고정
+- Sprint 19: 청구·수납 관리 그리드 좌우+상하 스크롤 지원 추가
+- Sprint 19: 원생관리 페이지네이션 제거 + 50명 제한 해제 (전체 목록 단일 뷰)
+- Sprint 19: 청구관리 년월 선택을 이전/다음 네비게이터 방식으로 통일
+- Sprint 19: 수업관리 캘린더 주보기를 월보기와 동일한 3열 이름 그리드 + 셀 높이 확장 방식으로 재설계 — 이름 칩 좌우 위치 고정, 동시 인원별 동적 열 확장
+- Sprint 19: 수업관리 캘린더 기본 진입 뷰를 월보기로 변경
+- Sprint 19: 교습일정 인쇄 캘린더 Red 테두리 + 기간성 학사일정 밴드(셀 배경색 직접 칠하기) + 폰트 확대 + 동적 행 수 계산 (빈 행 제거)
+- Sprint 19: 대시보드 당일수업 + 생일 위젯 상하 배치 + 2:1 비율
+- Sprint 19: 수업관리 캘린더 라인을 진하게 조정
+- Sprint 19: 좌측 사이드바 메뉴 폰트 한 단계 확대 (text-sm → text-base)
+- Sprint 19: 전체 메뉴 페이지(대시보드 제외) UI 밀도 조정 — 행간 1.25 통일, 패딩/여백 축소
+- Sprint 19: 접근성 폰트 기준 개정 — 본문 18/16pt → 16/14pt로 하향 조정 (실사용 피드백 반영), CLAUDE.md 반영
+- Sprint 19: h1~h6 전역 스타일을 `@layer base`로 감싸 유틸리티 클래스 무력화 버그 수정 (CSS Cascade Layers 오래된 버그 근본 수정)
+
+### Fixed
+- Sprint 19: 인쇄 창(팝업)을 닫으면 앱 전체 DB pool이 종료되던 심각한 버그 수정 — `src-tauri/src/lib.rs` `on_window_event` 핸들러에서 메인 창 이벤트만 pool close 트리거하도록 수정
+- Sprint 19: FullCalendar 주보기 2xN/10xN 겹침 버그 근본 수정 — 시간대별 칩 좌우 위치가 실제 column과 어긋나던 문제 해결
+- Sprint 19: 인쇄 대화상자 닫힘(취소 포함) 시 인쇄 팝업 창 자동 종료
+- Sprint 19: 기간성 학사일정 밴드 배경색이 인쇄에서 빠지던 문제 수정 (셀 배경색 직접 칠하기 방식으로 전환)
+- Sprint 19: 주보기 셀이 다음 시간대 위로 넘쳐 보이던 문제 근본 수정
+- Sprint 19: 원생 상세/수정 폼 여백 과다 문제 개선
+
 ---
 
 ## [1.1.0] - 2026-07-02

@@ -430,7 +430,8 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
             <h2 className="text-xl font-bold">
               {confirm.kind === 'remove' ? '수업 스케줄 삭제 확인' : '수업 스케줄 변경 확인'}
             </h2>
-            <p className="mt-3 whitespace-pre-line text-base leading-relaxed text-gray-800">
+            {/* 사용자 요청 — 원생관리 전체 행간 1.25로 통일(기존 leading-relaxed 예외 제거). */}
+            <p className="mt-3 whitespace-pre-line text-base leading-tight text-gray-800">
               {confirm.summary}
             </p>
             <div className="mt-5 flex justify-end gap-2">

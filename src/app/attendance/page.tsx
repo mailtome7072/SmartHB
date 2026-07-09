@@ -239,7 +239,8 @@ export default function AttendancePage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <main className="flex h-full flex-col">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <main className="flex h-full flex-col leading-tight">
       <header className="flex items-center gap-4 border-b border-[var(--border)] px-0 py-4">
         <h1 className="text-2xl font-bold">출결 관리</h1>
 
@@ -347,7 +348,10 @@ export default function AttendancePage() {
         </div>
       )}
 
-      <section className="flex-1 overflow-auto py-4">
+      {/* Sprint 19 T2: 이 section은 더 이상 자체 스크롤을 갖지 않는다(overflow-hidden) —
+          내부 AttendanceGrid가 유일한 스크롤 컨테이너가 되어 가로 스크롤바가 항상
+          뷰포트 내 고정 위치에서 접근 가능해진다(이중 스크롤 컨테이너 해소). */}
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden py-4">
         {existsQuery.isLoading && (
           <p className="text-gray-600">출결 상태 확인 중...</p>
         )}
@@ -367,7 +371,7 @@ export default function AttendancePage() {
         )}
 
         {showGrid && filteredGrid !== undefined && (
-          <>
+          <div className="flex min-h-0 flex-1 flex-col">
             <AttendanceGrid
               grid={filteredGrid}
               onNonClassDayClick={(studentId, eventDate) => {
@@ -426,11 +430,11 @@ export default function AttendancePage() {
               }}
             />
             {debouncedSearch !== '' && matchedCount === 0 && (
-              <p className="mt-4 text-center text-base text-gray-600">
+              <p className="mt-4 shrink-0 text-center text-base text-gray-600">
                 &ldquo;{searchInput}&rdquo; 검색 결과가 없습니다.
               </p>
             )}
-          </>
+          </div>
         )}
 
         {existsQuery.data === true && gridQuery.isLoading && (

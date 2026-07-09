@@ -4,6 +4,8 @@
  * 백엔드 `src-tauri/src/commands/billing.rs` 의 serde camelCase 직렬화와 1:1 정합.
  */
 
+import type { SchoolLevel } from '@/types/student'
+
 export type BillStatus = 'draft' | 'confirmed'
 
 export type MidMonthType = 'enrolled' | 'withdrawn'
@@ -14,7 +16,7 @@ export interface Bill {
   studentName: string
   studentSerialNo: string
   studentGrade: number
-  studentSchoolLevel: 'elementary' | 'middle'
+  studentSchoolLevel: SchoolLevel
   billYearMonth: string // "YYYY-MM"
   weeklyHours: number
   billAmount: number
@@ -33,6 +35,9 @@ export interface PaymentViewRow {
   studentId: number
   studentName: string
   studentSerialNo: string
+  /** Sprint 19 사용자 요청 — 기본 정렬(학년별+이름) 및 화면 표시용. */
+  studentGrade: number
+  studentSchoolLevel: SchoolLevel
   adjustedAmount: number
   isMidMonth: boolean
   midMonthType: MidMonthType | null
@@ -77,6 +82,9 @@ export interface UnpaidBill {
   studentId: number
   studentName: string
   studentSerialNo: string
+  /** Sprint 19 사용자 요청 — 기본 정렬(학년별+이름) 및 화면 표시용. */
+  studentGrade: number
+  studentSchoolLevel: SchoolLevel
   adjustedAmount: number
   isMidMonth: boolean
   midMonthType: MidMonthType | null

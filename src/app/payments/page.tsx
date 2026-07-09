@@ -69,11 +69,13 @@ function PaymentsContent() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-6xl">
-        <h1 className="mb-4 text-2xl font-bold">수납 관리</h1>
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일 + 그리드 좌우/상하 스크롤 지원을
+          위해 flex h-full flex-col로 변경(출결/원생/청구관리와 동일 패턴). 그리드 외 요소는 shrink-0. */}
+      <div className="mx-auto flex h-full max-w-6xl flex-col leading-tight">
+        <h1 className="mb-4 shrink-0 text-2xl font-bold">수납 관리</h1>
 
         {/* 탭 */}
-        <div className="mb-3 flex gap-1 border-b border-[var(--border)]">
+        <div className="mb-3 flex shrink-0 gap-1 border-b border-[var(--border)]">
           {([
             ['payments', '수납 관리'],
             ['summary', '월별 집계'],
@@ -98,7 +100,7 @@ function PaymentsContent() {
 
         {/* 툴바 — 수납 탭만 (월별 집계는 자체 기간 선택 사용) */}
         {tab === 'payments' && (
-          <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
             {/* 일정 관리 메뉴의 교습년월 선택 UI(◀ 이전 / 년월 / 다음 ▶)와 통일 — monthOptions
                 (교습기간 등록 월) 범위 내에서만 이동. */}
             <div className="flex items-center gap-2">
@@ -171,17 +173,24 @@ function PaymentsContent() {
           </div>
         )}
 
-        {tab === 'payments' && summary && <BillingSummaryBar summary={summary} />}
+        {tab === 'payments' && summary && (
+          <div className="shrink-0">
+            <BillingSummaryBar summary={summary} />
+          </div>
+        )}
 
         {tab === 'payments' && (
-          <PaymentsView
-            yearMonth={effectiveYearMonth}
-            onError={(msg) => setError(msg)}
-            matchedStudentIds={matchedStudentIds}
-            searchResults={searchResults}
-            paymentFilter={paymentFilter}
-            onDirtyChange={setDirtyCount}
-          />
+          <div className="min-h-0 flex-1">
+            <PaymentsView
+              yearMonth={effectiveYearMonth}
+              onError={(msg) => setError(msg)}
+              matchedStudentIds={matchedStudentIds}
+              searchResults={searchResults}
+              paymentFilter={paymentFilter}
+              onFilterChange={setPaymentFilter}
+              onDirtyChange={setDirtyCount}
+            />
+          </div>
         )}
 
         {tab === 'summary' && <BillingSummaryView defaultYearMonth={effectiveYearMonth} />}

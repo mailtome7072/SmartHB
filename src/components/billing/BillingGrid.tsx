@@ -18,6 +18,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { confirmBill, updateBill } from '@/lib/tauri'
 import { ConfirmBillUpdateDialog } from './ConfirmBillUpdateDialog'
 import type { Bill } from '@/types/billing'
+import type { SchoolLevel } from '@/types/student'
+import { compareKorean, useTableSort, withTiebreak } from '@/hooks/useTableSort'
 
 interface Props {
   bills: Bill[]
@@ -35,8 +37,43 @@ const MID_MONTH_LABEL: Record<NonNullable<Bill['midMonthType']>, string> = {
   withdrawn: '월중퇴교',
 }
 
+/**
+ * 정렬 가능 컬럼 (Sprint 19 T3, 사용자 요청 2번).
+ *
+ * 기본('default')은 백엔드가 반환한 순서(미확정→확정, 월중입퇴교 우선, 그 안에서
+ * 학년별+이름) 그대로 유지 — 청구 확정 워크플로우 그룹핑은 업무상 우선순위라
+ * 컬럼 클릭 전에는 건드리지 않는다. 컬럼 클릭 시에는 그 기준으로 전체 재정렬.
+ */
+type BillingSortKey = 'default' | 'name' | 'grade' | 'billAmount' | 'adjustedAmount' | 'status'
+
+const SCHOOL_LEVEL_ORDER: Record<SchoolLevel, number> = {
+  elementary: 0,
+  middle: 1,
+}
+
+const nameTiebreak = (a: Bill, b: Bill) => compareKorean(a.studentName, b.studentName)
+
+const BILLING_SORT_COMPARATORS: Record<BillingSortKey, (a: Bill, b: Bill) => number> = {
+  default: () => 0, // Array.sort는 stable — 백엔드 원본 순서 그대로 유지
+  name: (a, b) => compareKorean(a.studentName, b.studentName),
+  grade: withTiebreak(
+    (a, b) =>
+      SCHOOL_LEVEL_ORDER[a.studentSchoolLevel] - SCHOOL_LEVEL_ORDER[b.studentSchoolLevel] ||
+      a.studentGrade - b.studentGrade,
+    nameTiebreak,
+  ),
+  billAmount: withTiebreak((a, b) => a.billAmount - b.billAmount, nameTiebreak),
+  adjustedAmount: withTiebreak((a, b) => a.adjustedAmount - b.adjustedAmount, nameTiebreak),
+  status: withTiebreak((a, b) => a.status.localeCompare(b.status), nameTiebreak),
+}
+
 export function BillingGrid({ bills, yearMonth, onError }: Props) {
   const qc = useQueryClient()
+  const { sorted: sortedBills, toggleSort, indicator } = useTableSort<Bill, BillingSortKey>(
+    bills,
+    BILLING_SORT_COMPARATORS,
+    { key: 'default', direction: 'asc' },
+  )
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editValue, setEditValue] = useState('')
   const [pendingUpdate, setPendingUpdate] = useState<{
@@ -102,24 +139,70 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
   }
 
   return (
-    <>
-      <div className="overflow-x-auto rounded-md border border-[var(--border)]">
+    // 사용자 요청 — 청구/수납 그리드 모두 좌우+상하 스크롤 가능하도록(출결관리와 동일 패턴).
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-[var(--border)]">
         <table className="w-full text-base">
-          <thead className="bg-gray-100 text-left">
+          <thead className="sticky top-0 z-10 bg-gray-100 text-left">
             <tr>
               <th className="px-3 py-2">번호</th>
-              <th className="px-3 py-2">원생명</th>
-              <th className="px-3 py-2">학년</th>
+              <th className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('name')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="원생명 정렬 토글"
+                >
+                  원생명{indicator('name')}
+                </button>
+              </th>
+              <th className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('grade')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="학년 정렬 토글"
+                >
+                  학년{indicator('grade')}
+                </button>
+              </th>
               <th className="px-3 py-2 text-right">주 시간</th>
-              <th className="px-3 py-2 text-right">표준</th>
-              <th className="px-3 py-2 text-right">조정</th>
-              <th className="px-3 py-2">상태</th>
+              <th className="px-3 py-2 text-right">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('billAmount')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="표준 금액 정렬 토글"
+                >
+                  표준{indicator('billAmount')}
+                </button>
+              </th>
+              <th className="px-3 py-2 text-right">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('adjustedAmount')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="조정 금액 정렬 토글"
+                >
+                  조정{indicator('adjustedAmount')}
+                </button>
+              </th>
+              <th className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSort('status')}
+                  className="hover:text-[var(--accent)]"
+                  aria-label="상태 정렬 토글"
+                >
+                  상태{indicator('status')}
+                </button>
+              </th>
               <th className="px-3 py-2">구분</th>
               <th className="px-3 py-2 text-right">작업</th>
             </tr>
           </thead>
           <tbody>
-            {bills.map((b) => {
+            {sortedBills.map((b) => {
               const isEditing = editingId === b.id
               const rowBg = b.isMidMonth ? 'bg-amber-50' : ''
               return (
@@ -244,6 +327,6 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
           onCancel={() => setPendingUpdate(null)}
         />
       )}
-    </>
+    </div>
   )
 }

@@ -13,6 +13,38 @@ export function minutesToHours(minutes: number): number {
   return minutes / 60
 }
 
+/**
+ * "YYYY-MM-DD" → ISO 요일(1=월~7=일). Sprint 19 T4 — `calendar-image.ts`/
+ * `ThreeMonthCalendar.tsx`에 각자 정의돼있던 동일 함수를 공용화 (3번째 사용처 등장 시점).
+ */
+export function isoDayOfWeek(date: string): number {
+  const [y, m, d] = date.split('-').map(Number)
+  const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0=일~6=토
+  return jsDay === 0 ? 7 : jsDay
+}
+
+/** "YYYY-MM-DD" → 평일(월~금) 여부. Sprint 19 T4 — 공용화(calendar-image.ts/AcademicSchedulePrint.tsx). */
+export function isWeekday(date: string): boolean {
+  const dow = isoDayOfWeek(date)
+  return dow >= 1 && dow <= 5
+}
+
+/** "YYYY-MM-DD" → 다음 날짜. UTC 명시로 timezone 영향 회피. Sprint 19 T4 — 3중 중복 공용화. */
+export function nextIsoDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + 1)
+  return dt.toISOString().slice(0, 10)
+}
+
+/** "YYYY-MM-DD" → 이전 날짜. UTC 명시로 timezone 영향 회피. Sprint 19 T4 — 공용화. */
+export function prevIsoDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() - 1)
+  return dt.toISOString().slice(0, 10)
+}
+
 /** 시간(decimal) → 분(정수, 반올림). 음수/NaN 은 0 반환. */
 export function hoursToMinutes(hours: number): number {
   if (!Number.isFinite(hours) || hours <= 0) return 0

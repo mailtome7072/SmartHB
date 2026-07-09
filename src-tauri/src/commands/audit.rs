@@ -59,6 +59,8 @@ pub enum AuditEventType {
     AttendanceRescheduled,
     // 케이스2: 특정일 이후 영구 스케줄 변경 + 변경일 이후 출결 재생성
     ScheduleChangedWithRegen,
+    // Sprint 19 T8 — 매년 1월 이후 최초 실행 시 사용자 확인 후 일괄 학년 승급
+    GradesPromoted,
 }
 
 impl AuditEventType {
@@ -82,6 +84,7 @@ impl AuditEventType {
             Self::BillConfirmed => "bill-confirmed",
             Self::AttendanceRescheduled => "attendance-rescheduled",
             Self::ScheduleChangedWithRegen => "schedule-changed-with-regen",
+            Self::GradesPromoted => "grades-promoted",
         }
     }
 }

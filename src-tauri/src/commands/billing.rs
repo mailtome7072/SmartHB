@@ -193,7 +193,8 @@ pub(crate) async fn generate_bills_impl(
 /// 정렬 우선순위:
 ///   1. 미확정(`draft`) 먼저, 확정(`confirmed`) 다음
 ///   2. 월중입퇴교(`is_mid_month=1`) 가 같은 상태 내 우선
-///   3. 학생 이름 ASC
+///   3. 학생 학년별(school_level→grade)+이름 ASC — Sprint 19 T3(사용자 요청 1번). 확정/미확정
+///      워크플로우 그룹핑(1·2)은 업무상 우선순위라 유지하고, 그 안에서만 학년+이름 정렬 적용
 #[tauri::command]
 pub async fn list_bills(year_month: String) -> Result<Vec<Bill>, String> {
     let pool = db::pool().map_err(String::from)?;
@@ -217,7 +218,7 @@ pub(crate) async fn list_bills_impl(
          ORDER BY \
             CASE b.status WHEN 'draft' THEN 0 ELSE 1 END ASC, \
             b.is_mid_month DESC, \
-            s.name ASC",
+            s.school_level ASC, s.grade ASC, s.name ASC",
     )
     .bind(year_month)
     .fetch_all(pool)
@@ -401,6 +402,9 @@ pub struct PaymentViewRow {
     pub student_id: i64,
     pub student_name: String,
     pub student_serial_no: String,
+    /// Sprint 19 사용자 요청 — 기본 정렬(학년별+이름) 및 화면 표시용.
+    pub student_grade: i64,
+    pub student_school_level: String,
     pub adjusted_amount: i64,
     pub is_mid_month: bool,
     pub mid_month_type: Option<String>,
@@ -425,9 +429,13 @@ pub(crate) async fn list_payment_view_impl(
     year_month: &str,
 ) -> Result<Vec<PaymentViewRow>, String> {
     validate_year_month(year_month)?;
+    // Sprint 19 사용자 요청 — 미수납/월중입퇴교 업무 그룹핑(기존 우선순위)은 유지하되,
+    // 그 안에서의 정렬 기준을 이름 단독에서 학년별(school_level→grade)+이름으로 강화
+    // (billing.rs list_bills_impl과 동일 정책).
     let rows = sqlx::query(
         "SELECT b.id AS bill_id, p.id AS payment_id, b.student_id, \
-                s.name AS student_name, s.serial_no, b.adjusted_amount, \
+                s.name AS student_name, s.serial_no, s.grade, s.school_level, \
+                b.adjusted_amount, \
                 b.is_mid_month, b.mid_month_type, \
                 COALESCE(p.is_paid, 0) AS is_paid, \
                 p.paid_date, p.payer_name, \
@@ -442,7 +450,7 @@ pub(crate) async fn list_payment_view_impl(
          ORDER BY \
             COALESCE(p.is_paid, 0) ASC, \
             b.is_mid_month DESC, \
-            s.name ASC",
+            s.school_level ASC, s.grade ASC, s.name ASC",
     )
     .bind(year_month)
     .fetch_all(pool)
@@ -457,6 +465,8 @@ pub(crate) async fn list_payment_view_impl(
                 student_id: r.try_get("student_id").map_err(|e| e.to_string())?,
                 student_name: r.try_get("student_name").map_err(|e| e.to_string())?,
                 student_serial_no: r.try_get("serial_no").map_err(|e| e.to_string())?,
+                student_grade: r.try_get("grade").map_err(|e| e.to_string())?,
+                student_school_level: r.try_get("school_level").map_err(|e| e.to_string())?,
                 adjusted_amount: r.try_get("adjusted_amount").map_err(|e| e.to_string())?,
                 is_mid_month: {
                     let v: i64 = r.try_get("is_mid_month").map_err(|e| e.to_string())?;
@@ -696,6 +706,9 @@ pub struct UnpaidBill {
     pub student_id: i64,
     pub student_name: String,
     pub student_serial_no: String,
+    /// Sprint 19 사용자 요청 — 기본 정렬(학년별+이름) 및 화면 표시용.
+    pub student_grade: i64,
+    pub student_school_level: String,
     pub adjusted_amount: i64,
     pub is_mid_month: bool,
     pub mid_month_type: Option<String>,
@@ -826,15 +839,17 @@ pub(crate) async fn list_unpaid_bills_impl(
     year_month: &str,
 ) -> Result<Vec<UnpaidBill>, String> {
     validate_year_month(year_month)?;
+    // Sprint 19 사용자 요청 — 기본 정렬을 이름 단독에서 학년별(school_level→grade)+이름으로 강화.
     let rows = sqlx::query(
         "SELECT b.id AS bill_id, b.student_id, s.name AS student_name, s.serial_no, \
+                s.grade, s.school_level, \
                 b.adjusted_amount, b.is_mid_month, b.mid_month_type \
          FROM bills b \
          JOIN students s ON s.id = b.student_id \
          LEFT JOIN payments p ON p.bill_id = b.id \
          WHERE b.bill_year_month = ? \
            AND (p.id IS NULL OR p.is_paid = 0) \
-         ORDER BY s.name ASC",
+         ORDER BY s.school_level ASC, s.grade ASC, s.name ASC",
     )
     .bind(year_month)
     .fetch_all(pool)
@@ -848,6 +863,8 @@ pub(crate) async fn list_unpaid_bills_impl(
                 student_id: r.try_get("student_id").map_err(|e| e.to_string())?,
                 student_name: r.try_get("student_name").map_err(|e| e.to_string())?,
                 student_serial_no: r.try_get("serial_no").map_err(|e| e.to_string())?,
+                student_grade: r.try_get("grade").map_err(|e| e.to_string())?,
+                student_school_level: r.try_get("school_level").map_err(|e| e.to_string())?,
                 adjusted_amount: r.try_get("adjusted_amount").map_err(|e| e.to_string())?,
                 is_mid_month: {
                     let v: i64 = r.try_get("is_mid_month").map_err(|e| e.to_string())?;
@@ -1387,6 +1404,32 @@ mod tests {
         assert_eq!(bills[1].student_id, a);
         // confirmed → 마지막 (C)
         assert_eq!(bills[2].student_id, c);
+    }
+
+    #[tokio::test]
+    async fn list_bills_orders_by_grade_then_name_within_same_group() {
+        // Sprint 19 T3(사용자 요청 1번): 동일 status+mid_month 그룹 내에서는
+        // school_level→grade→name 순서 — 이름만으로는 구분 안 되는 경우도 검증.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "학생가", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "학생나", "2026-01-01", None).await;
+        for s in [a, b] {
+            seed_schedule(&pool, s, 1, 1).await;
+        }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        // a 를 중학생으로 승격 — 이름순(가→나)과 반대로 나와야 school_level 이 실제
+        // 정렬 기준임을 증명 (elementary 인 b 가 middle 인 a 보다 먼저).
+        sqlx::query("UPDATE students SET school_level='middle', grade=2 WHERE id=?")
+            .bind(a)
+            .execute(&pool)
+            .await
+            .expect("학생 학교급 갱신");
+
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let bills = list_bills_impl(&pool, "2026-05").await.expect("list");
+        assert_eq!(bills.len(), 2);
+        assert_eq!(bills[0].student_id, b, "elementary 가 middle 보다 먼저");
+        assert_eq!(bills[1].student_id, a);
     }
 
     #[tokio::test]
@@ -2067,6 +2110,52 @@ mod tests {
             paid.payment_method_label.is_some(),
             "결제수단 라벨 JOIN 채워짐"
         );
+    }
+
+    #[tokio::test]
+    async fn payment_view_orders_by_grade_then_name_within_same_group() {
+        // 사용자 요청 — 수납관리(list_payment_view) 기본 정렬에도 학년별+이름 적용.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "학생가", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "학생나", "2026-01-01", None).await;
+        for s in [a, b] {
+            seed_schedule(&pool, s, 1, 1).await;
+        }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        // a 를 중학생으로 승격 — elementary 인 b 가 먼저 나와야 한다(이름순 '가'<'나' 와 반대).
+        sqlx::query("UPDATE students SET school_level='middle', grade=2 WHERE id=?")
+            .bind(a)
+            .execute(&pool)
+            .await
+            .expect("학생 학교급 갱신");
+
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let rows = list_payment_view_impl(&pool, "2026-05").await.expect("view");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].student_id, b, "elementary 가 middle 보다 먼저");
+        assert_eq!(rows[1].student_id, a);
+    }
+
+    #[tokio::test]
+    async fn list_unpaid_bills_orders_by_grade_then_name() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let a = seed_student(&pool, "1", "학생다", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "학생라", "2026-01-01", None).await;
+        for s in [a, b] {
+            seed_schedule(&pool, s, 1, 1).await;
+        }
+        seed_standard_fee(&pool, 1, 100_000).await;
+        sqlx::query("UPDATE students SET school_level='middle', grade=1 WHERE id=?")
+            .bind(a)
+            .execute(&pool)
+            .await
+            .expect("학생 학교급 갱신");
+
+        generate_bills_impl(&pool, "2026-05").await.expect("gen");
+        let unpaid = list_unpaid_bills_impl(&pool, "2026-05").await.expect("list");
+        assert_eq!(unpaid.len(), 2);
+        assert_eq!(unpaid[0].student_id, b, "elementary 가 middle 보다 먼저");
+        assert_eq!(unpaid[1].student_id, a);
     }
 
     /// search_students_for_billing_impl — 이름 매칭 + 최근 수납 정보(ROW_NUMBER) 자동 채움.

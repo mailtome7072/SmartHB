@@ -67,7 +67,8 @@ export default function ChangePinPage() {
 
   return (
     <AppShell topBarSlot={<GlobalSearch />}>
-      <div className="mx-auto max-w-md">
+      {/* 사용자 요청 — 전체 행간 1.25(leading-tight)로 통일. */}
+      <div className="mx-auto max-w-md leading-tight">
         <SettingsHomeLink />
         <h1 className="mb-2 text-center text-2xl font-bold">PIN 번호 변경</h1>
         <p className="mb-6 text-center text-base text-gray-600">
