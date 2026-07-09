@@ -434,7 +434,9 @@ export function PaymentsView({
                   </td>
                   <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.paidDate ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.paidDate ?? '—'}
+                      </span>
                     ) : (
                       <input
                         type="date"
@@ -447,13 +449,15 @@ export function PaymentsView({
                           }
                         }}
                         disabled={!d.isPaid}
-                        className="h-8 w-36 rounded border border-[var(--border)] px-2 disabled:bg-gray-100"
+                        className="h-7 w-36 rounded border border-[var(--border)] px-2 text-sm disabled:bg-gray-100"
                       />
                     )}
                   </td>
                   <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.payerName ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.payerName ?? '—'}
+                      </span>
                     ) : (
                       <input
                         id={`payer-${b.billId}`}
@@ -461,13 +465,15 @@ export function PaymentsView({
                         value={d.payerName}
                         onChange={(e) => updateDraft(b.billId, { payerName: e.target.value })}
                         placeholder="이름"
-                        className="h-8 w-28 rounded border border-[var(--border)] px-2"
+                        className="h-7 w-28 rounded border border-[var(--border)] px-2 text-sm"
                       />
                     )}
                   </td>
                   <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.paymentMethodLabel ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.paymentMethodLabel ?? '—'}
+                      </span>
                     ) : (
                       <select
                         value={d.paymentMethodId ?? ''}
@@ -482,7 +488,7 @@ export function PaymentsView({
                                 : d.cardCompanyId,
                           })
                         }
-                        className={`h-8 w-28 rounded border px-2 ${
+                        className={`h-7 w-28 rounded border px-2 text-sm ${
                           d.isPaid && d.paymentMethodId === null
                             ? 'border-[var(--danger)]'
                             : 'border-[var(--border)]'
@@ -500,7 +506,9 @@ export function PaymentsView({
                   </td>
                   <td className="px-3 py-1">
                     {b.isPaid ? (
-                      <span className="text-sm text-gray-700">{b.cardCompanyLabel ?? '—'}</span>
+                      <span className="inline-flex h-7 items-center text-sm text-gray-700">
+                        {b.cardCompanyLabel ?? '—'}
+                      </span>
                     ) : (
                       <select
                         value={d.cardCompanyId ?? ''}
@@ -510,7 +518,7 @@ export function PaymentsView({
                           })
                         }
                         disabled={!showCardCompany}
-                        className={`h-8 w-32 rounded border px-2 disabled:bg-gray-100 ${
+                        className={`h-7 w-32 rounded border px-2 text-sm disabled:bg-gray-100 ${
                           isCard && d.cardCompanyId === null
                             ? 'border-[var(--danger)]'
                             : 'border-[var(--border)]'
