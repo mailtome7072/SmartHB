@@ -24,7 +24,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAppStore } from '@/stores/app-store'
 import { MENU_ITEMS } from '@/lib/menu-config'
-import { quitApp } from '@/lib/tauri'
+import { openManual, quitApp } from '@/lib/tauri'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -108,6 +108,15 @@ export function Sidebar() {
             )}
           </li>
         ))}
+        <li>
+          <button
+            type="button"
+            onClick={() => void openManual()}
+            className="flex min-h-[44px] w-full items-center border-l-4 border-transparent px-4 py-3 text-left text-base text-[var(--foreground)] hover:bg-[var(--background)]"
+          >
+            매뉴얼
+          </button>
+        </li>
         <li>
           <AlertDialog>
             <AlertDialogTrigger

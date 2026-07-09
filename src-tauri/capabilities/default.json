@@ -9,6 +9,7 @@
     "core:window:allow-create",
     "core:window:allow-close",
     "core:webview:allow-create-webview-window",
+    "core:path:allow-resolve-directory",
     "shell:allow-open",
     "dialog:allow-open",
     "dialog:allow-save",

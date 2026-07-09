@@ -207,6 +207,24 @@ export async function quitApp(): Promise<void> {
 }
 
 /**
+ * 앱에 번들된 사용 매뉴얼(HTML)을 시스템 기본 브라우저로 연다.
+ *
+ * 사이드바 "매뉴얼" 메뉴가 호출. 개발 모드(Tauri 없이 브라우저 실행)에서는
+ * 리소스 경로 해석이 불가능하므로 동작하지 않는다.
+ */
+export async function openManual(): Promise<void> {
+  if (typeof window === 'undefined') return
+  try {
+    const { resolveResource } = await import('@tauri-apps/api/path')
+    const { open } = await import('@tauri-apps/plugin-shell')
+    const path = await resolveResource('resources/manual/index.html')
+    await open(path)
+  } catch {
+    // 브라우저 환경 (Tauri 없이 실행 시) — 동작하지 않음
+  }
+}
+
+/**
  * 현재 인증 상태를 조회한다.
  *
  * - `'not-initialized'`: 비밀번호 미설정 — 최초 설정 모드 진입
