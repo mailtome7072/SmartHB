@@ -52,6 +52,9 @@ interface Props {
   searchResults: BillingSearchResult[]
   /** 수납 상태 필터 — 'all' / 'paid' / 'unpaid'. */
   paymentFilter: 'all' | 'paid' | 'unpaid'
+  /** 사용자 요청 — 그리드 상단 건수 요약 옆에도 필터 라디오를 노출하기 위해 부모 상태를
+   *  직접 변경할 수 있도록 콜백을 받는다. */
+  onFilterChange: (filter: 'all' | 'paid' | 'unpaid') => void
   /** P0-4: 미저장 변경 건수 통지 — 부모가 탭/월 변경 가드에 사용. */
   onDirtyChange?: (count: number) => void
 }
@@ -92,6 +95,7 @@ export function PaymentsView({
   matchedStudentIds,
   searchResults,
   paymentFilter,
+  onFilterChange,
   onDirtyChange,
 }: Props) {
   const qc = useQueryClient()
@@ -300,19 +304,54 @@ export function PaymentsView({
 
   const paidCount = rows.filter((r) => r.isPaid).length
   const unpaidCount = rows.length - paidCount
+  // 사용자 요청 — 라디오 라벨 건수는 현재 선택된 필터와 무관하게 검색 조건까지만 반영한
+  // 고정값(상단 툴바 필터와 동일 방식)이어야 "전체/수납완료/미수납" 각 옵션의 실제
+  // 건수를 항상 확인할 수 있다.
+  const searchFilteredRows = allRows.filter(
+    (r) => matchedStudentIds === null || matchedStudentIds.has(r.studentId),
+  )
+  const totalPaidCount = searchFilteredRows.filter((r) => r.isPaid).length
+  const totalUnpaidCount = searchFilteredRows.length - totalPaidCount
 
   return (
     // 사용자 요청 — 청구/수납 그리드 모두 좌우+상하 스크롤 가능하도록(출결관리와 동일 패턴).
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-3 flex shrink-0 items-center justify-between">
-        <p className="text-base">
-          청구 <strong>{rows.length}건</strong> · 수납완료 {paidCount} · 미수납 {unpaidCount}
-          {dirtyEntries.length > 0 && (
-            <span className="ml-2 text-sm text-amber-700">
-              · 변경 {dirtyEntries.length}건
-            </span>
-          )}
-        </p>
+      <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-base">
+            청구 <strong>{rows.length}건</strong> · 수납완료 {paidCount} · 미수납 {unpaidCount}
+            {dirtyEntries.length > 0 && (
+              <span className="ml-2 text-sm text-amber-700">
+                · 변경 {dirtyEntries.length}건
+              </span>
+            )}
+          </p>
+          {/* 사용자 요청 — 건수 요약 옆에도 수납 상태 필터 라디오 노출(디폴트 전체). */}
+          <div className="flex items-center gap-3 text-base" role="radiogroup" aria-label="수납 상태 필터">
+            {(
+              [
+                ['all', '전체', searchFilteredRows.length],
+                ['paid', '수납완료', totalPaidCount],
+                ['unpaid', '미수납', totalUnpaidCount],
+              ] as const
+            ).map(([key, label, count]) => (
+              <label
+                key={key}
+                className="flex min-h-[32px] cursor-pointer items-center gap-1 text-gray-700"
+              >
+                <input
+                  type="radio"
+                  name="payments-view-filter"
+                  value={key}
+                  checked={paymentFilter === key}
+                  onChange={() => onFilterChange(key)}
+                  className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
+                />
+                {label}({count})
+              </label>
+            ))}
+          </div>
+        </div>
         <button
           type="button"
           onClick={handleSave}

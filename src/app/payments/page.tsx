@@ -187,6 +187,7 @@ function PaymentsContent() {
               matchedStudentIds={matchedStudentIds}
               searchResults={searchResults}
               paymentFilter={paymentFilter}
+              onFilterChange={setPaymentFilter}
               onDirtyChange={setDirtyCount}
             />
           </div>
