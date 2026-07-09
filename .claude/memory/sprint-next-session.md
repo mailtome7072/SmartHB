@@ -1,6 +1,6 @@
 ---
 name: sprint-next-session
-description: "✅ Sprint 19 완료 + develop 머지 완료(2026-07-09, b5bf1b6) — v1.1.0은 이미 master 배포됨. 남은 일: Sprint 19 프로덕션 배포(버전 태그 미정, v1.2.0 후보). 새 세션 진입 시 가장 먼저 확인"
+description: "✅ Sprint 19 완료 + develop 머지 + v1.2.0 프로덕션 배포 전부 완료(2026-07-09). 다음 스프린트(Sprint 20) 계획 대기 중. 새 세션 진입 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
@@ -33,12 +33,17 @@ Sprint 17+18 범위였고 Sprint 19는 별도로 미배포 상태였음.
 3. **CDP 기반 실기동 검증**: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"` + `chrome-remote-interface`로 사이드바 "매뉴얼" 버튼 실클릭 → 기본 브라우저(Edge)에 매뉴얼 열림 확인 (스크린샷으로도 렌더링 확인)
    - 잠금 화면(`/lock`, `check_auth_status`='locked')에 걸리면 `auto_unlock_with_keychain` invoke 후 `location.reload()` 필요 (raw invoke만으론 React 상태 미갱신 → `/lock`으로 되돌아감)
 
-## ⬜ 남은 일 (다음 세션)
-
-1. **Sprint 19 프로덕션 배포**: develop은 이미 push 완료(b5bf1b6). "프로덕션 배포 준비해줘" → deploy-prod 에이전트로 develop→master 직접 머지 + 버전 태그(v1.2.0 후보, 사용자 확인 필요) + GitHub Release
-2. DEPLOY.md 현재 배포 현황 섹션은 "2026-07-08 | Post-v1.1 | Sprint 19"로 스테이징 검증 ✅ 완료 상태 — 프로덕션 배포 시 CV 체크리스트 이어서 진행
+### 4. v1.2.0 프로덕션 배포 완료 (deploy-prod 에이전트, 같은 세션)
+- risk-register 문서상 R129(높음)/R130(중간)가 "미해결"로 남아있었으나, 실제로는 커밋 e72c50f(sprint19-review F1~F4)에서 이미 해결됨 — 문서만 갱신 안 된 상태였음. 배포 전 실제 코드(GradePromotionDialog.tsx catch/ErrorDialog, useTableSort.ts withTiebreak)를 직접 확인해 해결 여부를 검증한 뒤 문서만 동기화하고 배포 진행. **risk-register/retrospective 액션아이템은 fix 커밋이 나가도 자동으로 안 닫힌다 — 배포 전에는 문서 상태보다 실제 코드를 먼저 확인할 것.**
+- develop → master fast-forward 머지, 버전 1.1.0 → 1.2.0, 태그 push, GitHub Actions 빌드(Windows+macOS) 성공, GitHub Release 아티팩트 검증 완료: https://github.com/mailtome7072/SmartHB/releases/tag/v1.2.0
+- **배포 중 발견된 실수**: 버전 bump 시 `package.json`/`Cargo.toml`만 갱신하고 `tauri.conf.json`을 빠뜨려 첫 빌드 아티팩트가 `SmartHB_1.1.0_*` 파일명으로 잘못 생성됨 — 태그 재생성으로 수정. 자세한 내용: [[deploy-version-three-files]]
+- `gh auth login`은 대화형(브라우저 코드 입력)이라 에이전트가 대신 실행 불가 — 사용자가 `! gh auth login`으로 직접 실행해야 함
+- local/remote develop·master 모두 동기화 완료 상태
 
 ## 마이그레이션 현황
-최신 **V310** (schools.school_type 자동 보정). develop에 반영 완료.
+최신 **V310** (schools.school_type 자동 보정). develop+master 모두 반영 완료.
 
-관련: [[workflow-no-pr]]
+## ⬜ 다음 세션 진입 시
+Sprint 20 계획 수립 대기 중 — 특별히 남은 작업 없음. 사용자가 다음 기능/개선 요청하면 그때부터 신규 사이클 시작.
+
+관련: [[workflow-no-pr]], [[deploy-version-three-files]]
