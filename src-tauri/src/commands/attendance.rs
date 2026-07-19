@@ -1508,9 +1508,13 @@ async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
         .await
         .map_err(|e| format!("출결 삭제 실패: {}", e))?;
     } else {
-        // OFF 이벤트 없음 → 교습기간 확인 후 INSERT OR IGNORE
-        let in_period: Option<i64> = sqlx::query_scalar(
-            "SELECT 1 FROM study_periods \
+        // OFF 이벤트 없음 → 날짜가 속한 확정 교습기간 확인 후 INSERT OR IGNORE.
+        // T1(Sprint 21): 태깅 year_month 를 달력월(date[..7])이 아닌 **교습기간 year_month**로
+        // 지정해 generate_impl 과 태깅 기준을 통일한다 — 다월 교습기간(예: 8월 7/30~9/2)에서
+        // 9/1 출결이 "2026-09"로 태깅되어 8월 그리드에 안 뜨던 불일치(R136) 해소.
+        // 교습기간 일자 중첩은 academic.rs IPC 레벨에서 금지되므로 날짜당 교습기간은 최대 1개.
+        let period_ym: Option<String> = sqlx::query_scalar(
+            "SELECT year_month FROM study_periods \
              WHERE start_date <= ? AND end_date >= ? AND is_confirmed = 1",
         )
         .bind(date)
@@ -1519,10 +1523,9 @@ async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
         .await
         .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
 
-        if in_period.is_some() {
+        if let Some(ym) = period_ym {
             let d = parse_date(date)?;
             let dow = d.weekday().number_from_monday() as i64;
-            let ym = &date[..7];
             sqlx::query(
                 "INSERT OR IGNORE INTO regular_attendances \
                  (student_id, event_date, year_month, status, class_minutes) \
@@ -1536,7 +1539,7 @@ async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
                    AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?)",
             )
             .bind(date)
-            .bind(ym)
+            .bind(&ym)
             .bind(dow)
             .bind(date)
             .bind(date)
@@ -2817,6 +2820,80 @@ mod tests {
         .await
         .unwrap();
         assert!(cnt >= 1, "OUT→ON: 출결 INSERT 기대, 실제 {}", cnt);
+    }
+
+    /// Sprint 21 T1(a): 다월 교습기간에서 sync 가 달력월이 아닌 교습기간 year_month 로 태깅.
+    #[tokio::test]
+    async fn sync_tags_with_teaching_period_ym_for_multimonth() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        // 8월 교습기간이 7/30~9/2 로 다월에 걸침.
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        // 화요일(2) 수업 — 2026-09-01 = 화.
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(2, 1)]).await;
+
+        sync_attendance_on_schedule_change(&pool, "2026-09-01", None)
+            .await
+            .expect("sync");
+
+        let ym: Option<String> = sqlx::query_scalar(
+            "SELECT year_month FROM regular_attendances \
+             WHERE student_id = ? AND event_date = '2026-09-01'",
+        )
+        .bind(sid)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            ym.as_deref(),
+            Some("2026-08"),
+            "달력월(2026-09)이 아닌 교습기간 ym(2026-08)로 태깅되어야 함"
+        );
+    }
+
+    /// Sprint 21 T1(b): 교습기간 밖 날짜는 sync 가 INSERT 하지 않음(기존 동작 유지).
+    #[tokio::test]
+    async fn sync_skips_date_outside_teaching_period() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        // 목요일(4) 수업 — 2026-09-03 = 목(교습기간 끝 9/2 이후).
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(4, 1)]).await;
+
+        sync_attendance_on_schedule_change(&pool, "2026-09-03", None)
+            .await
+            .expect("sync");
+
+        let cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances \
+             WHERE student_id = ? AND event_date = '2026-09-03'",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cnt, 0, "교습기간 밖 날짜는 sync INSERT 안 함");
+    }
+
+    /// Sprint 21 T1(c): 단일월 교습기간은 기존과 동일(교습기간 ym = 달력월) — 회귀 없음.
+    #[tokio::test]
+    async fn sync_tags_calendar_month_for_single_month_period() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-08-01", "2026-08-31", 1).await;
+        // 월요일(1) 수업 — 2026-08-03 = 월.
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+
+        sync_attendance_on_schedule_change(&pool, "2026-08-03", None)
+            .await
+            .expect("sync");
+
+        let ym: Option<String> = sqlx::query_scalar(
+            "SELECT year_month FROM regular_attendances \
+             WHERE student_id = ? AND event_date = '2026-08-03'",
+        )
+        .bind(sid)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ym.as_deref(), Some("2026-08"), "단일월은 교습기간 ym = 달력월");
     }
 
     /// T8 AC-2: ON→OFF — OFF 이벤트 추가 후 해당 날짜 출결 DELETE

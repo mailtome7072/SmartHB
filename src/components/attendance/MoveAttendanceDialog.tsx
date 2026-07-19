@@ -41,7 +41,12 @@ export function MoveAttendanceDialog({
   const [startHour, setStartHour] = useState(16)
   const queryClient = useQueryClient()
 
-  const [year, month] = yearMonth.split('-').map(Number)
+  // Sprint 21 T3: 수업일 이동은 백엔드가 '같은 달(달력월)' 한정이므로(다른 달은 보강으로),
+  // 달력을 교습기간 ym 이 아니라 **출발일(fromDate)의 달력월** 기준으로 그린다. 다월 교습기간의
+  // 이웃 달 출발일(예: 7/30)도 그 달(7월) 안에서 이동 대상을 고르게 되어 백엔드 제약과 정합.
+  const year = Number(fromDate.slice(0, 4))
+  const month = Number(fromDate.slice(5, 7))
+  const fromYm = fromDate.slice(0, 7)
   const lastDay = new Date(year, month, 0).getDate()
   const firstDow = new Date(year, month - 1, 1).getDay() // 0=일
 
@@ -68,7 +73,7 @@ export function MoveAttendanceDialog({
   }, [daySchedules])
 
   function dateStr(day: number): string {
-    return `${yearMonth}-${String(day).padStart(2, '0')}`
+    return `${fromYm}-${String(day).padStart(2, '0')}`
   }
 
   function reason(day: number): string | null {
