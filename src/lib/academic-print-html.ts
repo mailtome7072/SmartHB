@@ -26,31 +26,30 @@ interface GridCell {
   day: number
   outsideMonth: boolean
   dow: number
+  /** 셀의 실제 날짜(YYYY-MM-DD) — 앞/뒤 이웃 달 칸도 정확한 일자를 갖는다. */
+  iso: string
 }
 
+/** 해당 월의 달력 그리드(주 단위). 앞뒤로 채워지는 이웃 달 칸도 실제 날짜(iso)를 계산해 둔다. */
 function buildCalendarGrid(year: number, month: number): GridCell[] {
   const firstDow = new Date(year, month - 1, 1).getDay()
   const daysInMonth = new Date(year, month, 0).getDate()
-  const prevDays = new Date(year, month - 1, 0).getDate()
+  const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7
   const cells: GridCell[] = []
-
-  for (let i = 0; i < firstDow; i++) {
-    const d = prevDays - firstDow + 1 + i
-    cells.push({ day: d, outsideMonth: true, dow: i })
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ day: d, outsideMonth: false, dow: (firstDow + d - 1) % 7 })
-  }
-  const totalCells = Math.ceil(cells.length / 7) * 7
-  const remaining = totalCells - cells.length
-  for (let i = 1; i <= remaining; i++) {
-    cells.push({ day: i, outsideMonth: true, dow: (firstDow + daysInMonth + i - 1) % 7 })
+  for (let i = 0; i < totalCells; i++) {
+    // 1일에서 firstDow 만큼 앞선 날부터 순차 진행 — JS Date 가 월/연 경계를 자동 처리.
+    const d = new Date(year, month - 1, 1 - firstDow + i)
+    const cy = d.getFullYear()
+    const cm = d.getMonth() + 1
+    const cd = d.getDate()
+    cells.push({
+      day: cd,
+      outsideMonth: !(cy === year && cm === month),
+      dow: d.getDay(),
+      iso: `${cy}-${String(cm).padStart(2, '0')}-${String(cd).padStart(2, '0')}`,
+    })
   }
   return cells
-}
-
-function dateStr(year: number, month: number, day: number): string {
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
 function midIsoDate(start: string, end: string): string {
@@ -89,9 +88,11 @@ const STYLE = `
     font-family: Pretendard, -apple-system, sans-serif;
     background: #e5e7eb;
   }
-  /* 항상 1페이지에 맞춘다 — 전체를 뷰포트/페이지 높이(100vh)에 맞춰 flex 로 눌러 담고,
-     교습기간이 두 달에 걸치면 두 달 표가 그 안에서 공간을 나눠 가진다(행 수만큼 축소). */
-  .print-root {
+  .print-root { width: 100%; }
+  /* 한 페이지 = A4 가로 1장. 페이지 안에서 1~2개월 표가 flex 로 세로 공간을 나눠 갖는다
+     (행 수만큼 축소). 교습기간이 3개월 이상 걸치면 아래 페이지 분할(page-break)로 여러 장에
+     나눠, 각 월 달력이 항상 읽을 수 있는 크기를 유지한다(2개월/페이지). */
+  .print-page {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -152,6 +153,8 @@ const STYLE = `
     body { background: #fff; }
     @page { size: A4 landscape; margin: 8mm; }
     .print-month { page-break-inside: avoid; }
+    /* 3개월 이상 걸침 → 페이지당 2개월씩 분할 인쇄. 마지막 페이지 뒤 빈 장 방지. */
+    .print-page:not(:last-child) { page-break-after: always; }
   }
 `
 
@@ -160,16 +163,30 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
   const [sy, sm] = period.start_date.split('-').map(Number)
   const [ey, em] = period.end_date.split('-').map(Number)
 
+  // 주(主) 월 = 교습기간의 year_month. 교습기간이 3개월에 걸쳐도 대부분 "이전달 말주 + 주 월 +
+  // 다음달 첫주" 형태라, 그 앞뒤 며칠은 주 월 달력 그리드의 이웃 달 칸에 자연히 들어간다.
+  // → 교습기간 전체가 주 월 그리드(이웃 달 칸 포함) 범위에 들어오면 달력 한 장으로 표기한다.
+  const [pYear, pMonth] = period.year_month.split('-').map(Number)
+  const primaryGrid = buildCalendarGrid(pYear, pMonth)
+  const gridStartIso = primaryGrid[0].iso
+  const gridEndIso = primaryGrid[primaryGrid.length - 1].iso
+  const fitsSinglePage = period.start_date >= gridStartIso && period.end_date <= gridEndIso
+
   const months: { year: number; month: number }[] = []
-  let cy = sy
-  let cm = sm
-  while (cy < ey || (cy === ey && cm <= em)) {
-    months.push({ year: cy, month: cm })
-    if (cm === 12) {
-      cy++
-      cm = 1
-    } else {
-      cm++
+  if (fitsSinglePage) {
+    months.push({ year: pYear, month: pMonth })
+  } else {
+    // 드문 대규모 기간(그리드 밖까지 걸침) — 월별 달력으로 나눠 표기(멀티페이지 폴백).
+    let cy = sy
+    let cm = sm
+    while (cy < ey || (cy === ey && cm <= em)) {
+      months.push({ year: cy, month: cm })
+      if (cm === 12) {
+        cy++
+        cm = 1
+      } else {
+        cm++
+      }
     }
   }
 
@@ -221,32 +238,32 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
     bandLabelDate.set(e.id, midIsoDate(e.event_date, e.period_end_date as string))
   }
 
-  const title = `${sm}월 교습일정 (${period.start_date.slice(5).replace('-', '.')}~${period.end_date.slice(5).replace('-', '.')})`
+  const title = `${pMonth}월 교습일정 (${period.start_date.slice(5).replace('-', '.')}~${period.end_date.slice(5).replace('-', '.')})`
 
-  const monthsHtml = months
+  const monthHtmlList = months
     .map(({ year, month }) => {
       const grid = buildCalendarGrid(year, month)
       const rowCount = grid.length / 7
 
       function neighborIsTeaching(row: number, col: number): boolean {
         if (row < 0 || row >= rowCount || col < 0 || col > 6) return false
-        const n = grid[row * 7 + col]
-        if (n.outsideMonth) return false
-        return isTeaching(dateStr(year, month, n.day))
+        // 이웃 칸의 실제 날짜(iso)로 판정 — 이웃 달 칸(교습기간에 포함된 앞뒤 며칠)도
+        // 같은 교습영역으로 이어져 외곽선이 월 경계에서 끊기지 않게 한다.
+        return isTeaching(grid[row * 7 + col].iso)
       }
 
       const rowsHtml = Array.from({ length: rowCount }, (_, row) => {
         const cellsHtml = grid
           .slice(row * 7, row * 7 + 7)
           .map((cell, col) => {
-            const ds = cell.outsideMonth ? '' : dateStr(year, month, cell.day)
-            const inPeriod = !cell.outsideMonth && ds >= period.start_date && ds <= period.end_date
-            const dayEvents = (ds ? (eventByDate.get(ds) ?? []) : []).filter((e) => !isBandEvent(e))
-            const cellBands = ds
-              ? bandEvents.filter((e) => ds >= e.event_date && ds <= (e.period_end_date as string))
-              : []
+            const ds = cell.iso
+            const inPeriod = ds >= period.start_date && ds <= period.end_date
+            const dayEvents = (eventByDate.get(ds) ?? []).filter((e) => !isBandEvent(e))
+            const cellBands = bandEvents.filter(
+              (e) => ds >= e.event_date && ds <= (e.period_end_date as string),
+            )
 
-            const teaching = !cell.outsideMonth && ds !== '' && isTeaching(ds)
+            const teaching = isTeaching(ds)
             const outlineClasses = teaching
               ? [
                   !neighborIsTeaching(row - 1, col) ? 'print-teach-t' : '',
@@ -272,7 +289,9 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
               .join('')
 
             const bandClass = cellBands.length > 0 ? 'print-band' : ''
-            return `<td class="print-cell ${cell.outsideMonth ? 'print-outside' : ''} ${inPeriod ? 'print-in-period' : ''} ${bandClass} ${outlineClasses}">${bandsHtml}<span class="print-day-num ${dowClass}">${cell.day}</span>${eventsHtml}</td>`
+            // 교습기간에 포함된 이웃 달 칸(앞뒤 며칠)은 정상 표기, 포함되지 않은 이웃 달 칸만 회색.
+            const outsideClass = cell.outsideMonth && !inPeriod ? 'print-outside' : ''
+            return `<td class="print-cell ${outsideClass} ${inPeriod ? 'print-in-period' : ''} ${bandClass} ${outlineClasses}">${bandsHtml}<span class="print-day-num ${dowClass}">${cell.day}</span>${eventsHtml}</td>`
           })
           .join('')
         return `<tr>${cellsHtml}</tr>`
@@ -292,7 +311,17 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
         </div>
       `
     })
-    .join('')
+
+  // 페이지당 최대 2개월씩 묶어 페이지로 분할한다(1~2개월은 자연히 1페이지 → 기존 레이아웃 유지).
+  // 3개월 이상 걸치면 여러 페이지로 나뉘어 각 월 달력이 읽을 수 있는 크기를 유지한다.
+  const MONTHS_PER_PAGE = 2
+  const pagesHtml: string[] = []
+  for (let i = 0; i < monthHtmlList.length; i += MONTHS_PER_PAGE) {
+    const pageMonths = monthHtmlList.slice(i, i + MONTHS_PER_PAGE).join('')
+    pagesHtml.push(
+      `<div class="print-page"><h2 class="print-title">${escapeHtml(title)}</h2>${pageMonths}</div>`,
+    )
+  }
 
   return `<!doctype html>
 <html lang="ko">
@@ -303,8 +332,7 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
 </head>
 <body>
   <div class="print-root">
-    <h2 class="print-title">${escapeHtml(title)}</h2>
-    ${monthsHtml}
+    ${pagesHtml.join('')}
   </div>
   <script>
     // 인쇄/취소와 무관하게 대화상자가 닫히면(afterprint) 이 창은 용도를 다했으므로 스스로 닫는다.

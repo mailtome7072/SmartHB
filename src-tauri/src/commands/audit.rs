@@ -61,6 +61,8 @@ pub enum AuditEventType {
     ScheduleChangedWithRegen,
     // Sprint 19 T8 — 매년 1월 이후 최초 실행 시 사용자 확인 후 일괄 학년 승급
     GradesPromoted,
+    // Sprint 20 T3 — 청구 삭제 (ADR-010 B안: 미수납만 삭제 허용)
+    BillDeleted,
 }
 
 impl AuditEventType {
@@ -85,6 +87,7 @@ impl AuditEventType {
             Self::AttendanceRescheduled => "attendance-rescheduled",
             Self::ScheduleChangedWithRegen => "schedule-changed-with-regen",
             Self::GradesPromoted => "grades-promoted",
+            Self::BillDeleted => "bill-deleted",
         }
     }
 }

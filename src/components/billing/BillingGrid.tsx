@@ -15,8 +15,9 @@
 
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { confirmBill, updateBill } from '@/lib/tauri'
+import { confirmBill, deleteBill, updateBill } from '@/lib/tauri'
 import { ConfirmBillUpdateDialog } from './ConfirmBillUpdateDialog'
+import { DeleteBillDialog } from './DeleteBillDialog'
 import type { Bill } from '@/types/billing'
 import type { SchoolLevel } from '@/types/student'
 import { compareKorean, useTableSort, withTiebreak } from '@/hooks/useTableSort'
@@ -80,6 +81,7 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
     bill: Bill
     newAmount: number
   } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Bill | null>(null)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['bills', yearMonth] })
@@ -104,6 +106,17 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
       setEditingId(null)
       setEditValue('')
       setPendingUpdate(null)
+      onError('')
+    },
+    onError: (e) => onError(e instanceof Error ? e.message : String(e)),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteBill(id),
+    onMutate: () => onError(''),
+    onSuccess: () => {
+      invalidate()
+      setPendingDelete(null)
       onError('')
     },
     onError: (e) => onError(e instanceof Error ? e.message : String(e)),
@@ -294,16 +307,32 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
                           취소
                         </button>
                       </div>
-                    ) : b.status === 'draft' ? (
-                      <button
-                        type="button"
-                        onClick={() => confirmMutation.mutate(b.id)}
-                        disabled={confirmMutation.isPending}
-                        className="h-9 rounded border border-[var(--accent)] px-3 text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
-                      >
-                        확정
-                      </button>
-                    ) : null}
+                    ) : (
+                      <div className="flex justify-end gap-1">
+                        {b.status === 'draft' && (
+                          <button
+                            type="button"
+                            onClick={() => confirmMutation.mutate(b.id)}
+                            disabled={confirmMutation.isPending}
+                            className="h-9 rounded border border-[var(--accent)] px-3 text-sm text-[var(--accent)] hover:bg-blue-50 disabled:opacity-50"
+                          >
+                            확정
+                          </button>
+                        )}
+                        {/* ADR-010 B안: 미수납 청구만 삭제 가능. 수납완료는 비활성 + 안내. */}
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(b)}
+                          disabled={b.isPaid || deleteMutation.isPending}
+                          title={
+                            b.isPaid ? '수납 해제 후 삭제 가능' : '청구 삭제'
+                          }
+                          className="h-9 rounded border border-[var(--danger)] px-3 text-sm text-[var(--danger)] hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )
@@ -325,6 +354,16 @@ export function BillingGrid({ bills, yearMonth, onError }: Props) {
             })
           }}
           onCancel={() => setPendingUpdate(null)}
+        />
+      )}
+
+      {pendingDelete && (
+        <DeleteBillDialog
+          bill={pendingDelete}
+          onConfirm={async () => {
+            await deleteMutation.mutateAsync(pendingDelete.id)
+          }}
+          onCancel={() => setPendingDelete(null)}
         />
       )}
     </div>

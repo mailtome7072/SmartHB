@@ -30,7 +30,6 @@ use crate::commands::attendance::validate_year_month;
 use crate::commands::audit::{self, AuditEventType};
 use crate::commands::db;
 use crate::error::AppError;
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
@@ -80,7 +79,18 @@ pub(crate) async fn generate_bills_impl(
     year_month: &str,
 ) -> Result<GenerateBillsResult, String> {
     validate_year_month(year_month)?;
-    let (period_start, period_end) = year_month_range(year_month)?;
+    // T1 (Sprint 20): 청구 대상 기간을 달력월이 아닌 교습기간(study_periods) 기준으로 산정.
+    // 교습기간 미등록 월은 청구 생성을 차단한다 — 달력월 기준으로 대상을 잡으면 교습기간
+    // 종료 이후 입교한 원생까지 청구되는 버그(예: 7월 교습기간 7/2~29, 입교 7/30)를 방지.
+    let (period_start, period_end) = match load_billing_period_range(pool, year_month).await? {
+        Some(range) => range,
+        None => {
+            return Err(format!(
+                "{} 교습기간이 등록되지 않았습니다. 학사 캘린더에서 먼저 교습기간을 등록하세요.",
+                year_month
+            ))
+        }
+    };
 
     let mut tx = pool
         .begin()
@@ -101,11 +111,13 @@ pub(crate) async fn generate_bills_impl(
          FROM students s \
          LEFT JOIN student_schedules sch \
                 ON sch.student_id = s.id AND sch.effective_to IS NULL \
+                   AND sch.effective_from <= ? \
          WHERE s.enroll_date <= ? \
            AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
          GROUP BY s.id, s.enroll_date, s.withdraw_date \
          ORDER BY s.id",
     )
+    .bind(&period_end)
     .bind(&period_end)
     .bind(&period_start)
     .fetch_all(&mut *tx)
@@ -316,6 +328,60 @@ pub(crate) async fn update_bill_impl(
     .map_err(|e| format!("청구 수정 실패: {}", e))?;
 
     get_bill_impl(pool, id).await
+}
+
+/// 청구 삭제 (Sprint 20 T3, ADR-010 B안).
+///
+/// 가드: **미수납(`payments.is_paid=0` 또는 payments 행 없음)** 이면 상태(draft/confirmed)
+/// 무관 삭제 허용. **수납완료(`is_paid=1`)는 거부** — 먼저 수납을 해제해야 한다.
+/// `payments.bill_id ON DELETE CASCADE`(V109) 로 수납 행도 함께 삭제된다 —
+/// FK 강제(`PRAGMA foreign_keys=ON`, `db.rs`)가 전제.
+#[tauri::command]
+pub async fn delete_bill(id: i64) -> Result<(), String> {
+    let pool = db::pool().map_err(String::from)?;
+    delete_bill_impl(pool, id).await
+}
+
+pub(crate) async fn delete_bill_impl(pool: &SqlitePool, id: i64) -> Result<(), String> {
+    // 존재 확인 + 삭제 가드용 정보(수납여부·감사 상세)를 1쿼리로 조회.
+    let row = sqlx::query(
+        "SELECT b.student_id, b.bill_year_month, b.adjusted_amount, b.status, p.is_paid \
+         FROM bills b LEFT JOIN payments p ON p.bill_id = b.id \
+         WHERE b.id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("청구 조회 실패: {}", e))?
+    .ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
+
+    let is_paid: Option<i64> = row.try_get("is_paid").map_err(|e| e.to_string())?;
+    // ADR-010 B안: 수납완료된 청구는 삭제 거부.
+    if is_paid == Some(1) {
+        return Err("수납완료된 청구는 삭제할 수 없습니다. 먼저 수납을 해제하세요.".to_string());
+    }
+
+    let student_id: i64 = row.try_get("student_id").map_err(|e| e.to_string())?;
+    let year_month: String = row.try_get("bill_year_month").map_err(|e| e.to_string())?;
+    let amount: i64 = row.try_get("adjusted_amount").map_err(|e| e.to_string())?;
+    let status: String = row.try_get("status").map_err(|e| e.to_string())?;
+    let had_payment = is_paid.is_some();
+
+    // payments 는 ON DELETE CASCADE 로 함께 삭제된다.
+    sqlx::query("DELETE FROM bills WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("청구 삭제 실패: {}", e))?;
+
+    // 감사 로그 — subject=청구 id, details 는 PII 없는 메타(원생명 미포함, student_id 만).
+    let details = format!(
+        r#"{{"billId":{},"studentId":{},"yearMonth":"{}","amount":{},"status":"{}","hadPayment":{}}}"#,
+        id, student_id, year_month, amount, status, had_payment
+    );
+    audit::try_record(AuditEventType::BillDeleted, Some(&id.to_string()), Some(&details)).await;
+
+    Ok(())
 }
 
 // ─────────────────────── T3: 상태 머신 ───────────────────────
@@ -607,23 +673,29 @@ pub(crate) async fn get_default_billing_year_month_impl(
 
 // ─────────────────────── 헬퍼 ───────────────────────
 
-/// YYYY-MM 으로부터 (월초 YYYY-MM-01, 월말 YYYY-MM-DD) 일자 문자열 쌍을 반환.
-fn year_month_range(ym: &str) -> Result<(String, String), String> {
-    let year: i32 = ym[..4].parse().map_err(|e| format!("연도 파싱 실패: {}", e))?;
-    let month: u32 = ym[5..].parse().map_err(|e| format!("월 파싱 실패: {}", e))?;
-    let first = NaiveDate::from_ymd_opt(year, month, 1)
-        .ok_or_else(|| format!("월초 일자 생성 실패: {}-{:02}-01", year, month))?;
-    // 다음 달 첫째 날 - 1일 = 이번 달 말일.
-    let next_first = if month == 12 {
-        NaiveDate::from_ymd_opt(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd_opt(year, month + 1, 1)
+/// 청구 대상 기간을 교습기간(`study_periods`)에서 조회한다 — T1 (Sprint 20).
+///
+/// 반환: `Some((start_date, end_date))` = 해당 월 교습기간 존재 / `None` = 미등록.
+/// `generate_bills_impl` 과 `get_billing_summary_impl` 이 **동일한 대상 기간·규칙**을
+/// 쓰도록 단일 헬퍼로 통일한다. 한쪽만 교습기간 기준으로 바꾸면 청구 대상 수와 생성 청구
+/// 수가 어긋나 "추가 청구 데이터 생성 (N명)" 유령 버튼이 발생한다 (R135).
+async fn load_billing_period_range(
+    pool: &SqlitePool,
+    year_month: &str,
+) -> Result<Option<(String, String)>, String> {
+    let row = sqlx::query("SELECT start_date, end_date FROM study_periods WHERE year_month = ?")
+        .bind(year_month)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
+    match row {
+        Some(r) => {
+            let start: String = r.try_get("start_date").map_err(|e| e.to_string())?;
+            let end: String = r.try_get("end_date").map_err(|e| e.to_string())?;
+            Ok(Some((start, end)))
+        }
+        None => Ok(None),
     }
-    .ok_or_else(|| "다음 달 일자 생성 실패".to_string())?;
-    let last = next_first
-        .pred_opt()
-        .ok_or_else(|| "월말 일자 계산 실패".to_string())?;
-    Ok((first.to_string(), last.to_string()))
 }
 
 /// 월중입퇴교 플래그 산출.
@@ -949,7 +1021,9 @@ pub(crate) async fn get_billing_summary_impl(
     year_month: &str,
 ) -> Result<BillingSummary, String> {
     validate_year_month(year_month)?;
-    let (period_start, period_end) = year_month_range(year_month)?;
+    // T1 (Sprint 20): total_billable_students 산정을 generate_bills 와 동일한 교습기간 기준으로
+    // 통일한다. 한쪽만 바꾸면 "추가 청구 데이터 생성 (N명)" 유령 버튼 발생 (R135).
+    let period = load_billing_period_range(pool, year_month).await?;
 
     let row = sqlx::query(
         "SELECT \
@@ -966,24 +1040,31 @@ pub(crate) async fn get_billing_summary_impl(
     .await
     .map_err(|e| format!("청구 요약 조회 실패: {}", e))?;
 
-    // 해당 월에 수업을 진행한 원생 수 (스케줄 합 > 0 인 청구 대상). hotfix post-Sprint 11.
-    let total_billable_students: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM ( \
-            SELECT s.id \
-            FROM students s \
-            INNER JOIN student_schedules sch \
-                ON sch.student_id = s.id AND sch.effective_to IS NULL \
-            WHERE s.enroll_date <= ? \
-              AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
-            GROUP BY s.id \
-            HAVING SUM(sch.duration_hours) > 0 \
-         )",
-    )
-    .bind(&period_end)
-    .bind(&period_start)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("청구 대상 원생 수 조회 실패: {}", e))?;
+    // 해당 교습기간에 수업을 진행하는 청구 대상 원생 수 (generate_bills 와 동일 규칙:
+    // enroll_date ≤ 교습기간종료, 미퇴교, effective_from ≤ 교습기간종료, 주 수업시간 > 0).
+    // 교습기간 미등록 월은 청구 생성이 차단되므로 대상도 0 으로 본다.
+    let total_billable_students: i64 = match &period {
+        Some((period_start, period_end)) => sqlx::query_scalar(
+            "SELECT COUNT(*) FROM ( \
+                SELECT s.id \
+                FROM students s \
+                INNER JOIN student_schedules sch \
+                    ON sch.student_id = s.id AND sch.effective_to IS NULL \
+                       AND sch.effective_from <= ? \
+                WHERE s.enroll_date <= ? \
+                  AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
+                GROUP BY s.id \
+                HAVING SUM(sch.duration_hours) > 0 \
+             )",
+        )
+        .bind(period_end)
+        .bind(period_end)
+        .bind(period_start)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("청구 대상 원생 수 조회 실패: {}", e))?,
+        None => 0,
+    };
 
     let bill_count: i64 = row.try_get("bill_count").map_err(|e| e.to_string())?;
     let total_billed: i64 = row.try_get("total_billed").map_err(|e| e.to_string())?;
@@ -1223,7 +1304,24 @@ mod tests {
         .expect("seed schedule");
     }
 
+    /// 교습기간(study_periods) 시드 헬퍼 — T1(Sprint 20) 이후 청구 생성이 교습기간을 요구.
+    async fn seed_period(pool: &SqlitePool, ym: &str, start: &str, end: &str) {
+        sqlx::query(
+            "INSERT OR IGNORE INTO study_periods (year_month, start_date, end_date) \
+             VALUES (?, ?, ?)",
+        )
+        .bind(ym)
+        .bind(start)
+        .bind(end)
+        .execute(pool)
+        .await
+        .expect("seed period");
+    }
+
     async fn seed_standard_fee(pool: &SqlitePool, weekly_hours: i64, amount: i64) {
+        // T1(Sprint 20): 청구 생성이 교습기간 존재를 요구하므로, 청구 테스트가 공통으로 쓰는
+        // 2026-05 교습기간(5/1~5/31)을 이 헬퍼에서 함께 시드한다 (INSERT OR IGNORE, 중복 무해).
+        seed_period(pool, "2026-05", "2026-05-01", "2026-05-31").await;
         sqlx::query(
             "INSERT INTO standard_fees (weekly_hours, amount) VALUES (?, ?)",
         )
@@ -1232,23 +1330,6 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed fee");
-    }
-
-    #[tokio::test]
-    async fn year_month_range_computes_first_and_last_day() {
-        assert_eq!(
-            year_month_range("2026-02").unwrap(),
-            ("2026-02-01".to_string(), "2026-02-28".to_string())
-        );
-        assert_eq!(
-            year_month_range("2024-02").unwrap(),
-            ("2024-02-01".to_string(), "2024-02-29".to_string()),
-            "윤년"
-        );
-        assert_eq!(
-            year_month_range("2026-12").unwrap(),
-            ("2026-12-01".to_string(), "2026-12-31".to_string())
-        );
     }
 
     #[test]
@@ -1331,6 +1412,8 @@ mod tests {
         // 시드된 standard_fees 는 3~6시간만. 99시간은 매핑 없음 → skip 대상.
         let s2 = seed_student(&pool, "2", "원생B", "2026-01-01", None).await;
         seed_schedule(&pool, s2, 1, 99).await;
+        // 이 테스트는 seed_standard_fee 를 호출하지 않으므로 교습기간을 직접 시드.
+        seed_period(&pool, "2026-05", "2026-05-01", "2026-05-31").await;
 
         let result = generate_bills_impl(&pool, "2026-05").await.expect("ok");
         assert_eq!(result.generated_count, 0);
@@ -1374,6 +1457,199 @@ mod tests {
 
         let result = generate_bills_impl(&pool, "2026-05").await.expect("ok");
         assert_eq!(result.generated_count, 0, "4월말 퇴교한 학생은 5월 청구 대상 아님");
+    }
+
+    // ─────────────────────── T1 (Sprint 20): 교습기간 기준 전환 ───────────────────────
+
+    #[tokio::test]
+    async fn generate_bills_excludes_enroll_after_teaching_period_end() {
+        // 7월 교습기간 7/2~7/29, 입교 7/30 → 교습기간 종료 이후 입교 → 7월 청구 제외.
+        // (달력월 기준이었다면 7/30 ≤ 7/31 로 잘못 포함되던 버그)
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-07", "2026-07-02", "2026-07-29").await;
+        let sid = seed_student(&pool, "1", "원생A", "2026-07-30", None).await;
+        seed_schedule(&pool, sid, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+
+        let result = generate_bills_impl(&pool, "2026-07").await.expect("ok");
+        assert_eq!(result.generated_count, 0, "교습기간 종료 이후 입교생은 청구 제외");
+    }
+
+    #[tokio::test]
+    async fn generate_bills_includes_enroll_within_teaching_period() {
+        // 7월 교습기간 7/2~7/29, 입교 7/10 → 월중입교로 포함(mid_month enrolled).
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-07", "2026-07-02", "2026-07-29").await;
+        let sid = seed_student(&pool, "1", "원생A", "2026-07-10", None).await;
+        seed_schedule(&pool, sid, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+
+        let result = generate_bills_impl(&pool, "2026-07").await.expect("ok");
+        assert_eq!(result.generated_count, 1);
+        let bills = list_bills_impl(&pool, "2026-07").await.expect("list");
+        assert!(bills[0].is_mid_month);
+        assert_eq!(bills[0].mid_month_type.as_deref(), Some("enrolled"));
+    }
+
+    #[tokio::test]
+    async fn generate_bills_blocks_when_no_study_period() {
+        // 교습기간 미등록 월 → 청구 생성 차단(에러 + 안내 메시지).
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        seed_schedule(&pool, sid, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await; // 2026-05 만 시드됨
+        let err = generate_bills_impl(&pool, "2026-06").await;
+        assert!(err.is_err(), "교습기간 미등록 월은 차단");
+        assert!(
+            err.unwrap_err().contains("교습기간"),
+            "안내 메시지에 교습기간 언급"
+        );
+    }
+
+    #[tokio::test]
+    async fn generate_bills_excludes_schedule_effective_after_period_end() {
+        // 교습기간 내 재원이지만 스케줄이 교습기간 종료 이후 시작 → weekly_hours 0 → skip.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-07", "2026-07-02", "2026-07-29").await;
+        let sid = seed_student(&pool, "1", "원생A", "2026-07-05", None).await;
+        sqlx::query(
+            "INSERT INTO student_schedules \
+                (student_id, day_of_week, start_time, duration_hours, effective_from) \
+             VALUES (?, 1, '16:00', 1, '2026-07-30')",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .expect("seed late schedule");
+        seed_standard_fee(&pool, 1, 100_000).await;
+
+        let result = generate_bills_impl(&pool, "2026-07").await.expect("ok");
+        assert_eq!(
+            result.generated_count, 0,
+            "교습기간 종료 이후 시작 스케줄은 집계 제외"
+        );
+    }
+
+    #[tokio::test]
+    async fn summary_total_billable_matches_generate_target_teaching_period() {
+        // (f) get_billing_summary 대상 수가 generate_bills 와 동일 규칙 → 유령 버튼 회귀 방지.
+        // 7월 교습기간 7/2~7/29. A(1/1 입교, 대상) + B(7/30 입교, 종료 이후 → 비대상).
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-07", "2026-07-02", "2026-07-29").await;
+        let a = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
+        let b = seed_student(&pool, "2", "원생B", "2026-07-30", None).await;
+        seed_schedule(&pool, a, 1, 1).await;
+        seed_schedule(&pool, b, 1, 1).await;
+        seed_standard_fee(&pool, 1, 100_000).await;
+
+        generate_bills_impl(&pool, "2026-07").await.expect("gen");
+        let s = get_billing_summary_impl(&pool, "2026-07").await.expect("ok");
+        assert_eq!(s.bill_count, 1, "A 만 청구 생성");
+        assert_eq!(
+            s.total_billable_students, 1,
+            "B(7/30 입교)는 대상 아님 → 유령 버튼 없음"
+        );
+    }
+
+    // ─────────────────────── T3 (Sprint 20): 청구 삭제 (ADR-010 B안) ───────────────────────
+
+    /// FK 강제(PRAGMA foreign_keys=ON) — 프로덕션(db.rs startup)과 동일 환경에서 payments
+    /// CASCADE 삭제를 검증하기 위함. 인메모리 테스트 풀은 SQLite 기본값 OFF.
+    async fn enable_fk(pool: &SqlitePool) {
+        sqlx::query("PRAGMA foreign_keys=ON")
+            .execute(pool)
+            .await
+            .expect("fk on");
+    }
+
+    #[tokio::test]
+    async fn delete_bill_removes_draft_and_cascades_payment() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        enable_fk(&pool).await;
+        let bid = seed_bill(&pool, "2026-05").await;
+        // 미수납(is_paid=0) payment 행 생성 → CASCADE 삭제 대상.
+        create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: false,
+                paid_date: None,
+                payer_name: None,
+                payment_method_id: None,
+                card_company_id: None,
+            },
+        )
+        .await
+        .expect("unpaid payment");
+
+        delete_bill_impl(&pool, bid).await.expect("delete ok");
+
+        let bills: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bills WHERE id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(bills, 0, "청구 삭제됨");
+        let pays: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payments WHERE bill_id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pays, 0, "payments CASCADE 삭제됨");
+    }
+
+    #[tokio::test]
+    async fn delete_bill_allows_confirmed_when_unpaid() {
+        // B안 핵심: 확정(confirmed) + 미수납 → 삭제 허용.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        enable_fk(&pool).await;
+        let bid = seed_bill(&pool, "2026-05").await;
+        confirm_bill_impl(&pool, bid).await.expect("confirm");
+        delete_bill_impl(&pool, bid).await.expect("confirmed unpaid delete");
+        let cnt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bills WHERE id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(cnt, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_bill_rejects_when_paid() {
+        // B안: 수납완료(is_paid=1) → 삭제 거부.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        enable_fk(&pool).await;
+        let bid = seed_bill(&pool, "2026-05").await;
+        confirm_bill_impl(&pool, bid).await.expect("confirm");
+        batch_update_payments_impl(
+            &pool,
+            &[PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: None,
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            }],
+        )
+        .await
+        .expect("pay");
+
+        let err = delete_bill_impl(&pool, bid).await;
+        assert!(err.is_err(), "수납완료 청구는 삭제 거부");
+        let cnt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bills WHERE id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(cnt, 1, "거부 시 청구 잔존");
+    }
+
+    #[tokio::test]
+    async fn delete_bill_rejects_nonexistent() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let err = delete_bill_impl(&pool, 999).await;
+        assert!(err.is_err(), "존재하지 않는 청구 삭제 거부");
     }
 
     #[tokio::test]
@@ -1944,6 +2220,7 @@ mod tests {
         let s = seed_student(&pool, "1", "원생A", "2026-01-01", None).await;
         seed_schedule(&pool, s, 1, 1).await;
         seed_standard_fee(&pool, 1, 100_000).await;
+        seed_period(&pool, "2026-03", "2026-03-01", "2026-03-31").await;
         generate_bills_impl(&pool, "2026-03").await.expect("gen3");
         generate_bills_impl(&pool, "2026-05").await.expect("gen5");
 
@@ -2165,6 +2442,7 @@ mod tests {
         let a = seed_student(&pool, "1", "홍길동", "2026-01-01", None).await;
         seed_schedule(&pool, a, 1, 1).await;
         seed_standard_fee(&pool, 1, 100_000).await;
+        seed_period(&pool, "2026-04", "2026-04-01", "2026-04-30").await;
         // 두 달치 청구 생성 후 각각 다른 시점에 수납 — 최근(5월) 정보가 채워져야 한다.
         generate_bills_impl(&pool, "2026-04").await.expect("gen4");
         generate_bills_impl(&pool, "2026-05").await.expect("gen5");

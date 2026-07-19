@@ -81,6 +81,7 @@ pub fn run() {
             commands::billing::list_billed_months,
             commands::billing::get_bill,
             commands::billing::update_bill,
+            commands::billing::delete_bill,
             commands::billing::confirm_bill,
             commands::billing::confirm_all_bills,
             commands::billing::create_payment,

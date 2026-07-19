@@ -508,51 +508,64 @@ pub(crate) async fn count_ungenerated_attendance_students_impl(
     year_month: &str,
 ) -> Result<i64, String> {
     validate_year_month(year_month)?;
-    let (period_start, period_end) = ym_to_range(year_month)?;
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM ( \
-            SELECT s.id \
-            FROM students s \
-            INNER JOIN student_schedules sch \
-                   ON sch.student_id = s.id AND sch.effective_to IS NULL \
-            WHERE s.enroll_date <= ? \
-              AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
-              AND s.id NOT IN ( \
-                SELECT DISTINCT student_id FROM regular_attendances WHERE year_month = ? \
-              ) \
-            GROUP BY s.id \
-            HAVING SUM(sch.duration_hours) > 0 \
-         )",
-    )
-    .bind(&period_end)
-    .bind(&period_start)
-    .bind(year_month)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("미생성 출결 원생 수 조회 실패: {}", e))?;
-    Ok(count)
-}
+    // Sprint 20 T7 버그A: "그 달 출결 행이 0개인 학생"만 세던 기존 로직은, 학사일정 sync
+    // (단원평가 응시일 등 allows_regular_class=1)로 일부 날짜만 생성된 학생을 "생성 완료"로
+    // 오판해 "출결 생성" 버튼을 숨겼다. 이를 **교습기간 기대 수업일 대비 실제 생성 여부**로
+    // 판정하도록 교체 — generate_impl 과 동일한 규칙(스케줄·enroll/withdraw·off일)을 재사용.
+    //
+    // 확정 교습기간이 없으면 생성 자체가 불가하므로 미생성 0 (버튼 표시는 exists 로 별도 판단).
+    let (start_date, end_date) = match load_confirmed_period(pool, year_month).await {
+        Ok(range) => range,
+        Err(_) => return Ok(0),
+    };
+    let off_dates = load_off_dates(pool, &start_date, &end_date).await?;
+    let students = load_active_students(pool, &start_date).await?;
+    let sd = parse_date(&start_date)?;
+    let ed = parse_date(&end_date)?;
 
-/// YYYY-MM → (월초 YYYY-MM-01, 월말 YYYY-MM-DD) 문자열 쌍.
-fn ym_to_range(year_month: &str) -> Result<(String, String), String> {
-    let year: i32 = year_month[..4]
-        .parse()
-        .map_err(|e: std::num::ParseIntError| e.to_string())?;
-    let month: u32 = year_month[5..]
-        .parse()
-        .map_err(|e: std::num::ParseIntError| e.to_string())?;
-    let first = chrono::NaiveDate::from_ymd_opt(year, month, 1)
-        .ok_or_else(|| format!("월초 일자 생성 실패: {}-{:02}-01", year, month))?;
-    let next_first = if month == 12 {
-        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
-    } else {
-        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+    let mut count: i64 = 0;
+    for s in &students {
+        let slices = load_schedule_slices(pool, s.id).await?;
+        if slices.is_empty() {
+            continue;
+        }
+        let enroll_d = parse_date(&s.enroll_date)?;
+        let withdraw_d = match &s.withdraw_date {
+            Some(w) => Some(parse_date(w)?),
+            None => None,
+        };
+        // 교습기간 내 기대 정규 수업일 수 산출 (off일·입퇴교 범위 반영).
+        let mut expected: i64 = 0;
+        let mut d = sd;
+        while d <= ed {
+            if minutes_for_date(&slices, d).is_some() {
+                let in_range = d >= enroll_d && withdraw_d.is_none_or(|wd| d <= wd);
+                let ds = d.format("%Y-%m-%d").to_string();
+                if in_range && !off_dates.contains(&ds) {
+                    expected += 1;
+                }
+            }
+            d = d
+                .succ_opt()
+                .ok_or_else(|| "날짜 계산 오버플로".to_string())?;
+        }
+        if expected == 0 {
+            continue;
+        }
+        let actual: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE student_id = ? AND year_month = ?",
+        )
+        .bind(s.id)
+        .bind(year_month)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("출결 수 조회 실패: {}", e))?;
+        // 기대보다 실제가 적으면 아직 채워야 할 수업일이 남은 학생 → 미생성으로 카운트.
+        if actual < expected {
+            count += 1;
+        }
     }
-    .ok_or_else(|| "다음 달 일자 생성 실패".to_string())?;
-    let last = next_first
-        .pred_opt()
-        .ok_or_else(|| "월말 일자 계산 실패".to_string())?;
-    Ok((first.to_string(), last.to_string()))
+    Ok(count)
 }
 
 #[tauri::command]
@@ -1814,6 +1827,38 @@ mod tests {
         // 재호출 후 ungenerated 0
         let ungenerated2 = count_ungenerated_attendance_students_impl(&pool, "2026-06").await.expect("count2");
         assert_eq!(ungenerated2, 0);
+    }
+
+    /// Sprint 20 T7 버그A: 학사일정 sync 등으로 일부 날짜만 생성된 학생도 "미생성"으로
+    /// 감지되어야 한다("행 0개"만 세던 기존 로직은 부분생성을 완료로 오판해 버튼을 숨겼음).
+    #[tokio::test]
+    async fn count_ungenerated_detects_partial_generation() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        // 월요일(dow=1) 수업 — 2026-06 월요일은 1/8/15/22/29 로 5회.
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        // 부분생성 흉내 — 6/1(월) 하루만 출결 존재.
+        sqlx::query(
+            "INSERT INTO regular_attendances \
+                (student_id, event_date, year_month, status, class_minutes) \
+             VALUES (?, '2026-06-01', '2026-06', 'present', 60)",
+        )
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .expect("partial row");
+
+        let ungenerated = count_ungenerated_attendance_students_impl(&pool, "2026-06")
+            .await
+            .expect("count");
+        assert_eq!(ungenerated, 1, "기대 5회 중 1회만 생성 → 미생성으로 감지");
+
+        // 전체 생성 후 0.
+        generate_impl(&pool, "2026-06").await.expect("gen");
+        let after = count_ungenerated_attendance_students_impl(&pool, "2026-06")
+            .await
+            .expect("count2");
+        assert_eq!(after, 0, "완전 생성 후 미생성 0");
     }
 
     // ─────── AC-T2-5 ───────
