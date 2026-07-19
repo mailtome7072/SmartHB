@@ -330,6 +330,60 @@ pub(crate) async fn update_bill_impl(
     get_bill_impl(pool, id).await
 }
 
+/// 청구 삭제 (Sprint 20 T3, ADR-010 B안).
+///
+/// 가드: **미수납(`payments.is_paid=0` 또는 payments 행 없음)** 이면 상태(draft/confirmed)
+/// 무관 삭제 허용. **수납완료(`is_paid=1`)는 거부** — 먼저 수납을 해제해야 한다.
+/// `payments.bill_id ON DELETE CASCADE`(V109) 로 수납 행도 함께 삭제된다 —
+/// FK 강제(`PRAGMA foreign_keys=ON`, `db.rs`)가 전제.
+#[tauri::command]
+pub async fn delete_bill(id: i64) -> Result<(), String> {
+    let pool = db::pool().map_err(String::from)?;
+    delete_bill_impl(pool, id).await
+}
+
+pub(crate) async fn delete_bill_impl(pool: &SqlitePool, id: i64) -> Result<(), String> {
+    // 존재 확인 + 삭제 가드용 정보(수납여부·감사 상세)를 1쿼리로 조회.
+    let row = sqlx::query(
+        "SELECT b.student_id, b.bill_year_month, b.adjusted_amount, b.status, p.is_paid \
+         FROM bills b LEFT JOIN payments p ON p.bill_id = b.id \
+         WHERE b.id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("청구 조회 실패: {}", e))?
+    .ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
+
+    let is_paid: Option<i64> = row.try_get("is_paid").map_err(|e| e.to_string())?;
+    // ADR-010 B안: 수납완료된 청구는 삭제 거부.
+    if is_paid == Some(1) {
+        return Err("수납완료된 청구는 삭제할 수 없습니다. 먼저 수납을 해제하세요.".to_string());
+    }
+
+    let student_id: i64 = row.try_get("student_id").map_err(|e| e.to_string())?;
+    let year_month: String = row.try_get("bill_year_month").map_err(|e| e.to_string())?;
+    let amount: i64 = row.try_get("adjusted_amount").map_err(|e| e.to_string())?;
+    let status: String = row.try_get("status").map_err(|e| e.to_string())?;
+    let had_payment = is_paid.is_some();
+
+    // payments 는 ON DELETE CASCADE 로 함께 삭제된다.
+    sqlx::query("DELETE FROM bills WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("청구 삭제 실패: {}", e))?;
+
+    // 감사 로그 — subject=청구 id, details 는 PII 없는 메타(원생명 미포함, student_id 만).
+    let details = format!(
+        r#"{{"billId":{},"studentId":{},"yearMonth":"{}","amount":{},"status":"{}","hadPayment":{}}}"#,
+        id, student_id, year_month, amount, status, had_payment
+    );
+    audit::try_record(AuditEventType::BillDeleted, Some(&id.to_string()), Some(&details)).await;
+
+    Ok(())
+}
+
 // ─────────────────────── T3: 상태 머신 ───────────────────────
 
 /// 청구 단건 확정 — `draft` → `confirmed` (PRD §4.9.3).
@@ -1495,6 +1549,107 @@ mod tests {
             s.total_billable_students, 1,
             "B(7/30 입교)는 대상 아님 → 유령 버튼 없음"
         );
+    }
+
+    // ─────────────────────── T3 (Sprint 20): 청구 삭제 (ADR-010 B안) ───────────────────────
+
+    /// FK 강제(PRAGMA foreign_keys=ON) — 프로덕션(db.rs startup)과 동일 환경에서 payments
+    /// CASCADE 삭제를 검증하기 위함. 인메모리 테스트 풀은 SQLite 기본값 OFF.
+    async fn enable_fk(pool: &SqlitePool) {
+        sqlx::query("PRAGMA foreign_keys=ON")
+            .execute(pool)
+            .await
+            .expect("fk on");
+    }
+
+    #[tokio::test]
+    async fn delete_bill_removes_draft_and_cascades_payment() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        enable_fk(&pool).await;
+        let bid = seed_bill(&pool, "2026-05").await;
+        // 미수납(is_paid=0) payment 행 생성 → CASCADE 삭제 대상.
+        create_payment_impl(
+            &pool,
+            &PaymentInput {
+                bill_id: bid,
+                is_paid: false,
+                paid_date: None,
+                payer_name: None,
+                payment_method_id: None,
+                card_company_id: None,
+            },
+        )
+        .await
+        .expect("unpaid payment");
+
+        delete_bill_impl(&pool, bid).await.expect("delete ok");
+
+        let bills: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bills WHERE id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(bills, 0, "청구 삭제됨");
+        let pays: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payments WHERE bill_id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pays, 0, "payments CASCADE 삭제됨");
+    }
+
+    #[tokio::test]
+    async fn delete_bill_allows_confirmed_when_unpaid() {
+        // B안 핵심: 확정(confirmed) + 미수납 → 삭제 허용.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        enable_fk(&pool).await;
+        let bid = seed_bill(&pool, "2026-05").await;
+        confirm_bill_impl(&pool, bid).await.expect("confirm");
+        delete_bill_impl(&pool, bid).await.expect("confirmed unpaid delete");
+        let cnt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bills WHERE id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(cnt, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_bill_rejects_when_paid() {
+        // B안: 수납완료(is_paid=1) → 삭제 거부.
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        enable_fk(&pool).await;
+        let bid = seed_bill(&pool, "2026-05").await;
+        confirm_bill_impl(&pool, bid).await.expect("confirm");
+        batch_update_payments_impl(
+            &pool,
+            &[PaymentInput {
+                bill_id: bid,
+                is_paid: true,
+                paid_date: Some("2026-05-15".to_string()),
+                payer_name: None,
+                payment_method_id: Some(CASH_PAYMENT_METHOD_ID),
+                card_company_id: None,
+            }],
+        )
+        .await
+        .expect("pay");
+
+        let err = delete_bill_impl(&pool, bid).await;
+        assert!(err.is_err(), "수납완료 청구는 삭제 거부");
+        let cnt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bills WHERE id=?")
+            .bind(bid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(cnt, 1, "거부 시 청구 잔존");
+    }
+
+    #[tokio::test]
+    async fn delete_bill_rejects_nonexistent() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let err = delete_bill_impl(&pool, 999).await;
+        assert!(err.is_err(), "존재하지 않는 청구 삭제 거부");
     }
 
     #[tokio::test]
