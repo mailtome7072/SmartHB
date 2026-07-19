@@ -3,6 +3,7 @@
 이 파일은 sprint-planner 에이전트의 영구 메모리입니다.
 프로젝트 진행 상황, 기술 스택, 패턴 등을 기록합니다.
 
+- [Sprint 21 계획](sprint21-context.md) -- 출결 다월 그리드 태깅/표시 수정(R136). A안 확정. 15.5h 예상, 마이그레이션/의존성 없음
 - [Sprint 20 계획](sprint20-context.md) -- 청구 버그 수정(study_periods 기준 전환) + 삭제 기능 신규 + 실 DB 보정. 19h 예상, 마이그레이션/의존성 없음
 - [Sprint 19 계획](sprint19-context.md) -- Post-v1.1 UX 개선 8건 + 학년 자동승급 + 학교급 필터링. 33h 예상, V310 마이그레이션 1건
 - [Sprint 18 계획](sprint18-context.md) -- Post-v1.0 사용자 피드백 10건 반영 + 캘린더 UX 개선 + 출결 동기화. 17h 예상
@@ -22,7 +23,8 @@
 
 <!-- sprint-close 완료 시 업데이트 -->
 - 마지막 완료 스프린트: Sprint 20 (2026-07-19)
-- 다음 스프린트 번호: 21
+- 다음 스프린트 번호: 22
+- Sprint 21 계획 수립: 2026-07-19 (출결 다월 그리드 태깅/표시 수정 R136 -- T0~T4 5개 Task, 15.5h 예상, 마이그레이션/의존성 없음. sync_single_date 태깅 통일 + AttendanceGrid 컬럼 모델 재설계 + MoveAttendanceDialog 대응. Sprint 20+21 함께 v1.3.0 배포 예정)
 - Sprint 20 계획 수립: 2026-07-19 (Post-v1.2 청구 버그 수정 -- T1~T6 6개 Task, 19h 예상, 마이그레이션/의존성 없음. study_periods 기준 전환 + delete_bill 신규 + 실 DB 보정)
 - Sprint 19 계획 수립: 2026-07-07 (Post-v1.1 UX 개선 8건 + 학년 자동승급 + 학교급 필터링 -- T0~T10 11개 Task, 33h 예상, V310 마이그레이션 1건. T5 2xN 버그 원인 미확정으로 디버깅 버퍼 7h 확보)
 - Sprint 18 계획 수립: 2026-07-01 (Post-v1.0 사용자 피드백 10건 + 캘린더 UX 개선 + 출결 동기화 -- T0~T10 11개 Task, 17h 예상, T1+T2 이미 완료, 신규 의존성 없음, V308+V309 마이그레이션 완료)
