@@ -19,11 +19,12 @@ Sprint: 21  |  Date: 2026-07-19  |  Session: #1
 - [ ] 백엔드 IPC 신규 추가 없음 — 교습기간 범위는 기존 listStudyPeriods 데이터 재사용
 
 ## 완료 기준 (이번 세션)
-- [ ] T0: DEPLOY.md 인쇄 미리보기 확인 항목 추가
-- [ ] T1: sync_single_date 교습기간 ym 태깅 통일 + 단위 테스트 3건(다월/범위밖/단일월)
-- [ ] T2: AttendanceGrid 컬럼 교습기간 범위 + 전체 ISO 매핑 + 월경계 헤더 + 폴백
-- [ ] T3: MoveAttendanceDialog 교습기간 범위 대응
-- [ ] T4: 통합 검증(cargo test/clippy/cipher/lint/tsc/build) + 시각검증 안내(단일월 회귀/다월 전 일자)
+- ✅ T0: DEPLOY.md 인쇄 미리보기 확인 항목 추가
+- ✅ T1: sync_single_date 교습기간 ym 태깅 통일 + 단위 테스트 3건(다월/범위밖/단일월)
+- ✅ T2: AttendanceGrid 컬럼 교습기간 범위 + 전체 ISO 매핑 + 월경계 헤더 + 폴백
+- ✅ T3: MoveAttendanceDialog 출발일 달력월 기준(백엔드 동월 한정 정합 — 발견이슈 1)
+- ✅ T4: 통합 검증 전수 통과(test 444/clippy/cipher/lint/tsc/build). 실기기 시각검증만 배포 전 수동 QA
+- ✅ 교습월 기준 확정: 교습기간 소속 = 교습월(9/1·9/2도 8월 교습기간이면 8월) — 사용자 확정
 
 ## 발견된 이슈
 <!-- Step-back 프로토콜: 구조적 충돌/설계 오류 발견 시 여기에 기록 후 사용자 보고 -->
