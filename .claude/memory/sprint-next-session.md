@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: sprint21-deploy-2026-07-19
-  modified: 2026-07-19T15:18:44.545Z
+  modified: 2026-07-19T15:20:45.887Z
 ---
 
 ## ✅ 2026-07-19 세션 — Sprint 21 마무리 + v1.3.0 프로덕션 배포
@@ -32,7 +32,7 @@ metadata:
 - **부모 프로세스 환경에 GH_TOKEN이 상속**되어 있어 ~/.zshrc 주석 처리해도 현재 세션 프로세스에는 40자로 남음(Bash 도구 매 호출 재상속). 완전 제거는 Claude Code 재시작 필요.
 - 조치: (1) ~/.zshrc 해당 줄 주석 처리 완료 (2) 사용자가 `! unset GH_TOKEN && gh auth login`으로 keyring 로그인 생성
 - **이 세션 이후로도 GH_TOKEN이 env에 남아있는 한, 모든 `gh` 명령은 `env -u GH_TOKEN gh ...` 접두사로 실행해야 함.** (재시작 후엔 불필요)
-- 노출된 무효 토큰은 사용자에게 GitHub에서 Revoke 권고함(무효 상태지만 위생상)
+- 노출된 옛 토큰(`ghp_...`)은 **사용자가 GitHub에서 Revoke 완료(2026-07-20)** — 해결됨. 현재 인증은 keyring `gho_...` 사용
 
 ## 마이그레이션 현황
 최신 **V310** (schools.school_type 자동 보정). develop+master 모두 반영 완료. Sprint 20/21은 스키마 변경 없음.
