@@ -13,7 +13,7 @@ Sprint: 20  |  Date: 2026-07-19  |  Session: #1
 | src/types/billing.ts | [0회] | T4: 삭제 관련 타입(필요 시) |
 | src/app/billing/page.tsx | [0회] | T4: 삭제 버튼 배치 |
 | src/components/billing/*.tsx | [0회] | T4: 삭제 버튼 + 확인 다이얼로그 |
-| src/lib/academic-print-html.ts | [0회] | T6: 인쇄 3개월+ 걸침 멀티페이지 |
+| src/lib/academic-print-html.ts | [5회 ⚠️] | T6: 인쇄 3개월+ 걸침 멀티페이지 |
 | src/app/academic/print/page.tsx | [0회] | T6: 필요 시 |
 | src-tauri/src/commands/attendance.rs | [0회] | T7: count_ungenerated / sync_single_date / generate_impl 태깅 |
 | src/app/attendance/page.tsx | [0회] | T7: 생성 버튼 표시 조건 |

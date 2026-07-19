@@ -89,9 +89,11 @@ const STYLE = `
     font-family: Pretendard, -apple-system, sans-serif;
     background: #e5e7eb;
   }
-  /* 항상 1페이지에 맞춘다 — 전체를 뷰포트/페이지 높이(100vh)에 맞춰 flex 로 눌러 담고,
-     교습기간이 두 달에 걸치면 두 달 표가 그 안에서 공간을 나눠 가진다(행 수만큼 축소). */
-  .print-root {
+  .print-root { width: 100%; }
+  /* 한 페이지 = A4 가로 1장. 페이지 안에서 1~2개월 표가 flex 로 세로 공간을 나눠 갖는다
+     (행 수만큼 축소). 교습기간이 3개월 이상 걸치면 아래 페이지 분할(page-break)로 여러 장에
+     나눠, 각 월 달력이 항상 읽을 수 있는 크기를 유지한다(2개월/페이지). */
+  .print-page {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -152,6 +154,8 @@ const STYLE = `
     body { background: #fff; }
     @page { size: A4 landscape; margin: 8mm; }
     .print-month { page-break-inside: avoid; }
+    /* 3개월 이상 걸침 → 페이지당 2개월씩 분할 인쇄. 마지막 페이지 뒤 빈 장 방지. */
+    .print-page:not(:last-child) { page-break-after: always; }
   }
 `
 
@@ -223,7 +227,7 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
 
   const title = `${sm}월 교습일정 (${period.start_date.slice(5).replace('-', '.')}~${period.end_date.slice(5).replace('-', '.')})`
 
-  const monthsHtml = months
+  const monthHtmlList = months
     .map(({ year, month }) => {
       const grid = buildCalendarGrid(year, month)
       const rowCount = grid.length / 7
@@ -292,7 +296,17 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
         </div>
       `
     })
-    .join('')
+
+  // 페이지당 최대 2개월씩 묶어 페이지로 분할한다(1~2개월은 자연히 1페이지 → 기존 레이아웃 유지).
+  // 3개월 이상 걸치면 여러 페이지로 나뉘어 각 월 달력이 읽을 수 있는 크기를 유지한다.
+  const MONTHS_PER_PAGE = 2
+  const pagesHtml: string[] = []
+  for (let i = 0; i < monthHtmlList.length; i += MONTHS_PER_PAGE) {
+    const pageMonths = monthHtmlList.slice(i, i + MONTHS_PER_PAGE).join('')
+    pagesHtml.push(
+      `<div class="print-page"><h2 class="print-title">${escapeHtml(title)}</h2>${pageMonths}</div>`,
+    )
+  }
 
   return `<!doctype html>
 <html lang="ko">
@@ -303,8 +317,7 @@ export function buildAcademicPrintHtml({ period, events, operatingHours }: Build
 </head>
 <body>
   <div class="print-root">
-    <h2 class="print-title">${escapeHtml(title)}</h2>
-    ${monthsHtml}
+    ${pagesHtml.join('')}
   </div>
   <script>
     // 인쇄/취소와 무관하게 대화상자가 닫히면(afterprint) 이 창은 용도를 다했으므로 스스로 닫는다.
