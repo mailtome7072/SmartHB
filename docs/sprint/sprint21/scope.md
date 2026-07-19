@@ -10,7 +10,7 @@ Sprint: 21  |  Date: 2026-07-19  |  Session: #1
 | src-tauri/src/commands/attendance.rs | [2회] | T1: sync_single_date 태깅을 교습기간 ym으로 통일 + 테스트 |
 | src/app/attendance/page.tsx | [2회] | T2: 교습기간 range를 그리드/다이얼로그에 전달 |
 | src/components/attendance/AttendanceGrid.tsx | [12회 ⚠️] | T2: 컬럼 daysOfMonth→교습기간 범위, ISO 매핑, 헤더 월표기 |
-| src/components/attendance/MoveAttendanceDialog.tsx | [0회] | T3: 달력월 가정 제거, 교습기간 범위 기준 |
+| src/components/attendance/MoveAttendanceDialog.tsx | [2회] | T3: 달력월 가정 제거, 교습기간 범위 기준 |
 
 ## 수정하지 않을 파일 (Forbidden Areas 포함)
 - [ ] .github/workflows/ — CI/CD 파이프라인 (hook이 차단)
@@ -27,4 +27,8 @@ Sprint: 21  |  Date: 2026-07-19  |  Session: #1
 
 ## 발견된 이슈
 <!-- Step-back 프로토콜: 구조적 충돌/설계 오류 발견 시 여기에 기록 후 사용자 보고 -->
-(없음)
+1. **[T3 접근 조정]** 계획서 T3는 MoveAttendanceDialog를 "교습기간 범위" 기준으로 바꾸려 했으나,
+   백엔드 `move_attendance_impl`이 **달력월 동월 한정**(cross-month 이동 차단, 다른 달은 보강 기능)
+   임을 확인. 교습기간 범위(다월)로 달력을 그리면 백엔드가 거부할 날짜를 보여주게 됨 →
+   대신 **출발일(fromDate)의 달력월** 기준으로 달력을 그리도록 수정(이웃 달 출발일도 그 달 안에서
+   이동). 백엔드 제약과 정합하며 계획 의도(달력월 고정 가정 제거)도 충족.
