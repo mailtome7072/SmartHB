@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+---
+
+## [1.3.0] - 2026-07-20
+
 ### Added
 - Sprint 20: **청구 삭제 기능** — 미수납(draft/confirmed) 청구만 삭제 가능, 수납완료 청구는 삭제 거부(ADR-010 B안). `delete_bill` IPC(payments CASCADE, BillDeleted 감사 로그), 삭제 버튼(미수납만 활성) + 확인 다이얼로그. `DeleteBillDialog` 컴포넌트 신규. 단위 테스트 4건
 - Sprint 20: **실 DB 보정 절차 문서** — 교습기간 기준 전환 후 기존 오류 청구 식별·삭제 절차 (`docs/sprint/sprint20/data-correction-procedure.md`). 퇴교취소 후 월별 데이터 재생성 운영 워크플로우 안내(T5-b) 포함
