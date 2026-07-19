@@ -103,7 +103,13 @@
       "Bash(xargs sed -i '' 's/text-gray-400/text-gray-600/g')",
       "Bash(pkill -f \"next dev\")",
       "Bash(pkill -f \"next-server\")",
-      "Bash(awk '/fn move_attendance_impl/,/^}/' src-tauri/src/commands/attendance.rs)"
+      "Bash(awk '/fn move_attendance_impl/,/^}/' src-tauri/src/commands/attendance.rs)",
+      "Bash(env -u GH_TOKEN gh run list --limit 5 --json databaseId,status,conclusion,name,workflowName,headBranch,createdAt)",
+      "Bash(env -u GH_TOKEN gh run list --limit 5)",
+      "Bash(env -u GH_TOKEN gh release view v1.3.0 --json tagName,name,assets -q '.tagName + \" | \" + .name + \" | assets: \" + \\(.assets|length|tostring\\)')",
+      "Bash(env -u GH_TOKEN gh release view v1.3.0 --json assets -q '.assets[].name')",
+      "Bash(env -u GH_TOKEN gh release view v1.3.0 2>&1)",
+      "Bash(env -u GH_TOKEN gh release view v1.3.0 --json assets --jq '.assets[] | {name: .name, size: .size, downloadCount: .downloadCount, url: .url}' 2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,
