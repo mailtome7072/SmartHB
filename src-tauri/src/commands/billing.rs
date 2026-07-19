@@ -343,6 +343,19 @@ pub async fn delete_bill(id: i64) -> Result<(), String> {
 }
 
 pub(crate) async fn delete_bill_impl(pool: &SqlitePool, id: i64) -> Result<(), String> {
+    // F1(sprint-review): 가드 조회(SELECT)와 삭제(DELETE)를 한 트랜잭션으로 원자화 —
+    // 조회~삭제 사이 상태 변화(TOCTOU) 방지. generate_bills 와 동일한 BEGIN IMMEDIATE 패턴.
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+    sqlx::query("SELECT 1 FROM bills LIMIT 0")
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
     // 존재 확인 + 삭제 가드용 정보(수납여부·감사 상세)를 1쿼리로 조회.
     let row = sqlx::query(
         "SELECT b.student_id, b.bill_year_month, b.adjusted_amount, b.status, p.is_paid \
@@ -350,13 +363,13 @@ pub(crate) async fn delete_bill_impl(pool: &SqlitePool, id: i64) -> Result<(), S
          WHERE b.id = ?",
     )
     .bind(id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| format!("청구 조회 실패: {}", e))?
     .ok_or_else(|| format!("청구를 찾을 수 없습니다 (id={}).", id))?;
 
     let is_paid: Option<i64> = row.try_get("is_paid").map_err(|e| e.to_string())?;
-    // ADR-010 B안: 수납완료된 청구는 삭제 거부.
+    // ADR-010 B안: 수납완료된 청구는 삭제 거부 (tx 는 drop 시 자동 롤백).
     if is_paid == Some(1) {
         return Err("수납완료된 청구는 삭제할 수 없습니다. 먼저 수납을 해제하세요.".to_string());
     }
@@ -370,11 +383,17 @@ pub(crate) async fn delete_bill_impl(pool: &SqlitePool, id: i64) -> Result<(), S
     // payments 는 ON DELETE CASCADE 로 함께 삭제된다.
     sqlx::query("DELETE FROM bills WHERE id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| format!("청구 삭제 실패: {}", e))?;
 
-    // 감사 로그 — subject=청구 id, details 는 PII 없는 메타(원생명 미포함, student_id 만).
+    tx.commit()
+        .await
+        .map_err(AppError::Db)
+        .map_err(String::from)?;
+
+    // 감사 로그 — 커밋 후 best-effort(try_record 는 전역 pool 사용, confirm_bill 과 동일 패턴).
+    // subject=청구 id, details 는 PII 없는 메타(원생명 미포함, student_id 만).
     let details = format!(
         r#"{{"billId":{},"studentId":{},"yearMonth":"{}","amount":{},"status":"{}","hadPayment":{}}}"#,
         id, student_id, year_month, amount, status, had_payment
