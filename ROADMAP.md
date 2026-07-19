@@ -22,8 +22,8 @@
 | 항목 | 내용 |
 |------|------|
 | 전체 진행률 | v1.2.0 릴리즈 완료 + Post-v1.2 유지보수 진행 중 |
-| 현재 Phase | **Post-v1.2 청구 버그 수정** — Sprint 20 🔄 진행 중 (2026-07-19~) |
-| 다음 마일스톤 | v1.3.0 (청구 규칙 수정 + 삭제 기능 적용 후 릴리즈 예정) |
+| 현재 Phase | **Post-v1.2 청구 버그 수정** — Sprint 20 ✅ 완료 (2026-07-19) |
+| 다음 마일스톤 | v1.3.0 (Sprint 20 develop 머지 완료, QA 통과 후 릴리즈 예정) |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -994,32 +994,38 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
-### Sprint 20: 교습기간 다월 걸침 결함 일괄 수정 — 청구 규칙 전환 + 삭제 기능 + 인쇄/출결 버그 + 실 DB 보정 (2주) 🔄 진행 중
+### Sprint 20: 교습기간 다월 걸침 결함 일괄 수정 — 청구 규칙 전환 + 삭제 기능 + 인쇄/출결 버그 + 실 DB 보정 (2주) ✅ 완료 (2026-07-19)
 
 > 계획 문서: `docs/sprint/sprint20.md`
 > 실사용 중 발견된 "교습기간이 여러 달에 걸침" 계열 결함 일괄 수정. 청구 대상 선정을 교습기간(study_periods) 기준으로 전환 + 청구 삭제 기능 신규 + 교습일정 인쇄/출결 다월 버그 수정.
 > DB 마이그레이션 없음 / 새 의존성 없음
+> develop 직접 머지 (단일 개발자 정책, 2026-07-19)
 
 #### 작업 목록
 
-- ⬜ **T1**: 청구 대상 규칙 교습기간 기준 전환 — `generate_bills_impl`의 period를 `year_month_range`(달력월) 대신 `study_periods.start_date/end_date`로 교체. study_periods 미등록 월 차단. `compute_mid_month_flag` 교습기간 경계 사용. `effective_from` 필터 추가. **`get_billing_summary_impl` 동기화(유령 버튼 방지)**. 회귀 방지 단위 테스트 6건 · skill: systematic-debugging
-- ⬜ **T2**: 청구 삭제 가드 정책 ADR (정책 = B안 확정: 미수납이면 draft/confirmed 삭제, 수납완료 거부) · skill: brainstorming
-- ⬜ **T3**: 청구 삭제 백엔드 — `delete_bill` 커맨드 + `BillDeleted` audit variant + lib.rs 등록 + PRAGMA FK 검증 + 단위 테스트
-- ⬜ **T4**: 청구 삭제 프론트엔드 — IPC 래퍼 + 삭제 버튼(미수납만 활성) + 확인 다이얼로그 + TanStack Query 무효화 · skill: frontend-design
-- ⬜ **T5**: 실 DB 보정 절차 문서 — 백업 → 대상 식별 → 삭제 → 검증 / **T5-b**: 퇴교 취소 → 월별 데이터 재생성 운영 워크플로우 안내
-- ⬜ **T6**: 교습일정 인쇄 3개 월 이상 걸침 달력 깨짐 수정 (멀티페이지 분할, 1~2개월 회귀 방지) · skill: frontend-design
-- ⬜ **T7**: 출결 다월 결함 — 버그 A(부분생성 오판→생성 버튼 숨김, 사용자 차단) + 버그 B(다월 그리드 표시/태깅 불일치). 범위 크면 버그 B 후속 분리 · skill: systematic-debugging
-- ⬜ **T8**: 통합 검증
+- ✅ **T1**: 청구 대상 규칙 교습기간 기준 전환 — `generate_bills_impl`의 period를 `year_month_range`(달력월) 대신 `study_periods.start_date/end_date`로 교체. study_periods 미등록 월 차단. `compute_mid_month_flag` 교습기간 경계 사용. `effective_from` 필터 추가. **`get_billing_summary_impl` 동기화(유령 버튼 방지)**. 회귀 방지 단위 테스트 6건
+- ✅ **T2**: 청구 삭제 가드 정책 ADR (B안 확정: 미수납이면 draft/confirmed 삭제, 수납완료 거부) — ADR-010 작성 완료
+- ✅ **T3**: 청구 삭제 백엔드 — `delete_bill` 커맨드 + `BillDeleted` audit variant + lib.rs 등록 + PRAGMA FK 검증 + 단위 테스트 4건
+- ✅ **T4**: 청구 삭제 프론트엔드 — IPC 래퍼 + 삭제 버튼(미수납만 활성) + 확인 다이얼로그 + TanStack Query 무효화
+- ✅ **T5**: 실 DB 보정 절차 문서 (`docs/sprint/sprint20/data-correction-procedure.md`) / **T5-b**: 퇴교 취소 → 월별 데이터 재생성 운영 워크플로우 안내
+- ✅ **T6**: 교습일정 인쇄 3개 월 이상 걸침 달력 깨짐 수정 — **주 월 달력 한 장** 표기(앞뒤 이웃 달 며칠은 교습일로 강조, 그리드 밖 기간만 멀티페이지 폴백)
+- ✅ **T7-A**: 출결 버그 A 수정 — 부분생성 오판(생성 버튼 숨김) 수정. `count_ungenerated`를 기대 수업일 대비 판정으로 교체. 회귀 테스트 1건
+- ⏸️ **T7-B (R136)**: 출결 버그 B(다월 그리드 표시/태깅 불일치) — 그리드 컬럼 재설계 범위가 Sprint 20 용량 초과. **후속 스프린트로 분리** (Sprint 21 후보)
+- ✅ **T8**: 통합 검증 — cargo test 441 passed / clippy --all-targets clean / cargo check --features cipher / pnpm lint / tsc clean / pnpm build 전수 통과
 
 #### 완료 기준 (Definition of Done)
-- ⬜ 교습기간 종료일 이후 입교 원생이 해당 월 청구에서 제외됨 (단위 테스트)
-- ⬜ 교습기간 미등록 월 청구 생성 시 차단 + 안내 메시지
-- ⬜ `get_billing_summary.total_billable_students`가 generate_bills와 일치 → 유령 "추가 생성" 버튼 없음
-- ⬜ `delete_bill` IPC B안 가드 동작(미수납 삭제/수납완료 거부) + payments CASCADE 삭제 확인
-- ⬜ 청구 화면 삭제 UI + 확인 다이얼로그
-- ⬜ 교습일정 인쇄 3개월+ 걸침 정상 출력 + 1~2개월 회귀 없음
-- ⬜ 출결 부분생성 상태에서 재생성 경로가 열려 나머지 기간 채워짐
-- ⬜ cargo test 전체 통과 + clippy --all-targets + cipher check + lint + tsc + build
+- ✅ 교습기간 종료일 이후 입교 원생이 해당 월 청구에서 제외됨 (단위 테스트)
+- ✅ 교습기간 미등록 월 청구 생성 시 차단 + 안내 메시지
+- ✅ `get_billing_summary.total_billable_students`가 generate_bills와 일치 → 유령 "추가 생성" 버튼 없음
+- ✅ `delete_bill` IPC B안 가드 동작(미수납 삭제/수납완료 거부) + payments CASCADE 삭제 확인
+- ✅ 청구 화면 삭제 UI + 확인 다이얼로그
+- ✅ 교습일정 인쇄 3개월+ 걸침 정상 출력 (주 월 단일 달력 방식)
+- ✅ 출결 버그 A 수정 — 부분생성 상태에서 재생성 경로 열림
+- ⏸️ 출결 버그 B — 후속 Sprint 21로 분리 (R136)
+- ✅ cargo test 441 passed + clippy --all-targets + cipher check + lint + tsc + build
+
+#### 후속 백로그 (R136)
+- ⬜ **출결 버그 B**: 다월 교습기간에서 그리드 컬럼 표시·태깅 불일치 — 그리드 컬럼 재설계 필요. Sprint 21 후보로 ROADMAP 백로그에 유지.
 
 ---
 
@@ -1040,7 +1046,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 | M9: v1.0.1 안정화 | Post-v1.0 | Sprint 17 | +34주 ✅ | DB 안전성 잔여 수정 + 정책 간소화 |
 | M10: 사용자 피드백 반영 | Post-v1.0 | Sprint 18 | +36주 ✅ | 캘린더 UX 개선 + 출결 동기화 + 교습일정 인쇄 |
 | M11: UX 개선 | Post-v1.1 | Sprint 19 | +38주 ✅ | 그리드 정렬/스크롤 + 인쇄 아키텍처 재설계 + 학년 자동승급 + 학교급 필터링 + 수강생대장 출력 |
-| M12: 다월 결함 일괄 수정 | Post-v1.2 | Sprint 20 | +40주 | 청구 규칙 교습기간 전환 + 삭제 기능 + 인쇄/출결 다월 버그 + 실 DB 보정 |
+| M12: 다월 결함 일괄 수정 | Post-v1.2 | Sprint 20 | +40주 ✅ | 청구 규칙 교습기간 전환 + 삭제 기능 + 인쇄 다월 버그 + 출결 버그A 수정 (버그B는 R136으로 Sprint 21 후보) |
 
 ---
 

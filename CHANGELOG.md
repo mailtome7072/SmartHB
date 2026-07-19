@@ -37,6 +37,17 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 20: **청구 삭제 기능** — 미수납(draft/confirmed) 청구만 삭제 가능, 수납완료 청구는 삭제 거부(ADR-010 B안). `delete_bill` IPC(payments CASCADE, BillDeleted 감사 로그), 삭제 버튼(미수납만 활성) + 확인 다이얼로그. `DeleteBillDialog` 컴포넌트 신규. 단위 테스트 4건
+- Sprint 20: **실 DB 보정 절차 문서** — 교습기간 기준 전환 후 기존 오류 청구 식별·삭제 절차 (`docs/sprint/sprint20/data-correction-procedure.md`). 퇴교취소 후 월별 데이터 재생성 운영 워크플로우 안내(T5-b) 포함
+
+### Changed
+- Sprint 20: **청구 대상 선정 규칙 교습기간 기준 전환** — `generate_bills_impl` 기간을 달력월(`year_month_range`) 대신 `study_periods.start_date/end_date`로 교체. 교습기간 종료일 이후 입교 원생 자동 제외. `effective_from` 필터 추가(스케줄 이력 정합). 교습기간 미등록 월 청구 생성 차단 + 안내 메시지. `get_billing_summary_impl` 동기화 — 유령 "추가 생성" 버튼 방지. 회귀 테스트 6건
+- Sprint 20: **교습일정 인쇄 3개월+ 걸침 레이아웃 수정** — 기존 멀티페이지 달력 분할 방식에서 **주 월(主月) 달력 한 장** 표기로 변경. 앞뒤 이웃 달의 교습일은 해당 셀에 강조 표시. 그리드 밖 대규모 기간만 멀티페이지 폴백
+
+### Fixed
+- Sprint 20: **출결 생성 버튼 숨김 버그 수정(버그 A)** — `count_ungenerated`가 단순 미생성 레코드 수가 아닌 기대 수업일 대비 판정으로 교체되어, 부분생성 상태에서도 생성 버튼이 올바르게 표시됨. 회귀 테스트 1건
+
 ---
 
 ## [1.2.0] - 2026-07-09
