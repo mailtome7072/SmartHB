@@ -90,7 +90,6 @@ const ATTENDANCE_SORT_COMPARATORS: Record<
 function isMakeupEligibleForCell(
   student: AttendanceGridStudent,
   eventDate: string,
-  yearMonth: string,
   daySchedule: DaySchedule | undefined,
 ): boolean {
   // 학생 입퇴교 범위 외 → 차단
@@ -102,15 +101,18 @@ function isMakeupEligibleForCell(
   if (daySchedule !== undefined && daySchedule.allowsMakeup) return true
   // 보강불가 코드 차단
   if (daySchedule !== undefined && daySchedule.isBlock) return false
-  // 케이스 A — 평일 + 보강불가 코드 없음
-  const [year, month] = yearMonth.split('-').map(Number)
-  const day = Number(eventDate.slice(8, 10))
+  // 케이스 A — 평일 + 보강불가 코드 없음 (전체 ISO 날짜로 요일 산출)
+  const [year, month, day] = eventDate.split('-').map(Number)
   const dow = new Date(year, month - 1, day).getDay() // 0=일, 6=토
   return dow >= 1 && dow <= 5
 }
 
 interface Props {
   grid: AttendanceGridType
+  /** Sprint 21 T2 — 선택된 교습기간의 시작/종료 일자. 다월 교습기간이면 그리드 컬럼을
+   *  이 범위로 생성한다. null 이면 달력월 폴백. 페이지의 listStudyPeriods 데이터에서 전달. */
+  periodStartDate?: string | null
+  periodEndDate?: string | null
   /** Sprint 9 T6 — 비수업일(보강 가능 후보) 셀 클릭 시 호출. */
   onNonClassDayClick?: (studentId: number, eventDate: string) => void
   /** Sprint 9 Session #10 J6 — 보강일 셀 클릭 시 호출 (보강 관리 다이얼로그 진입).
@@ -130,37 +132,62 @@ interface LastToggle {
   previousStatus: AttendanceStatus
 }
 
-/** 해당 월의 모든 일자 (1~말일) — yearMonth 기준. */
-function daysOfMonth(yearMonth: string): number[] {
+/** 교습기간 start_date~end_date 의 모든 날짜(YYYY-MM-DD) 배열. 다월 교습기간이면
+ *  달력월 밖 날짜(7/30, 9/1 등)도 포함한다 (Sprint 21 T2). */
+function periodDates(startDate: string, endDate: string): string[] {
+  const [sy, sm, sd] = startDate.split('-').map(Number)
+  const cur = new Date(sy, sm - 1, sd)
+  const out: string[] = []
+  // 안전 상한(교습기간은 최대 ~6주) — 무한 루프 방지.
+  for (let i = 0; i < 400; i++) {
+    const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(
+      cur.getDate(),
+    ).padStart(2, '0')}`
+    if (iso > endDate) break
+    out.push(iso)
+    cur.setDate(cur.getDate() + 1)
+  }
+  return out
+}
+
+/** 폴백 — 교습기간 범위를 알 수 없을 때 달력월 1~말일을 ISO 날짜로 생성. */
+function calendarMonthDates(yearMonth: string): string[] {
   const [year, month] = yearMonth.split('-').map(Number)
-  // month 는 1-indexed (frontend), Date 는 0-indexed
   const lastDay = new Date(year, month, 0).getDate()
-  return Array.from({ length: lastDay }, (_, i) => i + 1)
+  return Array.from(
+    { length: lastDay },
+    (_, i) => `${yearMonth}-${String(i + 1).padStart(2, '0')}`,
+  )
 }
 
 const WEEKDAY_LABEL = ['일', '월', '화', '수', '목', '금', '토'] as const
 
-/** yearMonth(YYYY-MM) + 일자 → 한글 요일 (일~토). */
-function weekdayLabel(yearMonth: string, day: number): string {
-  const [year, month] = yearMonth.split('-').map(Number)
+/** ISO 날짜(YYYY-MM-DD) → 한글 요일 (일~토). */
+function weekdayLabel(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number)
   return WEEKDAY_LABEL[new Date(year, month - 1, day).getDay()]
 }
 
-/** 일자에 해당하는 출결 셀 검색 (Map). */
-function buildAttendanceByDay(
+/** 컬럼 헤더 표시 — 주 월(primaryYm) 날짜는 일(day)만, 이웃 달 날짜는 월/일 표기. */
+function headerDayLabel(iso: string, primaryYm: string): string {
+  const day = Number(iso.slice(8, 10))
+  if (iso.slice(0, 7) === primaryYm) return String(day)
+  return `${Number(iso.slice(5, 7))}/${day}`
+}
+
+/** 날짜(전체 ISO)에 해당하는 출결 셀 검색 (Map). 일(DD) 대신 전체 날짜 키 — 다월 충돌 해소. */
+function buildAttendanceByDate(
   attendances: AttendanceCell[],
 ): Map<string, AttendanceCell> {
   const map = new Map<string, AttendanceCell>()
-  for (const a of attendances) {
-    // event_date = YYYY-MM-DD → 일자(DD)만 추출
-    const day = a.eventDate.slice(8, 10)
-    map.set(day, a)
-  }
+  for (const a of attendances) map.set(a.eventDate, a)
   return map
 }
 
 export function AttendanceGrid({
   grid,
+  periodStartDate,
+  periodEndDate,
   onNonClassDayClick,
   onMakeupDayCellClick,
   onStudentNameClick,
@@ -172,7 +199,14 @@ export function AttendanceGrid({
   const [memoDialogCell, setMemoDialogCell] = useState<AttendanceCell | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const days = useMemo(() => daysOfMonth(grid.yearMonth), [grid.yearMonth])
+  // Sprint 21 T2: 컬럼을 교습기간 날짜 범위로 생성(다월 걸침 포함). 범위 미확보 시 달력월 폴백.
+  const dates = useMemo(
+    () =>
+      periodStartDate != null && periodEndDate != null
+        ? periodDates(periodStartDate, periodEndDate)
+        : calendarMonthDates(grid.yearMonth),
+    [periodStartDate, periodEndDate, grid.yearMonth],
+  )
 
   // Session #10 I7/I8 — 일자별 학사일정 매핑 (event_date → DaySchedule).
   const dayScheduleMap = useMemo(() => {
@@ -245,14 +279,15 @@ export function AttendanceGrid({
   // 조회월이 현재월일 때만 해당 일(day), 아니면 null.
   const scrollRef = useRef<HTMLDivElement>(null)
   const todayRef = useRef<HTMLTableCellElement>(null)
-  const todayDay = useMemo(() => {
+  const todayIso = useMemo(() => {
     const now = new Date()
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    return ym === grid.yearMonth ? now.getDate() : null
-  }, [grid.yearMonth])
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+      now.getDate(),
+    ).padStart(2, '0')}`
+  }, [])
 
   useEffect(() => {
-    if (todayDay === null) return
+    if (!dates.includes(todayIso)) return
     const raf = requestAnimationFrame(() => {
       const cell = todayRef.current
       const container = scrollRef.current
@@ -262,7 +297,7 @@ export function AttendanceGrid({
       container.scrollTo({ left: Math.max(0, target), behavior: 'smooth' })
     })
     return () => cancelAnimationFrame(raf)
-  }, [grid.yearMonth, todayDay])
+  }, [dates, todayIso])
 
   if (grid.students.length === 0) {
     return (
@@ -370,19 +405,18 @@ export function AttendanceGrid({
                 </button>
                 <div className="text-sm text-gray-600">(시간)</div>
               </th>
-              {days.map((d) => {
-                const wd = weekdayLabel(grid.yearMonth, d)
+              {dates.map((eventDate) => {
+                const wd = weekdayLabel(eventDate)
                 const isWeekend = wd === '토' || wd === '일'
-                const eventDate = `${grid.yearMonth}-${String(d).padStart(2, '0')}`
                 const sched = dayScheduleMap.get(eventDate)
                 // Session #12 K4: 단원평가 응시일은 배경색 제거(일반 평일과 동일 표기).
                 // 보강데이/공휴수업일 등 그 외 allowsMakeup=true 일자만 sky 배경 유지.
                 const isAssessment = sched?.label === '단원평가 응시일'
                 const showSkyBg = sched?.allowsMakeup === true && !isAssessment
-                const isToday = d === todayDay
+                const isToday = eventDate === todayIso
                 return (
                   <th
-                    key={`wd-${d}`}
+                    key={`wd-${eventDate}`}
                     title={isToday ? '오늘' : sched?.label}
                     className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-1 text-center text-sm ${
                       isToday
@@ -400,17 +434,16 @@ export function AttendanceGrid({
               })}
             </tr>
             <tr>
-              {days.map((d) => {
-                const eventDate = `${grid.yearMonth}-${String(d).padStart(2, '0')}`
+              {dates.map((eventDate) => {
                 const sched = dayScheduleMap.get(eventDate)
                 const isAssessment = sched?.label === '단원평가 응시일'
                 const showSkyBg = sched?.allowsMakeup === true && !isAssessment
                 // K4: 보강데이는 날짜 밑에 작은 폰트 라벨 — 셀 너비 변경 없도록 absolute 또는 leading-none.
                 const isMakeupDayLabel = sched?.label === '보강데이'
-                const isToday = d === todayDay
+                const isToday = eventDate === todayIso
                 return (
                   <th
-                    key={`d-${d}`}
+                    key={`d-${eventDate}`}
                     ref={isToday ? todayRef : undefined}
                     title={isToday ? '오늘' : sched?.label}
                     className={`min-w-[44px] border-b border-r border-[var(--border)] px-1 py-2 text-center text-sm leading-tight ${
@@ -421,7 +454,7 @@ export function AttendanceGrid({
                           : ''
                     }`}
                   >
-                    {d}
+                    {headerDayLabel(eventDate, grid.yearMonth)}
                     {isMakeupDayLabel && (
                       <div className="text-xs font-semibold leading-none text-sky-700">
                         보강데이
@@ -437,8 +470,7 @@ export function AttendanceGrid({
               <StudentRow
                 key={student.studentId}
                 student={student}
-                days={days}
-                yearMonth={grid.yearMonth}
+                dates={dates}
                 dayScheduleMap={dayScheduleMap}
                 onCellClick={handleCellClick}
                 onCellContextMenu={(cell, studentId) => {
@@ -489,8 +521,8 @@ export function AttendanceGrid({
 
 interface StudentRowProps {
   student: AttendanceGridType['students'][number]
-  days: number[]
-  yearMonth: string
+  /** Sprint 21 T2 — 교습기간 날짜 범위(전체 ISO 날짜 배열). */
+  dates: string[]
   /** Sprint 9 Session #10 I7/I8 — 일자별 학사일정 매핑. */
   dayScheduleMap: Map<string, DaySchedule>
   onCellClick: (cell: AttendanceCell) => void
@@ -505,8 +537,7 @@ interface StudentRowProps {
 
 const StudentRow = memo(function StudentRow({
   student,
-  days,
-  yearMonth,
+  dates,
   dayScheduleMap,
   onCellClick,
   onCellContextMenu,
@@ -519,15 +550,16 @@ const StudentRow = memo(function StudentRow({
   function handleCellClick(cell: AttendanceCell) {
     onCellClick(cell)
   }
-  const byDay = useMemo(
-    () => buildAttendanceByDay(student.attendances),
+  const byDate = useMemo(
+    () => buildAttendanceByDate(student.attendances),
     [student.attendances],
   )
   // J4: 학생별 보강 출결 매핑 (event_date → GridMakeupCell). 비수업일 셀에 표시.
-  const makeupsByDay = useMemo(() => {
+  // Sprint 21 T2: 일(DD) 대신 전체 ISO 날짜 키 — 다월 충돌 해소.
+  const makeupsByDate = useMemo(() => {
     const map = new Map<string, GridMakeupCell>()
     for (const m of student.makeups) {
-      map.set(m.eventDate.slice(8, 10), m)
+      map.set(m.eventDate, m)
     }
     return map
   }, [student.makeups])
@@ -606,15 +638,13 @@ const StudentRow = memo(function StudentRow({
           </td>
         )
       })()}
-      {days.map((day) => {
-        const dayKey = String(day).padStart(2, '0')
-        const cell = byDay.get(dayKey)
-        const eventDate = `${yearMonth}-${dayKey}`
+      {dates.map((eventDate) => {
+        const cell = byDate.get(eventDate)
         // J4: 비수업일 셀에 보강 진행 정보 (해당 일자 makeup 등록 시).
-        const makeupOnThisDay = cell === undefined ? makeupsByDay.get(dayKey) : undefined
+        const makeupOnThisDay = cell === undefined ? makeupsByDate.get(eventDate) : undefined
         // 사용자 요청 — 정규수업일에 같은 날 보강도 진행된 경우(예: 결석 발생일과 다른
         // 정규수업일에 보강) 다른 정규수업 완료 셀과 구분되도록 "+보강" 배지 표시.
-        const sameDayMakeup = cell !== undefined ? makeupsByDay.get(dayKey) : undefined
+        const sameDayMakeup = cell !== undefined ? makeupsByDate.get(eventDate) : undefined
         // I8: 비수업일 셀 사전 판단 — 보강 불가 일자는 "+" 자체 비표시.
         // J4 보강이 있는 비수업일에는 "+" 대신 보강 표기.
         // K1' (Session #12): 만기 미도래 미보강 결석이 이 일자 이전에 있을 때만 "+" 표시.
@@ -626,12 +656,7 @@ const StudentRow = memo(function StudentRow({
           cell === undefined &&
           makeupOnThisDay === undefined &&
           hasPriorPendingAbsence &&
-          isMakeupEligibleForCell(
-            student,
-            eventDate,
-            yearMonth,
-            dayScheduleMap.get(eventDate),
-          )
+          isMakeupEligibleForCell(student, eventDate, dayScheduleMap.get(eventDate))
         // J8: hint — 결석 셀에는 매칭된 보강일, 보강 셀에는 충당 결석일자 목록.
         const cellMakeupHintDate =
           cell?.status === 'makeup_done' && cell.makeupAttendanceId !== null
@@ -645,7 +670,7 @@ const StudentRow = memo(function StudentRow({
           sameDayMakeup !== undefined ? absenceDatesByMakeupId.get(sameDayMakeup.id) : undefined
         return (
           <CellView
-            key={day}
+            key={eventDate}
             cell={cell ?? null}
             makeup={makeupOnThisDay}
             cellMakeupHintDate={cellMakeupHintDate}
