@@ -179,6 +179,12 @@ export default function AttendancePage() {
     )
   }, [studyPeriodsQuery.data])
 
+  // Sprint 21 T2: 선택된 교습기간의 날짜 범위 — 다월 교습기간 그리드 컬럼/이동 다이얼로그 생성용.
+  const selectedPeriod = useMemo(
+    () => studyPeriodsQuery.data?.find((p) => p.year_month === yearMonth) ?? null,
+    [studyPeriodsQuery.data, yearMonth],
+  )
+
   // 일정 관리이 로드되었는데 현재 선택된 yearMonth 가 옵션에 없으면 첫 옵션(최신)으로 이동.
   // currentYearMonth 가 등록된 교습기간에 포함되면 그대로 유지 — 디폴트로 자연스럽게 현재월 노출.
   useEffect(() => {
@@ -374,6 +380,8 @@ export default function AttendancePage() {
           <div className="flex min-h-0 flex-1 flex-col">
             <AttendanceGrid
               grid={filteredGrid}
+              periodStartDate={selectedPeriod?.start_date ?? null}
+              periodEndDate={selectedPeriod?.end_date ?? null}
               onNonClassDayClick={(studentId, eventDate) => {
                 const student = filteredGrid.students.find(
                   (s) => s.studentId === studentId,
