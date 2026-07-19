@@ -1494,6 +1494,13 @@ export async function confirmBill(id: number): Promise<Bill> {
   return inv('confirm_bill', { id }) as Promise<Bill>
 }
 
+/** 청구 삭제 (Sprint 20 T3/T4, ADR-010 B안: 미수납만 삭제 가능). payments 는 CASCADE 삭제. */
+export async function deleteBill(id: number): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) throw new Error('[개발 모드] deleteBill 호출 불가')
+  await inv('delete_bill', { id })
+}
+
 export async function confirmAllBills(yearMonth: string): Promise<number> {
   const inv = await getInvoke()
   if (!inv) return 0

@@ -9,7 +9,7 @@ Sprint: 20  |  Date: 2026-07-19  |  Session: #1
 | src-tauri/src/commands/billing.rs | [14회 ⚠️] | T1: 청구 대상 규칙 교습기간 기준 전환 + get_billing_summary 동기화 / T3: delete_bill |
 | src-tauri/src/commands/audit.rs | [2회] | T3: BillDeleted audit variant |
 | src-tauri/src/lib.rs | [1회] | T3: delete_bill 커맨드 등록 |
-| src/lib/tauri/index.ts | [0회] | T4: deleteBill 래퍼 |
+| src/lib/tauri/index.ts | [1회] | T4: deleteBill 래퍼 |
 | src/types/billing.ts | [0회] | T4: 삭제 관련 타입(필요 시) |
 | src/app/billing/page.tsx | [0회] | T4: 삭제 버튼 배치 |
 | src/components/billing/*.tsx | [0회] | T4: 삭제 버튼 + 확인 다이얼로그 |
