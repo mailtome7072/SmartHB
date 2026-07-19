@@ -22,8 +22,8 @@
 | 항목 | 내용 |
 |------|------|
 | 전체 진행률 | v1.2.0 릴리즈 완료 + Post-v1.2 유지보수 진행 중 |
-| 현재 Phase | **Post-v1.2 출결 다월 그리드 수정** — Sprint 21 🔄 진행 중 |
-| 다음 마일스톤 | v1.3.0 (Sprint 20+21 완료 후 릴리즈 예정) |
+| 현재 Phase | **Post-v1.2 완료** — Sprint 21 ✅ 완료 (2026-07-19) |
+| 다음 마일스톤 | v1.3.0 (Sprint 20+21 완료 → deploy-prod로 릴리즈) |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -1025,30 +1025,30 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 - ✅ cargo test 441 passed + clippy --all-targets + cipher check + lint + tsc + build
 
 #### 후속 백로그 (R136)
-- 🔄 **출결 버그 B**: 다월 교습기간에서 그리드 컬럼 표시·태깅 불일치 — Sprint 21에서 처리 중.
+- ✅ **출결 버그 B (R136)**: 다월 교습기간에서 그리드 컬럼 표시·태깅 불일치 — Sprint 21에서 해소 완료 (2026-07-19).
 
 ---
 
-### Sprint 21: 출결 다월 교습기간 그리드 표시/태깅 불일치 수정 (2주) 🔄 진행 중
+### Sprint 21: 출결 다월 교습기간 그리드 표시/태깅 불일치 수정 (2주) ✅ 완료 (2026-07-19)
 
 > 계획 문서: `docs/sprint/sprint21.md`
 > Sprint 20에서 의도적으로 분리한 R136(출결 버그 B) 해소. 태깅 통일(백엔드) + 그리드 컬럼 모델 재설계(프론트엔드).
 > DB 마이그레이션 없음 / 새 의존성 없음
-> 완료 후 Sprint 20+21을 함께 v1.3.0으로 배포 예정.
+> Sprint 20+21을 함께 v1.3.0으로 배포 예정.
 
 #### 작업 목록
 
-- ⬜ **T0**: Sprint 20 회고 액션 A122 — DEPLOY.md 인쇄 미리보기 검증 항목 추가
-- ⬜ **T1**: `sync_single_date` 태깅 통일 — `&date[..7]`(달력월) → study_period의 year_month로 변경. `generate_impl`과 태깅 일관. 단위 테스트 3건
-- ⬜ **T2**: AttendanceGrid 컬럼 모델 재설계 — `daysOfMonth`(달력월 1~말일) → `periodDates`(교습기간 start_date~end_date 전체 날짜). `buildAttendanceByDay` DD 추출 → 전체 ISO 날짜 매핑. 월 경계 헤더 표기. 백엔드 IPC 추가 불필요 · skill: frontend-design
-- ⬜ **T3**: MoveAttendanceDialog 교습기간 범위 대응 — 달력월 가정(`lastDay`, `dateStr`) → 교습기간 날짜 범위 기준으로 변경
-- ⬜ **T4**: 통합 검증 — 자동 7항목 + 시각 검증(단일월 회귀 없음 + 다월 전 일자 표시 + 출결 토글 + 보강 등록 + 인쇄 미리보기)
+- ✅ **T0**: Sprint 20 회고 액션 A122 — DEPLOY.md 인쇄 미리보기 검증 항목 추가
+- ✅ **T1**: `sync_single_date` 태깅 통일 — `&date[..7]`(달력월) → study_period의 year_month로 변경. `generate_impl`과 태깅 일관. 단위 테스트 3건
+- ✅ **T2**: AttendanceGrid 컬럼 모델 재설계 — `daysOfMonth`(달력월 1~말일) → `periodDates`(교습기간 start_date~end_date 전체 날짜). `buildAttendanceByDay` DD 추출 → 전체 ISO 날짜 매핑. 월 경계 헤더 표기. 백엔드 IPC 추가 불필요
+- ✅ **T3**: MoveAttendanceDialog 달력월 기준 수정 — 출발일 달력월(`&date_str[..7]`) 기준으로 `lastDay`, `dateStr` 범위 일관화 (백엔드 move_attendance가 달력월 동월 한정이라 정합)
+- ✅ **T4**: 통합 검증 — cargo test 444 passed / clippy --all-targets / cargo check --features cipher / pnpm lint / tsc clean / pnpm build 전수 통과
 
 #### 완료 기준 (Definition of Done)
-- ⬜ `sync_single_date` 태깅이 교습기간 year_month 기준 — `generate_impl`과 통일
-- ⬜ 다월 교습기간(7/30~9/2) 그리드에 달력월 밖 날짜 모두 표시 + DD 충돌 없음
-- ⬜ 단일월 교습기간 회귀 없음 (기존 동작 유지)
-- ⬜ cargo test + clippy --all-targets + cipher check + lint + tsc + build 전수 통과
+- ✅ `sync_single_date` 태깅이 교습기간 year_month 기준 — `generate_impl`과 통일
+- ✅ 다월 교습기간(7/30~9/2) 그리드에 달력월 밖 날짜 모두 표시 + DD 충돌 없음
+- ✅ 단일월 교습기간 회귀 없음 (기존 동작 유지)
+- ✅ cargo test 444 passed + clippy --all-targets + cipher check + lint + tsc + build 전수 통과
 
 ---
 
@@ -1070,7 +1070,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 | M10: 사용자 피드백 반영 | Post-v1.0 | Sprint 18 | +36주 ✅ | 캘린더 UX 개선 + 출결 동기화 + 교습일정 인쇄 |
 | M11: UX 개선 | Post-v1.1 | Sprint 19 | +38주 ✅ | 그리드 정렬/스크롤 + 인쇄 아키텍처 재설계 + 학년 자동승급 + 학교급 필터링 + 수강생대장 출력 |
 | M12: 다월 결함 일괄 수정 | Post-v1.2 | Sprint 20 | +40주 ✅ | 청구 규칙 교습기간 전환 + 삭제 기능 + 인쇄 다월 버그 + 출결 버그A 수정 (버그B는 R136으로 Sprint 21) |
-| M13: 출결 그리드 정합성 | Post-v1.2 | Sprint 21 | +42주 🔄 | 출결 다월 그리드 태깅 통일 + 컬럼 모델 재설계 → v1.3.0 배포 |
+| M13: 출결 그리드 정합성 | Post-v1.2 | Sprint 21 | +42주 ✅ | 출결 다월 그리드 태깅 통일 + 컬럼 모델 재설계 → v1.3.0 배포 예정 |
 
 ---
 

@@ -22,7 +22,7 @@
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 20 (2026-07-19)
+- 마지막 완료 스프린트: Sprint 21 (2026-07-19)
 - 다음 스프린트 번호: 22
 - Sprint 21 계획 수립: 2026-07-19 (출결 다월 그리드 태깅/표시 수정 R136 -- T0~T4 5개 Task, 15.5h 예상, 마이그레이션/의존성 없음. sync_single_date 태깅 통일 + AttendanceGrid 컬럼 모델 재설계 + MoveAttendanceDialog 대응. Sprint 20+21 함께 v1.3.0 배포 예정)
 - Sprint 20 계획 수립: 2026-07-19 (Post-v1.2 청구 버그 수정 -- T1~T6 6개 Task, 19h 예상, 마이그레이션/의존성 없음. study_periods 기준 전환 + delete_bill 신규 + 실 DB 보정)
