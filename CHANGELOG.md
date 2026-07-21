@@ -37,6 +37,10 @@
 
 ## [Unreleased]
 
+---
+
+## [1.4.0] - 2026-07-22
+
 ### Added
 - Sprint 22: **보강 분 단위 부분 차감 스키마** — `makeup_allocations` 배분 링크 테이블(V311) 신규. 한 보강이 여러 결석에 얼마(분)를 충당했는지 명시적으로 저장. FK(makeup_attendances/regular_attendances) + UNIQUE(makeup_id, absence_id) + CHECK(allocated_minutes > 0) + 인덱스 2개. ADR-011 Accepted
 - Sprint 22: **유실 결석 자동 백필** — V312 멱등 마이그레이션. 기존 일 단위 매칭 데이터를 분 단위 배분으로 이전하고, 보강 시간이 결석 시간보다 적었던 경우(부분 보강) 잔여 결석을 `absent`로 복원. 앱 첫 실행 시 자동·무알림 적용
