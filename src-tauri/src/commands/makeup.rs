@@ -1786,4 +1786,129 @@ mod tests {
         // 1차 배분은 그대로 유지
         assert_eq!(alloc_of(&pool, r1.makeup_id, aid).await, 60);
     }
+
+    // ─────────────── T5: V312 백필 (레거시 makeup_done → 배분 이전 + 잔여 복원) ───────────────
+
+    /// V312 백필 마이그레이션을 인메모리 풀에 실행 (이미 적용됐어도 멱등 재실행).
+    async fn run_backfill(pool: &SqlitePool) {
+        let sql = include_str!("../../migrations/312__backfill_partial_makeup.sql");
+        sqlx::raw_sql(sql).execute(pool).await.expect("백필 실행");
+    }
+
+    /// 레거시(옵션A) makeup_done 매칭 세팅 — 보강 1건 + 결석 N건을 makeup_attendance_id 로 매칭.
+    /// absences: (event_date, class_minutes, makeup_deadline).
+    async fn seed_legacy_makeup_done(
+        pool: &SqlitePool,
+        sid: i64,
+        makeup_minutes: i64,
+        absences: &[(&str, i64, Option<&str>)],
+    ) -> Vec<i64> {
+        let mid: (i64,) = sqlx::query_as(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-06-13', '2026-06', ?) RETURNING id",
+        )
+        .bind(sid)
+        .bind(makeup_minutes)
+        .fetch_one(pool)
+        .await
+        .expect("legacy makeup");
+        let mut ids = Vec::new();
+        for &(date, cm, dl) in absences {
+            let aid: (i64,) = sqlx::query_as(
+                "INSERT INTO regular_attendances \
+                 (student_id, event_date, year_month, status, class_minutes, makeup_deadline, makeup_attendance_id) \
+                 VALUES (?, ?, '2026-06', 'makeup_done', ?, ?, ?) RETURNING id",
+            )
+            .bind(sid)
+            .bind(date)
+            .bind(cm)
+            .bind(dl)
+            .bind(mid.0)
+            .fetch_one(pool)
+            .await
+            .expect("legacy absence");
+            ids.push(aid.0);
+        }
+        ids
+    }
+
+    /// 원장님 케이스: 120분 결석에 60분 보강(makeup_done) → 잔여 60분 복원(absent).
+    #[tokio::test]
+    async fn backfill_restores_partial_makeup() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let aids =
+            seed_legacy_makeup_done(&pool, sid, 60, &[("2026-06-10", 120, Some("2026-07"))]).await;
+        run_backfill(&pool).await;
+        assert_eq!(status_of(&pool, aids[0]).await, "absent", "잔여가 남아 absent 복원");
+        assert_eq!(remaining_of(&pool, aids[0]).await, 60);
+    }
+
+    /// 정상 매칭(60=60)은 그대로 makeup_done 유지.
+    #[tokio::test]
+    async fn backfill_keeps_complete_makeup() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let aids =
+            seed_legacy_makeup_done(&pool, sid, 60, &[("2026-06-10", 60, Some("2026-07"))]).await;
+        run_backfill(&pool).await;
+        assert_eq!(status_of(&pool, aids[0]).await, "makeup_done");
+        assert_eq!(remaining_of(&pool, aids[0]).await, 0);
+    }
+
+    /// 초과 보강(90>60)은 60만 배분, 초과분 버림, makeup_done 유지.
+    #[tokio::test]
+    async fn backfill_over_makeup_drops_excess() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let aids =
+            seed_legacy_makeup_done(&pool, sid, 90, &[("2026-06-10", 60, Some("2026-07"))]).await;
+        run_backfill(&pool).await;
+        assert_eq!(status_of(&pool, aids[0]).await, "makeup_done");
+        assert_eq!(remaining_of(&pool, aids[0]).await, 0);
+    }
+
+    /// 보강 1건(60분)이 결석 2건(각 60)에 매칭됐던 레거시 → 임박한 1건만 소진, 나머지 복원.
+    #[tokio::test]
+    async fn backfill_one_makeup_multiple_absences() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let aids = seed_legacy_makeup_done(
+            &pool,
+            sid,
+            60,
+            &[
+                ("2026-06-10", 60, Some("2026-07")), // 임박 순 먼저
+                ("2026-06-11", 60, Some("2026-07")),
+            ],
+        )
+        .await;
+        run_backfill(&pool).await;
+        // A(6/10) 완전 소진 유지, B(6/11) 미배분 → 잔여 60 복원
+        assert_eq!(status_of(&pool, aids[0]).await, "makeup_done");
+        assert_eq!(remaining_of(&pool, aids[0]).await, 0);
+        assert_eq!(status_of(&pool, aids[1]).await, "absent");
+        assert_eq!(remaining_of(&pool, aids[1]).await, 60);
+    }
+
+    /// 멱등성 — 2회 실행해도 배분·상태 불변.
+    #[tokio::test]
+    async fn backfill_is_idempotent() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        let aids =
+            seed_legacy_makeup_done(&pool, sid, 60, &[("2026-06-10", 120, Some("2026-07"))]).await;
+        run_backfill(&pool).await;
+        run_backfill(&pool).await;
+        assert_eq!(status_of(&pool, aids[0]).await, "absent");
+        assert_eq!(remaining_of(&pool, aids[0]).await, 60);
+        // 배분은 1건만 (중복 INSERT 없음)
+        let cnt: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM makeup_allocations WHERE absence_id = ?")
+                .bind(aids[0])
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(cnt.0, 1);
+    }
 }
