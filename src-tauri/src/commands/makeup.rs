@@ -1390,4 +1390,90 @@ mod tests {
         assert_eq!(status, "makeup_done");
         assert_eq!(mid, Some(result.makeup_id));
     }
+
+    // ─────────────── T1: makeup_allocations 스키마 (V311, ADR-011) ───────────────
+
+    /// V311 마이그레이션이 인메모리 풀에 적용되어 유효 배분 행을 INSERT 할 수 있다.
+    #[tokio::test]
+    async fn makeup_allocations_accepts_valid_row() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
+        let mid: (i64,) = sqlx::query_as(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-06-13', '2026-06', 60) RETURNING id",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .expect("makeup INSERT");
+        sqlx::query(
+            "INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) \
+             VALUES (?, ?, 60)",
+        )
+        .bind(mid.0)
+        .bind(absences[0])
+        .execute(&pool)
+        .await
+        .expect("유효 배분 INSERT 성공");
+        let cnt: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM makeup_allocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(cnt.0, 1);
+    }
+
+    /// allocated_minutes <= 0 은 CHECK 제약 위반.
+    #[tokio::test]
+    async fn makeup_allocations_rejects_non_positive_minutes() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
+        let mid: (i64,) = sqlx::query_as(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-06-13', '2026-06', 60) RETURNING id",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .expect("makeup INSERT");
+        let err = sqlx::query(
+            "INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) \
+             VALUES (?, ?, 0)",
+        )
+        .bind(mid.0)
+        .bind(absences[0])
+        .execute(&pool)
+        .await;
+        assert!(err.is_err(), "allocated_minutes=0 은 CHECK 위반");
+    }
+
+    /// (makeup_id, absence_id) 쌍은 UNIQUE — 같은 보강이 같은 결석에 중복 배분 불가.
+    #[tokio::test]
+    async fn makeup_allocations_rejects_duplicate_pair() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let (sid, absences) = fixture_student_with_absences(&pool, &["2026-06-15"]).await;
+        let mid: (i64,) = sqlx::query_as(
+            "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
+             VALUES (?, '2026-06-13', '2026-06', 120) RETURNING id",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .expect("makeup INSERT");
+        sqlx::query(
+            "INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) VALUES (?, ?, 30)",
+        )
+        .bind(mid.0)
+        .bind(absences[0])
+        .execute(&pool)
+        .await
+        .expect("첫 배분");
+        let err = sqlx::query(
+            "INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) VALUES (?, ?, 30)",
+        )
+        .bind(mid.0)
+        .bind(absences[0])
+        .execute(&pool)
+        .await;
+        assert!(err.is_err(), "(makeup_id, absence_id) 중복 배분 거부");
+    }
 }
