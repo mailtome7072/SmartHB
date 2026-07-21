@@ -24,17 +24,38 @@ use sqlx::{Row, SqlitePool};
 use std::collections::BTreeMap;
 
 // ────────────────────────────────────────────────────────────────────
+// 잔여 보강필요분 계산 (ADR-011 분 단위 부분 차감)
+// ────────────────────────────────────────────────────────────────────
+
+/// 결석의 잔여 보강필요분을 계산하는 SQL 서브식을 만든다 (ADR-011).
+///
+/// `잔여 = class_minutes - SUM(makeup_allocations.allocated_minutes)`.
+/// `alias` 는 `regular_attendances` 테이블(또는 그 별칭)이며 **코드 내부 상수만**
+/// 전달한다 — 사용자 입력을 넘기면 안 된다(SQL 인젝션 방지, backend.md).
+/// 보강 매칭 여부 판정·잔여 집계에 쓰는 8개 쿼리(T4)가 이 헬퍼로 통일된다(R139 완화).
+pub(crate) fn remaining_minutes_expr(alias: &str) -> String {
+    format!(
+        "({a}.class_minutes - COALESCE((SELECT SUM(mal.allocated_minutes) \
+          FROM makeup_allocations mal WHERE mal.absence_id = {a}.id), 0))",
+        a = alias
+    )
+}
+
+// ────────────────────────────────────────────────────────────────────
 // 응답 구조체 (camelCase serde)
 // ────────────────────────────────────────────────────────────────────
 
-/// 원생의 미처리 결석 1건 — `status='absent' AND makeup_attendance_id IS NULL`.
+/// 원생의 미처리 결석 1건 — `status='absent'` 이면서 잔여 보강필요분 > 0 (ADR-011).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingAbsence {
     pub id: i64,
     pub event_date: String,
     pub year_month: String,
+    /// 원 결석 수업 시간(분) — 참고용.
     pub class_minutes: i64,
+    /// 잔여 보강필요분 = class_minutes - 이미 배분된 보강분. UI 표시·합산은 이 값 사용.
+    pub remaining_minutes: i64,
     pub makeup_deadline: Option<String>,
     pub absence_memo: Option<String>,
 }
@@ -104,16 +125,21 @@ async fn get_pending_absences_impl(
     pool: &SqlitePool,
     student_id: i64,
 ) -> Result<Vec<PendingAbsence>, String> {
-    let rows = sqlx::query(
-        "SELECT id, event_date, year_month, class_minutes, makeup_deadline, absence_memo \
+    // ADR-011: 미매칭(makeup_attendance_id) 대신 "잔여분 > 0" 기준 — 부분 소진 결석도 포함.
+    let remaining = remaining_minutes_expr("regular_attendances");
+    let sql = format!(
+        "SELECT id, event_date, year_month, class_minutes, \
+                {remaining} AS remaining_minutes, makeup_deadline, absence_memo \
          FROM regular_attendances \
-         WHERE student_id = ? AND status = 'absent' AND makeup_attendance_id IS NULL \
+         WHERE student_id = ? AND status = 'absent' AND {remaining} > 0 \
          ORDER BY (makeup_deadline IS NULL), makeup_deadline ASC, event_date ASC",
-    )
-    .bind(student_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("미처리 결석 조회 실패: {}", e))?;
+        remaining = remaining
+    );
+    let rows = sqlx::query(&sql)
+        .bind(student_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("미처리 결석 조회 실패: {}", e))?;
 
     let mut result = Vec::with_capacity(rows.len());
     for r in rows {
@@ -122,6 +148,7 @@ async fn get_pending_absences_impl(
             event_date: r.try_get("event_date").map_err(|e| e.to_string())?,
             year_month: r.try_get("year_month").map_err(|e| e.to_string())?,
             class_minutes: r.try_get("class_minutes").map_err(|e| e.to_string())?,
+            remaining_minutes: r.try_get("remaining_minutes").map_err(|e| e.to_string())?,
             makeup_deadline: r.try_get("makeup_deadline").map_err(|e| e.to_string())?,
             absence_memo: r.try_get("absence_memo").map_err(|e| e.to_string())?,
         });
@@ -394,11 +421,23 @@ async fn create_makeup_with_absences_impl(
 
     // 검증 3 폐기 (Session #10) — 정규 수업 요일에도 보강 등록 허용.
 
-    // 검증 4(舊) → 3: 결석 유효성 — 모두 본 학생 + status='absent' + 미매칭.
-    // SQL IN 절은 동적 placeholder 가 sqlx 에서 까다로워 — Rust 측 루프로 단건 검증.
+    // 검증 3: 결석 유효성 + 잔여분 수집 (ADR-011 분 단위 부분 차감).
+    // - 모두 본 학생 소속
+    // - status='absent' (makeup_done=잔여 0 / makeup_expired 는 매칭 불가)
+    // - 잔여분(class_minutes - 기존 배분합) > 0
+    // SQL IN 절은 sqlx 동적 placeholder 가 까다로워 — Rust 측 루프로 단건 검증.
+    struct AbsenceInfo {
+        id: i64,
+        deadline: Option<String>,
+        event_date: String,
+        remaining: i64,
+    }
+    let mut infos: Vec<AbsenceInfo> = Vec::with_capacity(payload.absence_ids.len());
     for &aid in &payload.absence_ids {
         let row = sqlx::query(
-            "SELECT student_id, status, makeup_attendance_id \
+            "SELECT student_id, status, event_date, makeup_deadline, class_minutes, \
+                    COALESCE((SELECT SUM(mal.allocated_minutes) FROM makeup_allocations mal \
+                              WHERE mal.absence_id = regular_attendances.id), 0) AS allocated \
              FROM regular_attendances WHERE id = ?",
         )
         .bind(aid)
@@ -408,20 +447,8 @@ async fn create_makeup_with_absences_impl(
         let row = row.ok_or_else(|| format!("결석을 찾을 수 없습니다 (id={}).", aid))?;
         let sid: i64 = row.try_get("student_id").map_err(|e| e.to_string())?;
         let status: String = row.try_get("status").map_err(|e| e.to_string())?;
-        let matched: Option<i64> = row
-            .try_get("makeup_attendance_id")
-            .map_err(|e| e.to_string())?;
         if sid != payload.student_id {
             return Err(format!("결석 id={} 가 다른 학생의 것입니다.", aid));
-        }
-        // matched 체크를 status 보다 먼저 — 정상 매칭된 결석(status='makeup_done', matched=Some)
-        // 케이스에 "이미 다른 보강" 메시지가 더 정확. status 분기는 makeup_expired 같은
-        // 예외 상태(matched=None) 케이스를 잡는다.
-        if matched.is_some() {
-            return Err(format!(
-                "결석 id={} 는 이미 다른 보강에 매칭되어 있습니다.",
-                aid
-            ));
         }
         if status != "absent" {
             return Err(format!(
@@ -429,16 +456,49 @@ async fn create_makeup_with_absences_impl(
                 aid, status
             ));
         }
+        let class_minutes: i64 = row.try_get("class_minutes").map_err(|e| e.to_string())?;
+        let allocated: i64 = row.try_get("allocated").map_err(|e| e.to_string())?;
+        let remaining = class_minutes - allocated;
+        if remaining <= 0 {
+            return Err(format!(
+                "결석 id={} 는 이미 보강이 모두 채워졌습니다.",
+                aid
+            ));
+        }
+        let event_date: String = row.try_get("event_date").map_err(|e| e.to_string())?;
+        let deadline: Option<String> = row.try_get("makeup_deadline").map_err(|e| e.to_string())?;
+        infos.push(AbsenceInfo {
+            id: aid,
+            deadline,
+            event_date,
+            remaining,
+        });
     }
 
-    // 검증 4 (PI-02 분 단위 활성 위치): 옵션 A 일 단위 채택으로 생략.
-    // 분 단위 전환 시 아래 주석 해제:
-    // let total: (i64,) = sqlx::query_as(
-    //     "SELECT COALESCE(SUM(class_minutes),0) FROM regular_attendances WHERE id IN (...)"
-    // ).fetch_one(pool).await...;
-    // if payload.class_minutes < total.0 { return Err("보강 시간이 결석 합계보다 적습니다."); }
+    // 검증 4 (ADR-011): 보강 시간이 선택 결석들의 잔여 합계를 초과하지 않아야 한다.
+    // 초과분은 기록할 결석이 없어 데이터 모순 — 신규 등록은 엄격히 차단한다.
+    // (과거 데이터 백필 V312 는 초과분 버림으로 관대 처리 — 구분)
+    let total_remaining: i64 = infos.iter().map(|i| i.remaining).sum();
+    if payload.class_minutes > total_remaining {
+        return Err(format!(
+            "보강 시간({}분)이 선택한 결석의 잔여 보강필요시간({}분)보다 많습니다.",
+            payload.class_minutes, total_remaining
+        ));
+    }
 
-    // 실행: 단일 트랜잭션 — INSERT makeup → UPDATE absences.
+    // 배분 순서: 소멸기한 임박(오래된) 순 — deadline ASC (NULL 마지막), event_date ASC.
+    infos.sort_by(|a, b| {
+        use std::cmp::Ordering;
+        let d = match (&a.deadline, &b.deadline) {
+            (Some(x), Some(y)) => x.cmp(y),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        };
+        d.then_with(|| a.event_date.cmp(&b.event_date))
+    });
+
+    // 실행: 단일 트랜잭션 — INSERT makeup → 배분(makeup_allocations) → 완전 소진 결석 makeup_done.
     let mut tx = pool
         .begin()
         .await
@@ -457,27 +517,43 @@ async fn create_makeup_with_absences_impl(
     .map_err(|e| format!("보강 INSERT 실패: {}", e))?;
     let makeup_id = makeup_row.0;
 
-    let mut matched_count = 0usize;
-    for &aid in &payload.absence_ids {
-        let res = sqlx::query(
-            "UPDATE regular_attendances \
-             SET status = 'makeup_done', makeup_attendance_id = ?, \
-                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-             WHERE id = ? AND status = 'absent' AND makeup_attendance_id IS NULL",
+    // 소멸기한 임박순으로 보강분을 결석에 배분 (min(잔여 보강분, 결석 잔여분)).
+    let mut remaining_makeup = payload.class_minutes;
+    let mut allocated_count = 0usize;
+    for info in &infos {
+        if remaining_makeup <= 0 {
+            break;
+        }
+        let alloc = remaining_makeup.min(info.remaining);
+        if alloc <= 0 {
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) \
+             VALUES (?, ?, ?)",
         )
         .bind(makeup_id)
-        .bind(aid)
+        .bind(info.id)
+        .bind(alloc)
         .execute(&mut *tx)
         .await
-        .map_err(|e| format!("결석 매칭 UPDATE 실패 (id={}): {}", aid, e))?;
-        if res.rows_affected() != 1 {
-            // 검증 3 통과 후 race 가 발생한 경우 — 트랜잭션 롤백.
-            return Err(format!(
-                "결석 id={} 매칭 실패 (검증 후 상태 변경 추정). 트랜잭션 롤백.",
-                aid
-            ));
+        .map_err(|e| format!("보강 배분 INSERT 실패 (absence_id={}): {}", info.id, e))?;
+        allocated_count += 1;
+        remaining_makeup -= alloc;
+
+        // 잔여가 모두 소진되면 makeup_done 전이 (makeup_attendance_id 는 레거시 — 설정하지 않음).
+        if info.remaining - alloc == 0 {
+            sqlx::query(
+                "UPDATE regular_attendances \
+                 SET status = 'makeup_done', \
+                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+                 WHERE id = ? AND status = 'absent'",
+            )
+            .bind(info.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("결석 소진 UPDATE 실패 (id={}): {}", info.id, e))?;
         }
-        matched_count += 1;
     }
 
     tx.commit()
@@ -488,7 +564,7 @@ async fn create_makeup_with_absences_impl(
         makeup_id,
         student_id: payload.student_id,
         event_date: payload.event_date.clone(),
-        matched_count,
+        matched_count: allocated_count,
     })
 }
 
@@ -534,17 +610,58 @@ async fn cancel_makeup_impl(pool: &SqlitePool, makeup_id: i64) -> Result<usize, 
         .await
         .map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
 
-    let revert_res = sqlx::query(
-        "UPDATE regular_attendances \
-         SET makeup_attendance_id = NULL, status = 'absent', \
-             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-         WHERE makeup_attendance_id = ?",
-    )
-    .bind(makeup_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| format!("결석 환원 실패: {}", e))?;
+    // 1. 이 보강이 배분된 결석 id 수집 (환원 판정 대상).
+    let absence_rows =
+        sqlx::query("SELECT absence_id FROM makeup_allocations WHERE makeup_id = ?")
+            .bind(makeup_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| format!("배분 조회 실패: {}", e))?;
+    let mut affected: Vec<i64> = Vec::with_capacity(absence_rows.len());
+    for r in &absence_rows {
+        affected.push(r.try_get("absence_id").map_err(|e| e.to_string())?);
+    }
 
+    // 2. 이 보강의 배분 레코드 삭제 (makeup DELETE 전 — FK 순서).
+    sqlx::query("DELETE FROM makeup_allocations WHERE makeup_id = ?")
+        .bind(makeup_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("배분 삭제 실패: {}", e))?;
+
+    // 3. 배분이 사라진 결석의 잔여를 재계산 — 잔여가 생겼는데 makeup_done 이면 absent 환원.
+    //    부분 소진 중이던(status='absent') 결석은 잔여만 늘고 상태 유지 → 환원 카운트 제외.
+    let mut reverted = 0usize;
+    for aid in &affected {
+        let row: (i64, i64, String) = sqlx::query_as(
+            "SELECT class_minutes, \
+                    COALESCE((SELECT SUM(allocated_minutes) FROM makeup_allocations \
+                              WHERE absence_id = ?), 0), \
+                    status \
+             FROM regular_attendances WHERE id = ?",
+        )
+        .bind(aid)
+        .bind(aid)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| format!("잔여 재계산 실패 (id={}): {}", aid, e))?;
+        let remaining = row.0 - row.1;
+        if remaining > 0 && row.2 == "makeup_done" {
+            sqlx::query(
+                "UPDATE regular_attendances \
+                 SET status = 'absent', \
+                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+                 WHERE id = ?",
+            )
+            .bind(aid)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("결석 환원 실패 (id={}): {}", aid, e))?;
+            reverted += 1;
+        }
+    }
+
+    // 4. 보강 레코드 삭제.
     sqlx::query("DELETE FROM makeup_attendances WHERE id = ?")
         .bind(makeup_id)
         .execute(&mut *tx)
@@ -555,7 +672,7 @@ async fn cancel_makeup_impl(pool: &SqlitePool, makeup_id: i64) -> Result<usize, 
         .await
         .map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
 
-    Ok(revert_res.rows_affected() as usize)
+    Ok(reverted)
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1024,15 +1141,64 @@ mod tests {
     }
 
     fn payload(student_id: i64, event_date: &str, absence_ids: Vec<i64>) -> CreateMakeupPayload {
+        payload_minutes(student_id, event_date, absence_ids, 60)
+    }
+
+    fn payload_minutes(
+        student_id: i64,
+        event_date: &str,
+        absence_ids: Vec<i64>,
+        class_minutes: i64,
+    ) -> CreateMakeupPayload {
         CreateMakeupPayload {
             student_id,
             event_date: event_date.to_string(),
-            class_minutes: 60,
+            class_minutes,
             absence_ids,
         }
     }
 
-    /// AC-T3-1: 정상 매칭 — 결석 2건 → makeup_id 발급 + 2건 모두 makeup_done 전이.
+    /// 결석의 현재 잔여 보강필요분 (class_minutes - 배분합).
+    async fn remaining_of(pool: &SqlitePool, absence_id: i64) -> i64 {
+        let r: (i64,) = sqlx::query_as(
+            "SELECT class_minutes - COALESCE((SELECT SUM(allocated_minutes) \
+                    FROM makeup_allocations WHERE absence_id = ?), 0) \
+             FROM regular_attendances WHERE id = ?",
+        )
+        .bind(absence_id)
+        .bind(absence_id)
+        .fetch_one(pool)
+        .await
+        .expect("잔여 조회");
+        r.0
+    }
+
+    /// 결석의 현재 status.
+    async fn status_of(pool: &SqlitePool, absence_id: i64) -> String {
+        let r: (String,) =
+            sqlx::query_as("SELECT status FROM regular_attendances WHERE id = ?")
+                .bind(absence_id)
+                .fetch_one(pool)
+                .await
+                .expect("상태 조회");
+        r.0
+    }
+
+    /// 특정 보강(makeup_id)이 특정 결석에 배분한 분(없으면 0).
+    async fn alloc_of(pool: &SqlitePool, makeup_id: i64, absence_id: i64) -> i64 {
+        let r: (i64,) = sqlx::query_as(
+            "SELECT COALESCE(SUM(allocated_minutes), 0) FROM makeup_allocations \
+             WHERE makeup_id = ? AND absence_id = ?",
+        )
+        .bind(makeup_id)
+        .bind(absence_id)
+        .fetch_one(pool)
+        .await
+        .expect("배분 조회");
+        r.0
+    }
+
+    /// AC-T3-1 (신규 분 단위): 결석 2건(각 60분)에 120분 보강 → 2건 모두 완전 소진.
     #[tokio::test]
     async fn create_makeup_matches_absences_atomically() {
         let pool = db::test_pool_in_memory().await.expect("pool");
@@ -1043,7 +1209,7 @@ mod tests {
 
         let result = create_makeup_with_absences_impl(
             &pool,
-            &payload(sid, "2026-06-13", absences.clone()),
+            &payload_minutes(sid, "2026-06-13", absences.clone(), 120),
         )
         .await
         .expect("정상 매칭");
@@ -1051,17 +1217,11 @@ mod tests {
         assert_eq!(result.student_id, sid);
         assert!(result.makeup_id > 0);
 
-        // 결석 2건 모두 makeup_done + makeup_attendance_id 설정 확인
+        // 결석 2건 모두 makeup_done + 잔여 0 + 각 60분 배분
         for aid in absences {
-            let row: (String, Option<i64>) = sqlx::query_as(
-                "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id=?",
-            )
-            .bind(aid)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-            assert_eq!(row.0, "makeup_done");
-            assert_eq!(row.1, Some(result.makeup_id));
+            assert_eq!(status_of(&pool, aid).await, "makeup_done");
+            assert_eq!(remaining_of(&pool, aid).await, 0);
+            assert_eq!(alloc_of(&pool, result.makeup_id, aid).await, 60);
         }
     }
 
@@ -1101,16 +1261,10 @@ mod tests {
             .await
             .expect("정규 수업 요일에도 보강 허용");
         assert_eq!(r.matched_count, 1);
-        // 결석 → makeup_done 전이 확인
-        let row: (String, Option<i64>) = sqlx::query_as(
-            "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id=?",
-        )
-        .bind(absences[0])
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(row.0, "makeup_done");
-        assert_eq!(row.1, Some(r.makeup_id));
+        // 60분 결석에 60분 보강 → 완전 소진 (makeup_attendance_id 는 레거시 — 검증하지 않음)
+        assert_eq!(status_of(&pool, absences[0]).await, "makeup_done");
+        assert_eq!(remaining_of(&pool, absences[0]).await, 0);
+        assert_eq!(alloc_of(&pool, r.makeup_id, absences[0]).await, 60);
     }
 
     /// AC-T3-5: 무효 absence_id (미존재) 거부.
@@ -1159,11 +1313,11 @@ mod tests {
                 .expect("첫 매칭");
         assert_eq!(r1.matched_count, 1);
 
-        // 같은 결석으로 두 번째 보강 시도 → 이미 매칭됨 거부
+        // 같은 결석(60분 완전 소진 → makeup_done)으로 두 번째 보강 시도 → 미처리(absent) 아님 거부
         let err = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-20", absences))
             .await
-            .expect_err("이미 매칭된 결석 거부");
-        assert!(err.contains("이미 다른 보강"));
+            .expect_err("완전 소진된 결석 재매칭 거부");
+        assert!(err.contains("미처리 결석"), "친화 메시지: {}", err);
     }
 
     /// AC-T3-8: 트랜잭션 원자성 — 일부 결석 유효성 검증 실패 시 makeup INSERT 도 롤백.
@@ -1225,9 +1379,10 @@ mod tests {
         let (sid, absences) =
             fixture_student_with_absences(&pool, &["2026-06-15", "2026-06-16"]).await;
         fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+        // 결석 2건(각 60분)에 120분 보강 → 2건 완전 소진
         let r = create_makeup_with_absences_impl(
             &pool,
-            &payload(sid, "2026-06-13", absences.clone()),
+            &payload_minutes(sid, "2026-06-13", absences.clone(), 120),
         )
         .await
         .expect("등록");
@@ -1237,24 +1392,22 @@ mod tests {
             .expect("취소");
         assert_eq!(reverted, 2);
 
-        // 결석 2건 모두 absent + makeup_attendance_id NULL
+        // 결석 2건 모두 absent 환원 + 잔여 60 복원
         for aid in &absences {
-            let row: (String, Option<i64>) = sqlx::query_as(
-                "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id=?",
-            )
-            .bind(aid)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-            assert_eq!(row.0, "absent");
-            assert_eq!(row.1, None);
+            assert_eq!(status_of(&pool, *aid).await, "absent");
+            assert_eq!(remaining_of(&pool, *aid).await, 60);
         }
-        // makeup_attendances 0건
+        // makeup_attendances 0건 + makeup_allocations 0건
         let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM makeup_attendances")
             .fetch_one(&pool)
             .await
             .unwrap();
         assert_eq!(count.0, 0);
+        let acount: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM makeup_allocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(acount.0, 0);
     }
 
     /// 존재하지 않는 makeup_id 취소 — 친화 에러.
@@ -1379,16 +1532,10 @@ mod tests {
 
         assert_eq!(result.matched_count, 1);
 
-        // 미래 결석이 makeup_done 으로 전이됨 — 매칭된 보강 id 도 연결.
-        let (status, mid): (String, Option<i64>) = sqlx::query_as(
-            "SELECT status, makeup_attendance_id FROM regular_attendances WHERE id = ?",
-        )
-        .bind(absences[0])
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(status, "makeup_done");
-        assert_eq!(mid, Some(result.makeup_id));
+        // 미래 결석이 makeup_done 으로 전이 + 60분 배분됨 (선행 수업 시나리오).
+        assert_eq!(status_of(&pool, absences[0]).await, "makeup_done");
+        assert_eq!(remaining_of(&pool, absences[0]).await, 0);
+        assert_eq!(alloc_of(&pool, result.makeup_id, absences[0]).await, 60);
     }
 
     // ─────────────── T1: makeup_allocations 스키마 (V311, ADR-011) ───────────────
@@ -1475,5 +1622,157 @@ mod tests {
         .execute(&pool)
         .await;
         assert!(err.is_err(), "(makeup_id, absence_id) 중복 배분 거부");
+    }
+
+    // ─────────────── T2 신규: 분 단위 부분 차감 ───────────────
+
+    /// 120분 결석에 60분 보강 → 부분 소진 (status='absent' 유지, 잔여 60분).
+    #[tokio::test]
+    async fn create_makeup_partial_leaves_remaining() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 2)]).await;
+        let aid = insert_absence(&pool, sid, "2026-06-16", "2026-06", 120, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        let r = create_makeup_with_absences_impl(
+            &pool,
+            &payload_minutes(sid, "2026-06-13", vec![aid], 60),
+        )
+        .await
+        .expect("부분 보강 등록");
+        assert_eq!(r.matched_count, 1);
+        // 잔여 60분 → 여전히 미처리(absent) → 보강 대상 유지
+        assert_eq!(status_of(&pool, aid).await, "absent");
+        assert_eq!(remaining_of(&pool, aid).await, 60);
+        assert_eq!(alloc_of(&pool, r.makeup_id, aid).await, 60);
+    }
+
+    /// 120분 결석에 60분 보강 2회 → 완전 소진.
+    #[tokio::test]
+    async fn create_makeup_two_partials_complete() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 2)]).await;
+        let aid = insert_absence(&pool, sid, "2026-06-16", "2026-06", 120, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+        fixture_makeup_eligible_date(&pool, "2026-06-20").await;
+
+        // 1차 60분
+        create_makeup_with_absences_impl(&pool, &payload_minutes(sid, "2026-06-13", vec![aid], 60))
+            .await
+            .expect("1차 부분 보강");
+        assert_eq!(status_of(&pool, aid).await, "absent");
+        assert_eq!(remaining_of(&pool, aid).await, 60);
+
+        // 2차 60분 → 완전 소진
+        create_makeup_with_absences_impl(&pool, &payload_minutes(sid, "2026-06-20", vec![aid], 60))
+            .await
+            .expect("2차 부분 보강");
+        assert_eq!(status_of(&pool, aid).await, "makeup_done");
+        assert_eq!(remaining_of(&pool, aid).await, 0);
+    }
+
+    /// 보강 시간이 선택 결석 잔여 합계를 초과하면 거부 (신규 등록은 엄격).
+    #[tokio::test]
+    async fn create_makeup_rejects_over_allocation() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 1)]).await;
+        let aid = insert_absence(&pool, sid, "2026-06-16", "2026-06", 60, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        // 결석 잔여 60분인데 120분 보강 시도 → 거부
+        let err = create_makeup_with_absences_impl(
+            &pool,
+            &payload_minutes(sid, "2026-06-13", vec![aid], 120),
+        )
+        .await
+        .expect_err("초과 배분 거부");
+        assert!(err.contains("잔여 보강필요시간"), "친화 메시지: {}", err);
+        // 롤백 확인 — makeup 0건
+        let mc: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM makeup_attendances")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(mc.0, 0);
+    }
+
+    /// 소멸기한 임박 순으로 배분 — 60분 보강은 마감 임박 결석부터 채운다.
+    #[tokio::test]
+    async fn create_makeup_allocates_by_deadline_first() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 1)]).await;
+        // A: 마감 2026-07(임박), B: 마감 2026-08 — 각 60분
+        let a_urgent =
+            insert_absence(&pool, sid, "2026-06-10", "2026-06", 60, Some("2026-07")).await;
+        let b_later =
+            insert_absence(&pool, sid, "2026-06-11", "2026-06", 60, Some("2026-08")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+
+        // 60분 보강 → 임박한 A 부터 채움 (입력 순서를 B,A 로 줘도 정렬로 A 우선)
+        let r = create_makeup_with_absences_impl(
+            &pool,
+            &payload_minutes(sid, "2026-06-13", vec![b_later, a_urgent], 60),
+        )
+        .await
+        .expect("배분");
+        assert_eq!(r.matched_count, 1, "임박 결석 1건만 배분");
+        assert_eq!(status_of(&pool, a_urgent).await, "makeup_done");
+        assert_eq!(remaining_of(&pool, a_urgent).await, 0);
+        assert_eq!(status_of(&pool, b_later).await, "absent");
+        assert_eq!(remaining_of(&pool, b_later).await, 60);
+    }
+
+    // ─────────────── T3 신규: 부분 차감 취소 ───────────────
+
+    /// 부분 소진 보강 취소 → 잔여 복원 (배분만 제거, status='absent' 유지 → 환원 카운트 0).
+    #[tokio::test]
+    async fn cancel_partial_makeup_restores_remaining() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 2)]).await;
+        let aid = insert_absence(&pool, sid, "2026-06-16", "2026-06", 120, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+        let r = create_makeup_with_absences_impl(
+            &pool,
+            &payload_minutes(sid, "2026-06-13", vec![aid], 60),
+        )
+        .await
+        .expect("부분 보강");
+        assert_eq!(remaining_of(&pool, aid).await, 60);
+
+        let reverted = cancel_makeup_impl(&pool, r.makeup_id).await.expect("취소");
+        assert_eq!(reverted, 0, "부분 소진(absent)은 환원 카운트 제외");
+        assert_eq!(status_of(&pool, aid).await, "absent");
+        assert_eq!(remaining_of(&pool, aid).await, 120);
+    }
+
+    /// 다중 보강 중 1건 취소 → 나머지 배분은 영향 없음.
+    #[tokio::test]
+    async fn cancel_one_of_multiple_makeups_keeps_others() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 2)]).await;
+        let aid = insert_absence(&pool, sid, "2026-06-16", "2026-06", 120, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await;
+        fixture_makeup_eligible_date(&pool, "2026-06-20").await;
+
+        let r1 = create_makeup_with_absences_impl(
+            &pool,
+            &payload_minutes(sid, "2026-06-13", vec![aid], 60),
+        )
+        .await
+        .expect("1차");
+        let r2 = create_makeup_with_absences_impl(
+            &pool,
+            &payload_minutes(sid, "2026-06-20", vec![aid], 60),
+        )
+        .await
+        .expect("2차");
+        assert_eq!(status_of(&pool, aid).await, "makeup_done");
+
+        // 2차 보강 취소 → 잔여 60 복원 + makeup_done→absent 환원
+        let reverted = cancel_makeup_impl(&pool, r2.makeup_id).await.expect("취소");
+        assert_eq!(reverted, 1);
+        assert_eq!(status_of(&pool, aid).await, "absent");
+        assert_eq!(remaining_of(&pool, aid).await, 60);
+        // 1차 배분은 그대로 유지
+        assert_eq!(alloc_of(&pool, r1.makeup_id, aid).await, 60);
     }
 }
