@@ -572,13 +572,16 @@ async fn create_makeup_with_absences_impl(
 // IPC: 보강 취소 (Sprint 9 T4)
 // ────────────────────────────────────────────────────────────────────
 
-/// 보강 1건을 취소하고 매칭된 결석을 모두 `absent` 상태로 환원한다.
+/// 보강 1건을 취소하고, 그 보강이 배분했던 분만큼 각 결석의 소진을 되돌린다 (ADR-011).
 ///
-/// 트랜잭션 순서 (V107 FK 위반 회피):
-/// 1. `regular_attendances` 연결 결석 환원 — `makeup_attendance_id=NULL, status='absent'`
-/// 2. `makeup_attendances` DELETE
+/// 트랜잭션 순서 (FK 무결성 유지):
+/// 1. 이 보강의 배분 결석 id 수집 (`makeup_allocations`)
+/// 2. `makeup_allocations` 배분 삭제 (makeup DELETE 전 — FK 순서)
+/// 3. 배분이 사라진 결석의 잔여 재계산 — 잔여>0 이 된 `makeup_done` 결석을 `absent` 환원
+///    (부분 소진 중이던 `absent` 결석은 잔여만 늘고 상태 유지)
+/// 4. `makeup_attendances` DELETE
 ///
-/// 1→2 순서 — FK NULL 처리가 DELETE 전이라야 무결성 위반 없음.
+/// 반환값 = makeup_done→absent 로 환원된 결석 수.
 /// audit `MakeupCancelled` 기록 (커밋 후 fire-and-forget).
 #[tauri::command]
 pub async fn cancel_makeup(makeup_id: i64) -> Result<(), String> {
