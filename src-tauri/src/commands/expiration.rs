@@ -93,12 +93,14 @@ pub(crate) async fn expire_overdue_absences_impl(
 
     // RETURNING 으로 전이된 레코드 메타데이터 조회 + UPDATE 원자성 확보.
     // student 이름 JOIN 은 RETURNING 직후 별도 쿼리로 — SQLite RETURNING 은 JOIN 미지원.
+    // ADR-011: status='absent' 이면 미보강 잔여가 남은 상태(완전 소진은 makeup_done).
+    // 부분 소진 결석도 잔여분이 기한 초과 시 소멸 대상 — makeup_attendance_id 조건 제거.
+    // 이미 배분된 보강분(makeup_allocations)은 그대로 보존되고 잔여만 소멸된다.
     let rows = sqlx::query(
         "UPDATE regular_attendances \
          SET status = 'makeup_expired', \
              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
          WHERE status = 'absent' \
-           AND makeup_attendance_id IS NULL \
            AND makeup_deadline IS NOT NULL \
            AND makeup_deadline IN ( \
              SELECT year_month FROM study_periods WHERE end_date <= ? \
@@ -193,21 +195,26 @@ pub(crate) async fn get_pending_makeup_for_withdrawal_impl(
     pool: &SqlitePool,
     student_id: i64,
 ) -> Result<WithdrawalPendingMakeup, String> {
-    let rows = sqlx::query(
-        "SELECT id, event_date, class_minutes, makeup_deadline \
+    // ADR-011: 부분 소진 결석도 잔여분이 남으면 퇴교 처리 대상 — 잔여분 기준으로 조회.
+    // class_minutes 필드에는 원 결석분이 아니라 잔여분을 담는다(퇴교 화면은 충당 필요 잔여 표시).
+    let rem = crate::commands::makeup::remaining_minutes_expr("regular_attendances");
+    let sql = format!(
+        "SELECT id, event_date, {rem} AS remaining, makeup_deadline \
          FROM regular_attendances \
-         WHERE student_id = ? AND status = 'absent' AND makeup_attendance_id IS NULL \
+         WHERE student_id = ? AND status = 'absent' AND {rem} > 0 \
          ORDER BY event_date",
-    )
-    .bind(student_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("미보강 결석 조회 실패: {}", e))?;
+        rem = rem
+    );
+    let rows = sqlx::query(&sql)
+        .bind(student_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("미보강 결석 조회 실패: {}", e))?;
 
     let mut absences: Vec<PendingAbsenceForWithdrawal> = Vec::with_capacity(rows.len());
     let mut remaining_minutes: i64 = 0;
     for r in rows {
-        let cm: i64 = r.try_get("class_minutes").map_err(|e| e.to_string())?;
+        let cm: i64 = r.try_get("remaining").map_err(|e| e.to_string())?;
         remaining_minutes += cm;
         absences.push(PendingAbsenceForWithdrawal {
             id: r.try_get("id").map_err(|e| e.to_string())?,
@@ -273,7 +280,7 @@ pub(crate) async fn process_withdrawal_makeup_impl(
             "UPDATE regular_attendances \
              SET absence_memo = ?, \
                  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-             WHERE student_id = ? AND status = 'absent' AND makeup_attendance_id IS NULL",
+             WHERE student_id = ? AND status = 'absent'",
         )
         .bind(memo)
         .bind(student_id)
@@ -287,7 +294,7 @@ pub(crate) async fn process_withdrawal_makeup_impl(
         "UPDATE regular_attendances \
          SET status = 'makeup_expired', \
              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
-         WHERE student_id = ? AND status = 'absent' AND makeup_attendance_id IS NULL \
+         WHERE student_id = ? AND status = 'absent' \
          RETURNING id",
     )
     .bind(student_id)

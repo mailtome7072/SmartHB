@@ -693,13 +693,18 @@ async fn get_absence_history_impl(
     pool: &SqlitePool,
     student_id: i64,
 ) -> Result<Vec<AbsenceHistoryItem>, String> {
+    // ADR-011: makeup_attendance_id LEFT JOIN 대신 배분(makeup_allocations) 집계.
+    // - makeup_class_minutes = 이 결석에 배분된 총 보강분(부분보강 시 여러 보강 합산)
+    // - makeup_event_date = 가장 최근 배분 보강의 일자 (대표값)
     let rows = sqlx::query(
         "SELECT r.id, r.event_date, r.class_minutes, r.status, \
                 r.makeup_deadline, r.absence_memo, \
-                m.event_date AS makeup_event_date, \
-                m.class_minutes AS makeup_class_minutes \
+                (SELECT MAX(m.event_date) FROM makeup_allocations al \
+                   JOIN makeup_attendances m ON m.id = al.makeup_id \
+                   WHERE al.absence_id = r.id) AS makeup_event_date, \
+                (SELECT SUM(al.allocated_minutes) FROM makeup_allocations al \
+                   WHERE al.absence_id = r.id) AS makeup_class_minutes \
          FROM regular_attendances r \
-         LEFT JOIN makeup_attendances m ON r.makeup_attendance_id = m.id \
          WHERE r.student_id = ? \
            AND r.status IN ('absent', 'makeup_done', 'makeup_expired') \
          ORDER BY r.event_date DESC",
@@ -1452,20 +1457,26 @@ mod tests {
             insert_absence(&pool, sid, "2026-06-20", "2026-06", 60, Some("2026-07")).await;
         let mid: (i64,) = sqlx::query_as(
             "INSERT INTO makeup_attendances (student_id, event_date, year_month, class_minutes) \
-             VALUES (?, '2026-06-25', '2026-06', 90) RETURNING id",
+             VALUES (?, '2026-06-25', '2026-06', 60) RETURNING id",
         )
         .bind(sid)
         .fetch_one(&pool)
         .await
         .unwrap();
+        // ADR-011: 배분 레코드로 매칭 표현 (makeup_attendance_id 미사용)
         sqlx::query(
-            "UPDATE regular_attendances SET status='makeup_done', makeup_attendance_id=? WHERE id=?",
+            "INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) VALUES (?, ?, 60)",
         )
         .bind(mid.0)
         .bind(aid)
         .execute(&pool)
         .await
         .unwrap();
+        sqlx::query("UPDATE regular_attendances SET status='makeup_done' WHERE id=?")
+            .bind(aid)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let history = get_absence_history_impl(&pool, sid).await.expect("이력");
         // 출석 제외 → 3건. DESC 정렬: 06-20, 06-15, 06-05
@@ -1473,7 +1484,7 @@ mod tests {
         assert_eq!(history[0].event_date, "2026-06-20");
         assert_eq!(history[0].status, "makeup_done");
         assert_eq!(history[0].makeup_event_date, Some("2026-06-25".to_string()));
-        assert_eq!(history[0].makeup_class_minutes, Some(90));
+        assert_eq!(history[0].makeup_class_minutes, Some(60));
 
         assert_eq!(history[1].event_date, "2026-06-15");
         assert_eq!(history[1].status, "absent");

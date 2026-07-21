@@ -712,11 +712,11 @@ async fn get_grid_impl(pool: &SqlitePool, year_month: &str) -> Result<Attendance
         // Sprint 9 Session #12 K1': 만기 미도래 미보강 결석 중 가장 이른 일자.
         // 그리드 yearMonth 기준으로 makeup_deadline 도래 여부 판단 (deadline NULL 또는 deadline >= yearMonth).
         // year_month 필터 없음 — 이전 월의 결석도 포함.
+        // ADR-011: status='absent' 이면 잔여 미보강(부분소진 포함). makeup_attendance_id 조건 제거.
         let earliest_pending_absence_date: Option<String> = sqlx::query_scalar(
             "SELECT MIN(event_date) FROM regular_attendances \
              WHERE student_id = ? \
                AND status = 'absent' \
-               AND makeup_attendance_id IS NULL \
                AND (makeup_deadline IS NULL OR makeup_deadline >= ?)",
         )
         .bind(student_id)
@@ -880,6 +880,21 @@ async fn toggle_impl(
                 .to_string(),
         );
     }
+    // ADR-011: 부분 보강이 진행된 결석(배분 존재)을 출석으로 되돌리면 고아 배분이 남는다 — 차단.
+    if current_status == "absent" && new_status == "present" {
+        let alloc: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM makeup_allocations WHERE absence_id = ?")
+                .bind(attendance_id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| format!("배분 조회 실패: {}", e))?;
+        if alloc.0 > 0 {
+            return Err(
+                "이 결석은 보강이 일부 진행되어 출석으로 변경할 수 없습니다. 보강 취소를 먼저 수행하세요."
+                    .to_string(),
+            );
+        }
+    }
     if current_status == new_status {
         return Err(format!("이미 '{}' 상태입니다.", new_status));
     }
@@ -1000,22 +1015,25 @@ async fn compute_summary(
     let absent_count: i64 = row.try_get::<Option<i64>, _>("absent_count").map_err(|e| e.to_string())?.unwrap_or(0);
 
     // 보강필요시간은 이월 누적 — 조회월 이전 달의 미보강 결석도 포함 (Sprint 14 버그픽스).
-    // 기준: status='absent' AND 미매칭 AND 소멸기한 미도래(deadline NULL 또는 ≥ 조회월) AND 재원생.
-    // earliest_pending_absence_date 의 술어와 정합. 퇴교생은 보강 대상 아님 → 0.
-    let needed: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(ra.class_minutes), 0) \
+    // ADR-011: 원 결석분 합이 아니라 잔여분(class_minutes - 배분합) 합.
+    // 기준: status='absent'(부분소진 포함, 완전소진은 makeup_done) AND 소멸기한 미도래 AND 재원생.
+    let rem = crate::commands::makeup::remaining_minutes_expr("ra");
+    let needed_sql = format!(
+        "SELECT COALESCE(SUM({rem}), 0) \
          FROM regular_attendances ra \
          JOIN students s ON s.id = ra.student_id \
          WHERE ra.student_id = ? \
-           AND ra.status = 'absent' AND ra.makeup_attendance_id IS NULL \
+           AND ra.status = 'absent' \
            AND (ra.makeup_deadline IS NULL OR ra.makeup_deadline >= ?) \
            AND s.withdraw_date IS NULL",
-    )
-    .bind(student_id)
-    .bind(year_month)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("보강필요시간 조회 실패: {}", e))?;
+        rem = rem
+    );
+    let needed: i64 = sqlx::query_scalar(&needed_sql)
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("보강필요시간 조회 실패: {}", e))?;
 
     let completed_row = sqlx::query(
         "SELECT COALESCE(SUM(class_minutes), 0) AS completed \
@@ -1046,27 +1064,31 @@ async fn fetch_pending_absences(
     student_id: i64,
     year_month: &str,
 ) -> Result<Vec<PendingMakeupDetail>, String> {
-    let rows = sqlx::query(
-        "SELECT ra.event_date, ra.class_minutes, ra.makeup_deadline \
+    // ADR-011: hover 내역도 잔여분 기준 — class_minutes 필드에 잔여분을 담는다(compute_summary needed 와 정합).
+    let rem = crate::commands::makeup::remaining_minutes_expr("ra");
+    let sql = format!(
+        "SELECT ra.event_date, {rem} AS remaining, ra.makeup_deadline \
          FROM regular_attendances ra \
          JOIN students s ON s.id = ra.student_id \
          WHERE ra.student_id = ? \
-           AND ra.status = 'absent' AND ra.makeup_attendance_id IS NULL \
+           AND ra.status = 'absent' AND {rem} > 0 \
            AND (ra.makeup_deadline IS NULL OR ra.makeup_deadline >= ?) \
            AND s.withdraw_date IS NULL \
          ORDER BY ra.event_date",
-    )
-    .bind(student_id)
-    .bind(year_month)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("보강필요 내역 조회 실패: {}", e))?;
+        rem = rem
+    );
+    let rows = sqlx::query(&sql)
+        .bind(student_id)
+        .bind(year_month)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("보강필요 내역 조회 실패: {}", e))?;
 
     rows.into_iter()
         .map(|r| {
             Ok(PendingMakeupDetail {
                 event_date: r.try_get("event_date").map_err(|e: sqlx::Error| e.to_string())?,
-                class_minutes: r.try_get("class_minutes").map_err(|e: sqlx::Error| e.to_string())?,
+                class_minutes: r.try_get("remaining").map_err(|e: sqlx::Error| e.to_string())?,
                 makeup_deadline: r.try_get("makeup_deadline").map_err(|e: sqlx::Error| e.to_string())?,
             })
         })
@@ -2296,13 +2318,25 @@ mod tests {
         .expect("ids");
         toggle_impl(&pool, a_ids[0].0, "absent").await.expect("a1 absent");
         toggle_impl(&pool, a_ids[1].0, "absent").await.expect("a2 absent");
-        // 1번째 결석은 보강 매칭됨 — V107 FK 강제로 실제 makeup id 필요.
+        // ADR-011: 1번째 결석을 60분 보강으로 완전 소진 (배분 레코드 + makeup_done).
         let makeup_id = seed_makeup(&pool, sid, "2026-06-22", "2026-06").await;
-        set_cell_state(&pool, a_ids[0].0, "absent", Some(makeup_id)).await;
+        sqlx::query(
+            "INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) VALUES (?, ?, 60)",
+        )
+        .bind(makeup_id)
+        .bind(a_ids[0].0)
+        .execute(&pool)
+        .await
+        .expect("alloc");
+        sqlx::query("UPDATE regular_attendances SET status='makeup_done' WHERE id=?")
+            .bind(a_ids[0].0)
+            .execute(&pool)
+            .await
+            .expect("done");
 
         let s = compute_summary(&pool, sid, "2026-06").await.expect("summary");
-        assert_eq!(s.absent_count, 2);
-        assert_eq!(s.makeup_needed_minutes, 60, "매칭된 결석은 needed 에서 제외");
+        assert_eq!(s.absent_count, 1, "makeup_done 은 absent_count 에서 제외");
+        assert_eq!(s.makeup_needed_minutes, 60, "완전 소진 결석은 needed 에서 제외");
     }
 
     // ─────── Sprint 14 버그픽스: 이월 누적 + 퇴교 제외 + hover 내역 ───────
