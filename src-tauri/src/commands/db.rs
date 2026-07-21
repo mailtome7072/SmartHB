@@ -96,12 +96,37 @@ async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
 
     apply_cipher_key_if_enabled(&pool).await?;
     apply_startup_pragmas(&pool).await?;
-    sqlx::migrate!("./migrations")
+
+    // 사전 스냅샷 (ADR-011 R140): 기존 DB 에 미적용 마이그레이션이 있으면 migrate 직전에 백업.
+    // 백필(V312) 등 데이터 변형 마이그레이션이 커밋 성공 후 오작동해도, 직전 상태 복구본을
+    // 남긴다(정상 경로는 마이그레이션 직전 백업이 없었음). cipher off 빌드는 백업이 stub →
+    // try_create_backup 이 조용히 no-op(stderr 안내). 실패해도 startup 은 계속 진행(fail-soft).
+    let migrator = sqlx::migrate!("./migrations");
+    if has_pending_migrations(&migrator, &pool).await {
+        crate::commands::backup::try_create_backup(crate::commands::backup::BackupLayer::Exit).await;
+    }
+    migrator
         .run(&pool)
         .await
         .map_err(|e| AppError::Config(format!("마이그레이션 실행 실패: {}", e)))?;
 
     Ok(pool)
+}
+
+/// 임베드된 마이그레이션 최신 버전이 DB 에 적용된 최신 버전보다 높은지 판정한다 (기존 DB 한정).
+///
+/// 첫 실행(신규 DB)은 `_sqlx_migrations` 테이블이 없거나 비어 있어 `applied_max=None` →
+/// `false`(빈 DB 백업은 무의미). 기존 DB 에 신규 마이그레이션이 대기 중일 때만 `true`.
+async fn has_pending_migrations(
+    migrator: &sqlx::migrate::Migrator,
+    pool: &SqlitePool,
+) -> bool {
+    let embedded_max = migrator.iter().map(|m| m.version).max().unwrap_or(0);
+    let applied_max: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(None);
+    matches!(applied_max, Some(v) if embedded_max > v)
 }
 
 /// PRD §5.6 시작 < 3초 예산을 위한 PRAGMA 설정.
