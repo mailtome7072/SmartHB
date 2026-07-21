@@ -17,16 +17,15 @@ Sprint: 22  |  Date: 2026-07-21  |  Session: #1
 | src-tauri/src/commands/diagnosis.rs | [0회] | T4-6: 부분 보강 부족분 감지 재검토 |
 | src-tauri/src/commands/students.rs | [0회] | T4-7: 원생 상세 집계 잔여분 기준 |
 | src-tauri/src/startup.rs | [0회] | T5: 마이그레이션 직전 사전 스냅샷 백업 안전장치 |
-| src-tauri/src/lib.rs | [0회] | T6: get_backfill_result IPC 등록 (필요 시) |
+| src-tauri/src/commands/audit.rs | [0회] | T5: 백필 보정 건수 audit_logs 기록 (UI 비노출, 필요 시) |
 
 ### 프론트엔드 (TS/React)
 | 파일 | 수정 횟수 | 비고 |
 |------|---------|------|
 | src/components/attendance/MakeupRegisterDialog.tsx | [0회] | T7: 1시간 단위 선택 UI + 잔여분 표시 |
 | src/components/attendance/AttendanceGrid.tsx | [0회] | T8: sticky z-index 층위 재정렬 |
-| src/lib/tauri/index.ts | [0회] | T6: getBackfillResult 래퍼 (필요 시) |
-| src/types/*.ts | [0회] | 잔여분/백필 응답 타입 (필요 시) |
-| (백필 안내 컴포넌트) | [0회] | T6: 백필 결과 토스트/다이얼로그 |
+| src/lib/tauri/index.ts | [0회] | 잔여분 조회 래퍼 시그니처 변경 (필요 시) |
+| src/types/*.ts | [0회] | 잔여분 응답 타입 (필요 시) |
 | src/components/attendance/MoveAttendanceDialog.tsx | [0회] | T7: A126 yearMonth→invalidationYm prop 명확화 |
 
 ### 문서
@@ -47,8 +46,8 @@ Sprint: 22  |  Date: 2026-07-21  |  Session: #1
 - [ ] T2: 보강 등록 분 단위 부분 차감 전환 + 비즈니스 규칙 100% 테스트
 - [ ] T3: 보강 취소 부분 차감 대응 + 테스트
 - [ ] T4: 8개 쿼리 술어 일괄 변경 (회귀 체크리스트 전수) + 테스트
-- [ ] T5: V312 백필 + 마이그레이션 직전 사전 스냅샷 백업 + 멱등성 테스트
-- [ ] T6: 백필 결과 안내 UI
+- [ ] T5: V312 백필(완전 자동·무알림, audit만 기록) + 마이그레이션 직전 사전 스냅샷 백업 + 멱등성 테스트
+- [ ] T6: (취소됨) 백필 결과 안내 UI — 무알림 결정으로 제거
 - [ ] T7: 보강 등록 1시간 단위 선택 UI + A126 prop 명확화
 - [ ] T8: 출결 그리드 z-index 수정 + 시각 검증
 - [ ] T9: 통합 검증 (자동 + cipher-on 백필 스모크 + 시각)
