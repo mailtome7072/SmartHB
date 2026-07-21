@@ -564,7 +564,7 @@ export default function AttendancePage() {
       {moveTarget !== null && (
         <MoveAttendanceDialog
           student={moveTarget.student}
-          yearMonth={yearMonth}
+          invalidationYm={yearMonth}
           fromDate={moveTarget.fromDate}
           daySchedules={filteredGrid?.daySchedules ?? []}
           onClose={() => setMoveTarget(null)}
