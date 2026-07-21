@@ -10,7 +10,10 @@ export interface PendingAbsence {
   id: number
   eventDate: string // YYYY-MM-DD
   yearMonth: string // YYYY-MM
+  /** 원 결석 수업 시간(분) — 참고용. */
   classMinutes: number
+  /** 잔여 보강필요분 = classMinutes − 이미 배분된 보강분 (ADR-011). UI 표시·합산은 이 값 사용. */
+  remainingMinutes: number
   /** 소멸기한 YYYY-MM. NULL 가능 (이전 월 데이터). */
   makeupDeadline: string | null
   /** 결석 사유 메모. */

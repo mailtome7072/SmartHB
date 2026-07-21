@@ -101,7 +101,8 @@ export function MakeupRegisterDialog({
   // React Strict Mode 에서 setState 콜백 안의 또 다른 setState 호출은 중복 실행됨
   // (J3-2 시각 검증 발견 — 1시간 결석 체크 시 3시간 표시 버그). 두 setState 를 분리.
   function toggleAbsence(absence: PendingAbsence) {
-    const absenceHours = minutesToHours(absence.classMinutes)
+    // ADR-011: 자동 합산은 잔여 보강필요분 기준 (부분 소진 결석은 남은 시간만 충당).
+    const absenceHours = minutesToHours(absence.remainingMinutes)
     const isCurrentlySelected = selected.has(absence.id)
 
     setSelected((prev) => {
@@ -137,8 +138,13 @@ export function MakeupRegisterDialog({
     },
   })
 
+  // ADR-011: 선택 결석들의 잔여 보강필요분 합 — 보강 시간이 이를 초과하면 등록 차단(백엔드도 거부).
+  const selectedRemainingMinutes = filteredPending
+    .filter((a) => selected.has(a.id))
+    .reduce((sum, a) => sum + a.remainingMinutes, 0)
+  const overAllocated = hoursToMinutes(classHours) > selectedRemainingMinutes
   const canSubmit =
-    isEligible && selected.size > 0 && classHours > 0 && !mutation.isPending
+    isEligible && selected.size > 0 && classHours > 0 && !overAllocated && !mutation.isPending
 
   return (
     <div
@@ -235,6 +241,16 @@ export function MakeupRegisterDialog({
                 현재 {formatHours(classHours)}시간 ({hoursToMinutes(classHours)}분)
               </span>
             </div>
+
+            {overAllocated && (
+              <p
+                role="alert"
+                className="mt-2 rounded-md border-2 border-[var(--danger)] bg-red-50 p-3 text-base text-[var(--danger)]"
+              >
+                보강 시간이 선택한 결석의 잔여 보강필요시간(
+                {minutesToHoursText(selectedRemainingMinutes)}시간)을 초과했습니다.
+              </p>
+            )}
           </>
         )}
 
@@ -295,7 +311,13 @@ function AbsenceRow({ absence, checked, onToggle }: AbsenceRowProps) {
       >
         <span className="font-semibold">{absence.eventDate}</span>
         <span className="ml-2 text-sm text-gray-600">
-          {minutesToHoursText(absence.classMinutes)}시간
+          잔여 {minutesToHoursText(absence.remainingMinutes)}시간
+          {absence.remainingMinutes !== absence.classMinutes && (
+            <span className="text-muted-foreground">
+              {' '}
+              (총 {minutesToHoursText(absence.classMinutes)}시간)
+            </span>
+          )}
         </span>
         {absence.makeupDeadline !== null && (
           <span className="ml-2 text-sm text-amber-700">
