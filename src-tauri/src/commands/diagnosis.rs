@@ -83,23 +83,25 @@ fn current_year_month() -> String {
 // 검사 7종 (내부 함수 — pool 주입으로 테스트 가능)
 // ----------------------------------------------------------------------------
 
-/// 1. 보강필요시간 음수(이상) — 보강 출석분이 "보강 대상 결석분"보다 많은 원생.
+/// 1. 보강 배분 초과(이상) — 결석의 배분 보강분(makeup_allocations 합)이 결석 시간을 초과.
 ///
-/// 앱 정의(attendance.rs)와 정합: 결석 중 **보강 대상**은 `absent` + `makeup_done`(소멸은 면제로
-/// 제외)이며, 여기서 보강완료(`makeup_attended`)를 차감한다. 정상 매칭이면 0 이상(= 잔여 미보강
-/// 결석분), 음수면 과보강/고아 보강 등 데이터 이상이다.
-///   net = SUM(class_minutes WHERE status IN ('absent','makeup_done'))
-///       − SUM(makeup_attendances.class_minutes WHERE status='makeup_attended')
+/// ADR-011: 잔여 음수(과보강)는 개별 결석 레벨에서 발생하며, 정상 경로는
+/// `(makeup_id, absence_id)` UNIQUE + 등록 시 초과 거부로 방지된다. 백필 오류·직접 DB 조작으로
+/// 어떤 결석의 배분합이 class_minutes 를 넘으면 이 검사가 잡는다. 부분 보강으로 잔여가 남는
+/// 것(잔여 > 0)은 정상이므로 플래그하지 않는다.
 async fn check_negative_makeup_minutes(
     pool: &SqlitePool,
 ) -> Result<Vec<DiagnosisIssue>, AppError> {
     let rows = sqlx::query(
         "SELECT s.id AS student_id, s.name AS name, \
-            COALESCE((SELECT SUM(class_minutes) FROM regular_attendances \
-                      WHERE student_id = s.id AND status IN ('absent', 'makeup_done')), 0) \
-          - COALESCE((SELECT SUM(class_minutes) FROM makeup_attendances \
-                      WHERE student_id = s.id AND status = 'makeup_attended'), 0) AS net \
-         FROM students s",
+            SUM(alloc.total - r.class_minutes) AS over_minutes \
+         FROM students s \
+         JOIN regular_attendances r ON r.student_id = s.id \
+         JOIN (SELECT absence_id, SUM(allocated_minutes) AS total \
+               FROM makeup_allocations GROUP BY absence_id) alloc \
+              ON alloc.absence_id = r.id \
+         WHERE alloc.total > r.class_minutes \
+         GROUP BY s.id, s.name",
     )
     .fetch_all(pool)
     .await
@@ -107,21 +109,19 @@ async fn check_negative_makeup_minutes(
 
     let mut issues = Vec::new();
     for r in rows {
-        let net: i64 = r.try_get("net").map_err(AppError::Db)?;
-        if net < 0 {
-            let student_id: i64 = r.try_get("student_id").map_err(AppError::Db)?;
-            let name: String = r.try_get("name").map_err(AppError::Db)?;
-            issues.push(DiagnosisIssue {
-                check_id: "negative_makeup_minutes".to_string(),
-                severity: "error".to_string(),
-                message: format!(
-                    "{} 원생의 보강필요시간이 음수입니다 ({}분 초과 보강). 출결/보강 기록을 확인해주세요.",
-                    name, -net
-                ),
-                target_table: Some("students".to_string()),
-                target_id: Some(student_id),
-            });
-        }
+        let over: i64 = r.try_get("over_minutes").map_err(AppError::Db)?;
+        let student_id: i64 = r.try_get("student_id").map_err(AppError::Db)?;
+        let name: String = r.try_get("name").map_err(AppError::Db)?;
+        issues.push(DiagnosisIssue {
+            check_id: "negative_makeup_minutes".to_string(),
+            severity: "error".to_string(),
+            message: format!(
+                "{} 원생의 보강 배분이 결석 시간을 초과합니다 ({}분 초과). 출결/보강 기록을 확인해주세요.",
+                name, over
+            ),
+            target_table: Some("students".to_string()),
+            target_id: Some(student_id),
+        });
     }
     Ok(issues)
 }
@@ -280,14 +280,14 @@ async fn check_absent_without_deadline(
         .collect())
 }
 
-/// 6. 고아 보강 데이터 — 어떤 정규출결에서도 참조(makeup_attendance_id)하지 않는 보강.
+/// 6. 고아 보강 데이터 — 어떤 결석에도 배분되지 않은 보강 (ADR-011: makeup_allocations 기준).
 async fn check_orphan_makeups(pool: &SqlitePool) -> Result<Vec<DiagnosisIssue>, AppError> {
     let rows = sqlx::query(
         "SELECT m.id AS makeup_id, s.name AS name, m.event_date AS event_date \
          FROM makeup_attendances m \
          JOIN students s ON s.id = m.student_id \
-         WHERE NOT EXISTS (SELECT 1 FROM regular_attendances ra \
-                           WHERE ra.makeup_attendance_id = m.id)",
+         WHERE NOT EXISTS (SELECT 1 FROM makeup_allocations al \
+                           WHERE al.makeup_id = m.id)",
     )
     .fetch_all(pool)
     .await
@@ -677,11 +677,13 @@ mod tests {
     async fn negative_makeup_detected_when_overmakeup() {
         let pool = test_pool_in_memory().await.unwrap();
         let sid = insert_student(&pool, "S1", "김학생").await;
-        // 결석 60분 1건 + 보강 출석 90분 1건 → net = -30
-        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-06-02', '2026-06', 'absent', 60)")
-            .bind(sid).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-06-05', '2026-06', 'makeup_attended', 90)")
-            .bind(sid).execute(&pool).await.unwrap();
+        // ADR-011: 60분 결석에 90분 배분(초과) → 이상 감지.
+        let aid: (i64,) = sqlx::query_as("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-06-02', '2026-06', 'makeup_done', 60) RETURNING id")
+            .bind(sid).fetch_one(&pool).await.unwrap();
+        let mid: (i64,) = sqlx::query_as("INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-06-05', '2026-06', 'makeup_attended', 90) RETURNING id")
+            .bind(sid).fetch_one(&pool).await.unwrap();
+        sqlx::query("INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) VALUES (?, ?, 90)")
+            .bind(mid.0).bind(aid.0).execute(&pool).await.unwrap();
         let issues = check_negative_makeup_minutes(&pool).await.unwrap();
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].check_id, "negative_makeup_minutes");
@@ -863,8 +865,11 @@ mod tests {
         let sid = insert_student(&pool, "S1", "김학생").await;
         let mid: (i64,) = sqlx::query_as("INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-06-05', '2026-06', 'makeup_attended', 60) RETURNING id")
             .bind(sid).fetch_one(&pool).await.unwrap();
-        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes, makeup_attendance_id) VALUES (?, '2026-06-02', '2026-06', 'makeup_done', 60, ?)")
-            .bind(sid).bind(mid.0).execute(&pool).await.unwrap();
+        let aid: (i64,) = sqlx::query_as("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-06-02', '2026-06', 'makeup_done', 60) RETURNING id")
+            .bind(sid).fetch_one(&pool).await.unwrap();
+        // ADR-011: 배분 레코드로 참조 표현
+        sqlx::query("INSERT INTO makeup_allocations (makeup_id, absence_id, allocated_minutes) VALUES (?, ?, 60)")
+            .bind(mid.0).bind(aid.0).execute(&pool).await.unwrap();
         let issues = check_orphan_makeups(&pool).await.unwrap();
         assert!(issues.is_empty());
     }
