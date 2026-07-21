@@ -37,6 +37,19 @@
 
 ## [Unreleased]
 
+### Added
+- Sprint 22: **보강 분 단위 부분 차감 스키마** — `makeup_allocations` 배분 링크 테이블(V311) 신규. 한 보강이 여러 결석에 얼마(분)를 충당했는지 명시적으로 저장. FK(makeup_attendances/regular_attendances) + UNIQUE(makeup_id, absence_id) + CHECK(allocated_minutes > 0) + 인덱스 2개. ADR-011 Accepted
+- Sprint 22: **유실 결석 자동 백필** — V312 멱등 마이그레이션. 기존 일 단위 매칭 데이터를 분 단위 배분으로 이전하고, 보강 시간이 결석 시간보다 적었던 경우(부분 보강) 잔여 결석을 `absent`로 복원. 앱 첫 실행 시 자동·무알림 적용
+- Sprint 22: **마이그레이션 직전 사전 스냅샷 백업** — V311/V312 적용 전 DB를 `backup/pre-migration/` 에 자동 보관하는 안전장치 (ADR-011 R140)
+
+### Changed
+- Sprint 22: **보강 등록·취소 분 단위 부분 차감 전환** — `makeup.rs` 등록 로직이 `makeup_allocations`에 분 단위로 배분하고 취소 시 해당 배분 레코드만 삭제하여 정확한 부분 환원 지원
+- Sprint 22: **보강 관련 조회/집계/소멸/진단 쿼리 잔여분 기반 전환** — `calendar.rs`, `attendance.rs`, `expiration.rs`, `diagnosis.rs` 등 8개 파일에서 잔여분(`class_minutes - SUM(allocated_minutes)`)을 기준으로 통일
+
+### Fixed
+- Sprint 22: **보강 부분 차감 시 잔여 결석 유실 버그 수정** — 2시간 결석에 1시간만 보강 시 잔여 1시간이 보강 대상 목록에서 사라지던 실사용 버그 해소. 잔여분이 있는 결석은 `absent` 상태로 목록에 재노출
+- Sprint 22: **출결 그리드 상하 스크롤 시 고정 헤더 깨짐 수정** — `AttendanceGrid` sticky 헤더·셀의 z-index 층위 충돌 해소. 스크롤 시 날짜 헤더·원생 셀이 콘텐츠 위에 올바르게 고정
+
 ---
 
 ## [1.3.0] - 2026-07-20
