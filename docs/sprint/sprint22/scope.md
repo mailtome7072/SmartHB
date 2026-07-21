@@ -57,4 +57,13 @@ Sprint: 22  |  Date: 2026-07-21  |  Session: #1
 (없음)
 
 ## 세션 로그
-- #1 (2026-07-21): 브랜치 생성, scope 선언, 계획 문서 커밋. T0(ADR) 착수 예정.
+- #1 (2026-07-21): 브랜치 생성, scope 선언, 계획 문서 커밋. T0(ADR) 착수.
+- #1 계속: T0~T9 구현 완료 (커밋 10건).
+  - T0 ADR-011(B안) / T1 V311 makeup_allocations / T2·T3 등록·취소 분단위 부분차감
+  - T4 조회·집계·소멸·진단 쿼리 전수 잔여분 전환 (calendar/attendance/expiration/makeup/diagnosis;
+    students 재원로직은 변경 불필요 판정)
+  - T5 V312 백필(원장님 케이스 포함 5건 검증) + 마이그레이션 직전 사전 스냅샷
+  - T7 보강 UI 잔여분 + A126 rename / T8 그리드 z-index 층위 재정렬
+  - A114 이연 유지(범위 외)
+  - 자동검증 전부 통과: cargo test 457 / clippy / lint / tsc / build / cargo check --features cipher
+  - 잔여: 시각 검증(개발서버) + cipher-on 실DB 백필 스모크(배포 단계) — sprint-close/review 대기
