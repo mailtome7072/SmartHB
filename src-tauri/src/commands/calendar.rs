@@ -198,7 +198,11 @@ pub(crate) async fn get_makeup_management_data_impl(
     let imminent_threshold = today + chrono::Duration::days(7);
 
     // 학생별 미보강 결석 집계: 잔여 시간 + 가장 임박한 deadline.
-    let rows = sqlx::query(
+    // ADR-011: 원 결석분 합이 아니라 잔여분(class_minutes - 배분합) 합으로 집계 —
+    // 부분 소진 결석도 잔여가 남으면 목록에 노출된다. makeup_attendance_id 조건 제거
+    // (완전 소진은 status='makeup_done' 이라 자동 제외, 부분 소진은 status='absent' 유지).
+    let rem = crate::commands::makeup::remaining_minutes_expr("ra");
+    let sql = format!(
         "SELECT \
             s.id AS student_id, \
             s.name AS student_name, \
@@ -206,18 +210,20 @@ pub(crate) async fn get_makeup_management_data_impl(
             s.withdraw_date, \
             s.grade, \
             s.school_level, \
-            COALESCE(SUM(ra.class_minutes), 0) AS remaining_minutes, \
+            COALESCE(SUM({rem}), 0) AS remaining_minutes, \
             MIN(ra.makeup_deadline) AS earliest_deadline \
          FROM students s \
          JOIN regular_attendances ra ON ra.student_id = s.id \
-         WHERE ra.status = 'absent' AND ra.makeup_attendance_id IS NULL \
+         WHERE ra.status = 'absent' \
          GROUP BY s.id, s.name, s.serial_no, s.withdraw_date, s.grade, s.school_level \
          HAVING remaining_minutes > 0 \
          ORDER BY earliest_deadline IS NULL, earliest_deadline ASC, s.name",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("보강 관리 데이터 조회 실패: {}", e))?;
+        rem = rem
+    );
+    let rows = sqlx::query(&sql)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("보강 관리 데이터 조회 실패: {}", e))?;
 
     // Sprint 11 F4: 루프 안 개별 study_periods 조회(N+1) → 사전 IN 절 batch 1쿼리로 전환.
     use std::collections::{HashMap, HashSet};

@@ -94,7 +94,8 @@ export default function StudentsPage() {
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel | ''>('')
   const [grade, setGrade] = useState<string>('')
   const [gender, setGender] = useState<Gender | ''>('')
-  const [activeOnly, setActiveOnly] = useState(true)
+  // Sprint 22: 재원 상태 필터 3분화 (재원중/전체/퇴원, 택1 세그먼트).
+  const [enrollment, setEnrollment] = useState<'active' | 'all' | 'withdrawn'>('active')
   const [sort, setSort] = useState<StudentSort>('grade-asc')
   // T4 (이슈 #3): 학교명 필터
   const [schoolId, setSchoolId] = useState<string>('')
@@ -109,7 +110,8 @@ export default function StudentsPage() {
     grade: grade === '' ? undefined : Number(grade),
     gender: gender === '' ? undefined : gender,
     school_id: schoolId === '' ? undefined : Number(schoolId),
-    active_only: activeOnly,
+    active_only: enrollment === 'active',
+    withdrawn_only: enrollment === 'withdrawn',
     sort,
   }
   // 사용자 요청 — 페이지네이션 제거, 전체 원생을 한 번에 로드(백엔드 MAX_LIST_LIMIT=1000 상한).
@@ -268,15 +270,25 @@ export default function StudentsPage() {
               </option>
             ))}
           </select>
-          <label className="flex h-11 items-center gap-2">
-            <input
-              type="checkbox"
-              checked={activeOnly}
-              onChange={(e) => setActiveOnly(e.target.checked)}
-              className="h-5 w-5"
-            />
-            재원 중만
-          </label>
+          <div className="flex h-11 items-center gap-4" role="group" aria-label="재원 상태 필터">
+            {(
+              [
+                ['active', '재원중'],
+                ['all', '전체'],
+                ['withdrawn', '퇴원'],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={value} className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={enrollment === value}
+                  onChange={() => setEnrollment(value)}
+                  className="h-5 w-5 cursor-pointer accent-[var(--accent)]"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
         </section>
 
         {/* 사용자 요청 — 출결관리와 동일하게 이 div가 유일한 스크롤 컨테이너(좌우+상하). */}
@@ -366,7 +378,9 @@ export default function StudentsPage() {
                   <td className="px-3 py-2 text-base">
                     {s.name}
                     {s.withdraw_date !== null && (
-                      <span className="ml-2 text-sm text-muted-foreground">(퇴교)</span>
+                      <span className="ml-2 text-sm text-muted-foreground">
+                        (퇴교 {s.withdraw_date})
+                      </span>
                     )}
                     {draftIds.has(s.id) && (
                       <span

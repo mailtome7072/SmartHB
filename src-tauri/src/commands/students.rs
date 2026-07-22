@@ -230,7 +230,10 @@ pub struct StudentUpdate {
 /// `count_students` 는 동일 필터(`limit`/`offset` 제외)로 총 건수를 반환한다.
 #[derive(Debug, Deserialize, Default)]
 pub struct StudentFilter {
+    /// 재원중만 (withdraw_date IS NULL). '전체'/'퇴원' 필터와 상호배타 사용 (Sprint 22).
     pub active_only: Option<bool>,
+    /// 퇴원만 (withdraw_date IS NOT NULL). active_only 와 동시 true 금지 (프론트가 택1 보장).
+    pub withdrawn_only: Option<bool>,
     pub name_query: Option<String>,
     pub school_level: Option<SchoolLevel>,
     pub grade: Option<i64>,
@@ -546,6 +549,9 @@ fn build_filter_clause(filter: &StudentFilter) -> (String, String) {
     let mut conditions: Vec<&'static str> = Vec::new();
     if filter.active_only.unwrap_or(false) {
         conditions.push("s.withdraw_date IS NULL");
+    }
+    if filter.withdrawn_only.unwrap_or(false) {
+        conditions.push("s.withdraw_date IS NOT NULL");
     }
     if filter.name_query.is_some() {
         conditions.push("s.name LIKE ?");
@@ -1056,6 +1062,26 @@ mod tests {
         assert!(join_sql.starts_with("INNER JOIN student_schedules"));
         assert!(join_sql.contains("sch.day_of_week = ?"));
         assert_eq!(where_sql, "", "JOIN ON 조건은 WHERE 가 아니라 별도 절");
+    }
+
+    #[test]
+    fn build_filter_clause_withdrawn_only() {
+        // Sprint 22: '퇴원' 필터 — withdraw_date IS NOT NULL 조건, IS NULL 은 없어야 함.
+        let filter = StudentFilter {
+            withdrawn_only: Some(true),
+            ..Default::default()
+        };
+        let (where_sql, _) = build_filter_clause(&filter);
+        assert!(where_sql.contains("s.withdraw_date IS NOT NULL"));
+        assert!(!where_sql.contains("IS NULL"), "재원중 조건은 없어야 함");
+    }
+
+    #[test]
+    fn build_filter_clause_all_has_no_enrollment_condition() {
+        // '전체' — active_only/withdrawn_only 둘 다 미지정 → withdraw_date 조건 없음.
+        let filter = StudentFilter::default();
+        let (where_sql, _) = build_filter_clause(&filter);
+        assert!(!where_sql.contains("withdraw_date"), "전체는 재원 상태 조건 없음");
     }
 
     #[test]

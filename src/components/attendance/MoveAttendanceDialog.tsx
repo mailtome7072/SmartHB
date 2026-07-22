@@ -20,7 +20,7 @@ const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'] as const
 
 interface Props {
   student: AttendanceGridStudent
-  yearMonth: string // YYYY-MM
+  invalidationYm: string // YYYY-MM — 이동 반영 후 무효화할 출결 그리드 년월 (A126 명확화)
   fromDate: string // YYYY-MM-DD
   daySchedules: DaySchedule[]
   onClose: () => void
@@ -29,7 +29,7 @@ interface Props {
 
 export function MoveAttendanceDialog({
   student,
-  yearMonth,
+  invalidationYm,
   fromDate,
   daySchedules,
   onClose,
@@ -95,7 +95,7 @@ export function MoveAttendanceDialog({
     setError(null)
     try {
       await moveAttendance(student.studentId, fromDate, to, startTime)
-      void queryClient.invalidateQueries({ queryKey: ['attendance-grid', yearMonth] })
+      void queryClient.invalidateQueries({ queryKey: ['attendance-grid', invalidationYm] })
       onSuccess()
     } catch (e) {
       setError(typeof e === 'string' ? e : (e as Error).message)

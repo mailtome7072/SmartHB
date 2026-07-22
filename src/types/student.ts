@@ -87,7 +87,10 @@ export interface GradePromotionCheck {
 }
 
 export interface StudentFilter {
+  /** 재원중만 (withdraw_date IS NULL). '전체'/'퇴원'과 상호배타. */
   active_only?: boolean
+  /** 퇴원만 (withdraw_date IS NOT NULL). Sprint 22 — active_only와 동시 true 금지. */
+  withdrawn_only?: boolean
   name_query?: string
   school_level?: SchoolLevel
   grade?: number

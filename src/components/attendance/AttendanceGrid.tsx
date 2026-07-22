@@ -326,7 +326,7 @@ export function AttendanceGrid({
         className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--border)]"
       >
         <table className="border-collapse text-base">
-          <thead className="sticky top-0 z-10 bg-gray-100">
+          <thead className="sticky top-0 z-20 bg-gray-100">
             {/* Sprint 8 T9 follow-up: 원생 + 요약 4컬럼 모두 sticky left 누적.
                 좌측 가로 스크롤 시 일자 영역만 이동하고 원생/요약 컬럼은 시야 유지.
                 너비는 헤더 텍스트 기준 ~120% — 출석/결석(2글자) 88px, 보강필요/완료(4글자) 120px.
@@ -334,7 +334,7 @@ export function AttendanceGrid({
             <tr>
               <th
                 rowSpan={2}
-                className="sticky left-0 z-20 w-[140px] min-w-[140px] border-b border-r border-[var(--border)] bg-amber-100 px-3 py-2 text-left"
+                className="sticky left-0 z-30 w-[140px] min-w-[140px] border-b border-r border-[var(--border)] bg-amber-100 px-3 py-2 text-left"
               >
                 <button
                   type="button"
@@ -347,7 +347,7 @@ export function AttendanceGrid({
               </th>
               <th
                 rowSpan={2}
-                className="sticky left-[140px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[140px] z-30 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 <button
                   type="button"
@@ -363,7 +363,7 @@ export function AttendanceGrid({
                   만 카운트 — 보강완료/소멸 제외. "미처리 결석" 으로 의미 명확화. */}
               <th
                 rowSpan={2}
-                className="sticky left-[202px] z-20 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[202px] z-30 w-[62px] min-w-[62px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
                 title="status='absent' AND makeup_attendance_id IS NULL — 보강완료·소멸 결석은 제외"
               >
                 <button
@@ -379,7 +379,7 @@ export function AttendanceGrid({
               </th>
               <th
                 rowSpan={2}
-                className="sticky left-[264px] z-20 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[264px] z-30 w-[84px] min-w-[84px] border-b border-r border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 <button
                   type="button"
@@ -393,7 +393,7 @@ export function AttendanceGrid({
               </th>
               <th
                 rowSpan={2}
-                className="sticky left-[348px] z-20 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
+                className="sticky left-[348px] z-30 w-[84px] min-w-[84px] border-b border-r-2 border-r-[var(--border)] border-[var(--border)] bg-amber-100 px-2 py-2 text-center text-sm leading-tight"
               >
                 <button
                   type="button"
@@ -598,7 +598,7 @@ const StudentRow = memo(function StudentRow({
           <button
             type="button"
             onClick={() => onStudentNameClick(student.studentId)}
-            className="block w-full text-left hover:text-[var(--accent)] hover:underline"
+            className="block w-full text-left text-[var(--accent)] hover:underline"
             title="결석 이력 보기"
           >
             <div>{student.name}</div>
