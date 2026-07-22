@@ -1,5 +1,5 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
-- [Sprint 다음 세션](sprint-next-session.md) — ✅Sprint19 develop머지+매뉴얼기능+v1.2.0 프로덕션 배포 완료(2026-07-09). 새 세션 진입 시 가장 먼저 확인
+- [Sprint 다음 세션](sprint-next-session.md) — ✅Sprint22 완료+v1.4.0 프로덕션 배포(2026-07-22). 보강 분단위 부분차감(V311/V312)+출결그리드 z-index+UX개선. Sprint23 대기. 새 세션 진입 시 가장 먼저 확인
 - [배포 시 버전 파일 3곳](deploy-version-three-files.md) — package.json/Cargo.toml/tauri.conf.json 모두 동기화 필요, 하나라도 빠지면 인스톨러 파일명 틀어짐
 - [Sprint 13 PIN 옵션화](sprint13-pin-optional.md) — 실행 시 PIN 인증 옵션화(C안: 키체인 자동 스킵). Sprint 13 완료·머지
 - [Phase 5 취소](exam-feature-cancelled.md) — 단원평가(/exams) + 학습보고서(/reports) 개발 전면 취소. 다음 계획 시 Phase 5 통째 제외, 메뉴 2개 제거
