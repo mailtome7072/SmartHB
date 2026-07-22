@@ -9,12 +9,13 @@
  * - "출결관리 이동" 버튼 → 해당 원생 이름으로 출결관리 필터 이동 (PI-04: 일괄 등록 없음)
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { getMakeupManagementData } from '@/lib/tauri'
 import { minutesToHoursText } from '@/lib/time'
 import { useAppStore } from '@/stores/app-store'
+import { AbsenceHistoryDialog } from '@/components/attendance/AbsenceHistoryDialog'
 import { compareKorean, useTableSort, withTiebreak } from '@/hooks/useTableSort'
 import type { MakeupManagementStudent } from '@/types/calendar'
 import type { SchoolLevel } from '@/types/student'
@@ -55,6 +56,12 @@ interface Props {
 export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props) {
   const router = useRouter()
   const setAttendanceSearchPreset = useAppStore((s) => s.setAttendanceSearchPreset)
+  // Sprint 22: 원생 이름 클릭 → 결석 이력 다이얼로그 (출결관리와 동일 UX).
+  const [historyTarget, setHistoryTarget] = useState<{
+    studentId: number
+    studentName: string
+    studentSerialNo: string
+  } | null>(null)
 
   const query = useQuery({
     queryKey: ['makeup-management', yearMonth],
@@ -154,7 +161,21 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
                   }
                 >
                   <td className="px-4 py-1 font-medium">
-                    {s.studentName}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setHistoryTarget({
+                          studentId: s.studentId,
+                          studentName: s.studentName,
+                          studentSerialNo: s.serialNo,
+                        })
+                      }
+                      className="text-[var(--accent)] hover:underline"
+                      title="결석 이력 보기"
+                      aria-label={`${s.studentName} 결석 이력 보기`}
+                    >
+                      {s.studentName}
+                    </button>
                     {s.withdrawDate !== null && (
                       <span className="ml-1 text-xs text-muted-foreground">(퇴교)</span>
                     )}
@@ -188,6 +209,15 @@ export function MakeupManagementView({ yearMonth, search, enrolledOnly }: Props)
             </tbody>
           </table>
         </div>
+      )}
+
+      {historyTarget !== null && (
+        <AbsenceHistoryDialog
+          studentId={historyTarget.studentId}
+          studentName={historyTarget.studentName}
+          studentSerialNo={historyTarget.studentSerialNo}
+          onClose={() => setHistoryTarget(null)}
+        />
       )}
     </section>
   )

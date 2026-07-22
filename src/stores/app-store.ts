@@ -30,6 +30,13 @@ interface AppState {
   attendanceSearchPreset: string | null
 
   /**
+   * 출결 관리 → 수업 관리 이동 시 보강 관리 탭을 초기 활성화하는 프리셋 (Sprint 22).
+   * 수업 관리 페이지가 mount 시 소비하여 초기 탭을 'makeup' 으로 열고 false 로 비운다 (1회성).
+   * attendanceSearchPreset 과 대칭 패턴 — static export 에서 useSearchParams Suspense 이슈 회피.
+   */
+  schedulesInitialMakeupTab: boolean
+
+  /**
    * 미저장 변경 네비게이션 가드 (Sprint 12 — 공지문 편집 중 메뉴 이동 시 저장 확인).
    * 화면이 등록하며, 이동 직전 호출되어 `true` 면 즉시 이동 허용, `false` 면 차단(화면이 확인
    * 다이얼로그 표시 후 직접 이동 처리). 등록 화면 unmount 시 null 로 해제한다.
@@ -49,6 +56,7 @@ interface AppState {
   toggleSidebar: () => void
   setSelectedPeriodMonth: (month: string | null) => void
   setAttendanceSearchPreset: (name: string | null) => void
+  setSchedulesInitialMakeupTab: (open: boolean) => void
   setUnsavedGuard: (guard: ((href: string) => boolean) | null) => void
   setUnsavedNavTarget: (href: string | null) => void
 }
@@ -58,6 +66,7 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarOpen: true,
   selectedPeriodMonth: null,
   attendanceSearchPreset: null,
+  schedulesInitialMakeupTab: false,
   unsavedGuard: null,
   unsavedNavTarget: null,
 
@@ -66,6 +75,8 @@ export const useAppStore = create<AppState>((set) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSelectedPeriodMonth: (selectedPeriodMonth) => set({ selectedPeriodMonth }),
   setAttendanceSearchPreset: (attendanceSearchPreset) => set({ attendanceSearchPreset }),
+  setSchedulesInitialMakeupTab: (schedulesInitialMakeupTab) =>
+    set({ schedulesInitialMakeupTab }),
   setUnsavedGuard: (unsavedGuard) => set({ unsavedGuard }),
   setUnsavedNavTarget: (unsavedNavTarget) => set({ unsavedNavTarget }),
 }))

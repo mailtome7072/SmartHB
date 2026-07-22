@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkAttendanceExists,
@@ -93,6 +94,9 @@ export default function AttendancePage() {
     fromDate: string
   } | null>(null)
   const queryClient = useQueryClient()
+  const router = useRouter()
+  // Sprint 22: '보강 관리' 버튼 → 수업 관리(/schedules) 보강 관리 탭으로 이동 (프리셋 소비 방식).
+  const setSchedulesInitialMakeupTab = useAppStore((s) => s.setSchedulesInitialMakeupTab)
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(searchInput.trim().toLowerCase()), 200)
@@ -315,17 +319,29 @@ export default function AttendancePage() {
           </div>
         )}
 
-        {/* 출결 0건 — 그리드 없는 빈 상태에서는 헤더 우측에 표시 */}
-        {showGenerateButton && !showGrid && (
+        {/* 헤더 우측 그룹 — 빈 상태 생성 버튼(있을 때) + 보강 관리 이동 버튼 (Sprint 22) */}
+        <div className="ml-auto flex items-center gap-2">
+          {showGenerateButton && !showGrid && (
+            <button
+              type="button"
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+              className="min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            >
+              {generateMutation.isPending ? '생성 중...' : generateButtonLabel}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => generateMutation.mutate()}
-            disabled={generateMutation.isPending}
-            className="ml-auto min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            onClick={() => {
+              setSchedulesInitialMakeupTab(true)
+              router.push('/schedules')
+            }}
+            className="min-h-[44px] rounded-lg border-2 border-[var(--accent)] px-4 text-base font-semibold text-[var(--accent)] hover:bg-gray-50"
           >
-            {generateMutation.isPending ? '생성 중...' : generateButtonLabel}
+            보강 관리
           </button>
-        )}
+        </div>
       </header>
 
       {error !== null && (

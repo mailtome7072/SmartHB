@@ -598,7 +598,7 @@ const StudentRow = memo(function StudentRow({
           <button
             type="button"
             onClick={() => onStudentNameClick(student.studentId)}
-            className="block w-full text-left hover:text-[var(--accent)] hover:underline"
+            className="block w-full text-left text-[var(--accent)] hover:underline"
             title="결석 이력 보기"
           >
             <div>{student.name}</div>

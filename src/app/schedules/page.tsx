@@ -10,7 +10,7 @@
  * FullCalendar 는 static export(R67) 대응으로 `dynamic(..., { ssr: false })` 로드.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
@@ -59,7 +59,16 @@ type Tab = 'calendar' | 'makeup'
 export default function SchedulesPage() {
   const router = useRouter()
   const setAttendanceSearchPreset = useAppStore((s) => s.setAttendanceSearchPreset)
-  const [tab, setTab] = useState<Tab>('calendar')
+  const setSchedulesInitialMakeupTab = useAppStore((s) => s.setSchedulesInitialMakeupTab)
+  // Sprint 22: 출결 관리의 '보강 관리' 버튼으로 진입 시 초기 탭을 보강 관리로 연다 (프리셋 1회 소비).
+  const [tab, setTab] = useState<Tab>(() =>
+    useAppStore.getState().schedulesInitialMakeupTab ? 'makeup' : 'calendar',
+  )
+  useEffect(() => {
+    if (useAppStore.getState().schedulesInitialMakeupTab) {
+      setSchedulesInitialMakeupTab(false)
+    }
+  }, [setSchedulesInitialMakeupTab])
   const [yearMonth, setYearMonth] = useState(currentYearMonth)
   // 보강 관리 탭 필터 — 재원중 체크 (원생 검색은 2차 검증에서 제거).
   const [makeupEnrolledOnly, setMakeupEnrolledOnly] = useState(true)
