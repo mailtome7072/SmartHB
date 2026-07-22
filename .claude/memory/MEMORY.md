@@ -1,5 +1,6 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
-- [Sprint 다음 세션](sprint-next-session.md) — ✅Sprint22 완료+v1.4.0 프로덕션 배포(2026-07-22). 보강 분단위 부분차감(V311/V312)+출결그리드 z-index+UX개선. Sprint23 대기. 새 세션 진입 시 가장 먼저 확인
+- [Sprint 다음 세션](sprint-next-session.md) — ⚠️v1.4.0 배포 후 2026-07-22 학원PC 데이터 전면소실 사고→복구 완료. Sprint23(재발방지 A+B, ADR-012 A안) 계획·커밋·push 완료·미구현. 새 세션 진입 시 가장 먼저 확인
+- [데이터 소실 복구법](data-loss-recovery-method.md) — 암호화 DB 오프라인 복구(salt.bin+PIN→PBKDF2 키 재현, rusqlite bundled-sqlcipher로 복호화·행수검사·원자적 교체). 복사본에서만 작업·사고 중 재설정 금지. RCA: docs/incidents/2026-07-22
 - [배포 시 버전 파일 3곳](deploy-version-three-files.md) — package.json/Cargo.toml/tauri.conf.json 모두 동기화 필요, 하나라도 빠지면 인스톨러 파일명 틀어짐
 - [Sprint 13 PIN 옵션화](sprint13-pin-optional.md) — 실행 시 PIN 인증 옵션화(C안: 키체인 자동 스킵). Sprint 13 완료·머지
 - [Phase 5 취소](exam-feature-cancelled.md) — 단원평가(/exams) + 학습보고서(/reports) 개발 전면 취소. 다음 계획 시 Phase 5 통째 제외, 메뉴 2개 제거
