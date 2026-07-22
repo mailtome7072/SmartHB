@@ -6,6 +6,7 @@
  * 출결표 학생명 클릭으로 진입. 해당 원생의 결석/보강완료/보강소멸 이력을 표 형태로 표시.
  * 처리 상태별 시각 구분 (AC-4.5-7):
  * - 미처리 결석: 빨간 배경
+ * - 부분보강(ADR-011, 잔여 있음): 주황 배경 + 보강일/보강시간/잔여시간
  * - 보강완료: 초록 배경 + 보강일/시간
  * - 보강소멸: 회색 배경 + "소멸" 라벨
  *
@@ -124,7 +125,13 @@ interface HistoryRowProps {
 }
 
 function HistoryRow({ item }: HistoryRowProps) {
-  const cls = statusRowClass(item.status)
+  // ADR-011: absent 이면서 배분된 보강분이 있으면 '부분보강' — status 만으로는 미처리와 구분 안 됨.
+  const makeupMinutes = item.makeupClassMinutes ?? 0
+  const isPartial = item.status === 'absent' && makeupMinutes > 0
+  const remaining = item.classMinutes - makeupMinutes
+  const cls = rowClass(item.status, isPartial)
+  const showMakeupInfo =
+    (item.status === 'makeup_done' || isPartial) && item.makeupEventDate !== null
   return (
     <tr className={cls.bg}>
       <td className="border-b border-r border-[var(--border)] px-3 py-2 font-medium">
@@ -137,12 +144,17 @@ function HistoryRow({ item }: HistoryRowProps) {
         <span className={cls.label}>{cls.text}</span>
       </td>
       <td className="border-b border-r border-[var(--border)] px-3 py-2 text-center text-sm">
-        {item.status === 'makeup_done' && item.makeupEventDate !== null ? (
+        {showMakeupInfo ? (
           <>
             <span className="font-semibold">{item.makeupEventDate}</span>
             {item.makeupClassMinutes !== null && (
               <span className="ml-1 text-gray-600">
-                ({minutesToHoursText(item.makeupClassMinutes)}시간)
+                ({minutesToHoursText(item.makeupClassMinutes)}시간 보강)
+              </span>
+            )}
+            {isPartial && (
+              <span className="ml-1 font-semibold text-amber-800">
+                · 잔여 {minutesToHoursText(remaining)}시간
               </span>
             )}
           </>
@@ -159,11 +171,13 @@ function HistoryRow({ item }: HistoryRowProps) {
   )
 }
 
-function statusRowClass(status: AbsenceHistoryItem['status']): {
-  bg: string
-  label: string
-  text: string
-} {
+function rowClass(
+  status: AbsenceHistoryItem['status'],
+  isPartial: boolean,
+): { bg: string; label: string; text: string } {
+  if (isPartial) {
+    return { bg: 'bg-amber-50', label: 'text-amber-800', text: '부분보강' }
+  }
   switch (status) {
     case 'absent':
       return {
