@@ -289,7 +289,8 @@ async fn compute_next_serial(
 /// 실제 INSERT 와 race-free 보장은 [`create_student`] 의 트랜잭션이 담당. 본 IPC 는 advisory.
 #[tauri::command]
 pub async fn next_serial_number() -> Result<String, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let mut tx = pool.begin().await.map_err(AppError::Db).map_err(String::from)?;
     let next = compute_next_serial(&mut tx).await.map_err(String::from)?;
     tx.rollback().await.map_err(AppError::Db).map_err(String::from)?;
@@ -299,7 +300,8 @@ pub async fn next_serial_number() -> Result<String, String> {
 /// 신규 원생을 등록한다. PI-05 자동 채번 또는 사용자 override.
 #[tauri::command]
 pub async fn create_student(payload: NewStudent) -> Result<Student, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let mut tx = pool
         .begin()
         .await
@@ -369,7 +371,8 @@ pub(crate) async fn insert_student_tx(
 /// 무시한다. 프론트는 readonly 표시하지만 백엔드도 가드(defense in depth).
 #[tauri::command]
 pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "UPDATE students SET \
             name = ?, gender = ?, school_level = ?, grade = ?, \
@@ -409,7 +412,8 @@ pub async fn update_student(id: i64, payload: StudentUpdate) -> Result<Student, 
 
 #[tauri::command]
 pub async fn get_student(id: i64) -> Result<Student, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "SELECT id, serial_no, name, gender, school_level, grade, school_id, \
                 phone_student, phone_mother, phone_father, birth_date, enroll_date, withdraw_date, \
@@ -430,7 +434,8 @@ pub async fn get_student(id: i64) -> Result<Student, String> {
 /// 원생을 퇴교 처리한다 — `withdraw_date` 만 설정.
 #[tauri::command]
 pub async fn withdraw_student(id: i64, withdraw_date: String) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let result = sqlx::query(
         "UPDATE students SET \
             withdraw_date = ?, \
@@ -463,7 +468,8 @@ pub async fn withdraw_student(id: i64, withdraw_date: String) -> Result<(), Stri
 /// `absent` 로 환원. 자연 만기 소멸은 T5 폐기 정책에 따라 환원 대상 외.
 #[tauri::command]
 pub async fn reinstate_student(id: i64) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let revived_ids = reinstate_student_impl(pool, id).await?;
     let details = if revived_ids.is_empty() {
         None
@@ -610,7 +616,8 @@ fn bind_filter<'q>(
 /// R14: 페이지네이션 정책은 [`clamp_list_limit`] 참조.
 #[tauri::command]
 pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let (where_sql, join_sql) = build_filter_clause(&filter);
     let limit = clamp_list_limit(filter.limit);
     let offset = filter.offset.unwrap_or(0);
@@ -654,7 +661,8 @@ pub async fn list_students(filter: StudentFilter) -> Result<Vec<Student>, String
 /// `limit`/`offset` 필드는 무시한다 — 필터 조합 자체의 총 건수를 반환.
 #[tauri::command]
 pub async fn count_students(filter: StudentFilter) -> Result<i64, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let (where_sql, join_sql) = build_filter_clause(&filter);
 
     let mut sql = String::from("SELECT COUNT(*) AS cnt FROM students s ");
@@ -741,7 +749,8 @@ async fn check_grade_promotion_impl(
 /// 프론트엔드는 `needed && count > 0` 일 때만 확인 다이얼로그를 표시한다.
 #[tauri::command]
 pub async fn check_grade_promotion() -> Result<GradePromotionCheck, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     check_grade_promotion_impl(pool, &current_year())
         .await
         .map_err(String::from)
@@ -790,7 +799,8 @@ async fn promote_grades_impl(pool: &sqlx::SqlitePool, year: &str) -> Result<i64,
 /// `last_grade_promotion_year`를 올해로 기록해 같은 해 중복 승급을 방지한다.
 #[tauri::command]
 pub async fn promote_grades() -> Result<i64, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     promote_grades_impl(pool, &current_year()).await.map_err(String::from)
 }
 

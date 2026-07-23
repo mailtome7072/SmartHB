@@ -157,7 +157,8 @@ pub(crate) async fn change_schedule_day_impl(
 /// 단일 트랜잭션 안에서 수행하여 부분 인덱스 UNIQUE 충돌을 회피한다.
 #[tauri::command]
 pub async fn set_schedule(payload: ScheduleSet) -> Result<StudentSchedule, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     set_schedule_impl(pool, payload).await.map_err(String::from)
 }
 
@@ -167,7 +168,8 @@ pub async fn change_schedule_day(
     payload: ScheduleSet,
     old_day_of_week: i64,
 ) -> Result<StudentSchedule, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     change_schedule_day_impl(pool, payload, old_day_of_week)
         .await
         .map_err(String::from)
@@ -183,7 +185,8 @@ pub async fn delete_schedule(
     day_of_week: i64,
     today: String,
 ) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     sqlx::query(
         "UPDATE student_schedules SET \
             effective_to = ?, \
@@ -203,7 +206,8 @@ pub async fn delete_schedule(
 /// 원생의 현행 스케줄 목록 — `effective_to IS NULL` 행만, 요일 오름차순.
 #[tauri::command]
 pub async fn get_schedules(student_id: i64) -> Result<Vec<StudentSchedule>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let rows = sqlx::query(
         "SELECT id, student_id, day_of_week, start_time, duration_hours, \
                 effective_from, effective_to, created_at, updated_at \
@@ -225,7 +229,8 @@ pub async fn get_schedules(student_id: i64) -> Result<Vec<StudentSchedule>, Stri
 /// 원생의 전체 스케줄 변경 이력 — 최신 effective_from 부터 역순.
 #[tauri::command]
 pub async fn get_schedule_history(student_id: i64) -> Result<Vec<StudentSchedule>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let rows = sqlx::query(
         "SELECT id, student_id, day_of_week, start_time, duration_hours, \
                 effective_from, effective_to, created_at, updated_at \
@@ -247,7 +252,8 @@ pub async fn get_schedule_history(student_id: i64) -> Result<Vec<StudentSchedule
 /// 원생의 주 총 수업시간 — 현행 스케줄의 `duration_hours` 합산 (PI-03 후보).
 #[tauri::command]
 pub async fn get_weekly_hours(student_id: i64) -> Result<i64, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "SELECT COALESCE(SUM(duration_hours), 0) AS total \
          FROM student_schedules \

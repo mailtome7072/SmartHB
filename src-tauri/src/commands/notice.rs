@@ -297,7 +297,8 @@ pub async fn delete_notice_asset(filename: String) -> Result<(), String> {
 /// 공지문 레이아웃 저장 — `app_settings.notice_layout` JSON (AC-4.10-3).
 #[tauri::command]
 pub async fn save_notice_layout(layout: NoticeLayout) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let json = serde_json::to_string(&layout)
         .map_err(|e| format!("레이아웃 직렬화 실패: {}", e))?;
     sqlx::query(
@@ -316,7 +317,8 @@ pub async fn save_notice_layout(layout: NoticeLayout) -> Result<(), String> {
 /// 공지문 레이아웃 조회 — 없으면 기본값(3종 텍스트박스) 반환.
 #[tauri::command]
 pub async fn get_notice_layout() -> Result<NoticeLayout, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
         .bind(KEY_NOTICE_LAYOUT)
         .fetch_optional(pool)
@@ -370,7 +372,8 @@ async fn upsert_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(),
 /// 저장된 공지문 템플릿 이름 목록 (가나다순).
 #[tauri::command]
 pub async fn list_notice_layouts() -> Result<Vec<String>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     read_layout_names(pool).await
 }
 
@@ -384,7 +387,8 @@ pub async fn save_notice_layout_named(name: String, layout: NoticeLayout) -> Res
     if name.contains("::") {
         return Err("템플릿 이름에 '::' 는 사용할 수 없습니다.".to_string());
     }
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let layout_json =
         serde_json::to_string(&layout).map_err(|e| format!("레이아웃 직렬화 실패: {}", e))?;
     upsert_setting(pool, &named_layout_key(&name), &layout_json).await?;
@@ -403,7 +407,8 @@ pub async fn save_notice_layout_named(name: String, layout: NoticeLayout) -> Res
 /// 이름으로 저장된 템플릿 조회 — 없으면 기본값.
 #[tauri::command]
 pub async fn get_notice_layout_named(name: String) -> Result<NoticeLayout, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
         .bind(named_layout_key(&name))
         .fetch_optional(pool)
@@ -421,7 +426,8 @@ pub async fn get_notice_layout_named(name: String) -> Result<NoticeLayout, Strin
 /// 이름 템플릿 삭제.
 #[tauri::command]
 pub async fn delete_notice_layout_named(name: String) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     sqlx::query("DELETE FROM app_settings WHERE key = ?")
         .bind(named_layout_key(&name))
         .execute(pool)
@@ -581,7 +587,8 @@ fn validate_year_month_loose(ym: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_notice_month_info(year_month: String) -> Result<NoticeMonthInfo, String> {
     validate_year_month_loose(&year_month)?;
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
 
     // 교습기간
     let sp = sqlx::query("SELECT start_date, end_date FROM study_periods WHERE year_month = ?")

@@ -474,7 +474,8 @@ pub async fn preview_students_csv(file_path: String) -> Result<PreviewResult, St
     let bytes = std::fs::read(&file_path)
         .map_err(|e| format!("파일을 읽을 수 없습니다: {}", e))?;
     let parsed = parse_csv(&bytes).map_err(String::from)?;
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let existing = load_existing(pool).await.map_err(String::from)?;
 
     let mut rows = Vec::with_capacity(parsed.len());
@@ -514,7 +515,8 @@ pub async fn import_students_csv(file_path: String) -> Result<ImportResult, Stri
         Err(e) => format!("백업을 생성하지 못했습니다(가져오기는 계속 진행): {}", e),
     };
 
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let mut existing = load_existing(pool).await.map_err(String::from)?;
 
     // 전체 가져오기를 단일 트랜잭션으로 묶는다 — 중간 DB 오류 시 부분 삽입 없이 전부 롤백(코드리뷰 C2).

@@ -39,6 +39,30 @@
 
 ---
 
+## [1.5.0] - 2026-07-23
+
+> **Sprint 23** — 2026-07-22 프로덕션 데이터 소실 사고 재발방지. ADR-012 A안(클라우드 폴더 유지 + 접근 강화) 적용. DB 마이그레이션 없음(V312 유지), 신규 의존성 없음.
+
+### Added
+- Sprint 23: **신규 PC 키 유도 + 키체인 채택 IPC** (`try_adopt_key`) — 2번째 PC에서 기존 PIN과 salt로 PBKDF2 키를 재유도하고 DB 무결성을 검증한 뒤 자동으로 키체인에 채택. LockScreen 폴백으로 실패 시 수동 PIN 재입력 유도
+- Sprint 23: **마이그레이션 직전 자동 스냅샷** 정책 확장 — create_if_missing 가드 발동 시점 및 복원 소스 검증 실패 시점에도 사전 스냅샷 트리거 추가
+
+### Changed
+- Sprint 23: **`after_connect` 훅 PRAGMA 재적용** — 커넥션 풀의 모든 새 연결이 맺어질 때마다 `PRAGMA key`, `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON` 등을 자동 재적용. 커넥션 단위 키 유실(C3) 근절
+- Sprint 23: **`create_if_missing` 가드** — 클라우드 폴더에 `salt.bin` 등 셋업 흔적이 있는데 `app.db`가 없으면 DB 신규 생성을 차단하고 fail-hard 종료. 빈 DB 날조(C1) 및 무결성 오판(C2) 방지
+- Sprint 23: **유휴 close + 활동 재연결** — `pool()` 함수를 async + owned Arc로 전환. 앱이 일정 시간 유휴 상태가 되면 DB connection pool을 완전 close하고 WAL 체크포인트를 수행. 다음 IPC 호출 시 fresh pool로 재연결하여 클라우드 동기화 간섭(torn-sync) 위험 최소화 (ADR-012 A안 핵심)
+- Sprint 23: **자동 복원 다계층 폴백 강화** — WAL 사이드카 원자 처리, 소스 파일 크기·무결성 사전 검증, 복원 실패 시 차상위 백업 계층 순차 폴백. 소멸기한 초과(H1) / 소스 검증 미흡(H3) / 단일 시도 실패 시 중단(H4) 결함 근절
+- Sprint 23: **백업 소스 품질 검증 + 마지막 정상 백업 축출 방지** — 백업 파일 생성 전 소스 크기(0 bytes) 거부 및 열세 파일 거부. 순환 삭제 로직이 마지막 정상 백업을 삭제하지 않도록 가드 추가 (H2)
+- Sprint 23: **config 손상 처리 통일** — startup/setup 경로 양쪽에서 config.json 읽기 실패 시 동일한 안전 폴백 경로 적용. `set_password` 호출 시 기존 salt 파일이 있으면 덮어쓰지 않는 하드 가드 추가 (M1, M2)
+- Sprint 23: **device.id 유실 자기오판 방지** — device.id 파일이 없거나 읽기 실패한 경우 lock 점유 오판을 방지하는 방어 코드 추가. STALE 판정 기준을 마지막 heartbeat 절대 시각 대신 활동 기반 임계값으로 보정 (M3, M4)
+
+### Fixed
+- Sprint 23: **빈 DB 날조(C1) 수정** — 클라우드 동기화 충돌로 0 bytes 또는 헤더 손상 DB가 생성될 때 앱이 이를 정상 DB로 인식해 기존 데이터를 덮어쓰던 근본 결함 차단
+- Sprint 23: **커넥션 키 재적용 누락(C3) 수정** — 커넥션 풀 재사용 시 cipher PRAGMA가 재적용되지 않아 읽기 오류가 발생하던 결함 해소
+- Sprint 23: **복원 미발동(H1, H3, H4) 수정** — integrity_check 실패 후 복원 함수가 호출되지 않거나 소스 검증 없이 손상 파일로 복원을 시도하던 결함 수정
+
+---
+
 ## [1.4.0] - 2026-07-22
 
 ### Added

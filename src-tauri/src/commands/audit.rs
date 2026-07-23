@@ -114,7 +114,8 @@ pub(crate) async fn record(
     event_subject: Option<&str>,
     details: Option<&str>,
 ) -> Result<(), AppError> {
-    let pool = db::pool()?;
+    let pool = db::pool().await?;
+    let pool = &pool;
     sqlx::query(
         "INSERT INTO audit_logs (event_type, event_subject, details) VALUES (?, ?, ?)",
     )
@@ -147,7 +148,8 @@ async fn list_logs(
     since: Option<DateTime<Utc>>,
     limit: Option<u32>,
 ) -> Result<Vec<AuditLogEntry>, AppError> {
-    let pool = db::pool()?;
+    let pool = db::pool().await?;
+    let pool = &pool;
     let limit = limit.unwrap_or(100).min(1000);
 
     // since 유무에 따라 SQL 문자열만 분기 — bind 흐름과 query_as 호출은 단일화하여 중복 제거.
@@ -180,7 +182,8 @@ async fn list_logs(
 ///
 /// T10 시작 시퀀스 [`crate::startup::app_startup_sequence`] 에서 호출되어 보관 기간 정책을 강제한다.
 pub(crate) async fn cleanup_older_than(days: i64) -> Result<u64, AppError> {
-    let pool = db::pool()?;
+    let pool = db::pool().await?;
+    let pool = &pool;
     let cutoff = Utc::now() - chrono::Duration::days(days);
     let result = sqlx::query("DELETE FROM audit_logs WHERE created_at < ?")
         .bind(cutoff.to_rfc3339())

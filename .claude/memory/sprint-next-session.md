@@ -1,43 +1,46 @@
 ---
 name: sprint-next-session
-description: "✅ Sprint 20+21 → develop 머지 + v1.3.0 프로덕션 배포 + master→develop 역머지 전부 완료(2026-07-19). 다음 스프린트 계획 대기 중. 새 세션 진입 시 가장 먼저 확인"
+description: "⚠️ v1.4.0 후 2026-07-22 데이터 소실 사고→복구 완료. 다음 세션 = 회사 PC 릴레이 시작: git pull + 메모리 동기화 + /sprint-dev 23 (Sprint 23 재발방지 A+B, ADR-012 A안, 미구현). 새 세션 진입 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
-  originSessionId: sprint21-deploy-2026-07-19
-  modified: 2026-07-19T15:20:45.887Z
+  originSessionId: dataloss-incident-2026-07-22
 ---
 
-## ✅ 2026-07-19 세션 — Sprint 21 마무리 + v1.3.0 프로덕션 배포
+## ⬜ 다음 세션 진입 시 — 회사 PC 릴레이 시작 (최우선)
 
-### 완료 작업
-1. **Sprint 21 (출결 다월 교습기간 그리드 R136)** sprint-close + sprint-review 완료 산출물 커밋:
-   - 회고(`docs/sprint-retrospectives/sprint21-retrospective.md`), 테스트 보고서(`docs/test-reports/2026-07-19-sprint21.md`), DEPLOY.md
-2. **스테이징 검증** 전부 통과:
-   - 자동: lint ✅ / tsc ✅ / cargo test 444 passed ✅ / clippy -D warnings ✅ / pnpm build ✅ (DB 마이그레이션 변경 없음, V310 유지)
-   - 수동: 출결 단일월 회귀 없음 / 다월 그리드 표시 / 토글+보강 / 수업일 이동 / 교습일정 인쇄(A122) 원장 확인 완료
-   - `pnpm build` 캐시 플레이크 재현됨(빌드 직후 out/ 삭제 시) → `.next`+`out` 삭제 후 재빌드로 해결. 코드 문제 아님
-3. **v1.3.0 프로덕션 배포 (deploy-prod 에이전트)**:
-   - develop → master 직접 머지(PR 없음, [[workflow-no-pr]]), 버전 3파일 bump([[deploy-version-three-files]])
-   - GitHub Actions success(22분), Release 아티팩트 `SmartHB_1.3.0_x64-setup.exe` + `SmartHB_1.3.0_aarch64.dmg` 검증 완료
-   - https://github.com/mailtome7072/SmartHB/releases/tag/v1.3.0
-   - 배포 범위: Sprint 20(청구 교습기간 기준 전환, 청구 삭제 ADR-010, 교습일정 인쇄, 출결 버그 A) + Sprint 21(R136)
-   - Policy Gate: risk-register R131/R132(High)·R133/R138(Medium) 완화계획 있는 미해결 항목 → 사용자 인지 후 진행
-4. **master → develop 역머지** 완료 후, deploy-prod 에이전트가 생성만 하고 미커밋으로 남긴 배포 마무리 문서(CHANGELOG [Unreleased]→[1.3.0] 전환, DEPLOY.md 배포현황, `docs/deploy-history/2026-07-20.md` 아카이브)를 커밋(`5d5ee55`)·push해 마무리.
-   - **최종 동기화 검증 완료(clean)**: develop=`5d5ee55`(local=remote), master=`74bb447`(local=remote), 태그 v1.3.0=`74bb447`(local=remote). 미커밋 변경 없음
-   - 교훈: deploy-prod 에이전트가 CHANGELOG/DEPLOY/deploy-history 문서를 수정하고도 최종 커밋을 빠뜨릴 수 있음 → 배포 후 `git status`로 미커밋 문서 확인 필요
+> **요약: git pull + 메모리 동기화 + `/sprint-dev 23`**
 
-### ⚠️ gh CLI 인증 트랩 (이번 세션 발견 — 중요)
-- `~/.zshrc` 2번째 줄에 **무효 `GH_TOKEN`(ghp_...)** 이 하드코딩돼 있었음 → gh가 이 무효 토큰을 우선 사용해 모든 gh 명령 실패. `git push`는 macOS 키체인 자격증명이라 정상.
-- **부모 프로세스 환경에 GH_TOKEN이 상속**되어 있어 ~/.zshrc 주석 처리해도 현재 세션 프로세스에는 40자로 남음(Bash 도구 매 호출 재상속). 완전 제거는 Claude Code 재시작 필요.
-- 조치: (1) ~/.zshrc 해당 줄 주석 처리 완료 (2) 사용자가 `! unset GH_TOKEN && gh auth login`으로 keyring 로그인 생성
-- **이 세션 이후로도 GH_TOKEN이 env에 남아있는 한, 모든 `gh` 명령은 `env -u GH_TOKEN gh ...` 접두사로 실행해야 함.** (재시작 후엔 불필요)
-- 노출된 옛 토큰(`ghp_...`)은 **사용자가 GitHub에서 Revoke 완료(2026-07-20)** — 해결됨. 현재 인증은 keyring `gho_...` 사용
+1. `git checkout develop && git pull` — 최신 develop(≥`8ba1102`) 받기
+2. **메모리 미러 → 하네스 사용자 메모리 동기화** (절차: `.claude/memory/README.md`) — ⚠️ 안 하면 회사 PC의 Claude가 사고·복구·Sprint 23 맥락을 모름
+3. (그 PC 첫 클론이면) `./SETUP.sh` + `.env` 준비 + `sqlx migrate run`으로 로컬 `SmartHB-dev.db` 생성
+4. **`/sprint-dev 23`** 입력 → sprint23 브랜치 자동 생성. **T0(ADR-012) 완료 상태라 T1부터** 진행. (`/sprint-dev`는 사용자가 직접 입력)
 
-## 마이그레이션 현황
-최신 **V310** (schools.school_type 자동 보정). develop+master 모두 반영 완료. Sprint 20/21은 스키마 변경 없음.
+- 병행(독립 트랙): **학원 PC 데이터 복구 최종 확인**(2026-07-23~, MYBOX 동기화 후 앱 실행→원생 31명 확인)
+- 이연: A114(sync_single_date 이력 패턴), A127(cancel_makeup N+1)
+- 주의: cipher 검증(T9)은 `--features cipher` 빌드 필요(Windows=Strawberry Perl, [[cipher-test-gate-trap]]). 나머지는 평문 빌드 가능. 회사 PC는 dev DB로 작업 → 프로덕션 실데이터 무관.
 
-## ⬜ 다음 세션 진입 시
-다음 스프린트(Sprint 22) 계획 수립 대기 중 — 특별히 남은 작업 없음. 사용자가 다음 기능/개선 요청하면 그때부터 신규 사이클 시작.
+---
 
-관련: [[workflow-no-pr]], [[deploy-version-three-files]]
+## ⚠️ 2026-07-22 프로덕션 데이터 소실 사고 + 복구 + Sprint 23 계획 (배경)
+
+### 직전 상태
+- **v1.4.0(Sprint 22)** 배포 완료 — 보강 분단위 부분차감(V311/V312), 출결 그리드 z-index, UX 개선. 마이그레이션 최신 **V312**.
+
+### 사고 (학원 Windows PC, v1.3 / schema V310)
+장시간 방치 + 강제종료 반복 → 로그인 오류 → 재로그인하니 원생 등 전체 데이터 0건(전면 소실). + 이전부터 "장시간 미사용 후 저장 오류(재시작하면 정상)" 간헐 발생.
+- **근본원인**: 라이브 SQLite/SQLCipher DB를 클라우드 동기화 폴더(MYBOX)에 열어둔 채 사용.
+  - ① 전면소실: 클라우드 파일 일시부재(dehydration) 시 `db.rs create_if_missing(true)`가 가드 없이 빈 DB 날조 + 마이그레이션/시드 → 무결성 quick_check가 빈 DB를 "정상"으로 fail-soft 판정(auto_restore 미발동). **삭제 버그 아님**(전수감사 확인). 빈 DB=229KB(시드만)/정상=499KB급, salt.bin 원본유지(mtime 6/28)라 salt 재생성 없음.
+  - ② 유휴 저장오류: startup PRAGMA(key 등)가 풀에 1회만 적용 → 유휴 중 커넥션 교체 시 "맨 커넥션"이 키 없어 NOTADB, 재시작만 복구.
+- 상세 RCA: `docs/incidents/2026-07-22-data-loss-rca.md` (결함 C1~C3/H1~H5/M1~M5/B).
+
+### 복구 (완료)
+- 오프라인 복호화로 폴더 내 전체 .db 행수 검사 → 최신 온전본 `backup/exit/app_20260722_074410.db`(원생 31, 1238행, 7/22 16:44) 식별 → MYBOX `app.db` 원자적 교체(빈 DB 보존) → 재검증(원생 31). 복구법: [[data-loss-recovery-method]].
+- v1.3(V310)→v1.4(V311/V312) 마이그레이션도 복구 복사본으로 테스트 통과(무손실, makeup_allocations 백필 정상).
+
+### Sprint 23 계획 (커밋·push 완료 `521c3ef`, 미구현)
+- 주제: 사고 재발방지 A(데이터안전) + B(2번째PC로그인). **DB 마이그레이션·새 의존성 없음.**
+- **ADR-012 = A안**(`docs/arch/adr-012-db-live-location.md`): 라이브 DB를 **클라우드 폴더에 유지 + 접근 강화**(데이터 로컬 이전 안 함). 매트릭스 A 4.30 > B 3.55 > C 3.30. B안(로컬+핸드오프)은 ROADMAP에 향후 Phase 후보 등록.
+- Task T0~T9(29h), 계획 `docs/sprint/sprint23.md`: T0 ADR완료 / T1 after_connect 키재적용(②유휴오류) / T2 create_if_missing 가드(①) / T3 복원강화 / T4 백업검증 / T5 config통일+salt가드 / T6 유휴 close+재연결 / T7 2번째PC 키채택(B) / T8 device.id+STALE / T9 통합검증.
+
+관련: [[workflow-no-pr]], [[deploy-version-three-files]], [[data-loss-recovery-method]], [[ntfs-power-loss-pattern]]

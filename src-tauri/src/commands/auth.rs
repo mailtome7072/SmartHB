@@ -622,6 +622,15 @@ pub async fn set_password(password: String) -> Result<(), String> {
     let password = Zeroizing::new(password);
     // ADR-007: 앱 잠금은 6자리 숫자 PIN. UI 우회 방어를 위해 진입점에서 재검증.
     validate_pin(&password).map_err(String::from)?;
+    // M2(T5): 기존 salt 하드 가드. 이미 salt(파일/레거시 keyring)가 있으면 새 salt 생성을 거부한다.
+    // 새 salt 를 만들면 기존 암호화 DB 의 키 유도가 달라져 DB 를 열 수 없게 되므로(데이터 접근 불가),
+    // set_password 는 최초 설정에서만 허용한다. 비밀번호 변경/2번째 PC 로그인은 별도 흐름
+    // (change_password / try_adopt_key)에서 처리한다. 프론트 not-initialized 분기와 이중 방어.
+    if salt_exists().map_err(String::from)? {
+        return Err(String::from(AppError::Auth(
+            "이미 설정된 비밀번호가 있습니다. 비밀번호 변경 또는 다른 PC 로그인 기능을 사용하세요.".to_string(),
+        )));
+    }
     eprintln!("[auth] set_password 진입");
     let salt = generate_salt();
     let key = derive_key_async(password, salt).await.map_err(String::from)?;
@@ -645,6 +654,83 @@ pub async fn set_password(password: String) -> Result<(), String> {
     cache_credentials(salt, DerivedKey(key.0));
     // 최초 설정 시점은 pool 미초기화 — try_record 가 silent skip. 비밀번호 변경 IPC(추후)는 unlock 후 호출되어 정상 기록.
     audit::try_record(AuditEventType::PasswordChange, None, None).await;
+    Ok(())
+}
+
+/// T7(B1): 2번째 PC 에서 기존 비밀번호(PIN)로 DB 키를 유도해 이 PC 의 키체인에 채택한다.
+///
+/// 시나리오: salt.bin·app.db 는 클라우드 동기화로 도착했으나 이 PC 의 키체인에는 아직 DB 키가
+/// 없는 상태(신규 PC). 사용자가 원래 PIN 을 입력하면 `PBKDF2(PIN, salt)` 로 키를 재유도하고,
+/// 그 키로 실제 DB 복호화가 되는지 검증한 뒤 성공 시에만 키체인에 저장한다.
+///
+/// **salt 는 절대 재생성하지 않는다** (기존 salt.bin 읽기 전용). set_password 의 salt 하드
+/// 가드(M2)와 상보적 — set_password 는 신규 salt 생성 경로, 본 IPC 는 기존 salt 채택 경로.
+#[tauri::command]
+pub async fn try_adopt_key(pin: String) -> Result<(), String> {
+    try_adopt_key_impl(&Zeroizing::new(pin))
+        .await
+        .map_err(String::from)
+}
+
+async fn try_adopt_key_impl(pin: &Zeroizing<String>) -> Result<(), AppError> {
+    validate_pin(pin)?;
+    // 이미 이 PC 에 키가 있으면 채택 불필요 — 일반 잠금 해제 경로 사용.
+    if retrieve_key_from_keyring().is_ok() {
+        return Err(AppError::Auth(
+            "이미 이 PC 에 인증 키가 있습니다. 잠금 해제를 사용해 주세요.".to_string(),
+        ));
+    }
+    // 클라우드 공유 salt.bin 로드 (읽기 전용, 재생성 금지). 미존재 시 최초 설정 필요 에러.
+    let salt = load_salt()?;
+    let key = derive_key_async(pin.clone(), salt).await?;
+    // 유도 키로 실제 DB 복호화가 되는지 검증 — 잘못된 PIN 이면 여기서 실패.
+    verify_key_opens_db(&key).await?;
+    // 검증 통과 → 이 PC 키체인에 저장 + 캐시(후속 startup 이 keyring 재조회 없이 진행).
+    store_key_in_keyring(&key)?;
+    cache_credentials(salt, key);
+    eprintln!("[auth] try_adopt_key: 2번째 PC 키 채택 완료");
+    audit::try_record(
+        AuditEventType::SecurityEvent,
+        Some("key-adoption"),
+        Some(r#"{"detail":"2nd PC key adopted from salt+PIN"}"#),
+    )
+    .await;
+    Ok(())
+}
+
+/// 유도 키로 DB 를 열어 실제 복호화(페이지 접근)가 되는지 검증한다.
+#[cfg(feature = "cipher")]
+async fn verify_key_opens_db(key: &DerivedKey) -> Result<(), AppError> {
+    let db_path = paths::db_path();
+    if !db_path.exists() {
+        return Err(AppError::Auth(
+            "DB 파일이 없습니다. 클라우드 동기화가 완료된 후 다시 시도해 주세요.".to_string(),
+        ));
+    }
+    let hex = key.to_hex();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        use rusqlite::Connection;
+        let conn =
+            Connection::open(&db_path).map_err(|e| AppError::Auth(format!("DB 열기 실패: {}", e)))?;
+        conn.execute_batch(&paths::pragma_key_sql(&hex))
+            .map_err(|e| AppError::Auth(format!("DB 키 적용 실패: {}", e)))?;
+        // 실제 페이지 접근으로 복호화 검증 — 키가 틀리면 "file is not a database" 등으로 실패.
+        conn.query_row("SELECT COUNT(*) FROM students", [], |r| r.get::<_, i64>(0))
+            .map_err(|_| {
+                AppError::Auth(
+                    "PIN 이 올바르지 않거나 DB 가 손상되었습니다. 다시 확인해 주세요.".to_string(),
+                )
+            })?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Auth(format!("키 검증 작업 실패: {}", e)))?
+}
+
+/// 평문(cipher off) 빌드 — 암호화가 없어 키 검증이 무의미하므로 통과. 2번째 PC 키 채택은
+/// cipher 빌드에서만 실질 동작한다(개발 빌드는 평문 DB).
+#[cfg(not(feature = "cipher"))]
+async fn verify_key_opens_db(_key: &DerivedKey) -> Result<(), AppError> {
     Ok(())
 }
 
@@ -1049,6 +1135,33 @@ mod tests {
         std::fs::write(&path, varied_salt(9)).unwrap();
         assert!(salt_exists_at(&path).expect("파일 존재 확인"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// M2(T5): 기존 salt.bin 이 있으면 set_password 가 새 salt 생성을 거부한다 (하드 가드).
+    /// 셋업 완료 후 set_password 재호출이 기존 암호화 DB 키를 파괴하는 것을 방지.
+    #[tokio::test]
+    async fn set_password_rejects_when_salt_exists() {
+        let dir = unique_test_dir("m2-salt-guard");
+        crate::commands::paths::update_data_root(dir.clone());
+        std::fs::write(dir.join("salt.bin"), varied_salt(7)).unwrap();
+
+        let result = set_password("123456".to_string()).await;
+        assert!(result.is_err(), "기존 salt 존재 시 set_password 거부");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("이미 설정된") || msg.contains("비밀번호"),
+            "안내 메시지에 이유 포함: {}",
+            msg
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// T7(B1): try_adopt_key 는 형식이 잘못된 PIN 을 keyring/salt 접근 이전에 즉시 거부한다.
+    /// (전체 채택 흐름은 cipher + 실제 2번째 PC 가 필요하므로 T9 수동 검증에 위임.)
+    #[tokio::test]
+    async fn try_adopt_key_rejects_invalid_pin() {
+        let result = try_adopt_key_impl(&Zeroizing::new("12".to_string())).await;
+        assert!(result.is_err(), "6자리가 아닌 PIN 은 거부");
     }
 
     /// load_salt_from 이 동일 파일 입력에 대해 항상 같은 결과 반환 —
