@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -36,7 +37,33 @@ use uuid::Uuid;
 const LOCK_FILENAME: &str = "app.lock";
 
 /// 24시간 미갱신 시 stale 판정 — heartbeat 제거(Sprint 17) 후 비정상 종료 기준을 24h로 완화.
+///
+/// A113 상수 쌍: 프론트 `src/components/LockWarning.tsx` 와 동일 값 유지. 값 변경 시 양쪽 동기 필수.
 const STALE_THRESHOLD_SECONDS: i64 = 86400;
+
+/// T8(M4): touch_lock 스로틀 — 이 간격(초) 이내 재호출은 무시하여 클라우드 동기화 churn 억제.
+const TOUCH_THROTTLE_SECONDS: u64 = 60;
+
+/// T8(M3): device.id 파일이 있었으나 손상/판독 실패로 새 UUID 를 강제 재생성했는지 플래그.
+/// 이 경우 기존 락의 device_id 와 불일치해 자기 락을 "다른 PC"로 오판하므로, acquire/check 에서
+/// 기존 락을 자기 것으로 간주한다(보수적 접근 허용). **첫 실행 부재(NotFound)는 제외** — 정상적인
+/// 신규 디바이스이므로 2-PC 상호 배제를 보존해야 한다.
+static DEVICE_ID_LOST: AtomicBool = AtomicBool::new(false);
+
+/// T8(M4): 마지막 touch_lock 수행 시각(epoch secs) — 스로틀 판정용.
+static LAST_TOUCH_SECS: AtomicU64 = AtomicU64::new(0);
+
+fn now_epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// device.id 유실(손상) 여부 — M3 자기 오판 방지 분기에서 참조.
+fn device_id_was_lost() -> bool {
+    DEVICE_ID_LOST.load(Ordering::Relaxed)
+}
 
 /// device.id 파일 경로 — `lib.rs::setup` 에서 OS `app_config_dir/device.id` 로 1회 초기화.
 ///
@@ -67,28 +94,40 @@ fn device_id() -> Uuid {
 
 fn load_or_create_device_id() -> Uuid {
     let Some(path) = DEVICE_ID_PATH.get() else {
-        // setup 진입 전 호출 (테스트 환경 등) — 메모리-only fallback.
+        // setup 진입 전 호출 (테스트 환경 등) — 메모리-only fallback. 유실 플래그 세우지 않음.
         return Uuid::new_v4();
     };
-    load_or_create_device_id_at(path)
+    let (id, lost) = load_or_create_device_id_at(path);
+    if lost {
+        // M3: 기존 device.id 유실 → 기존 락 자기 오판 방지 분기 활성화.
+        DEVICE_ID_LOST.store(true, Ordering::Relaxed);
+    }
+    id
 }
 
-fn load_or_create_device_id_at(path: &Path) -> Uuid {
+/// device.id 를 로드하거나 생성한다. 반환 `bool` = **기존 파일이 있었으나 손상/판독 실패로**
+/// 새 UUID 를 강제 재생성했는지(=유실). 첫 실행 부재(NotFound)는 `false`(정상 신규 디바이스).
+fn load_or_create_device_id_at(path: &Path) -> (Uuid, bool) {
     match std::fs::read_to_string(path) {
         Ok(content) => match Uuid::parse_str(content.trim()) {
-            Ok(uuid) => uuid,
+            Ok(uuid) => (uuid, false),
             Err(_) => {
                 eprintln!(
-                    "[lock] device.id 손상 감지 ({} 바이트). 새 UUID 재생성.",
+                    "[lock] device.id 손상 감지 ({} 바이트). 새 UUID 재생성 (유실).",
                     content.len()
                 );
-                regenerate_device_id(path)
+                (regenerate_device_id(path), true)
             }
         },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => regenerate_device_id(path),
+        // 첫 실행 — 파일 부재는 정상 신규 디바이스. 유실 아님(2-PC 상호 배제 보존).
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (regenerate_device_id(path), false),
         Err(e) => {
-            eprintln!("[lock] device.id 읽기 실패 ({}): {} — 메모리-only fallback", path.display(), e);
-            Uuid::new_v4()
+            eprintln!(
+                "[lock] device.id 읽기 실패 ({}): {} — 메모리-only fallback (유실)",
+                path.display(),
+                e
+            );
+            (Uuid::new_v4(), true)
         }
     }
 }
@@ -163,6 +202,9 @@ impl LockInfo {
         (Utc::now() - self.last_heartbeat).num_seconds()
     }
 
+    /// JSON heartbeat 기반 stale 판정. 프로덕션 경로는 활동 기준([`seconds_since_lock_activity`])을
+    /// 사용하며(M4), 본 메서드는 단위 테스트의 순수 로직 검증 전용이다.
+    #[cfg(test)]
     fn is_stale(&self) -> bool {
         self.seconds_since_heartbeat() >= STALE_THRESHOLD_SECONDS
     }
@@ -200,6 +242,53 @@ fn ensure_lock_dir() -> Result<(), AppError> {
         std::fs::create_dir_all(parent).map_err(|e| app_err!(Lock, "락 디렉토리 생성 실패", e))?;
     }
     Ok(())
+}
+
+/// T8(M4): 활동 마커 — 락 파일의 mtime 을 현재 시각으로 갱신한다(내용 불변, best-effort).
+///
+/// heartbeat 는 Sprint 17 에서 제거되어 STALE 판정이 앱 **시작 시각** 기준이었다. 장시간(>24h)
+/// 실행 세션이 다른 PC 에 stale 로 오판되는 것을 막기 위해, **활동 중** 이 함수를 호출해 mtime 을
+/// 갱신한다(활동 기준 STALE). [`TOUCH_THROTTLE_SECONDS`] 로 스로틀하여 클라우드 동기화 churn 억제.
+/// 본 디바이스 점유가 아니면 갱신하지 않는다(남의 락 mtime 을 건드리지 않음).
+pub(crate) fn touch_lock() {
+    let now = now_epoch_secs();
+    let last = LAST_TOUCH_SECS.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < TOUCH_THROTTLE_SECONDS {
+        return; // 스로틀
+    }
+    let path = lock_path();
+    // 본 디바이스 점유일 때만 갱신 — 남의 락/부재 락은 건드리지 않는다.
+    match read_lock_info() {
+        Ok(Some(info)) if info.is_self() => {}
+        _ => return,
+    }
+    match OpenOptions::new().write(true).open(&path) {
+        Ok(f) => {
+            if let Err(e) = f.set_modified(SystemTime::now()) {
+                eprintln!("[lock] touch_lock mtime 갱신 실패 (무시): {}", e);
+                return;
+            }
+            LAST_TOUCH_SECS.store(now, Ordering::Relaxed);
+        }
+        Err(e) => eprintln!("[lock] touch_lock 파일 열기 실패 (무시): {}", e),
+    }
+}
+
+/// 락 파일 mtime 이후 경과 초 — 읽기 실패 시 `None`.
+fn lock_file_mtime_age_secs(path: &Path) -> Option<i64> {
+    let mtime = std::fs::metadata(path).ok()?.modified().ok()?;
+    let age = SystemTime::now().duration_since(mtime).ok()?.as_secs();
+    Some(age as i64)
+}
+
+/// T8(M4): 활동 기준 경과 시간 — 락 파일 mtime 과 JSON last_heartbeat 중 **더 최근** 신호 기준.
+/// touch_lock 이 활동 중 mtime 을 갱신하므로 장시간 세션의 false-stale 을 방지한다.
+fn seconds_since_lock_activity(path: &Path, info: &LockInfo) -> i64 {
+    let json_age = info.seconds_since_heartbeat();
+    match lock_file_mtime_age_secs(path) {
+        Some(mtime_age) => json_age.min(mtime_age),
+        None => json_age,
+    }
 }
 
 /// 락 파일 내용을 파싱한다.
@@ -306,28 +395,36 @@ pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
     match current {
         None => {}
         Some(info) if info.is_self() => {}
-        // stale 락(5분 미갱신)은 항상 자동 점유 — 점유한 프로세스가 비정상 종료된 신호.
-        // 단일 사용자 모델(PRD §1)에서 stale 락이 잔존하면 사용자가 의식적으로 강제 점유
-        // 옵션을 매번 확인하는 것보다 자동 정리가 UX 친화적이고 안전.
-        // `force` 옵션은 이제 *fresh* 락(다른 PC 정상 사용 중) 도 강제 점유할 때만 의미.
-        Some(info) if info.is_stale() => {
+        // M3(T8): device.id 유실(손상) 시 기존 락의 device_id 와 불일치해 자기 락을 "다른 PC"로
+        // 오판, 최대 24h 자기 잠금이 발생한다. 유실 감지 시 기존 락을 자기 것으로 간주해 점유한다
+        // (단일 사용자 모델의 보수적 접근 허용). 락 재점유로 새 device_id 가 기록된다.
+        Some(info) if device_id_was_lost() => {
             eprintln!(
-                "[lock] stale lock 자동 점유 ({}초 미갱신, 이전 device_id={})",
-                info.seconds_since_heartbeat(),
+                "[lock] device.id 유실 감지 → 기존 락(device_id={})을 자기 것으로 간주하고 점유 (M3)",
+                info.device_id
+            );
+        }
+        // stale 락은 항상 자동 점유 — 점유 프로세스 비정상 종료 신호. M4: 활동 기준(mtime/heartbeat
+        // 중 최신) 으로 판정하여 장시간 실행 세션의 false-stale 을 방지한다.
+        // 단일 사용자 모델(PRD §1)에서 자동 정리가 UX 친화적. `force` 는 *fresh* 락 강제 점유용.
+        Some(info) if seconds_since_lock_activity(&path, &info) >= STALE_THRESHOLD_SECONDS => {
+            eprintln!(
+                "[lock] stale lock 자동 점유 ({}초 미활동, 이전 device_id={})",
+                seconds_since_lock_activity(&path, &info),
                 info.device_id
             );
         }
         Some(info) if force => {
             eprintln!(
                 "[lock] force=true 로 fresh lock 강제 점유 ({}초 전, 이전 device_id={})",
-                info.seconds_since_heartbeat(),
+                seconds_since_lock_activity(&path, &info),
                 info.device_id
             );
         }
         Some(info) => {
             return Err(AppError::Lock(format!(
                 "다른 컴퓨터에서 사용 중입니다. (마지막 활동: {}초 전)",
-                info.seconds_since_heartbeat()
+                seconds_since_lock_activity(&path, &info)
             )));
         }
     }
@@ -351,16 +448,21 @@ pub(crate) fn acquire_lock_atomic(force: bool) -> Result<(), AppError> {
 /// 현재 락 상태를 반환한다.
 #[tauri::command]
 pub async fn check_lock_status() -> Result<LockStatus, String> {
+    let path = lock_path();
     let info = read_lock_info().map_err(String::from)?;
     let status = match info {
         None => LockStatus::Free,
-        Some(info) if info.is_self() => LockStatus::OwnedBySelf {
-            last_heartbeat_seconds_ago: info.seconds_since_heartbeat(),
+        // M3: device.id 유실 시에도 자기 점유로 표시(자기 오판 방지). M4: 활동 기준 경과 시간.
+        Some(info) if info.is_self() || device_id_was_lost() => LockStatus::OwnedBySelf {
+            last_heartbeat_seconds_ago: seconds_since_lock_activity(&path, &info),
         },
-        Some(info) => LockStatus::OwnedByOther {
-            stale: info.is_stale(),
-            last_heartbeat_seconds_ago: info.seconds_since_heartbeat(),
-        },
+        Some(info) => {
+            let age = seconds_since_lock_activity(&path, &info);
+            LockStatus::OwnedByOther {
+                stale: age >= STALE_THRESHOLD_SECONDS,
+                last_heartbeat_seconds_ago: age,
+            }
+        }
     };
     Ok(status)
 }
@@ -515,9 +617,9 @@ mod tests {
     #[test]
     fn device_id_persists_across_load_calls() {
         let path = unique_device_id_path("persists");
-        let first = load_or_create_device_id_at(&path);
+        let first = load_or_create_device_id_at(&path).0;
         assert!(path.exists(), "device.id 파일이 생성되어야 함 (AC-T3-2)");
-        let second = load_or_create_device_id_at(&path);
+        let second = load_or_create_device_id_at(&path).0;
         assert_eq!(first, second, "재시작 시 동일 UUID 유지 (AC-T3-1)");
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
@@ -526,7 +628,7 @@ mod tests {
     #[test]
     fn device_id_file_contains_parseable_uuid() {
         let path = unique_device_id_path("parseable");
-        let uuid = load_or_create_device_id_at(&path);
+        let uuid = load_or_create_device_id_at(&path).0;
         let content = std::fs::read_to_string(&path).unwrap();
         let parsed = Uuid::parse_str(content.trim()).expect("저장된 파일은 valid UUID");
         assert_eq!(parsed, uuid);
@@ -538,8 +640,8 @@ mod tests {
     fn device_id_differs_across_app_config_dirs() {
         let path_a = unique_device_id_path("pc-a");
         let path_b = unique_device_id_path("pc-b");
-        let id_a = load_or_create_device_id_at(&path_a);
-        let id_b = load_or_create_device_id_at(&path_b);
+        let id_a = load_or_create_device_id_at(&path_a).0;
+        let id_b = load_or_create_device_id_at(&path_b).0;
         assert_ne!(id_a, id_b, "다른 app_config_dir 는 다른 device.id 보유");
         std::fs::remove_dir_all(path_a.parent().unwrap()).ok();
         std::fs::remove_dir_all(path_b.parent().unwrap()).ok();
@@ -551,7 +653,7 @@ mod tests {
         let path = unique_device_id_path("corrupted");
         // 손상 파일: UUID 형식 아님
         std::fs::write(&path, "not-a-uuid-at-all").unwrap();
-        let recovered = load_or_create_device_id_at(&path);
+        let recovered = load_or_create_device_id_at(&path).0;
         // 재기록 — 파일에 유효 UUID 가 다시 저장됨
         let content = std::fs::read_to_string(&path).unwrap();
         let parsed = Uuid::parse_str(content.trim()).expect("재생성 후 valid UUID");
@@ -563,7 +665,7 @@ mod tests {
     #[test]
     fn device_id_atomic_write_no_tmp_leak() {
         let path = unique_device_id_path("no-tmp");
-        let _uuid = load_or_create_device_id_at(&path);
+        let _uuid = load_or_create_device_id_at(&path).0;
         let tmp = path.with_extension("id.tmp");
         assert!(path.exists());
         assert!(!tmp.exists(), "tmp 파일이 rename 후 잔존하면 안 됨");
@@ -577,7 +679,7 @@ mod tests {
     fn device_id_file_has_owner_only_permissions() {
         use std::os::unix::fs::PermissionsExt;
         let path = unique_device_id_path("perm-0600");
-        let _uuid = load_or_create_device_id_at(&path);
+        let _uuid = load_or_create_device_id_at(&path).0;
         let mode = std::fs::metadata(&path)
             .expect("device.id 메타데이터")
             .permissions()
@@ -592,7 +694,7 @@ mod tests {
     fn device_id_regenerates_on_empty_file() {
         let path = unique_device_id_path("empty");
         std::fs::write(&path, "").unwrap();
-        let _uuid = load_or_create_device_id_at(&path);
+        let _uuid = load_or_create_device_id_at(&path).0;
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(!content.trim().is_empty(), "재생성 후 비어있지 않아야 함");
         Uuid::parse_str(content.trim()).expect("재생성 후 valid UUID");
@@ -671,6 +773,46 @@ mod tests {
         let result = parse_lock_info(&json).unwrap();
         assert!(result.is_some());
         assert!(result.unwrap().is_self());
+    }
+
+    // ─── Sprint 23 T8: device.id 유실 판정(M3) + 활동 기준 staleness(M4) ───
+
+    /// AC-T8-M3: 첫 실행 부재는 유실 아님(false, 2-PC 상호 배제 보존), 기존 파일 손상은 유실(true).
+    #[test]
+    fn device_id_lost_flag_semantics() {
+        let p1 = unique_device_id_path("lost-firstrun");
+        let (_id, lost_first) = load_or_create_device_id_at(&p1);
+        assert!(!lost_first, "첫 실행(부재)은 유실 아님");
+        std::fs::remove_dir_all(p1.parent().unwrap()).ok();
+
+        let p2 = unique_device_id_path("lost-corrupt");
+        std::fs::write(&p2, "not-a-uuid-at-all").unwrap();
+        let (_id2, lost_corrupt) = load_or_create_device_id_at(&p2);
+        assert!(lost_corrupt, "기존 파일 손상은 유실");
+        std::fs::remove_dir_all(p2.parent().unwrap()).ok();
+    }
+
+    /// AC-T8-M4: 활동 경과 시간은 락 파일 mtime 과 JSON heartbeat 중 더 최근 신호를 택한다.
+    /// JSON heartbeat 이 오래돼도 mtime 이 최신이면(touch_lock 갱신) stale 로 오판하지 않는다.
+    #[test]
+    fn seconds_since_lock_activity_prefers_recent_mtime() {
+        let dir = std::env::temp_dir().join(format!("smarthb-t8-act-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("app.lock");
+        std::fs::write(&path, b"x").unwrap(); // mtime = now
+
+        // JSON heartbeat 은 1시간 전(오래됨) — mtime(now)이 더 최근 신호로 채택되어야 함.
+        let info = LockInfo {
+            device_id: Uuid::new_v4(),
+            last_heartbeat: Utc::now() - chrono::Duration::hours(1),
+        };
+        let age = seconds_since_lock_activity(&path, &info);
+        assert!(age < 60, "최근 mtime 이 활동 신호로 채택 → age 작음: {}", age);
+        assert!(
+            age < STALE_THRESHOLD_SECONDS,
+            "최근 활동이면 stale 아님"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
 }

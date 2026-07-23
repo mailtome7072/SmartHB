@@ -313,12 +313,18 @@ fn spawn_background_tasks() {
             ticker.tick().await; // 첫 tick 즉시 소비
             loop {
                 ticker.tick().await;
-                if db::pool_if_open().is_some()
-                    && db::seconds_since_activity() >= IDLE_CLOSE_THRESHOLD_SECS
-                {
+                if db::pool_if_open().is_none() {
+                    continue; // 이미 유휴 close 상태 — 할 일 없음
+                }
+                if db::seconds_since_activity() >= IDLE_CLOSE_THRESHOLD_SECS {
                     if let Err(e) = db::close_for_idle().await {
                         eprintln!("[startup] 유휴 DB close 실패 (무시): {}", e);
                     }
+                } else {
+                    // T8(M4): 활동 중 — 락 mtime 을 갱신해 활동 기준 STALE 판정을 유지한다.
+                    //         장시간(>24h) 실행 세션이 다른 PC 에 false-stale 로 오판되는 것 방지.
+                    //         스로틀(TOUCH_THROTTLE_SECONDS)은 touch_lock 내부에서 처리.
+                    lock::touch_lock();
                 }
             }
         });

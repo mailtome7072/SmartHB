@@ -19,7 +19,7 @@ T0(ADR-012) ✅ 완료 → T1부터 진행.
 | src-tauri/src/commands/paths.rs | [2회] | T2 setup_completed 캐시 ✅, T5 config 처리 통일 (무음 fallback 제거, salt.bin SSOT) ✅ |
 | src-tauri/src/commands/setup.rs | [2회] | T2 complete_setup 캐시 갱신 ✅, T5 read_status_from_path 공유 ✅ |
 | src-tauri/src/commands/auth.rs | [2회] | T5 set_password salt 가드 ✅, T7 try_adopt_key ✅ |
-| src-tauri/src/commands/lock.rs | [0회] | T8 device.id 손상 처리, touch_lock, STALE 보정 |
+| src-tauri/src/commands/lock.rs | [1회] | T8 device.id 유실 처리, touch_lock, 활동기준 STALE ✅ |
 | src-tauri/src/lib.rs | [1회] | T7 try_adopt_key IPC 등록 ✅ |
 | src/lib/tauri/index.ts | [1회] | T7 tryAdoptKey 래퍼 ✅ |
 | src/components/LockScreen.tsx | [1회] | T7 잠금 실패 시 키 채택 폴백 ✅ (계획 예상목록 외 — 기능 도달성 위해 추가) |
@@ -41,7 +41,7 @@ T0(ADR-012) ✅ 완료 → T1부터 진행.
 - ✅ T5 A6 config 통일 + set_password salt 가드 (M1, M2)
 - ✅ T6 A1 유휴 close + 활동 재연결 (A안 채택 — 사용자 결정: 처음부터 강력한 조치)
 - ✅ T7 B1 신규 PC 키 유도 + 키체인 채택
-- [ ] T8 B2 device.id 손상 + STALE 보정 (M3, M4)
+- ✅ T8 B2 device.id 손상 + STALE 보정 (M3, M4) — STALE 값(86400) 유지로 A113 프론트 동기화 불필요
 - [ ] T9 통합 검증 + cipher 스모크 (자동 7항목)
 
 ## 작업 순서 (의존성 기반)
