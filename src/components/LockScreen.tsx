@@ -102,22 +102,18 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
       const startup = await appStartupSequence(password, false)
       onUnlocked?.(startup)
     } catch (e) {
-      // T7(B1): 잠금 해제 모드에서 실패하면 "2번째 PC(이 PC 키체인에 키 없음)" 가능성 →
-      // 같은 PIN 으로 키 채택(tryAdoptKey)을 시도한 뒤 재시도한다. 최초 설정 모드는 대상 아님.
+      // T7(B1): 잠금 해제 실패 시 "2번째 PC(이 PC 키체인에 키 없음)" 가능성 → 같은 PIN 으로
+      // 키 채택(tryAdoptKey) 시도 후 재시도. 최초 설정 모드는 대상 아님.
+      // 채택 성공 시 진입하고, 실패하면 **원래 잠금 해제 오류(e)를 그대로 표시**한다 — 채택 실패
+      // 메시지(예: "이미 이 PC 에 키 있음")로 덮어쓰면 실제 원인(DB 미동기화 등)을 가린다(QA 발견).
       if (!isInitialSetup) {
         try {
           await tryAdoptKey(password)
           const startup = await appStartupSequence(password, false)
           onUnlocked?.(startup)
           return
-        } catch (adoptErr) {
-          const adoptMsg = typeof adoptErr === 'string' ? adoptErr : ''
-          // "이미 이 PC 에 키 있음" = 같은 PC 의 PIN 오류 → 원래 오류를 보여준다.
-          // 그 외(신규 PC PIN 오류/DB 미동기화) → 채택 단계의 구체적 안내를 보여준다.
-          if (!adoptMsg.includes('이미 이 PC')) {
-            setError(adoptMsg || '처리 중 오류가 발생했습니다. 다시 시도해주세요.')
-            return
-          }
+        } catch {
+          // 채택 실패 — 아래에서 원래 오류(e)를 표시.
         }
       }
       setError(typeof e === 'string' ? e : '처리 중 오류가 발생했습니다. 다시 시도해주세요.')

@@ -195,7 +195,9 @@ async fn open_pool_only(db_path: &Path) -> Result<SqlitePool, AppError> {
         } else {
             " (설정 파일 salt.bin 도 확인되지 않습니다)"
         };
-        return Err(AppError::Config(format!(
+        // UserFacing: 문구를 그대로 사용자에게 노출한다. (Config 는 user_message 가 generic
+        // "설정 마법사 다시 실행" 으로 치환해 실제 원인(동기화 대기)을 숨기므로 부적합 — QA 발견)
+        return Err(AppError::UserFacing(format!(
             "DB 파일(app.db)이 없습니다. 클라우드 동기화가 완료된 후 다시 시도해 주세요.{}",
             salt_hint
         )));
@@ -204,7 +206,7 @@ async fn open_pool_only(db_path: &Path) -> Result<SqlitePool, AppError> {
     if let Some(parent) = db_path.parent() {
         // 셋업 완료 상태에서 데이터 폴더 자체가 없으면(전체 dehydration) 생성하지 않는다.
         if setup_done && !parent.exists() {
-            return Err(AppError::Config(
+            return Err(AppError::UserFacing(
                 "데이터 폴더가 없습니다. 클라우드 동기화가 완료된 후 다시 시도해 주세요.".to_string(),
             ));
         }
