@@ -33,9 +33,13 @@ const OUTPUT_SUBDIR: &str = "output";
 #[cfg(not(test))]
 mod storage {
     use super::{FALLBACK_DEV_ROOT, PathBuf};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock};
 
     static DATA_ROOT: OnceLock<Mutex<PathBuf>> = OnceLock::new();
+    // T2(C2): config.json 의 setup_completed 캐시 — build_pool/integrity 가 AppHandle 없이
+    // "셋업 완료 여부"를 판정하는 데 사용 (빈 DB 날조 방지). 앱 시작 시 1회 세팅.
+    static SETUP_COMPLETED: AtomicBool = AtomicBool::new(false);
 
     fn cell() -> &'static Mutex<PathBuf> {
         DATA_ROOT.get_or_init(|| Mutex::new(PathBuf::from(FALLBACK_DEV_ROOT)))
@@ -53,15 +57,25 @@ mod storage {
             *guard = new_path;
         }
     }
+
+    pub(super) fn read_setup_completed() -> bool {
+        SETUP_COMPLETED.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn write_setup_completed(v: bool) {
+        SETUP_COMPLETED.store(v, Ordering::Relaxed);
+    }
 }
 
 #[cfg(test)]
 mod storage {
     use super::{FALLBACK_DEV_ROOT, PathBuf};
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     thread_local! {
         static DATA_ROOT: RefCell<PathBuf> = RefCell::new(PathBuf::from(FALLBACK_DEV_ROOT));
+        // 테스트: thread_local 로 각 테스트가 독립된 setup_completed 를 보유 (병렬 안전).
+        static SETUP_COMPLETED: Cell<bool> = const { Cell::new(false) };
     }
 
     pub(super) fn read() -> PathBuf {
@@ -70,6 +84,14 @@ mod storage {
 
     pub(super) fn write(new_path: PathBuf) {
         DATA_ROOT.with(|c| *c.borrow_mut() = new_path);
+    }
+
+    pub(super) fn read_setup_completed() -> bool {
+        SETUP_COMPLETED.with(|c| c.get())
+    }
+
+    pub(super) fn write_setup_completed(v: bool) {
+        SETUP_COMPLETED.with(|c| c.set(v));
     }
 }
 
@@ -117,23 +139,35 @@ pub(crate) fn update_data_root(new_path: PathBuf) {
     storage::write(new_path);
 }
 
+/// config.json 의 `setup_completed` 캐시 값 — 마법사 완료 여부 (T2/C2).
+///
+/// `build_pool`(빈 DB 날조 방지) 과 `integrity` startup 검사가 AppHandle 없이 참조한다.
+/// 앱 시작 시 [`init_data_root_from_config`] 가 config 에서 읽어 세팅하고, `complete_setup`
+/// IPC 가 마법사 완료 시 갱신한다. 기본 false (최초 실행 = 셋업 미완료).
+pub(crate) fn setup_completed() -> bool {
+    storage::read_setup_completed()
+}
+
+/// `setup_completed` 캐시를 갱신한다 — `complete_setup` IPC / startup config 로드에서 호출.
+pub(crate) fn set_setup_completed(v: bool) {
+    storage::write_setup_completed(v);
+}
+
 /// 앱 시작 시 1회 호출 — config.json 의 cloud_folder_path 가 있으면 그 하위 `smarthb/` 로
 /// data root 를 설정. 없으면 fallback 유지.
 pub(crate) fn init_data_root_from_config(config_path: &std::path::Path) {
-    let Ok(json) = std::fs::read_to_string(config_path) else {
-        return;
-    };
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) else {
-        return;
-    };
-    let Some(path) = parsed
-        .get("cloud_folder_path")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-    else {
-        return;
-    };
-    update_data_root(PathBuf::from(path).join(SMARTHB_SUBDIR));
+    // M1(T5): setup.rs 와 동일한 손상 감지·백업·fallback 로직을 공유한다. 이전의 무음(silent)
+    // 상대경로 fallback 을 제거 — config 손상은 read_status_from_path 가 경고 로그 + 손상본 백업으로
+    // 처리하고, 여기서는 그 결과(SetupStatus)만 반영한다.
+    let status = crate::commands::setup::read_status_from_path(config_path);
+    if !status.cloud_folder_path.is_empty() {
+        update_data_root(PathBuf::from(&status.cloud_folder_path).join(SMARTHB_SUBDIR));
+    }
+    // M1(T5): salt.bin 을 "셋업 완료"의 SSOT 로 삼는다. config.json 이 setup_completed 플래그를
+    // 잃어버려도(부분 손상) salt.bin 이 있으면 셋업 완료로 간주하여 build_pool 이 빈 DB 를 날조하는
+    // 것을 막는다(C1/C2 와 연계). data_root 확정 후 salt_path() 로 판정.
+    let done = status.setup_completed || salt_path().exists();
+    set_setup_completed(done);
 }
 
 /// SQLCipher `PRAGMA key` 적용용 SQL 단편.
@@ -176,6 +210,52 @@ mod tests {
         init_data_root_from_config(&tmp);
         assert_eq!(data_root(), PathBuf::from("/tmp/my-cloud").join(SMARTHB_SUBDIR));
         std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn init_from_config_caches_setup_completed_flag() {
+        let tmp = std::env::temp_dir().join("smarthb-paths-test-setupflag.json");
+        std::fs::write(
+            &tmp,
+            r#"{"cloud_folder_path":"/tmp/c","setup_completed":true}"#,
+        )
+        .unwrap();
+        assert!(!setup_completed(), "초기값 false");
+        init_data_root_from_config(&tmp);
+        assert!(setup_completed(), "config 의 setup_completed=true 반영");
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn init_from_config_setup_flag_false_when_missing() {
+        let tmp = std::env::temp_dir().join("smarthb-paths-test-setupflag-false.json");
+        std::fs::write(&tmp, r#"{"cloud_folder_path":"/tmp/c"}"#).unwrap();
+        init_data_root_from_config(&tmp);
+        assert!(!setup_completed(), "필드 누락 시 false 유지");
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    /// M1(T5): config 에 setup_completed 플래그가 없어도 클라우드 폴더에 salt.bin 이 있으면
+    /// 셋업 완료로 추론한다 (salt.bin = SSOT). config 부분 손상 시 빈 DB 날조 방지.
+    #[test]
+    fn init_from_config_infers_setup_done_from_salt_when_flag_missing() {
+        let cloud = std::env::temp_dir().join(format!("smarthb-m1-cloud-{}", std::process::id()));
+        let smarthb = cloud.join(SMARTHB_SUBDIR);
+        std::fs::create_dir_all(&smarthb).unwrap();
+        std::fs::write(smarthb.join(SALT_FILENAME), [0u8; 32]).unwrap();
+        let cfg = std::env::temp_dir().join(format!("smarthb-m1-cfg-{}.json", std::process::id()));
+        let cloud_json = cloud.to_string_lossy().replace('\\', "/");
+        std::fs::write(&cfg, format!(r#"{{"cloud_folder_path":"{}"}}"#, cloud_json)).unwrap();
+
+        assert!(!setup_completed(), "초기값 false");
+        init_data_root_from_config(&cfg);
+        assert!(
+            setup_completed(),
+            "salt.bin 존재 → config 플래그 없어도 셋업 완료 추론"
+        );
+
+        std::fs::remove_file(&cfg).ok();
+        std::fs::remove_dir_all(&cloud).ok();
     }
 
     #[test]

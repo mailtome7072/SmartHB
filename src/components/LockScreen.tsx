@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { appStartupSequence, checkAuthStatus, setPassword } from '@/lib/tauri'
+import { appStartupSequence, checkAuthStatus, setPassword, tryAdoptKey } from '@/lib/tauri'
 import { SplashScreen } from '@/components/splash-screen'
 import { PIN_LENGTH, PIN_PATTERN, PinField } from '@/components/ui/pin-field'
 import type { AuthStatus, StartupResult } from '@/types'
@@ -102,6 +102,24 @@ export function LockScreen({ onUnlocked }: { onUnlocked?: (result: StartupResult
       const startup = await appStartupSequence(password, false)
       onUnlocked?.(startup)
     } catch (e) {
+      // T7(B1): 잠금 해제 모드에서 실패하면 "2번째 PC(이 PC 키체인에 키 없음)" 가능성 →
+      // 같은 PIN 으로 키 채택(tryAdoptKey)을 시도한 뒤 재시도한다. 최초 설정 모드는 대상 아님.
+      if (!isInitialSetup) {
+        try {
+          await tryAdoptKey(password)
+          const startup = await appStartupSequence(password, false)
+          onUnlocked?.(startup)
+          return
+        } catch (adoptErr) {
+          const adoptMsg = typeof adoptErr === 'string' ? adoptErr : ''
+          // "이미 이 PC 에 키 있음" = 같은 PC 의 PIN 오류 → 원래 오류를 보여준다.
+          // 그 외(신규 PC PIN 오류/DB 미동기화) → 채택 단계의 구체적 안내를 보여준다.
+          if (!adoptMsg.includes('이미 이 PC')) {
+            setError(adoptMsg || '처리 중 오류가 발생했습니다. 다시 시도해주세요.')
+            return
+          }
+        }
+      }
       setError(typeof e === 'string' ? e : '처리 중 오류가 발생했습니다. 다시 시도해주세요.')
     } finally {
       setSubmitting(false)

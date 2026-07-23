@@ -117,7 +117,8 @@ pub struct AbsenceHistoryItem {
 /// PRD §4.5.4 보강 등록 다이얼로그가 충당 결석 선택지를 표시하기 위해 호출.
 #[tauri::command]
 pub async fn get_pending_absences(student_id: i64) -> Result<Vec<PendingAbsence>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_pending_absences_impl(pool, student_id).await
 }
 
@@ -180,7 +181,8 @@ pub async fn get_makeup_eligible_dates(
     year_month: String,
 ) -> Result<Vec<EligibleDate>, String> {
     validate_year_month(&year_month)?;
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_makeup_eligible_dates_impl(pool, student_id, &year_month).await
 }
 
@@ -338,7 +340,8 @@ async fn get_makeup_eligible_dates_impl(
 pub async fn create_makeup_with_absences(
     payload: CreateMakeupPayload,
 ) -> Result<MakeupResult, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let result = create_makeup_with_absences_impl(pool, &payload).await?;
     audit::try_record(
         AuditEventType::MakeupCreated,
@@ -585,7 +588,8 @@ async fn create_makeup_with_absences_impl(
 /// audit `MakeupCancelled` 기록 (커밋 후 fire-and-forget).
 #[tauri::command]
 pub async fn cancel_makeup(makeup_id: i64) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let reverted = cancel_makeup_impl(pool, makeup_id).await?;
     audit::try_record(
         AuditEventType::MakeupCancelled,
@@ -688,7 +692,8 @@ async fn cancel_makeup_impl(pool: &SqlitePool, makeup_id: i64) -> Result<usize, 
 /// 정렬: `event_date DESC` (최신순). 출석/`makeup_attended` 단순 보강 등록 행은 제외.
 #[tauri::command]
 pub async fn get_absence_history(student_id: i64) -> Result<Vec<AbsenceHistoryItem>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_absence_history_impl(pool, student_id).await
 }
 

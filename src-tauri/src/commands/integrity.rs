@@ -34,6 +34,79 @@ const ROLLBACK_SUBDIR: &str = "restore_rollback";
 const ROLLBACK_FILENAME_PREFIX: &str = "rollback_";
 const ROLLBACK_FILENAME_SUFFIX: &str = ".db";
 
+/// T3(H4): 복원 소스로 인정할 최소 파일 크기 — SQLite 최소 1 페이지(512B) 미만이면 손상/빈 파일.
+const MIN_VALID_DB_BYTES: u64 = 512;
+
+/// T3(H3): auto_restore 다계층 폴백 검색 순서 — exit(종료 스냅샷) → daily → weekly.
+/// 각 계층 내부는 최신순. hourly 는 손상/빈 상태를 포함할 위험이 상대적으로 커 자동 폴백 대상에서
+/// 제외한다(수동 복원에서는 여전히 선택 가능).
+const RESTORE_LAYER_CHAIN: [BackupLayer; 3] =
+    [BackupLayer::Exit, BackupLayer::Daily, BackupLayer::Weekly];
+
+/// auto_restore 자동 시도 상한 — 무한 루프 방지 + 시작 지연 억제.
+const MAX_RESTORE_ATTEMPTS: usize = 5;
+
+/// `app.db` 의 WAL/SHM 사이드카 경로 2개를 반환한다.
+fn sidecar_paths(db: &Path) -> [PathBuf; 2] {
+    let mut wal = db.as_os_str().to_owned();
+    wal.push("-wal");
+    let mut shm = db.as_os_str().to_owned();
+    shm.push("-shm");
+    [PathBuf::from(wal), PathBuf::from(shm)]
+}
+
+/// T3(H1): 복원 대상 DB 의 stale WAL/SHM 사이드카를 제거한다 — 구 손상 DB 의 WAL 이 남아
+/// 복원된 app.db 에 잘못 적용되는 것을 방지. best-effort(실패는 경고만).
+fn remove_stale_sidecars(db: &Path) {
+    for p in sidecar_paths(db) {
+        if p.exists() {
+            if let Err(e) = std::fs::remove_file(&p) {
+                eprintln!("[integrity] stale 사이드카 제거 실패 (무시) {}: {}", p.display(), e);
+            }
+        }
+    }
+}
+
+/// R145(ntfs-power-loss): 복원 직후 데이터 페이지를 디스크에 강제 flush — 전원 손실 시 NULL 손상 방지.
+fn fsync_file(path: &Path) {
+    match std::fs::File::open(path) {
+        Ok(f) => {
+            if let Err(e) = f.sync_all() {
+                eprintln!("[integrity] 복원본 fsync 실패 (무시): {}", e);
+            }
+        }
+        Err(e) => eprintln!("[integrity] 복원본 fsync 위해 열기 실패 (무시): {}", e),
+    }
+}
+
+/// T3(H4): 복원 소스 파일 크기 사전 검증(열기 전, cipher 무관). 512B 미만은 손상/빈 파일로 거부.
+fn validate_source_file_size(path: &Path) -> Result<(), AppError> {
+    let size = std::fs::metadata(path)
+        .map_err(|e| app_err!(Integrity, "백업 파일 확인 실패", e))?
+        .len();
+    if size < MIN_VALID_DB_BYTES {
+        return Err(AppError::Integrity(format!(
+            "백업 파일이 너무 작아 손상으로 판단됩니다 ({} bytes): {}",
+            size,
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+/// T3(H4): 복원 소스의 mtime 이 현재 라이브 DB 보다 과거이면 신선도 역전 경고(차단 아님).
+fn warn_if_stale_source(backup: &Path, current_db: &Path) {
+    if let (Ok(bm), Ok(cm)) = (std::fs::metadata(backup), std::fs::metadata(current_db)) {
+        if let (Ok(bt), Ok(ct)) = (bm.modified(), cm.modified()) {
+            if bt < ct {
+                eprintln!(
+                    "[integrity] ⚠️ 복원 소스가 현재 DB 보다 오래됨 (신선도 역전) — 복원 후 최근 입력이 유실될 수 있음"
+                );
+            }
+        }
+    }
+}
+
 /// 무결성 검증 모드.
 ///
 /// - `Quick`: `PRAGMA quick_check` — ~50ms, 앱 시작 시 사용 (PRD §5.6 < 3초 예산)
@@ -122,6 +195,17 @@ fn run_pragma_check_with_key(
     Ok(classify_pragma_rows(rows))
 }
 
+/// 주어진 키로 DB 를 열어 `students` 행수를 센다 — 빈/날조 DB 판정 및 복원 후보 비어있음 검사용.
+#[cfg(feature = "cipher")]
+fn count_students_with_key(db_path: &Path, hex_key: &str) -> Result<i64, AppError> {
+    use rusqlite::Connection;
+    let conn = Connection::open(db_path).map_err(|e| app_err!(Integrity, "DB 열기 실패", e))?;
+    conn.execute_batch(&paths::pragma_key_sql(hex_key))
+        .map_err(|e| app_err!(Integrity, "PRAGMA key 적용 실패", e))?;
+    conn.query_row("SELECT COUNT(*) FROM students", [], |r| r.get(0))
+        .map_err(|e| app_err!(Integrity, "students 행수 조회 실패", e))
+}
+
 #[cfg(feature = "cipher")]
 fn run_pragma_check(db_path: &Path, mode: IntegrityMode) -> Result<IntegrityCheckResult, AppError> {
     use crate::commands::auth::get_cached_or_load_key;
@@ -161,19 +245,57 @@ fn candidates_newest_first(layer: BackupLayer) -> Result<Vec<BackupMetadata>, Ap
     Ok(entries)
 }
 
-/// 후보들을 시간 역순으로 순회하며 quick_check 통과한 가장 최신 백업을 반환한다.
-///
-/// 모든 후보가 손상되었으면 `None` — 호출자가 명확한 에러로 사용자에게 안내한다.
-///
-/// OS Keychain 키 조회는 1회만 수행하여 후보 N개 손상 시 N회 IPC 발생을 막는다.
-fn select_healthy_backup(layer: BackupLayer) -> Result<Option<BackupMetadata>, AppError> {
-    let candidates = candidates_newest_first(layer)?;
-    if candidates.is_empty() {
-        return Ok(None);
+/// T3(H3): 복원 계층 체인(exit→daily→weekly) 전체 후보를 우선순위 순으로 이어붙인다.
+/// 각 계층 내부는 최신순 — 결과는 [최신 exit … 과거 exit, 최신 daily …, 최신 weekly …].
+fn restore_candidates_across_chain() -> Result<Vec<BackupMetadata>, AppError> {
+    let mut all = Vec::new();
+    for layer in RESTORE_LAYER_CHAIN {
+        all.extend(candidates_newest_first(layer)?);
     }
-    select_first_healthy_with_cached_key(candidates)
+    Ok(all)
 }
 
+/// T3(H4): 복원 후보 사전 검증 — 크기 + quick_check + 비어있지 않음(원생 데이터 존재).
+/// 하나라도 실패하면 Err 로 해당 후보를 스킵하게 한다. cipher off 빌드는 quick_check 가 Err 를
+/// 반환하므로 자동 복원 자체가 성립하지 않는다(개발 빌드는 fail-soft).
+fn precheck_restore_candidate(path: &Path) -> Result<(), AppError> {
+    validate_source_file_size(path)?;
+    let check = run_pragma_check(path, IntegrityMode::Quick)?;
+    if !matches!(check, IntegrityCheckResult::Ok) {
+        return Err(AppError::Integrity(format!(
+            "백업 무결성 검증 실패: {}",
+            path.display()
+        )));
+    }
+    #[cfg(feature = "cipher")]
+    if is_empty_domain_db(path).unwrap_or(false) {
+        return Err(AppError::Integrity(
+            "백업에 원생 데이터가 없어 복원 후보에서 제외합니다 (빈 백업).".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// T3(H3): exit→daily→weekly 계층 체인 전체를 순회하며 quick_check 통과 + 비어있지 않은
+/// 가장 우선순위 높은(최신 exit → … → 과거 weekly) 백업을 반환한다. 모두 부적합하면 `None`.
+fn select_healthy_backup_chain() -> Result<Option<BackupMetadata>, AppError> {
+    for layer in RESTORE_LAYER_CHAIN {
+        let candidates = candidates_newest_first(layer)?;
+        if candidates.is_empty() {
+            continue;
+        }
+        if let Some(m) = select_first_healthy_with_cached_key(candidates)? {
+            return Ok(Some(m));
+        }
+    }
+    Ok(None)
+}
+
+/// 후보들을 시간 역순으로 순회하며 quick_check 통과 + 원생 데이터 존재(비어있지 않음)한 가장
+/// 최신 백업을 반환한다 (T3 H4: 빈/열세 소스 거부).
+///
+/// 개별 후보 검증 오류(열기/복호화 실패)는 abort 하지 않고 다음 후보로 스킵한다.
+/// OS Keychain 키 조회는 1회만 수행하여 후보 N개 검증 시 N회 IPC 발생을 막는다.
 #[cfg(feature = "cipher")]
 fn select_first_healthy_with_cached_key(
     candidates: Vec<BackupMetadata>,
@@ -184,9 +306,26 @@ fn select_first_healthy_with_cached_key(
     let hex_key = key.to_hex();
     for candidate in candidates {
         let path = PathBuf::from(&candidate.path);
-        let result = run_pragma_check_with_key(&path, hex_key.as_str(), IntegrityMode::Quick)?;
-        if matches!(result, IntegrityCheckResult::Ok) {
-            return Ok(Some(candidate));
+        if validate_source_file_size(&path).is_err() {
+            eprintln!("[integrity] 백업 크기 미달 스킵: {}", candidate.path);
+            continue;
+        }
+        match run_pragma_check_with_key(&path, hex_key.as_str(), IntegrityMode::Quick) {
+            Ok(IntegrityCheckResult::Ok) => {}
+            Ok(IntegrityCheckResult::Failed { .. }) => {
+                eprintln!("[integrity] 손상 백업 스킵: {}", candidate.path);
+                continue;
+            }
+            Err(e) => {
+                eprintln!("[integrity] 백업 검증 오류 스킵 ({}): {}", candidate.path, e);
+                continue;
+            }
+        }
+        // 빈 DB(원생 0명) 백업은 복원해도 데이터 소실이므로 후보에서 제외 (H4).
+        match count_students_with_key(&path, hex_key.as_str()) {
+            Ok(n) if n > 0 => return Ok(Some(candidate)),
+            Ok(_) => eprintln!("[integrity] 빈 백업 스킵(원생 0명): {}", candidate.path),
+            Err(e) => eprintln!("[integrity] 백업 행수 확인 실패 스킵 ({}): {}", candidate.path, e),
         }
     }
     Ok(None)
@@ -202,11 +341,14 @@ fn select_first_healthy_with_cached_key(
 
 /// 지정 백업 파일로 현재 DB 를 복원한다.
 ///
-/// 1. 후보 백업 `PRAGMA quick_check` 통과 확인 — 실패 시 즉시 거부
-/// 2. 현재 DB 를 `restore_rollback/` 으로 rename (atomic on most filesystems)
-/// 3. 백업 파일을 `app.db` 로 파일 복사 — SQLCipher 암호화 상태 그대로 (복호화 금지)
-/// 4. 복사 실패 시 rollback 을 되돌려 원상 복구 시도
+/// 1. 소스 파일 크기 사전 검증(H4) + `PRAGMA quick_check` 통과 확인 — 실패 시 즉시 거부
+/// 2. 신선도 역전 경고(H4) — 소스가 현재 DB 보다 오래되면 로그
+/// 3. 현재 DB 를 `restore_rollback/` 으로 rename (atomic on most filesystems)
+/// 4. 구 DB 의 stale WAL/SHM 사이드카 제거(H1) — 복원본에 stale WAL 적용 방지
+/// 5. 백업 파일을 `app.db` 로 파일 복사 — SQLCipher 암호화 상태 그대로 (복호화 금지) + fsync(R145)
+/// 6. 복사 실패 시 rollback 을 되돌려 원상 복구 시도
 fn restore_from_path_sync(backup_path: &Path, idx: usize) -> Result<RestoreResult, AppError> {
+    validate_source_file_size(backup_path)?; // H4: 열기 전 크기 검증
     let check = run_pragma_check(backup_path, IntegrityMode::Quick)?;
     if !matches!(check, IntegrityCheckResult::Ok) {
         return Err(AppError::Integrity(format!(
@@ -219,16 +361,21 @@ fn restore_from_path_sync(backup_path: &Path, idx: usize) -> Result<RestoreResul
     let rollback_path = rollback_dir.join(generate_rollback_filename(Utc::now(), idx));
     let current_db = paths::db_path();
 
+    warn_if_stale_source(backup_path, &current_db); // H4: 신선도 역전 경고
+
     if current_db.exists() {
         std::fs::rename(&current_db, &rollback_path)
             .map_err(|e| app_err!(Integrity, "현재 DB rollback 이동 실패", e))?;
     }
+    // H1: 구 DB 의 stale WAL/SHM 제거 — 복원된 app.db 에 잘못된 WAL 이 적용되는 것을 방지.
+    remove_stale_sidecars(&current_db);
 
     if let Err(e) = std::fs::copy(backup_path, &current_db) {
         // 복원 실패 — rollback 을 되돌려 원상복구 시도
         let _ = std::fs::rename(&rollback_path, &current_db);
         return Err(app_err!(Integrity, "백업 파일 복사 실패", e));
     }
+    fsync_file(&current_db); // R145: 전원 손실 대비 데이터 페이지 커밋
 
     Ok(RestoreResult {
         restored_from: backup_path.to_string_lossy().into_owned(),
@@ -236,13 +383,13 @@ fn restore_from_path_sync(backup_path: &Path, idx: usize) -> Result<RestoreResul
     })
 }
 
-/// exit 계층 최신 정상 백업으로 자동 복원 (현재 DB 는 rollback 보존).
-/// startup 손상 자동복원(`startup::run_startup`) 과 `auto_restore` IPC 가 공유.
+/// 계층 체인(exit→daily→weekly)에서 최신 정상+비어있지 않은 백업으로 자동 복원.
+/// 현재 DB 는 rollback 보존. `auto_restore` IPC 가 사용.
 pub(crate) fn auto_restore_sync() -> Result<RestoreResult, AppError> {
-    let healthy = select_healthy_backup(BackupLayer::Exit)?;
+    let healthy = select_healthy_backup_chain()?;
     let backup_meta = healthy.ok_or_else(|| {
         AppError::Integrity(
-            "exit 계층에서 무결한 백업을 찾지 못했습니다. 일일/주간 백업을 수동으로 선택해주세요."
+            "무결한 백업(exit/daily/weekly)을 찾지 못했습니다. 백업 파일을 수동으로 선택해주세요."
                 .to_string(),
         )
     })?;
@@ -251,11 +398,12 @@ pub(crate) fn auto_restore_sync() -> Result<RestoreResult, AppError> {
 
 /// 복원 후 quick_check 재검증을 포함한 자동 복원 — startup 전용.
 ///
-/// 파일 복사 후 OS 레벨 손상(NTFS power-loss 등)을 감지하기 위해 복원된 app.db 에
-/// quick_check 를 재실행한다. 실패 시 다음 최신 exit 백업으로 재시도 (최대 3회).
+/// 계층 체인(exit→daily→weekly) 전체를 최신순으로 순회하며, 각 후보를 사전 검증(크기·무결성·
+/// 비어있지 않음) 후 복원한다. 복사 후 OS 레벨 손상(NTFS power-loss 등)을 감지하기 위해 복원된
+/// app.db 에 quick_check 를 재실행하고, 실패 시 다음 후보로 재시도한다(최대 [`MAX_RESTORE_ATTEMPTS`]회).
 /// 모두 실패하면 사용자 친화 에러 반환.
 pub(crate) fn auto_restore_with_retry() -> Result<RestoreResult, AppError> {
-    let candidates = candidates_newest_first(BackupLayer::Exit)?;
+    let candidates = restore_candidates_across_chain()?;
     if candidates.is_empty() {
         return Err(AppError::Integrity(
             "복원할 수 있는 백업이 없습니다. 수동으로 백업 파일을 선택해주세요.".to_string(),
@@ -263,8 +411,24 @@ pub(crate) fn auto_restore_with_retry() -> Result<RestoreResult, AppError> {
     }
 
     let mut last_err = AppError::Integrity("알 수 없는 복원 오류".to_string());
+    let mut idx = 0usize;
 
-    for (idx, candidate) in candidates.into_iter().take(3).enumerate() {
+    for candidate in candidates {
+        if idx >= MAX_RESTORE_ATTEMPTS {
+            break;
+        }
+        // H4: 소스 사전 검증(크기·무결성·비어있지 않음). 실패 시 다음 후보로 스킵(시도 횟수 미소진).
+        if let Err(e) = precheck_restore_candidate(Path::new(&candidate.path)) {
+            eprintln!(
+                "[integrity] 복원 후보 스킵 [{}] {}: {}",
+                candidate.layer.subdir(),
+                candidate.path,
+                e
+            );
+            last_err = e;
+            continue;
+        }
+        idx += 1;
         let result = restore_from_path_sync(Path::new(&candidate.path), idx);
         let restore_result = match result {
             Ok(r) => r,
@@ -308,17 +472,50 @@ pub(crate) fn restore_from_path(backup_path: &Path) -> Result<RestoreResult, App
 /// 안내 메시지를 startup 결과 필드(`integrity_ok=false`) 로 전달한다.
 pub(crate) fn check_integrity_quick_for_startup() -> Result<IntegrityCheckResult, AppError> {
     let db_path = paths::db_path();
+    let setup_done = paths::setup_completed();
     if !db_path.exists() {
-        // 첫 실행 — DB 파일 자체가 아직 없음. startup 이 db::initialize 로 생성한다.
+        // T2(C2) case A: 셋업 완료 상태인데 DB 파일이 없다 = 유실/클라우드 dehydration.
+        // Failed 로 승격 → startup 이 db::initialize(생성 차단) 전에 auto_restore 를 시도한다.
+        // 백업이 없으면 auto_restore 가 실패하고 build_pool C1 가드가 명확한 에러로 중단한다.
+        if setup_done {
+            return Ok(IntegrityCheckResult::Failed {
+                detail: "설정 완료 상태이나 DB 파일(app.db)이 존재하지 않습니다 (유실 또는 클라우드 동기화 미완료).".to_string(),
+            });
+        }
+        // 최초 실행 — DB 파일 자체가 아직 없음. startup 이 db::initialize 로 생성한다.
         return Ok(IntegrityCheckResult::Ok);
     }
     match run_pragma_check(&db_path, IntegrityMode::Quick) {
-        Ok(r) => Ok(r),
+        Ok(IntegrityCheckResult::Ok) => {
+            // T2(C2) case B: quick_check 는 통과했으나 도메인 데이터가 비어 있고(원생 0명)
+            // 셋업이 완료된 상태면 "빈 DB 날조 의심" → Failed 로 승격해 auto_restore 유도.
+            // 판정 오류(키 로드 실패 등)는 오탐 방지를 위해 "비어있지 않음"으로 보수 처리.
+            #[cfg(feature = "cipher")]
+            if setup_done && is_empty_domain_db(&db_path).unwrap_or(false) {
+                return Ok(IntegrityCheckResult::Failed {
+                    detail: "DB 에 원생 데이터가 없습니다 (빈 DB 날조 의심).".to_string(),
+                });
+            }
+            Ok(IntegrityCheckResult::Ok)
+        }
+        Ok(failed) => Ok(failed),
         // cipher off 개발 빌드 — run_pragma_check 가 stub 안내. startup 은 fail-soft 진행.
         #[cfg(not(feature = "cipher"))]
         Err(AppError::Integrity(_)) => Ok(IntegrityCheckResult::Ok),
         Err(e) => Err(e),
     }
+}
+
+/// T2(C2): DB 에 도메인 데이터(원생)가 전혀 없는지 판정한다 — 빈 DB 날조 감지용.
+///
+/// 시드만 존재하는 날조 DB 는 `students` 행수 0. 정상 사용 DB 는 원생이 1명 이상.
+/// (최초 설정 직후 원생 미입력 상태도 0 이지만, 그 경로는 `setup_completed=false` 이거나
+/// 호출측에서 setup_done 전제를 함께 확인하므로 오탐하지 않는다.)
+#[cfg(feature = "cipher")]
+fn is_empty_domain_db(db_path: &Path) -> Result<bool, AppError> {
+    use crate::commands::auth::get_cached_or_load_key;
+    let key = get_cached_or_load_key()?;
+    Ok(count_students_with_key(db_path, key.to_hex().as_str())? == 0)
 }
 
 // ============================================================================
@@ -363,6 +560,125 @@ mod tests {
     fn classify_ok_single_row() {
         let result = classify_pragma_rows(vec!["ok".to_string()]);
         assert_eq!(result, IntegrityCheckResult::Ok);
+    }
+
+    // ─── Sprint 23 T2: startup 빈/부재 DB fail-hard (C2) ───
+
+    /// AC-T2-C2 case A: 셋업 완료(setup_completed=true) + DB 부재 → Failed 승격
+    /// (startup 이 auto_restore 를 시도하도록). db_path 미존재는 cipher 무관하게 판정 가능.
+    #[test]
+    fn startup_check_flags_missing_db_when_setup_done() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t2c2_missing_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        paths::update_data_root(dir.clone());
+        paths::set_setup_completed(true);
+
+        let r = check_integrity_quick_for_startup().expect("래퍼는 Ok");
+        assert!(
+            matches!(r, IntegrityCheckResult::Failed { .. }),
+            "셋업 완료 + DB 부재 → Failed"
+        );
+
+        paths::set_setup_completed(false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// AC-T2-C2 case A 반례: 최초 실행(setup_completed=false) + DB 부재 → Ok (생성 허용).
+    #[test]
+    fn startup_check_ok_when_first_run_db_missing() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t2c2_first_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        paths::update_data_root(dir.clone());
+        paths::set_setup_completed(false);
+
+        let r = check_integrity_quick_for_startup().expect("래퍼는 Ok");
+        assert!(
+            matches!(r, IntegrityCheckResult::Ok),
+            "최초 실행 + DB 부재 → Ok (db::initialize 가 생성)"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ─── Sprint 23 T3: 복원 체계 강화 (H1, H3, H4) ───
+
+    /// AC-T3-H4: 512B 미만 소스는 손상으로 거부, 이상은 통과.
+    #[test]
+    fn validate_source_file_size_rejects_small() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t3_size_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let small = dir.join("small.db");
+        std::fs::write(&small, vec![0u8; 100]).unwrap();
+        assert!(validate_source_file_size(&small).is_err(), "100B < 512B 거부");
+        let big = dir.join("big.db");
+        std::fs::write(&big, vec![1u8; 1024]).unwrap();
+        assert!(validate_source_file_size(&big).is_ok(), "1024B 허용");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// AC-T3-H1: 복원 대상의 stale WAL/SHM 사이드카가 제거되고 본체는 유지된다.
+    #[test]
+    fn remove_stale_sidecars_deletes_wal_shm_only() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t3_side_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("app.db");
+        std::fs::write(&db, b"body").unwrap();
+        let [wal, shm] = sidecar_paths(&db);
+        std::fs::write(&wal, b"w").unwrap();
+        std::fs::write(&shm, b"s").unwrap();
+
+        remove_stale_sidecars(&db);
+        assert!(!wal.exists(), "-wal 제거");
+        assert!(!shm.exists(), "-shm 제거");
+        assert!(db.exists(), "본체 app.db 는 유지");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// AC-T3-H3: 복원 후보 체인이 계층 우선순위(exit→daily→weekly) + 계층 내 최신순으로 정렬된다.
+    /// weekly 가 시간상 최신이어도 계층 우선순위에 따라 뒤에 온다.
+    #[test]
+    fn restore_chain_orders_by_layer_priority_then_time() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t3_chain_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["exit", "daily", "weekly"] {
+            std::fs::create_dir_all(dir.join("backup").join(sub)).unwrap();
+        }
+        paths::update_data_root(dir.clone());
+        std::fs::write(dir.join("backup/exit/app_20260101_100000.db"), b"x").unwrap();
+        std::fs::write(dir.join("backup/exit/app_20260102_100000.db"), b"x").unwrap();
+        std::fs::write(dir.join("backup/daily/app_20260103_100000.db"), b"x").unwrap();
+        std::fs::write(dir.join("backup/weekly/app_20260104_100000.db"), b"x").unwrap();
+
+        let chain = restore_candidates_across_chain().expect("체인 스캔");
+        let layers: Vec<BackupLayer> = chain.iter().map(|m| m.layer).collect();
+        assert_eq!(
+            layers,
+            vec![
+                BackupLayer::Exit,
+                BackupLayer::Exit,
+                BackupLayer::Daily,
+                BackupLayer::Weekly
+            ]
+        );
+        assert!(chain[0].path.contains("20260102"), "exit 계층 내 최신 먼저");
+        assert!(chain[1].path.contains("20260101"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// AC-T3-H4: 크기 미달 백업은 복원 진입 즉시 거부(quick_check 이전 단계에서).
+    #[test]
+    fn restore_from_path_rejects_undersized_backup() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t3_tiny_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        paths::update_data_root(dir.clone());
+        let tiny = dir.join("tiny_backup.db");
+        std::fs::write(&tiny, vec![0u8; 50]).unwrap();
+
+        let r = restore_from_path(&tiny);
+        assert!(r.is_err(), "50B 백업은 크기 검증에서 거부");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

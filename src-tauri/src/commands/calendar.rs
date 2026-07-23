@@ -79,7 +79,8 @@ pub struct MakeupManagementStudent {
 #[tauri::command]
 pub async fn get_calendar_data(year_month: String) -> Result<CalendarMonth, String> {
     validate_year_month(&year_month)?;
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_calendar_data_impl(pool, &year_month).await
 }
 
@@ -183,7 +184,8 @@ pub async fn get_makeup_management_data(
     year_month: String,
 ) -> Result<Vec<MakeupManagementStudent>, String> {
     validate_year_month(&year_month)?;
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_makeup_management_data_impl(pool, None).await
 }
 

@@ -212,16 +212,48 @@ pub(crate) fn scan_layer(layer: BackupLayer) -> Result<Vec<BackupMetadata>, AppE
 }
 
 /// 지정 디렉토리의 백업 파일 개수가 `max` 를 초과하면 가장 오래된 파일부터 삭제한다.
+///
+/// T4(H2): `max` 가 0 이하로 잘못 전달돼도 최소 1개(최신)는 보존한다 — 정상 백업 전멸 방지.
 fn rotate_dir(dir: &Path, layer: BackupLayer, max: usize) -> Result<(), AppError> {
+    let effective_max = max.max(1);
     let entries = scan_dir(dir, layer)?;
-    if entries.len() <= max {
+    if entries.len() <= effective_max {
         return Ok(());
     }
-    let to_delete = entries.len() - max;
+    let to_delete = entries.len() - effective_max;
+    // entries 는 created_at 오름차순 — take(to_delete) 는 가장 오래된 것부터. 최신 effective_max 개 보존.
     for m in entries.into_iter().take(to_delete) {
         std::fs::remove_file(&m.path).map_err(|e| app_err!(Backup, "순환 삭제 실패", e))?;
     }
     Ok(())
+}
+
+/// T4(H2): 최신 백업 대비 소스 크기가 절반 미만이면 급격한 축소로 판단 — 순수 함수(단위테스트 대상).
+fn is_drastic_shrink(src_size: u64, latest_backup_size: u64) -> bool {
+    latest_backup_size > 0 && src_size.saturating_mul(2) < latest_backup_size
+}
+
+/// 지정 계층의 최신 백업 파일 크기(bytes)를 반환한다. 백업이 없으면 `None`.
+fn latest_backup_size(layer: BackupLayer) -> Result<Option<u64>, AppError> {
+    let entries = scan_layer(layer)?; // created_at 오름차순
+    Ok(entries.last().map(|m| m.size_bytes))
+}
+
+/// T4(H2): 소스 DB 가 최신 백업의 50% 미만이면 경고 로그(차단 아님 — 대량 삭제 등 정상 케이스 가능).
+fn warn_if_drastic_shrink(layer: BackupLayer, source: &Path) {
+    let Ok(meta) = std::fs::metadata(source) else {
+        return;
+    };
+    if let Ok(Some(latest)) = latest_backup_size(layer) {
+        if is_drastic_shrink(meta.len(), latest) {
+            eprintln!(
+                "[backup] ⚠️ {} 소스 DB({}B)가 최신 백업({}B)의 50% 미만 — 급격한 축소 감지",
+                layer.subdir(),
+                meta.len(),
+                latest
+            );
+        }
+    }
 }
 
 fn rotate_layer(layer: BackupLayer) -> Result<(), AppError> {
@@ -253,6 +285,17 @@ fn perform_backup_with_cipher(source: &Path, dest: &Path) -> Result<(), AppError
     src.busy_timeout(Duration::from_secs(30))
         .map_err(|e| app_err!(Backup, "소스 DB busy_timeout 설정 실패", e))?;
     src.execute_batch(&pragma_sql).map_err(|e| app_err!(Backup, "소스 PRAGMA key 적용 실패", e))?;
+
+    // T4(H2): 빈 소스(원생 0명) 백업 거부 — 빈 DB 가 백업 계층에 쌓여 정상 백업을 순환 삭제로
+    // 밀어내는(전멸) 사고 경로를 원천 차단한다. RCA H2 대응.
+    let student_count: i64 = src
+        .query_row("SELECT COUNT(*) FROM students", [], |r| r.get(0))
+        .map_err(|e| app_err!(Backup, "소스 원생 수 조회 실패", e))?;
+    if student_count == 0 {
+        return Err(AppError::Backup(
+            "원생 데이터가 없어 백업을 생성하지 않습니다 (빈 DB).".to_string(),
+        ));
+    }
 
     let mut dst = Connection::open(dest).map_err(|e| app_err!(Backup, "대상 DB 열기 실패", e))?;
     dst.busy_timeout(Duration::from_secs(30))
@@ -429,6 +472,7 @@ fn create_backup_sync(layer: BackupLayer) -> Result<BackupMetadata, AppError> {
     let dest_tmp = dir.join(format!("{}.tmp", filename));
 
     let source = paths::db_path();
+    warn_if_drastic_shrink(layer, &source); // T4(H2): 급격한 축소 경고(차단 아님)
     if let Err(e) = perform_backup_with_cipher(&source, &dest_tmp) {
         let _ = std::fs::remove_file(&dest_tmp);
         return Err(e);
@@ -704,6 +748,34 @@ mod tests {
             rotate_dir(dir, BackupLayer::Exit, BackupLayer::Exit.max_keep()).unwrap();
             let count = std::fs::read_dir(dir).unwrap().count();
             assert!(count <= BackupLayer::Exit.max_keep());
+        });
+    }
+
+    // ─── Sprint 23 T4: 소스 검증 + 축출 방지 (H2) ───
+
+    #[test]
+    fn is_drastic_shrink_detects_half_or_less() {
+        assert!(is_drastic_shrink(400, 1000), "40% → 급격한 축소");
+        assert!(is_drastic_shrink(0, 1000), "0B → 축소");
+        assert!(!is_drastic_shrink(600, 1000), "60% → 정상");
+        assert!(!is_drastic_shrink(500, 1000), "정확히 50% 는 경계(미만 아님) → 정상");
+        assert!(!is_drastic_shrink(100, 0), "기준 백업 없음(0) → 판정 안 함");
+    }
+
+    #[test]
+    fn rotation_never_deletes_below_one() {
+        // max=0 으로 잘못 호출돼도 최신 1개는 보존 (H2 전멸 방지).
+        with_temp_layer_dir(|dir| {
+            write_backup_file(dir, "20260101_120000");
+            write_backup_file(dir, "20260102_120000");
+            write_backup_file(dir, "20260103_120000");
+            rotate_dir(dir, BackupLayer::Exit, 0).unwrap();
+            let names: Vec<String> = std::fs::read_dir(dir)
+                .unwrap()
+                .filter_map(|e| e.ok().and_then(|e| e.file_name().into_string().ok()))
+                .collect();
+            assert_eq!(names.len(), 1, "max=0 이어도 최소 1개 보존");
+            assert!(names[0].contains("20260103"), "가장 최신 파일이 보존되어야 함");
         });
     }
 

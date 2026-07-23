@@ -579,7 +579,8 @@ pub async fn run_diagnosis(run_type: String) -> Result<DiagnosisResult, String> 
             "진단 유형이 올바르지 않습니다.".to_string(),
         )));
     }
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     run_and_record(pool, &run_type, &current_date(), &current_year_month())
         .await
         .map_err(String::from)
@@ -589,21 +590,24 @@ pub async fn run_diagnosis(run_type: String) -> Result<DiagnosisResult, String> 
 #[tauri::command]
 pub async fn get_diagnosis_history(limit: i64) -> Result<Vec<DiagnosisHistoryRow>, String> {
     let limit = limit.clamp(1, 120);
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     fetch_history(pool, limit).await.map_err(String::from)
 }
 
 /// 대시보드 알림용 최신 진단 결과 1건.
 #[tauri::command]
 pub async fn get_latest_diagnosis() -> Result<Option<DiagnosisHistoryRow>, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     Ok(fetch_history(pool, 1).await.map_err(String::from)?.into_iter().next())
 }
 
 /// 당월 자동 진단 필요 여부 (매월 1일 첫 실행 판단, AC-6.6-1).
 #[tauri::command]
 pub async fn check_auto_diagnosis_needed() -> Result<bool, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     auto_needed(pool, &current_year_month())
         .await
         .map_err(String::from)
@@ -612,14 +616,16 @@ pub async fn check_auto_diagnosis_needed() -> Result<bool, String> {
 /// 진단 이력 1건 삭제 (행 단위). 존재하지 않는 id 는 무시한다(멱등).
 #[tauri::command]
 pub async fn delete_diagnosis_history(id: i64) -> Result<(), String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     delete_history_row(pool, id).await.map_err(String::from)
 }
 
 /// 진단 이력 전체 삭제 ("이력 비우기").
 #[tauri::command]
 pub async fn clear_diagnosis_history() -> Result<(), String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     clear_history(pool).await.map_err(String::from)
 }
 

@@ -44,6 +44,7 @@ pub fn run() {
             commands::auth::set_password,
             commands::auth::unlock_db,
             commands::auth::change_pin,
+            commands::auth::try_adopt_key,
             commands::lock::check_lock_status,
             commands::lock::acquire_lock,
             commands::lock::release_lock,

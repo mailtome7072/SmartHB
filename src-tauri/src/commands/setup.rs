@@ -69,7 +69,10 @@ fn read_status(app: &AppHandle) -> Result<SetupStatus, AppError> {
 }
 
 /// 테스트 가능한 핵심 로직. AppHandle 없이 경로만으로 동작한다.
-fn read_status_from_path(path: &Path) -> SetupStatus {
+///
+/// M1(T5): `paths::init_data_root_from_config` 도 이 함수를 호출하여 config 손상 감지·백업·
+/// fallback 을 startup 경로와 통일한다 (이전에는 paths 가 별도의 무음 fallback 로직 보유).
+pub(crate) fn read_status_from_path(path: &Path) -> SetupStatus {
     let bytes = match fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return SetupStatus::default(),
@@ -189,6 +192,9 @@ pub async fn complete_setup(app: AppHandle) -> Result<(), String> {
     }
     status.setup_completed = true;
     write_status(&app, &status).map_err(String::from)?;
+    // T2(C2): 런타임 캐시 즉시 반영 — 이후 재초기화 경로에서 build_pool/integrity 가드가
+    // 셋업 완료를 인지하도록. (config.json 은 위에서 이미 영속화됨)
+    paths::set_setup_completed(true);
     Ok(())
 }
 
@@ -241,9 +247,9 @@ async fn change_data_folder_impl(app: &AppHandle, new_path: &str) -> Result<(), 
     let new_root_preexisted = new_root.exists();
 
     // 1. WAL 체크포인트 — 현재 DB 의 WAL 내용을 본체로 반영(복사본 정합). 풀 미초기화면 skip.
-    if let Ok(pool) = crate::commands::db::pool() {
+    if let Some(pool) = crate::commands::db::pool_if_open() {
         if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
-            .execute(pool)
+            .execute(&pool)
             .await
         {
             eprintln!("[setup] WAL checkpoint 실패: {}", e);
@@ -279,9 +285,12 @@ async fn change_data_folder_impl(app: &AppHandle, new_path: &str) -> Result<(), 
     //    실패시키고 재시작(프론트 relaunch / dev 수동 안내)을 강제한다. 재시작 후 새 프로세스가
     //    새 경로 config 로 POOL 을 다시 초기화한다. 닫지 않으면 변경 직후 입력이 구 DB 에 쓰여
     //    재시작 후 신 DB 에서 누락된다.
-    if let Ok(pool) = crate::commands::db::pool() {
+    if let Some(pool) = crate::commands::db::pool_if_open() {
         pool.close().await;
     }
+    // T6: 재연결 봉쇄 — 구 경로 DB 로의 우발적 재연결·쓰기를 막고 재시작을 강제한다.
+    // (유휴 재연결 도입 전에는 pool.close() 만으로 충분했으나, 이제 pool() 이 자동 재연결하므로 필수)
+    crate::commands::db::mark_shutdown_for_restart();
 
     Ok(())
 }

@@ -80,7 +80,8 @@ fn map_weekly_hours_unique(hours: i64, err: sqlx::Error) -> AppError {
 
 #[tauri::command]
 pub async fn list_fees() -> Result<Vec<StandardFee>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let rows = sqlx::query(
         "SELECT id, weekly_hours, amount, sort_order, is_active, created_at, updated_at \
          FROM standard_fees \
@@ -98,7 +99,8 @@ pub async fn list_fees() -> Result<Vec<StandardFee>, String> {
 
 #[tauri::command]
 pub async fn create_fee(payload: NewFee) -> Result<StandardFee, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "INSERT INTO standard_fees (weekly_hours, amount, sort_order) \
          VALUES (?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM standard_fees))) \
@@ -116,7 +118,8 @@ pub async fn create_fee(payload: NewFee) -> Result<StandardFee, String> {
 
 #[tauri::command]
 pub async fn update_fee(id: i64, payload: FeeUpdate) -> Result<StandardFee, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "UPDATE standard_fees SET \
             weekly_hours = ?, amount = ?, sort_order = ?, is_active = ?, \
@@ -145,7 +148,8 @@ pub async fn update_fee(id: i64, payload: FeeUpdate) -> Result<StandardFee, Stri
 /// 주 수업시간 → 매칭 교습비 (정확 일치 우선, 없으면 이하 최댓값).
 #[tauri::command]
 pub async fn match_fee_by_hours(weekly_hours: i64) -> Result<Option<StandardFee>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "SELECT id, weekly_hours, amount, sort_order, is_active, created_at, updated_at \
          FROM standard_fees \

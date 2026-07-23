@@ -70,7 +70,8 @@ pub struct GenerateBillsResult {
 /// 재원 + 월중입퇴교 원생 일괄 청구 생성 (PRD §4.9.1, AC-4.9-1).
 #[tauri::command]
 pub async fn generate_bills(year_month: String) -> Result<GenerateBillsResult, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     generate_bills_impl(pool, &year_month).await
 }
 
@@ -209,7 +210,8 @@ pub(crate) async fn generate_bills_impl(
 ///      워크플로우 그룹핑(1·2)은 업무상 우선순위라 유지하고, 그 안에서만 학년+이름 정렬 적용
 #[tauri::command]
 pub async fn list_bills(year_month: String) -> Result<Vec<Bill>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     list_bills_impl(pool, &year_month).await
 }
 
@@ -244,7 +246,8 @@ pub(crate) async fn list_bills_impl(
 /// 실제 청구가 존재하는 년월만 제시한다.
 #[tauri::command]
 pub async fn list_billed_months() -> Result<Vec<String>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     list_billed_months_impl(pool).await
 }
 
@@ -258,7 +261,8 @@ pub(crate) async fn list_billed_months_impl(pool: &SqlitePool) -> Result<Vec<Str
 /// 단건 조회.
 #[tauri::command]
 pub async fn get_bill(id: i64) -> Result<Bill, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_bill_impl(pool, id).await
 }
 
@@ -287,7 +291,8 @@ pub(crate) async fn get_bill_impl(pool: &SqlitePool, id: i64) -> Result<Bill, St
 /// 단, 수납완료(`payments.is_paid=1`)된 청구는 이미 수금이 끝났으므로 금액 수정을 거부한다.
 #[tauri::command]
 pub async fn update_bill(id: i64, adjusted_amount: i64) -> Result<Bill, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     update_bill_impl(pool, id, adjusted_amount).await
 }
 
@@ -338,7 +343,8 @@ pub(crate) async fn update_bill_impl(
 /// FK 강제(`PRAGMA foreign_keys=ON`, `db.rs`)가 전제.
 #[tauri::command]
 pub async fn delete_bill(id: i64) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     delete_bill_impl(pool, id).await
 }
 
@@ -410,7 +416,8 @@ pub(crate) async fn delete_bill_impl(pool: &SqlitePool, id: i64) -> Result<(), S
 /// `confirmed` 상태에서 호출 시 거부 (재확정 불가).
 #[tauri::command]
 pub async fn confirm_bill(id: i64) -> Result<Bill, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     confirm_bill_impl(pool, id).await
 }
 
@@ -449,7 +456,8 @@ pub(crate) async fn confirm_bill_impl(pool: &SqlitePool, id: i64) -> Result<Bill
 /// 월 전체 미확정 청구 일괄 확정. 반환값은 전이된 건수.
 #[tauri::command]
 pub async fn confirm_all_bills(year_month: String) -> Result<i64, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     confirm_all_bills_impl(pool, &year_month).await
 }
 
@@ -505,7 +513,8 @@ pub struct PaymentViewRow {
 /// 해당 월의 모든 청구 + 수납 정보 통합 조회 — PaymentsView 가 사용.
 #[tauri::command]
 pub async fn list_payment_view(year_month: String) -> Result<Vec<PaymentViewRow>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     list_payment_view_impl(pool, &year_month).await
 }
 
@@ -599,7 +608,8 @@ pub struct BillingSearchResult {
 pub async fn search_students_for_billing(
     query: String,
 ) -> Result<Vec<BillingSearchResult>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     search_students_for_billing_impl(pool, &query).await
 }
 
@@ -673,7 +683,8 @@ pub(crate) async fn search_students_for_billing_impl(
 /// UI 디폴트 청구년월 — 가장 최근(MAX) 교습기간 월 반환. 없으면 None.
 #[tauri::command]
 pub async fn get_default_billing_year_month() -> Result<Option<String>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_default_billing_year_month_impl(pool).await
 }
 
@@ -855,7 +866,8 @@ pub struct BillingPeriodStats {
 /// 수납 생성 — bill_id UNIQUE. 동일 청구에 이미 payments 행 있으면 에러 (update_payment 사용).
 #[tauri::command]
 pub async fn create_payment(input: PaymentInput) -> Result<Payment, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     create_payment_impl(pool, &input).await
 }
 
@@ -884,7 +896,8 @@ pub(crate) async fn create_payment_impl(
 /// 수납 갱신 — id 기반. bill_id 변경 불가 (입력 무시).
 #[tauri::command]
 pub async fn update_payment(id: i64, input: PaymentInput) -> Result<Payment, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     update_payment_impl(pool, id, &input).await
 }
 
@@ -921,7 +934,8 @@ pub(crate) async fn update_payment_impl(
 /// 미납 정의: payments 없음 OR `is_paid=0`. 정렬: 학생명 ASC.
 #[tauri::command]
 pub async fn list_unpaid_bills(year_month: String) -> Result<Vec<UnpaidBill>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     list_unpaid_bills_impl(pool, &year_month).await
 }
 
@@ -973,7 +987,8 @@ pub(crate) async fn list_unpaid_bills_impl(
 /// 반환값: 처리된 entry 수 (성공 시 입력 길이와 동일).
 #[tauri::command]
 pub async fn batch_update_payments(items: Vec<PaymentInput>) -> Result<i64, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     batch_update_payments_impl(pool, &items).await
 }
 
@@ -1031,7 +1046,8 @@ pub(crate) async fn batch_update_payments_impl(
 /// 월별 청구·수납 요약 (PRD §4.11.3 대시보드 위젯 선행 준비).
 #[tauri::command]
 pub async fn get_billing_summary(year_month: String) -> Result<BillingSummary, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_billing_summary_impl(pool, &year_month).await
 }
 
@@ -1116,7 +1132,8 @@ fn period_like_pattern(period: &str) -> Result<String, String> {
 /// 기간(연도 'YYYY' 또는 월 'YYYY-MM') 청구·수납 집계 + 결제수단별 수납 총액 (월별 집계 탭).
 #[tauri::command]
 pub async fn get_billing_period_stats(period: String) -> Result<BillingPeriodStats, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_billing_period_stats_impl(pool, &period).await
 }
 
