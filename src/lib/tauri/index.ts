@@ -267,6 +267,21 @@ export async function unlockDb(password: string): Promise<void> {
 }
 
 /**
+ * T7(B1): 2번째 PC 에서 기존 PIN 으로 DB 키를 유도해 이 PC 키체인에 채택한다.
+ *
+ * salt.bin·app.db 는 클라우드 동기화로 도착했으나 이 PC 키체인에 키가 없을 때(신규 PC),
+ * 원래 PIN 을 입력하면 키를 재유도·검증 후 저장한다. PIN 오류/DB 손상/미동기화 시 throw.
+ */
+export async function tryAdoptKey(pin: string): Promise<void> {
+  const inv = await getInvoke()
+  if (!inv) {
+    // 개발 모드 — no-op
+    return
+  }
+  await inv('try_adopt_key', { pin })
+}
+
+/**
  * 현재 PIN 을 확인한 뒤 새 PIN 으로 변경한다 (잠금 해제 상태에서 설정 메뉴를 통해 호출).
  *
  * 현 PIN 불일치 / 새 PIN 형식 오류 시 throw — 호출자가 catch 하여 사용자 메시지 표시.
