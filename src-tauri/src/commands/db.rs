@@ -15,13 +15,13 @@
 //! T9 에서는 IPC 노출 없음 — pool 초기화는 T10 startup IPC 가 호출하며, 다른 모듈은 `pool()`
 //! 만 호출한다. 본 sprint 단계에서는 audit/sync 모듈이 직접 호출하는 테스트 경로만 활성.
 //!
-//! T10 통합 전까지 `initialize`/`build_pool`/`apply_cipher_key_if_enabled` 등이 호출되지
+//! T10 통합 전까지 `initialize`/`build_pool`/`configure_connection` 등이 호출되지
 //! 않으므로 모듈 전체에 `#[allow(dead_code)]` 를 적용한다.
 
 #![allow(dead_code)]
 
 use crate::error::AppError;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection, SqlitePool, SqlitePoolOptions};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
@@ -38,8 +38,10 @@ const MAX_CONNECTIONS: u32 = 1;
 /// connection acquire 대기 최대 시간 — pool 이 busy 할 때 이 시간 내 acquire 못하면 에러.
 const ACQUIRE_TIMEOUT_SECS: u64 = 30;
 // max_lifetime/idle_timeout 미설정 — SQLite 는 로컬 파일이라 network stale 없음.
-// 설정 시 sqlx 가 connection 을 교체할 때 PRAGMA key(cipher)·busy_timeout 등이 재적용되지
-// 않아 cipher 빌드에서 idle 후 모든 쿼리가 실패하는 심각한 버그 유발.
+// T1(A3) 이전에는 커넥션 교체 시 PRAGMA key(cipher)·busy_timeout 등이 재적용되지 않아
+// cipher 빌드에서 idle 후 모든 쿼리가 실패하는 심각한 버그(C3)가 있었다. 이제 after_connect
+// 훅([`configure_connection`])이 새 커넥션마다 key + pragma 를 재적용하므로 커넥션 교체가
+// 안전하다. 실제 유휴 close/재연결 풀 라이프사이클 관리는 T6 에서 도입.
 
 /// 전역 pool 참조. 미초기화 시 `AppError::Config` — 호출자가 unlock 흐름을 안내한다.
 pub(crate) fn pool() -> Result<&'static SqlitePool, AppError> {
@@ -88,14 +90,14 @@ async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
         .map_err(|e| AppError::Config(format!("DB URL 파싱 실패: {}", e)))?
         .create_if_missing(true);
 
+    // T1(A3): PRAGMA key(cipher) + startup PRAGMA 를 after_connect 훅으로 이전한다.
+    // 풀이 새 커넥션을 열 때마다(유휴 close 후 재연결 포함) 자동 재적용되어 C3(키 유실)·H5 근절.
     let pool = SqlitePoolOptions::new()
         .max_connections(MAX_CONNECTIONS)
         .acquire_timeout(Duration::from_secs(ACQUIRE_TIMEOUT_SECS))
+        .after_connect(|conn, _meta| Box::pin(configure_connection(conn)))
         .connect_with(connect_options)
         .await?;
-
-    apply_cipher_key_if_enabled(&pool).await?;
-    apply_startup_pragmas(&pool).await?;
 
     // 사전 스냅샷 (ADR-011 R140): 기존 DB 에 미적용 마이그레이션이 있으면 migrate 직전에 백업.
     // 백필(V312) 등 데이터 변형 마이그레이션이 커밋 성공 후 오작동해도, 직전 상태 복구본을
@@ -129,39 +131,44 @@ async fn has_pending_migrations(
     matches!(applied_max, Some(v) if embedded_max > v)
 }
 
-/// PRD §5.6 시작 < 3초 예산을 위한 PRAGMA 설정.
+/// T1(A3) after_connect 훅 — 풀이 새 커넥션을 열 때마다 호출되어 PRAGMA key(cipher) +
+/// startup PRAGMA 를 재적용한다. 유휴 후 커넥션 교체(T6) 시에도 키·pragma 가 유지된다.
 ///
+/// PRAGMA 설명 (PRD §5.6 시작 < 3초 예산):
 /// - `journal_mode=WAL`: 동시 reader 허용 + 쓰기 latency 감소
-/// - `cache_size=-8000`: 8MB 페이지 캐시 (음수는 KiB 단위, 시작 시 큰 마이그레이션도 메모리에서 처리)
+/// - `cache_size=-8000`: 8MB 페이지 캐시 (음수는 KiB 단위)
 /// - `foreign_keys=ON`: SQLite 기본값 OFF — 외래키 제약 강제
+/// - `busy_timeout=30000`: 클라우드 동기화/백업 lock 충돌 시 최대 30초 재시도
+/// - `journal_size_limit`: WAL 파일 상한 64MB — 클라우드 동기화 부하 제어
 ///
-/// `PRAGMA key` 가 적용된 후 호출되어야 한다 (SQLCipher 빌드). 마이그레이션 실행 전에 호출.
-async fn apply_startup_pragmas(pool: &SqlitePool) -> Result<(), AppError> {
-    sqlx::query("PRAGMA journal_mode=WAL").execute(pool).await?;
-    sqlx::query("PRAGMA cache_size=-8000").execute(pool).await?;
-    sqlx::query("PRAGMA foreign_keys=ON").execute(pool).await?;
-    // 클라우드 동기화/백업 lock 충돌 시 즉시 실패 대신 최대 30초 재시도
-    sqlx::query("PRAGMA busy_timeout=30000").execute(pool).await?;
-    // WAL 파일 상한 64MB — 초과 시 자동 checkpoint 유도로 클라우드 동기화 부하 제어
-    sqlx::query("PRAGMA journal_size_limit=67108864").execute(pool).await?;
+/// 반환 타입이 `sqlx::Error` 인 이유: after_connect 콜백 시그니처 요구. 키 로드 실패(AppError)는
+/// `sqlx::Error::Configuration` 으로 매핑한다.
+async fn configure_connection(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+    // PRAGMA key 는 커넥션 확립 직후, 다른 어떤 데이터 접근 쿼리보다 먼저 적용되어야 한다 (SQLCipher).
+    apply_cipher_key_conn(conn).await?;
+    sqlx::query("PRAGMA journal_mode=WAL").execute(&mut *conn).await?;
+    sqlx::query("PRAGMA cache_size=-8000").execute(&mut *conn).await?;
+    sqlx::query("PRAGMA foreign_keys=ON").execute(&mut *conn).await?;
+    sqlx::query("PRAGMA busy_timeout=30000").execute(&mut *conn).await?;
+    sqlx::query("PRAGMA journal_size_limit=67108864").execute(&mut *conn).await?;
     Ok(())
 }
 
 #[cfg(feature = "cipher")]
-async fn apply_cipher_key_if_enabled(pool: &SqlitePool) -> Result<(), AppError> {
+async fn apply_cipher_key_conn(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
     use crate::commands::auth::get_cached_or_load_key;
     use crate::commands::paths::pragma_key_sql;
 
     // Sprint 7 T1: 캐시 경유로 keyring 호출 1회로 통합 (verify_password 가 이미 채워둔 캐시 hit).
-    let key = get_cached_or_load_key()?;
+    let key = get_cached_or_load_key()
+        .map_err(|e| sqlx::Error::Configuration(String::from(e).into()))?;
     let hex_key = key.to_hex();
-    // PRAGMA key 는 첫 connection 마다 적용되어야 한다. max_connections=1 이므로 1회로 충분.
-    sqlx::query(&pragma_key_sql(hex_key.as_str())).execute(pool).await?;
+    sqlx::query(&pragma_key_sql(hex_key.as_str())).execute(&mut *conn).await?;
     Ok(())
 }
 
 #[cfg(not(feature = "cipher"))]
-async fn apply_cipher_key_if_enabled(_pool: &SqlitePool) -> Result<(), AppError> {
+async fn apply_cipher_key_conn(_conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
     // 평문 SQLite (개발 빌드) — PRAGMA key 적용 없음.
     Ok(())
 }
@@ -180,6 +187,31 @@ pub(crate) async fn test_pool_in_memory() -> Result<SqlitePool, AppError> {
         .run(&pool)
         .await
         .map_err(|e| AppError::Config(format!("테스트 마이그레이션 실패: {}", e)))?;
+    Ok(pool)
+}
+
+/// 테스트 전용 — 실제 프로덕션과 동일한 after_connect 훅([`configure_connection`])을 붙인
+/// 파일 기반 풀을 만든다. `max_lifetime` 을 짧게 지정하면 acquire 시 커넥션이 교체되어
+/// 재연결 시 PRAGMA 재적용을 검증할 수 있다 (cipher off 에서는 key 이외 pragma 만 적용).
+#[cfg(all(test, not(feature = "cipher")))]
+pub(crate) async fn test_pool_with_after_connect(
+    db_path: &std::path::Path,
+    max_lifetime: Option<Duration>,
+) -> Result<SqlitePool, AppError> {
+    let url = db_url(&db_path.to_path_buf())?;
+    let connect_options = SqliteConnectOptions::from_str(&url)
+        .map_err(|e| AppError::Config(format!("DB URL 파싱 실패: {}", e)))?
+        .create_if_missing(true);
+    let mut builder = SqlitePoolOptions::new()
+        .max_connections(MAX_CONNECTIONS)
+        .min_connections(0);
+    if let Some(lifetime) = max_lifetime {
+        builder = builder.max_lifetime(lifetime);
+    }
+    let pool = builder
+        .after_connect(|conn, _meta| Box::pin(configure_connection(conn)))
+        .connect_with(connect_options)
+        .await?;
     Ok(pool)
 }
 
@@ -272,6 +304,57 @@ mod tests {
             let msg: String = err.into();
             assert!(msg.contains("설정") || msg.contains("잠금"));
         }
+    }
+
+    // ─── Sprint 23 T1: after_connect 훅 PRAGMA 재적용 검증 (C3, H5) ───
+
+    /// 테스트 임시 DB 경로 — 프로세스 ID + 태그로 충돌 회피. WAL/SHM 사이드카까지 정리.
+    #[cfg(not(feature = "cipher"))]
+    fn temp_db_cleanup(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let base = path.to_string_lossy();
+        let _ = std::fs::remove_file(format!("{}-wal", base));
+        let _ = std::fs::remove_file(format!("{}-shm", base));
+    }
+
+    /// AC-T1: after_connect 훅이 커넥션 교체(max_lifetime 만료) 후 재연결 시에도 PRAGMA 를
+    /// 재적용하는지 검증. cipher off 이므로 key 이외 3종(WAL/foreign_keys/busy_timeout)을 확인.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn after_connect_reapplies_pragmas_on_reconnect() {
+        let path = std::env::temp_dir().join(format!("smarthb_t1_reconnect_{}.db", std::process::id()));
+        temp_db_cleanup(&path);
+        let pool = test_pool_with_after_connect(&path, Some(Duration::from_millis(1)))
+            .await
+            .expect("after_connect 풀 생성");
+
+        // 최초 커넥션 — PRAGMA 적용 확인
+        let assert_pragmas = |pool: SqlitePool| async move {
+            let journal: (String,) = sqlx::query_as("PRAGMA journal_mode")
+                .fetch_one(&pool)
+                .await
+                .expect("journal_mode 조회");
+            assert_eq!(journal.0.to_lowercase(), "wal", "journal_mode=WAL 재적용");
+            let fk: (i64,) = sqlx::query_as("PRAGMA foreign_keys")
+                .fetch_one(&pool)
+                .await
+                .expect("foreign_keys 조회");
+            assert_eq!(fk.0, 1, "foreign_keys=ON 재적용");
+            let busy: (i64,) = sqlx::query_as("PRAGMA busy_timeout")
+                .fetch_one(&pool)
+                .await
+                .expect("busy_timeout 조회");
+            assert_eq!(busy.0, 30000, "busy_timeout=30000 재적용");
+            pool
+        };
+        let pool = assert_pragmas(pool).await;
+
+        // max_lifetime(1ms) 만료 유도 → 다음 acquire 시 커넥션 교체 → after_connect 재실행
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let pool = assert_pragmas(pool).await;
+
+        pool.close().await;
+        temp_db_cleanup(&path);
     }
 
     // ─── Sprint 8 T1: V106 출결 도메인 마이그레이션 검증 (PRD §6.2) ───
