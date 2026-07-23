@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | v1.3.0 릴리즈 완료 + Post-v1.3 유지보수 진행 중 |
-| 현재 Phase | **Post-v1.4** — Sprint 23 진행 중 |
-| 다음 마일스톤 | Sprint 23 (v1.5) — 프로덕션 데이터 소실 사고 재발방지 |
+| 전체 진행률 | v1.4.0 릴리즈 완료 + Post-v1.4 Sprint 23 완료 (v1.5.0 배포 대기) |
+| 현재 Phase | **Post-v1.4** — Sprint 23 완료 (2026-07-23) |
+| 다음 마일스톤 | v1.5.0 배포 (deploy-prod) — 데이터 소실 사고 재발방지 패치 |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -1084,7 +1084,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
-### Sprint 23: 프로덕션 데이터 소실 사고 재발방지 — 데이터 안전 + 2번째 PC 로그인 (2주) 🔄 진행 중
+### Sprint 23: 프로덕션 데이터 소실 사고 재발방지 — 데이터 안전 + 2번째 PC 로그인 (2주) ✅ 완료 (2026-07-23)
 
 > 계획 문서: `docs/sprint/sprint23.md`
 > 사고 분석: `docs/incidents/2026-07-22-data-loss-rca.md`
@@ -1095,28 +1095,28 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 **A — 데이터 안전 (MUST, ADR-012 A안: 클라우드 유지 + 접근 강화)**
 - ✅ **T0**: ADR-012 데이터 위치 결정 — A안 확정 (클라우드 유지, 데이터 이전 없음)
-- ⬜ **T1**: A3 after_connect PRAGMA key 재적용 — C3+H5 수정 (커넥션 단위 PRAGMA 보장)
-- ⬜ **T2**: A2 create_if_missing 가드 + 빈 DB fail-hard — C1+C2 수정
-- ⬜ **T3**: A4 자동 복원 체계 강화 — H1+H3+H4 수정 (다계층 폴백 + 소스 검증)
-- ⬜ **T4**: A5 백업 소스 검증 + 축출 방지 — H2 수정
-- ⬜ **T5**: A6 config 처리 통일 + salt 가드 — M1+M2 수정
-- ⬜ **T6**: A1 클라우드 안전 접근 강화 — 유휴 시 DB close + WAL 체크포인트 + 활동 재연결
+- ✅ **T1**: A3 after_connect PRAGMA key 재적용 — C3+H5 수정 (커넥션 단위 PRAGMA 보장)
+- ✅ **T2**: A2 create_if_missing 가드 + 빈 DB fail-hard — C1+C2 수정
+- ✅ **T3**: A4 자동 복원 체계 강화 — H1+H3+H4 수정 (다계층 폴백 + 소스 검증)
+- ✅ **T4**: A5 백업 소스 검증 + 축출 방지 — H2 수정
+- ✅ **T5**: A6 config 처리 통일 + salt 가드 — M1+M2 수정
+- ✅ **T6**: A1 클라우드 안전 접근 강화 — 유휴 시 DB close + WAL 체크포인트 + 활동 재연결
 
 **B — 2번째 PC 로그인 (MUST, Capacity 확보로 승격)**
-- ⬜ **T7**: B1 신규 PC 키 유도 + 키체인 채택 — PBKDF2(PIN, salt) 검증 후 채택
-- ⬜ **T8**: B2 device.id 손상 + STALE 판정 보정 — M3+M4 수정
+- ✅ **T7**: B1 신규 PC 키 유도 + 키체인 채택 — PBKDF2(PIN, salt) 검증 후 채택
+- ✅ **T8**: B2 device.id 손상 + STALE 판정 보정 — M3+M4 수정
 
 **통합**
-- ⬜ **T9**: 통합 검증 + cipher 스모크 테스트 (A115 이행)
+- ✅ **T9**: 통합 검증 + cipher 스모크 테스트 (A115 이행)
 
 #### 완료 기준 (Definition of Done)
 - ✅ ADR-012 작성 완료 (A안 확정)
-- ⬜ C1~C3 Critical 결함 3건 수정 (T1, T2)
-- ⬜ H1~H4 High 결함 4건 수정 (T3, T4)
-- ⬜ M1~M2 Medium 결함 2건 수정 (T5)
-- ⬜ A1 클라우드 안전 접근 강화 — 유휴 close + WAL 체크포인트 + 활동 재연결 (T6)
-- ⬜ B1+B2 2번째 PC 로그인 수정 (T7, T8)
-- ⬜ cargo test 전체 통과 + clippy --all-targets + cipher check + cipher test + lint + tsc + build
+- ✅ C1~C3 Critical 결함 3건 수정 (T1, T2)
+- ✅ H1~H4 High 결함 4건 수정 (T3, T4)
+- ✅ M1~M2 Medium 결함 2건 수정 (T5)
+- ✅ A1 클라우드 안전 접근 강화 — 유휴 close + WAL 체크포인트 + 활동 재연결 (T6)
+- ✅ B1+B2 2번째 PC 로그인 수정 (T7, T8)
+- ✅ cargo test 478 passed + clippy --all-targets clean + cipher check + cipher test 140 + lint + tsc + build
 
 #### 이연 항목
 - ⏸️ **A114**: sync_single_date 이력 패턴 리팩터 — attendance.rs 미수정으로 범위 밖 (7회째 이연)
@@ -1144,7 +1144,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 | M12: 다월 결함 일괄 수정 | Post-v1.2 | Sprint 20 | +40주 ✅ | 청구 규칙 교습기간 전환 + 삭제 기능 + 인쇄 다월 버그 + 출결 버그A 수정 (버그B는 R136으로 Sprint 21) |
 | M13: 출결 그리드 정합성 | Post-v1.2 | Sprint 21 | +42주 ✅ | 출결 다월 그리드 태깅 통일 + 컬럼 모델 재설계 → v1.3.0 배포 예정 |
 | M14: 보강 부분 차감 | Post-v1.3 | Sprint 22 | +44주 ✅ | 보강 분 단위 부분 차감 + 유실 데이터 백필(V311/V312) + 출결 그리드 z-index 수정 |
-| M15: 데이터 안전 재발방지 | Post-v1.4 | Sprint 23 | +46주 | 데이터 소실 사고 RCA 재발방지 — 클라우드 유지+접근 강화(ADR-012 A안) + 빈 DB 가드 + after_connect 훅 + 유휴 close + 복원/백업 강화 + 2번째 PC 로그인 |
+| M15: 데이터 안전 재발방지 | Post-v1.4 | Sprint 23 | +46주 ✅ | 데이터 소실 사고 RCA 재발방지 — 클라우드 유지+접근 강화(ADR-012 A안) + 빈 DB 가드 + after_connect 훅 + 유휴 close + 복원/백업 강화 + 2번째 PC 로그인 |
 
 ---
 
