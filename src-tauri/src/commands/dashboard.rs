@@ -629,50 +629,58 @@ async fn save_memo_slot(
 
 #[tauri::command]
 pub async fn get_academy_overview() -> Result<AcademyOverview, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     overview(pool, today_naive()).await.map_err(String::from)
 }
 
 #[tauri::command]
 pub async fn get_today_schedule() -> Result<TodaySchedule, String> {
     let weekday = today_naive().weekday().number_from_monday() as u8;
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     today_schedule(pool, weekday).await.map_err(String::from)
 }
 
 #[tauri::command]
 pub async fn get_monthly_summary(year_month: String) -> Result<MonthlySummary, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     monthly_summary(pool, &year_month).await.map_err(String::from)
 }
 
 #[tauri::command]
 pub async fn get_billing_trend() -> Result<Vec<BillingTrendPoint>, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     billing_trend(pool).await.map_err(String::from)
 }
 
 #[tauri::command]
 pub async fn get_birthdays_this_month() -> Result<Vec<BirthdayEntry>, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     birthdays_this_month(pool, today_naive()).await.map_err(String::from)
 }
 
 #[tauri::command]
 pub async fn get_dashboard_alerts() -> Result<Vec<DashboardAlert>, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     dashboard_alerts(pool, today_naive()).await.map_err(String::from)
 }
 
 #[tauri::command]
 pub async fn get_dashboard_memos() -> Result<Vec<MemoNote>, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_memos(pool).await.map_err(String::from)
 }
 
 #[tauri::command]
 pub async fn save_dashboard_memo(index: usize, content: String, height: i64) -> Result<(), String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     save_memo_slot(pool, index, &content, height)
         .await
         .map_err(String::from)

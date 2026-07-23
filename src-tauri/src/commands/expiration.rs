@@ -59,7 +59,8 @@ pub struct ExpiredAbsenceDetail {
 /// 트리거 3개소(앱 시작 / 출결 생성 / 교습기간 등록) 모두 동일 IPC 호출 (T4 통합).
 #[tauri::command]
 pub async fn expire_overdue_absences() -> Result<ExpirationReport, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let report = expire_overdue_absences_impl(pool, None).await?;
     if report.transitioned_count > 0 {
         // audit: 전이된 결석마다 1건씩 기록. fire-and-forget.
@@ -187,7 +188,8 @@ pub enum WithdrawalChoice {
 pub async fn get_pending_makeup_for_withdrawal(
     student_id: i64,
 ) -> Result<WithdrawalPendingMakeup, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     get_pending_makeup_for_withdrawal_impl(pool, student_id).await
 }
 
@@ -239,7 +241,8 @@ pub async fn process_withdrawal_makeup(
     choice: WithdrawalChoice,
     withdraw_date: String,
 ) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let expired_ids =
         process_withdrawal_makeup_impl(pool, student_id, &choice, &withdraw_date).await?;
     // audit fire-and-forget — 전이된 결석마다 1건 + 학생 퇴교 1건.

@@ -46,6 +46,13 @@ const AUDIT_RETENTION_DAYS: i64 = 365;
 /// hourly 백업 간격 — 2시간으로 확대해 MYBOX 업로드 부하 및 lock 충돌 빈도 절감 (T4).
 const HOURLY_BACKUP_INTERVAL_SECS: u64 = 7200;
 
+/// T6(A1): 유휴 판정 임계 — 마지막 DB 활동 후 이 시간(초) 경과 시 pool 을 close 한다.
+/// 5분 무활동이면 사용자가 실제로 손을 뗐다고 보고 클라우드 동기화 간섭을 줄인다.
+const IDLE_CLOSE_THRESHOLD_SECS: u64 = 300;
+
+/// 유휴 감지 태스크의 점검 주기(초) — 임계 대비 충분히 촘촘하게(1분) 확인한다.
+const IDLE_CHECK_INTERVAL_SECS: u64 = 60;
+
 /// 시작 시퀀스 결과 — IPC 응답.
 ///
 /// `elapsed_ms` 는 startup IPC 진입부터 종료까지의 wall-clock 시간 (PRD §5.6 < 3000ms 목표).
@@ -78,6 +85,8 @@ pub struct StartupResult {
 /// 백그라운드 task 핸들 묶음 — `OnceLock` 으로 1회 spawn 보장.
 struct BackgroundHandles {
     _hourly_backup: JoinHandle<()>,
+    /// T6(A1): 유휴 감지 → DB close 태스크.
+    _idle_close: JoinHandle<()>,
 }
 
 static BACKGROUND: OnceLock<BackgroundHandles> = OnceLock::new();
@@ -227,11 +236,8 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
 
     // 5. Sprint 10 T4 (PI-05): 소멸 자동 전이 — 앱 시작 트리거.
     //    db::initialize 완료 후 pool 사용 가능. fail-soft — 실패해도 startup 자체는 성공.
-    let expiration_report = match expiration::expire_overdue_absences_impl(
-        db::pool().expect("pool initialized above"),
-        None,
-    )
-    .await
+    let startup_pool = db::pool().await.expect("pool initialized above");
+    let expiration_report = match expiration::expire_overdue_absences_impl(&startup_pool, None).await
     {
         Ok(r) => r,
         Err(e) => {
@@ -290,17 +296,35 @@ fn spawn_background_tasks() {
                 ticker.tick().await;
                 backup::try_create_backup(backup::BackupLayer::Hourly).await;
                 backup::run_catchup_backups().await;
-                // WAL 파일을 본체로 병합해 클라우드 동기화 대상 크기 제어
-                if let Ok(pool) = db::pool() {
+                // WAL 파일을 본체로 병합해 클라우드 동기화 대상 크기 제어.
+                // 유휴로 닫혀 있으면 재연결하지 않는다(pool_if_open) — 이미 유휴 close 시 병합됨.
+                if let Some(pool) = db::pool_if_open() {
                     let _ = sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
-                        .execute(pool)
+                        .execute(&pool)
                         .await
                         .inspect_err(|e| eprintln!("[backup] hourly WAL checkpoint 실패: {}", e));
                 }
             }
         });
+        // T6(A1): 유휴 감지 → DB close 태스크. 마지막 활동 후 임계 경과 + pool 이 열려 있으면
+        // close_for_idle 로 WAL 병합 + 연결 해제 → 클라우드 동기화 간섭 최소화. 재활동 시 db::pool() 재연결.
+        let idle_close = tokio::spawn(async {
+            let mut ticker = tokio::time::interval(Duration::from_secs(IDLE_CHECK_INTERVAL_SECS));
+            ticker.tick().await; // 첫 tick 즉시 소비
+            loop {
+                ticker.tick().await;
+                if db::pool_if_open().is_some()
+                    && db::seconds_since_activity() >= IDLE_CLOSE_THRESHOLD_SECS
+                {
+                    if let Err(e) = db::close_for_idle().await {
+                        eprintln!("[startup] 유휴 DB close 실패 (무시): {}", e);
+                    }
+                }
+            }
+        });
         BackgroundHandles {
             _hourly_backup: hourly_backup,
+            _idle_close: idle_close,
         }
     });
 }
@@ -327,8 +351,8 @@ pub async fn exit_hook() {
     // DB 가 클라우드 동기화 폴더에 있어, -wal 미병합 상태로 종료하면 OS 동기화가 db 와 wal 을
     // 서로 다른 시점에 업로드해 다른 PC 에서 최근 트랜잭션이 조용히 유실될 수 있다 (torn-sync).
     // 체크포인트로 본체에 병합하고 pool 을 정상 종료해 동기화 대상을 완결된 단일 파일로 만든다.
-    if let Ok(pool) = db::pool() {
-        match sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(pool).await {
+    if let Some(pool) = db::pool_if_open() {
+        match sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(&pool).await {
             Ok(_) => eprintln!("[startup] exit WAL checkpoint 완료"),
             Err(e) => eprintln!("[startup] exit WAL checkpoint 실패 (무시): {}", e),
         }

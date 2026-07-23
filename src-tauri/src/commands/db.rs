@@ -22,45 +22,138 @@
 
 use crate::error::AppError;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection, SqlitePool, SqlitePoolOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
-use tokio::sync::OnceCell;
+use tokio::sync::Mutex as AsyncMutex;
 
-/// 전역 SqlitePool — unlock 후 lazy 초기화. 미초기화 상태에서 호출 시 `AppError::Config` 반환.
-static POOL: OnceCell<SqlitePool> = OnceCell::const_new();
+/// 전역 SqlitePool — unlock 후 초기화. 유휴 시 close 되어 `None` 이 될 수 있으며(T6), 재활동 시
+/// [`pool`] 이 자동 재연결한다. `SqlitePool` 은 내부 Arc 라 clone 이 저렴하다.
+static POOL: RwLock<Option<SqlitePool>> = RwLock::new(None);
+
+/// 재연결에 사용할 DB 경로 — [`initialize`] 가 최초 1회 기억. 유휴 close 후 [`pool`] 이 참조.
+static POOL_DB_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// (재)연결·close 를 직렬화하는 async 뮤텍스 — 동시 재연결/close-재연결 경쟁 방지.
+static RECONNECT_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
+
+/// 마지막 DB 접근(=활동) 시각(epoch secs). [`pool`] 진입 시 갱신, 유휴 감지가 참조.
+static LAST_ACTIVITY_SECS: AtomicU64 = AtomicU64::new(0);
+
+/// 재시작 대기 래치 — DB 폴더 변경(setup.rs) / 종료(exit) 시 set. 켜지면 [`pool`] 이 재연결을
+/// 거부하고 에러를 반환해 구 경로 DB 로의 우발적 재연결·쓰기를 막는다.
+static POOL_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 /// SQLite max_connections — SQLite 는 단일 writer 제한이라 1 로 고정.
-///
-/// 다중 reader 허용을 위해 WAL 모드를 켜는 것은 T10 startup PRAGMA 설정에서 처리.
 const MAX_CONNECTIONS: u32 = 1;
 
 /// connection acquire 대기 최대 시간 — pool 이 busy 할 때 이 시간 내 acquire 못하면 에러.
 const ACQUIRE_TIMEOUT_SECS: u64 = 30;
-// max_lifetime/idle_timeout 미설정 — SQLite 는 로컬 파일이라 network stale 없음.
-// T1(A3) 이전에는 커넥션 교체 시 PRAGMA key(cipher)·busy_timeout 등이 재적용되지 않아
-// cipher 빌드에서 idle 후 모든 쿼리가 실패하는 심각한 버그(C3)가 있었다. 이제 after_connect
-// 훅([`configure_connection`])이 새 커넥션마다 key + pragma 를 재적용하므로 커넥션 교체가
-// 안전하다. 실제 유휴 close/재연결 풀 라이프사이클 관리는 T6 에서 도입.
+// max_lifetime/idle_timeout 미설정 — 커넥션 교체 시 PRAGMA 재적용은 after_connect 훅
+// ([`configure_connection`], T1/C3)이 보장한다. 유휴 시 풀 전체 close/재연결은 T6 에서 도입:
+// [`close_for_idle`] 가 WAL 병합 후 pool 을 닫고, 재활동 시 [`pool`] 이 재연결한다.
 
-/// 전역 pool 참조. 미초기화 시 `AppError::Config` — 호출자가 unlock 흐름을 안내한다.
-pub(crate) fn pool() -> Result<&'static SqlitePool, AppError> {
-    POOL.get()
-        .ok_or_else(|| AppError::Config("DB가 아직 잠금 해제되지 않았습니다.".to_string()))
+fn now_epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
-/// 본 모듈 외부에서 pool 이 이미 초기화되었는지 확인 — 테스트 / 재진입 방지용.
+/// 마지막 활동 이후 경과 초 — 유휴 감지 백그라운드 태스크(startup.rs)가 참조.
+pub(crate) fn seconds_since_activity() -> u64 {
+    now_epoch_secs().saturating_sub(LAST_ACTIVITY_SECS.load(Ordering::Relaxed))
+}
+
+/// 현재 열려 있는 pool 의 clone 을 반환한다(닫혔거나 미초기화면 `None`). 재연결하지 않는다.
+fn current_open_pool() -> Option<SqlitePool> {
+    let guard = POOL.read().expect("POOL rwlock poisoned");
+    match guard.as_ref() {
+        Some(p) if !p.is_closed() => Some(p.clone()),
+        _ => None,
+    }
+}
+
+/// 재연결 없이 현재 열린 pool 을 반환한다 — 백그라운드 체크포인트/종료 hook 전용(유휴 상태를
+/// 깨우지 않기 위해 활동 시각도 갱신하지 않는다).
+pub(crate) fn pool_if_open() -> Option<SqlitePool> {
+    current_open_pool()
+}
+
+/// 전역 pool 을 조회한다. 유휴로 닫혀 있으면 자동 재연결한다(T6). 미초기화 시 `AppError::Config`.
+///
+/// 반환값은 소유 `SqlitePool`(내부 Arc clone) — 호출부는 `&pool` 로 사용한다. 매 호출 시 활동
+/// 시각을 갱신하여 유휴 감지 타이머를 리셋한다.
+pub(crate) async fn pool() -> Result<SqlitePool, AppError> {
+    LAST_ACTIVITY_SECS.store(now_epoch_secs(), Ordering::Relaxed);
+    if let Some(p) = current_open_pool() {
+        return Ok(p);
+    }
+    // 닫혀 있거나 미초기화 — 재연결(직렬화). 재시작 대기 상태면 거부.
+    let _guard = RECONNECT_LOCK.lock().await;
+    if let Some(p) = current_open_pool() {
+        return Ok(p); // 다른 태스크가 먼저 재연결함
+    }
+    if POOL_SHUTDOWN.load(Ordering::Relaxed) {
+        return Err(AppError::Config(
+            "앱을 재시작해 주세요 (데이터 폴더 변경/종료 진행 중).".to_string(),
+        ));
+    }
+    let path = POOL_DB_PATH
+        .get()
+        .ok_or_else(|| AppError::Config("DB가 아직 잠금 해제되지 않았습니다.".to_string()))?
+        .clone();
+    let new_pool = open_pool_only(&path).await?;
+    *POOL.write().expect("POOL rwlock poisoned") = Some(new_pool.clone());
+    eprintln!("[db] 유휴 후 DB 재연결 완료");
+    Ok(new_pool)
+}
+
+/// 본 모듈 외부에서 pool 이 초기화(경로 확정)되었는지 확인 — 테스트 / 재진입 방지용.
 #[allow(dead_code)]
 pub(crate) fn is_initialized() -> bool {
-    POOL.get().is_some()
+    POOL_DB_PATH.get().is_some()
+}
+
+/// T6: 유휴 시 DB 연결을 닫는다 — WAL 을 본체로 병합(TRUNCATE) 후 pool close → 클라우드 동기화가
+/// 단일 완결 파일(app.db)만 처리하도록 보장하고 파일 핸들을 해제한다. 재활동 시 [`pool`] 이 재연결.
+///
+/// 안전성: `pool.close()` 는 graceful — 체크아웃된(사용 중) 커넥션이 반환될 때까지 대기 후 닫는다.
+/// 따라서 진행 중 쿼리를 중단시키지 않는다. 유휴 판정(마지막 활동 후 5분, startup.rs)이 활성 사용
+/// 중 호출을 사실상 배제하며, RECONNECT_LOCK 으로 재연결과 상호 배제한다.
+pub(crate) async fn close_for_idle() -> Result<(), AppError> {
+    let _guard = RECONNECT_LOCK.lock().await;
+    let Some(p) = current_open_pool() else {
+        return Ok(()); // 이미 닫힘
+    };
+    if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(&p)
+        .await
+    {
+        eprintln!("[db] 유휴 WAL 체크포인트 실패 (close 계속): {}", e);
+    }
+    p.close().await;
+    *POOL.write().expect("POOL rwlock poisoned") = None;
+    eprintln!("[db] 유휴 감지 → DB 연결 close (재활동 시 자동 재연결)");
+    Ok(())
+}
+
+/// DB 폴더 변경/종료 시 재연결을 봉쇄한다 — 구 경로 DB 로의 우발적 재연결·쓰기 방지.
+pub(crate) fn mark_shutdown_for_restart() {
+    POOL_SHUTDOWN.store(true, Ordering::Relaxed);
+    if let Ok(mut guard) = POOL.write() {
+        *guard = None;
+    }
 }
 
 /// SQLite 파일 URL 을 생성한다 — `sqlite:///abs/path.db` 형식 (sqlx 요구).
 ///
 /// 절대 경로 변환은 사용자 작업 디렉토리 변경에 안전한 동작을 보장한다.
-fn db_url(path: &PathBuf) -> Result<String, AppError> {
+fn db_url(path: &Path) -> Result<String, AppError> {
     let abs = if path.is_absolute() {
-        path.clone()
+        path.to_path_buf()
     } else {
         std::env::current_dir()
             .map_err(|e| AppError::Config(format!("작업 디렉토리 확인 실패: {}", e)))?
@@ -70,21 +163,31 @@ fn db_url(path: &PathBuf) -> Result<String, AppError> {
     Ok(format!("sqlite:///{}", abs_str.trim_start_matches('/')))
 }
 
-/// DB pool 을 초기화한다 — unlock 통과 직후 1회 호출.
+/// DB pool 을 초기화한다 — unlock 통과 직후 1회 호출. 마이그레이션 포함.
 ///
 /// cipher on 빌드는 `PRAGMA key` 적용 후 마이그레이션. off 는 평문 SQLite + 동일 마이그레이션.
-/// 이미 초기화되었으면 기존 pool 을 그대로 반환 — 재호출 idempotent.
-pub(crate) async fn initialize(db_path: PathBuf) -> Result<&'static SqlitePool, AppError> {
-    POOL.get_or_try_init(|| async move { build_pool(db_path).await })
-        .await
+/// 이미 초기화되어 열려 있으면 기존 pool 을 그대로 반환 — 재호출 idempotent. 재연결용으로 경로를 기억한다.
+pub(crate) async fn initialize(db_path: PathBuf) -> Result<SqlitePool, AppError> {
+    if let Some(p) = current_open_pool() {
+        return Ok(p);
+    }
+    let _guard = RECONNECT_LOCK.lock().await;
+    if let Some(p) = current_open_pool() {
+        return Ok(p);
+    }
+    let _ = POOL_DB_PATH.set(db_path.clone()); // 최초 1회 경로 기억 (재연결용)
+    let pool = build_pool(db_path).await?;
+    *POOL.write().expect("POOL rwlock poisoned") = Some(pool.clone());
+    LAST_ACTIVITY_SECS.store(now_epoch_secs(), Ordering::Relaxed);
+    Ok(pool)
 }
 
-async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
+/// 마이그레이션 없이 pool 을 연다 — 재연결(유휴 후) 경로 전용. C1 가드 + after_connect 훅 포함.
+async fn open_pool_only(db_path: &Path) -> Result<SqlitePool, AppError> {
     // T2(C1): 셋업 완료(config.json setup_completed=true) 상태인데 app.db 가 없으면 = 클라우드
     // 동기화 폴더의 DB 가 일시 부재(dehydration)하거나 유실된 것. 빈 DB 를 새로 날조하지 않고
     // 명확한 안내 에러로 중단한다(RCA C1). 최초 설정(마법사)은 DB 생성이 setup_completed=true
     // 전환보다 먼저 일어나므로(setup/page.tsx Step3<Step4) 이 가드에 걸리지 않는다.
-    // salt.bin 도 함께 확인하되, setup_completed 가 주 판별자다(salt 가 함께 dehydrate 돼도 안전).
     let setup_done = crate::commands::paths::setup_completed();
     if setup_done && !db_path.exists() {
         let salt_hint = if crate::commands::paths::salt_path().exists() {
@@ -109,7 +212,7 @@ async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
             .map_err(|e| AppError::Config(format!("DB 디렉토리 생성 실패: {}", e)))?;
     }
 
-    let url = db_url(&db_path)?;
+    let url = db_url(db_path)?;
     // 셋업 완료 상태에서는 절대 새 DB 를 만들지 않는다 (위 가드로 부재는 이미 차단됨 — 이중 방어).
     let connect_options = SqliteConnectOptions::from_str(&url)
         .map_err(|e| AppError::Config(format!("DB URL 파싱 실패: {}", e)))?
@@ -123,6 +226,11 @@ async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
         .after_connect(|conn, _meta| Box::pin(configure_connection(conn)))
         .connect_with(connect_options)
         .await?;
+    Ok(pool)
+}
+
+async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
+    let pool = open_pool_only(&db_path).await?;
 
     // 사전 스냅샷 (ADR-011 R140): 기존 DB 에 미적용 마이그레이션이 있으면 migrate 직전에 백업.
     // 백필(V312) 등 데이터 변형 마이그레이션이 커밋 성공 후 오작동해도, 직전 상태 복구본을
@@ -223,7 +331,7 @@ pub(crate) async fn test_pool_with_after_connect(
     db_path: &std::path::Path,
     max_lifetime: Option<Duration>,
 ) -> Result<SqlitePool, AppError> {
-    let url = db_url(&db_path.to_path_buf())?;
+    let url = db_url(db_path)?;
     let connect_options = SqliteConnectOptions::from_str(&url)
         .map_err(|e| AppError::Config(format!("DB URL 파싱 실패: {}", e)))?
         .create_if_missing(true);
@@ -318,16 +426,16 @@ mod tests {
         assert!(dup.is_err(), "동일 key 중복 삽입은 UNIQUE 제약 위반");
     }
 
-    #[test]
-    fn pool_uninitialized_returns_friendly_error() {
+    #[tokio::test]
+    async fn pool_uninitialized_returns_friendly_error() {
         // 본 테스트는 다른 test 가 POOL 을 초기화하지 않았다는 전제가 필요 — 단위 테스트 격리상
         // 항상 보장되지는 않으므로 미초기화 케이스만 검증.
         if !is_initialized() {
-            let result = pool();
+            let result = pool().await;
             let err = result.expect_err("미초기화 상태에서 에러");
             // user_message 한국어 키워드
             let msg: String = err.into();
-            assert!(msg.contains("설정") || msg.contains("잠금"));
+            assert!(msg.contains("설정") || msg.contains("잠금") || msg.contains("재시작"));
         }
     }
 
@@ -423,6 +531,47 @@ mod tests {
         assert_eq!(count.0, 0, "신규 DB 는 원생 0명 (마이그레이션만 적용)");
 
         pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ─── Sprint 23 T6: 유휴 close → 재연결 데이터 보존 (A1) ───
+
+    /// AC-T6: 유휴 close 후 재활동 시 자동 재연결되며 데이터가 보존된다.
+    /// 전역 POOL/POOL_DB_PATH 를 사용하는 통합 테스트 — 전역 pool() 을 쓰는 다른 테스트
+    /// (pool_uninitialized_returns_friendly_error)는 is_initialized 가드로 보호된다.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn idle_close_then_reconnect_preserves_data() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t6_cycle_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("app.db");
+
+        // 최초 초기화 (setup_completed=false 기본 → 생성 허용 + 마이그레이션).
+        let p = initialize(db_path.clone()).await.expect("initialize");
+        sqlx::query(
+            "INSERT INTO students (serial_no, name, gender, school_level, grade, enroll_date) \
+             VALUES ('T6-001','유휴테스트','male','elementary',3,'2026-01-01')",
+        )
+        .execute(&p)
+        .await
+        .expect("insert");
+        drop(p);
+
+        // 유휴 close → pool 닫힘.
+        close_for_idle().await.expect("close_for_idle");
+        assert!(pool_if_open().is_none(), "close 후 pool 은 닫혀 있어야 함");
+
+        // 재활동 → 자동 재연결 + 데이터 보존.
+        let p2 = pool().await.expect("reconnect");
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM students WHERE serial_no='T6-001'")
+            .fetch_one(&p2)
+            .await
+            .expect("count");
+        assert_eq!(count.0, 1, "close/재연결 후에도 데이터 보존");
+
+        // 정리.
+        close_for_idle().await.ok();
         let _ = std::fs::remove_dir_all(&dir);
     }
 

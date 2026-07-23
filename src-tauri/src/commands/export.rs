@@ -408,7 +408,8 @@ async fn build_billing_sheet(
 /// 원생 명단을 .xlsx 로 내보낸다.
 #[tauri::command]
 pub async fn export_students(file_path: String) -> Result<ExportResult, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     let sheet = build_students_sheet(pool).await.map_err(String::from)?;
     let byte_size = write_xlsx(&sheet, &file_path).map_err(String::from)?;
     Ok(ExportResult { file_path, row_count: sheet.rows.len() as i64, byte_size })
@@ -420,7 +421,8 @@ pub async fn export_attendances(
     year_month: Option<String>,
     file_path: String,
 ) -> Result<ExportResult, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     let sheet = build_attendances_sheet(pool, year_month.as_deref())
         .await
         .map_err(String::from)?;
@@ -434,7 +436,8 @@ pub async fn export_billing(
     year_month: Option<String>,
     file_path: String,
 ) -> Result<ExportResult, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     let sheet = build_billing_sheet(pool, year_month.as_deref())
         .await
         .map_err(String::from)?;

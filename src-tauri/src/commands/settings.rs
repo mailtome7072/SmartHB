@@ -51,7 +51,8 @@ fn default_operating_hours() -> Vec<DayHours> {
 /// 현재 운영 시간 조회. 저장된 값 없으면 디폴트 반환.
 #[tauri::command]
 pub async fn get_operating_hours() -> Result<Vec<DayHours>, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
         .bind(KEY_OPERATING_HOURS)
         .fetch_optional(pool)
@@ -105,7 +106,8 @@ pub async fn save_operating_hours(hours: Vec<DayHours>) -> Result<(), String> {
         }
     }
 
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     let json = serde_json::to_string(&hours).map_err(|e| {
         String::from(AppError::Config(format!(
             "operating_hours 직렬화 실패: {}",
@@ -162,7 +164,8 @@ pub struct AcademyInfo {
 /// 교습소 정보 조회. 저장된 값 없으면 빈 정보(Default) 반환.
 #[tauri::command]
 pub async fn get_academy_info() -> Result<AcademyInfo, String> {
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
         .bind(KEY_ACADEMY_INFO)
         .fetch_optional(pool)
@@ -201,7 +204,8 @@ pub async fn save_academy_info(info: AcademyInfo) -> Result<(), String> {
         )));
     }
 
-    let pool = pool().map_err(String::from)?;
+    let pool = pool().await.map_err(String::from)?;
+    let pool = &pool;
     let json = serde_json::to_string(&info).map_err(|e| {
         String::from(AppError::Config(format!("academy_info 직렬화 실패: {}", e)))
     })?;

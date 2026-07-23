@@ -145,7 +145,8 @@ async fn expire_fail_soft(pool: &sqlx::SqlitePool) -> crate::commands::expiratio
 pub async fn create_study_period(
     payload: CreateStudyPeriodPayload,
 ) -> Result<StudyPeriodResult, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
 
     // 일자 중첩 검증 — Sprint 8 T8 (R39 / A28): 미확정(is_confirmed=0) 교습기간은
     // 임시 작성 중 상태로 간주하여 overlap 차단 대상에서 제외. 확정된 교습기간만 충돌 검사.
@@ -195,7 +196,8 @@ pub async fn update_study_period(
     id: i64,
     payload: UpdateStudyPeriodPayload,
 ) -> Result<StudyPeriodResult, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
 
     // 대상 기간 조회 + 차단 조건 검증
     let target = sqlx::query("SELECT year_month, is_closed FROM study_periods WHERE id = ?")
@@ -263,7 +265,8 @@ pub async fn list_study_periods(
     from_month: String,
     to_month: String,
 ) -> Result<Vec<StudyPeriod>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let rows = sqlx::query(
         "SELECT id, year_month, start_date, end_date, is_confirmed, is_closed, \
                 created_at, updated_at \
@@ -286,7 +289,8 @@ pub async fn list_study_periods(
 /// 특정 월의 교습기간 조회. 없으면 None 반환.
 #[tauri::command]
 pub async fn get_study_period(year_month: String) -> Result<Option<StudyPeriod>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "SELECT id, year_month, start_date, end_date, is_confirmed, is_closed, \
                 created_at, updated_at \
@@ -306,7 +310,8 @@ pub async fn get_study_period(year_month: String) -> Result<Option<StudyPeriod>,
 /// Sprint 10 T4 (PI-05): 확정 직후 소멸 자동 전이 — 새로 확정된 month 의 deadline 도래 결석 처리.
 #[tauri::command]
 pub async fn confirm_study_period(id: i64) -> Result<StudyPeriodResult, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "UPDATE study_periods SET \
             is_confirmed = 1, \
@@ -332,7 +337,8 @@ pub async fn confirm_study_period(id: i64) -> Result<StudyPeriodResult, String> 
 /// 미확정 교습기간 삭제. is_confirmed=1 또는 is_closed=1 이면 차단.
 #[tauri::command]
 pub async fn delete_study_period(id: i64) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let target = sqlx::query("SELECT is_confirmed, is_closed FROM study_periods WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
@@ -416,7 +422,8 @@ async fn check_cascade_delete_guard(
 /// 사용자 클릭 직후 AlertDialog 표시 전에 호출. 삭제 가능 여부 + 영향 건수 + 보존 공휴일 건수 반환.
 #[tauri::command]
 pub async fn get_cascade_delete_preview(id: i64) -> Result<CascadeDeletePreview, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let (start_date, end_date, deletable, reason) =
         check_cascade_delete_guard(pool, id).await.map_err(String::from)?;
 
@@ -457,7 +464,8 @@ pub async fn get_cascade_delete_preview(id: i64) -> Result<CascadeDeletePreview,
 /// 확정 교습기간 cascade 삭제 — 트랜잭션 안에서 공휴일 제외 학사 일정 + 교습기간 삭제.
 #[tauri::command]
 pub async fn delete_study_period_cascade(id: i64) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let (start_date, end_date, deletable, reason) =
         check_cascade_delete_guard(pool, id).await.map_err(String::from)?;
     if !deletable {
@@ -543,7 +551,8 @@ pub struct UpdateScheduleCodePayload {
 /// 학사 일정 코드 전체 목록 — 시스템 예약 5종 + 사용자 추가. is_active 포함.
 #[tauri::command]
 pub async fn list_schedule_codes() -> Result<Vec<ScheduleCode>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let rows = sqlx::query(
         "SELECT id, code_name, is_system_reserved, allows_regular_class, allows_makeup_class, \
                 is_duplicate_blocked, is_period_type, is_active, created_at, updated_at \
@@ -565,7 +574,8 @@ pub async fn list_schedule_codes() -> Result<Vec<ScheduleCode>, String> {
 pub async fn create_schedule_code(
     payload: CreateScheduleCodePayload,
 ) -> Result<ScheduleCode, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let result = sqlx::query(
         "INSERT INTO schedule_codes \
             (code_name, is_system_reserved, allows_regular_class, allows_makeup_class, \
@@ -597,7 +607,8 @@ pub async fn update_schedule_code(
     id: i64,
     payload: UpdateScheduleCodePayload,
 ) -> Result<ScheduleCode, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let target = sqlx::query("SELECT is_system_reserved FROM schedule_codes WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
@@ -637,7 +648,8 @@ pub async fn update_schedule_code(
 /// 코드 활성/비활성 토글. 시스템 예약 코드도 토글 허용 (AC-T6-2).
 #[tauri::command]
 pub async fn toggle_schedule_code_active(id: i64) -> Result<ScheduleCode, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(
         "UPDATE schedule_codes SET \
             is_active = 1 - is_active, \
@@ -947,7 +959,8 @@ async fn check_placement_constraints(
 pub async fn create_schedule_event(
     payload: CreateScheduleEventPayload,
 ) -> Result<ScheduleEvent, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
 
     let code = sqlx::query(
         "SELECT code_name, is_duplicate_blocked, is_period_type FROM schedule_codes WHERE id = ?",
@@ -1023,7 +1036,8 @@ pub async fn update_schedule_event(
     id: i64,
     payload: UpdateScheduleEventPayload,
 ) -> Result<ScheduleEvent, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let target = sqlx::query(
         "SELECT e.event_date, e.period_end_date, e.code_id, c.code_name, c.is_duplicate_blocked \
          FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
@@ -1107,7 +1121,8 @@ pub async fn update_schedule_event(
 /// 학사 일정 삭제 — 지난 달 차단 (AC-T7-3) + 시드 공휴일 차단 (Sprint 7 T9 + V16 post-review).
 #[tauri::command]
 pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let target = sqlx::query(
         "SELECT e.event_date, e.period_end_date, e.is_seeded, c.code_name, c.is_system_reserved \
          FROM schedule_events e JOIN schedule_codes c ON c.id = e.code_id \
@@ -1172,7 +1187,8 @@ pub async fn list_schedule_events(
     from_date: String,
     to_date: String,
 ) -> Result<Vec<ScheduleEventListItem>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let rows = sqlx::query(
         "SELECT e.id, e.code_id, c.code_name, c.is_system_reserved, \
                 c.is_duplicate_blocked, c.is_period_type, \
@@ -1201,7 +1217,8 @@ pub async fn list_schedule_events(
 pub async fn auto_place_assessment_dates(
     year_month: String,
 ) -> Result<Vec<ScheduleEvent>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let mut tx = pool
         .begin()
         .await

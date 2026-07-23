@@ -247,9 +247,9 @@ async fn change_data_folder_impl(app: &AppHandle, new_path: &str) -> Result<(), 
     let new_root_preexisted = new_root.exists();
 
     // 1. WAL 체크포인트 — 현재 DB 의 WAL 내용을 본체로 반영(복사본 정합). 풀 미초기화면 skip.
-    if let Ok(pool) = crate::commands::db::pool() {
+    if let Some(pool) = crate::commands::db::pool_if_open() {
         if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
-            .execute(pool)
+            .execute(&pool)
             .await
         {
             eprintln!("[setup] WAL checkpoint 실패: {}", e);
@@ -285,9 +285,12 @@ async fn change_data_folder_impl(app: &AppHandle, new_path: &str) -> Result<(), 
     //    실패시키고 재시작(프론트 relaunch / dev 수동 안내)을 강제한다. 재시작 후 새 프로세스가
     //    새 경로 config 로 POOL 을 다시 초기화한다. 닫지 않으면 변경 직후 입력이 구 DB 에 쓰여
     //    재시작 후 신 DB 에서 누락된다.
-    if let Ok(pool) = crate::commands::db::pool() {
+    if let Some(pool) = crate::commands::db::pool_if_open() {
         pool.close().await;
     }
+    // T6: 재연결 봉쇄 — 구 경로 DB 로의 우발적 재연결·쓰기를 막고 재시작을 강제한다.
+    // (유휴 재연결 도입 전에는 pool.close() 만으로 충분했으나, 이제 pool() 이 자동 재연결하므로 필수)
+    crate::commands::db::mark_shutdown_for_restart();
 
     Ok(())
 }

@@ -51,13 +51,15 @@ pub struct GenerateResult {
 
 #[tauri::command]
 pub async fn check_attendance_exists(year_month: String) -> Result<bool, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     check_exists_impl(pool, &year_month).await
 }
 
 #[tauri::command]
 pub async fn generate_attendances(year_month: String) -> Result<GenerateResult, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     generate_impl(pool, &year_month).await
 }
 
@@ -491,7 +493,8 @@ pub struct ToggleResult {
 
 #[tauri::command]
 pub async fn get_attendance_grid(year_month: String) -> Result<AttendanceGrid, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     get_grid_impl(pool, &year_month).await
 }
 
@@ -499,7 +502,8 @@ pub async fn get_attendance_grid(year_month: String) -> Result<AttendanceGrid, S
 /// hotfix post-Sprint 11: 출결 데이터 생성 후 신규 등록 원생에 대한 "추가 출결 데이터 생성" UX.
 #[tauri::command]
 pub async fn count_ungenerated_attendance_students(year_month: String) -> Result<i64, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     count_ungenerated_attendance_students_impl(pool, &year_month).await
 }
 
@@ -573,7 +577,8 @@ pub async fn toggle_attendance(
     attendance_id: i64,
     new_status: String,
 ) -> Result<ToggleResult, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     toggle_impl(pool, attendance_id, &new_status).await
 }
 
@@ -582,7 +587,8 @@ pub async fn update_absence_memo(
     attendance_id: i64,
     memo: Option<String>,
 ) -> Result<(), String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     update_memo_impl(pool, attendance_id, memo.as_deref()).await
 }
 
@@ -591,7 +597,8 @@ pub async fn get_attendance_summary(
     student_id: i64,
     year_month: String,
 ) -> Result<AttendanceSummary, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     get_summary_impl(pool, student_id, &year_month).await
 }
 
@@ -1166,7 +1173,8 @@ pub async fn move_attendance(
     to_date: String,
     start_time: String,
 ) -> Result<MoveAttendanceResult, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     let result = move_attendance_impl(pool, student_id, &from_date, &to_date, &start_time).await?;
     audit::try_record(
         AuditEventType::AttendanceRescheduled,
@@ -1314,7 +1322,8 @@ pub async fn apply_schedule_change(
     student_id: i64,
     effective_date: String,
 ) -> Result<ScheduleChangeResult, String> {
-    let pool = pool().map_err(|e| e.to_string())?;
+    let pool = pool().await.map_err(|e| e.to_string())?;
+    let pool = &pool;
     let result = apply_schedule_change_impl(pool, student_id, &effective_date).await?;
     audit::try_record(
         AuditEventType::ScheduleChangedWithRegen,

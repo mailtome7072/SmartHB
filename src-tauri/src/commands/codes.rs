@@ -195,7 +195,8 @@ pub async fn list_codes(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<Vec<CodeEntry>, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let limit = clamp_list_limit(limit);
     let offset = offset.unwrap_or(0);
     let rows = sqlx::query(table.list_sql())
@@ -214,7 +215,8 @@ pub async fn list_codes(
 /// 코드 테이블의 총 항목 수 (R14 페이지네이션 UI 보조).
 #[tauri::command]
 pub async fn count_codes(table: CodeTable) -> Result<i64, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let row = sqlx::query(table.count_sql())
         .fetch_one(pool)
         .await
@@ -227,7 +229,8 @@ pub async fn count_codes(table: CodeTable) -> Result<i64, String> {
 
 #[tauri::command]
 pub async fn create_code(table: CodeTable, payload: NewCode) -> Result<CodeEntry, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let next_order = payload.sort_order.unwrap_or(0);
 
     let mut q = sqlx::query(table.insert_sql());
@@ -257,7 +260,8 @@ pub async fn update_code(
     id: i64,
     payload: CodeUpdate,
 ) -> Result<CodeEntry, String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     // bind 순서는 각 테이블 update_sql() 의 `?` 순서와 대응: schools 만 `extra`(school_type)
     // 파라미터가 label 다음에 하나 더 끼어든다 — label, [extra], sort_order, is_active, id.
     let mut q = sqlx::query(table.update_sql()).bind(&payload.label);
@@ -286,7 +290,8 @@ pub async fn update_code(
 /// 코드 항목 정렬 순서 일괄 변경 — `(id, sort_order)` 쌍 배열로 받아 한 트랜잭션에 UPDATE.
 #[tauri::command]
 pub async fn reorder_codes(table: CodeTable, orders: Vec<(i64, i64)>) -> Result<(), String> {
-    let pool = db::pool().map_err(String::from)?;
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
     let mut tx = pool.begin().await.map_err(AppError::Db).map_err(String::from)?;
     let column = match table {
         CodeTable::Schools => "sort_order",
