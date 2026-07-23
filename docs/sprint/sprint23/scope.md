@@ -13,7 +13,7 @@ T0(ADR-012) ✅ 완료 → T1부터 진행.
 |------|---------|------|
 | src-tauri/src/commands/db.rs | [2회] | T1 after_connect 훅 ✅, T2 create_if_missing 가드 ✅, T6 유휴 close/재연결 |
 | src-tauri/src/commands/integrity.rs | [2회] | T2 빈 DB fail-hard ✅, T3 WAL 처리·다계층 폴백·소스 검증 ✅ |
-| src-tauri/src/commands/backup.rs | [0회] | T4 소스 검증, 마지막 백업 축출 방지 |
+| src-tauri/src/commands/backup.rs | [1회] | T4 소스 검증, 마지막 백업 축출 방지 ✅ |
 | src-tauri/src/commands/paths.rs | [1회] | T2 setup_completed 캐시 ✅, T5 config 처리 통일 (무음 fallback 제거, salt.bin SSOT) |
 | src-tauri/src/commands/setup.rs | [1회] | T2 complete_setup 캐시 갱신 ✅, T5 config 손상 처리 통일 |
 | src-tauri/src/commands/auth.rs | [0회] | T5 set_password salt 가드, T7 try_adopt_key |
@@ -35,7 +35,7 @@ T0(ADR-012) ✅ 완료 → T1부터 진행.
 - ✅ T1 A3 after_connect PRAGMA 재적용 (C3, H5)
 - ✅ T2 A2 create_if_missing 가드 + 빈 DB fail-hard (C1, C2)
 - ✅ T3 A4 자동 복원 체계 강화 (H1, H3, H4)
-- [ ] T4 A5 백업 소스 검증 + 축출 방지 (H2)
+- ✅ T4 A5 백업 소스 검증 + 축출 방지 (H2)
 - [ ] T5 A6 config 통일 + set_password salt 가드 (M1, M2)
 - [ ] T6 A1 유휴 close + 활동 재연결
 - [ ] T7 B1 신규 PC 키 유도 + 키체인 채택
