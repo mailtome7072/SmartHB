@@ -69,7 +69,10 @@ fn read_status(app: &AppHandle) -> Result<SetupStatus, AppError> {
 }
 
 /// 테스트 가능한 핵심 로직. AppHandle 없이 경로만으로 동작한다.
-fn read_status_from_path(path: &Path) -> SetupStatus {
+///
+/// M1(T5): `paths::init_data_root_from_config` 도 이 함수를 호출하여 config 손상 감지·백업·
+/// fallback 을 startup 경로와 통일한다 (이전에는 paths 가 별도의 무음 fallback 로직 보유).
+pub(crate) fn read_status_from_path(path: &Path) -> SetupStatus {
     let bytes = match fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return SetupStatus::default(),

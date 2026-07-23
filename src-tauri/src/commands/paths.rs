@@ -156,27 +156,18 @@ pub(crate) fn set_setup_completed(v: bool) {
 /// 앱 시작 시 1회 호출 — config.json 의 cloud_folder_path 가 있으면 그 하위 `smarthb/` 로
 /// data root 를 설정. 없으면 fallback 유지.
 pub(crate) fn init_data_root_from_config(config_path: &std::path::Path) {
-    let Ok(json) = std::fs::read_to_string(config_path) else {
-        return;
-    };
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) else {
-        return;
-    };
-    // T2(C2): setup_completed 캐시 — cloud_folder_path 유무와 무관하게 먼저 반영.
-    set_setup_completed(
-        parsed
-            .get("setup_completed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-    );
-    let Some(path) = parsed
-        .get("cloud_folder_path")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-    else {
-        return;
-    };
-    update_data_root(PathBuf::from(path).join(SMARTHB_SUBDIR));
+    // M1(T5): setup.rs 와 동일한 손상 감지·백업·fallback 로직을 공유한다. 이전의 무음(silent)
+    // 상대경로 fallback 을 제거 — config 손상은 read_status_from_path 가 경고 로그 + 손상본 백업으로
+    // 처리하고, 여기서는 그 결과(SetupStatus)만 반영한다.
+    let status = crate::commands::setup::read_status_from_path(config_path);
+    if !status.cloud_folder_path.is_empty() {
+        update_data_root(PathBuf::from(&status.cloud_folder_path).join(SMARTHB_SUBDIR));
+    }
+    // M1(T5): salt.bin 을 "셋업 완료"의 SSOT 로 삼는다. config.json 이 setup_completed 플래그를
+    // 잃어버려도(부분 손상) salt.bin 이 있으면 셋업 완료로 간주하여 build_pool 이 빈 DB 를 날조하는
+    // 것을 막는다(C1/C2 와 연계). data_root 확정 후 salt_path() 로 판정.
+    let done = status.setup_completed || salt_path().exists();
+    set_setup_completed(done);
 }
 
 /// SQLCipher `PRAGMA key` 적용용 SQL 단편.
@@ -242,6 +233,29 @@ mod tests {
         init_data_root_from_config(&tmp);
         assert!(!setup_completed(), "필드 누락 시 false 유지");
         std::fs::remove_file(&tmp).ok();
+    }
+
+    /// M1(T5): config 에 setup_completed 플래그가 없어도 클라우드 폴더에 salt.bin 이 있으면
+    /// 셋업 완료로 추론한다 (salt.bin = SSOT). config 부분 손상 시 빈 DB 날조 방지.
+    #[test]
+    fn init_from_config_infers_setup_done_from_salt_when_flag_missing() {
+        let cloud = std::env::temp_dir().join(format!("smarthb-m1-cloud-{}", std::process::id()));
+        let smarthb = cloud.join(SMARTHB_SUBDIR);
+        std::fs::create_dir_all(&smarthb).unwrap();
+        std::fs::write(smarthb.join(SALT_FILENAME), [0u8; 32]).unwrap();
+        let cfg = std::env::temp_dir().join(format!("smarthb-m1-cfg-{}.json", std::process::id()));
+        let cloud_json = cloud.to_string_lossy().replace('\\', "/");
+        std::fs::write(&cfg, format!(r#"{{"cloud_folder_path":"{}"}}"#, cloud_json)).unwrap();
+
+        assert!(!setup_completed(), "초기값 false");
+        init_data_root_from_config(&cfg);
+        assert!(
+            setup_completed(),
+            "salt.bin 존재 → config 플래그 없어도 셋업 완료 추론"
+        );
+
+        std::fs::remove_file(&cfg).ok();
+        std::fs::remove_dir_all(&cloud).ok();
     }
 
     #[test]

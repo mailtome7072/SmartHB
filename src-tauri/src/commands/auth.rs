@@ -622,6 +622,15 @@ pub async fn set_password(password: String) -> Result<(), String> {
     let password = Zeroizing::new(password);
     // ADR-007: 앱 잠금은 6자리 숫자 PIN. UI 우회 방어를 위해 진입점에서 재검증.
     validate_pin(&password).map_err(String::from)?;
+    // M2(T5): 기존 salt 하드 가드. 이미 salt(파일/레거시 keyring)가 있으면 새 salt 생성을 거부한다.
+    // 새 salt 를 만들면 기존 암호화 DB 의 키 유도가 달라져 DB 를 열 수 없게 되므로(데이터 접근 불가),
+    // set_password 는 최초 설정에서만 허용한다. 비밀번호 변경/2번째 PC 로그인은 별도 흐름
+    // (change_password / try_adopt_key)에서 처리한다. 프론트 not-initialized 분기와 이중 방어.
+    if salt_exists().map_err(String::from)? {
+        return Err(String::from(AppError::Auth(
+            "이미 설정된 비밀번호가 있습니다. 비밀번호 변경 또는 다른 PC 로그인 기능을 사용하세요.".to_string(),
+        )));
+    }
     eprintln!("[auth] set_password 진입");
     let salt = generate_salt();
     let key = derive_key_async(password, salt).await.map_err(String::from)?;
@@ -1048,6 +1057,25 @@ mod tests {
         let path = dir.join("salt.bin");
         std::fs::write(&path, varied_salt(9)).unwrap();
         assert!(salt_exists_at(&path).expect("파일 존재 확인"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// M2(T5): 기존 salt.bin 이 있으면 set_password 가 새 salt 생성을 거부한다 (하드 가드).
+    /// 셋업 완료 후 set_password 재호출이 기존 암호화 DB 키를 파괴하는 것을 방지.
+    #[tokio::test]
+    async fn set_password_rejects_when_salt_exists() {
+        let dir = unique_test_dir("m2-salt-guard");
+        crate::commands::paths::update_data_root(dir.clone());
+        std::fs::write(dir.join("salt.bin"), varied_salt(7)).unwrap();
+
+        let result = set_password("123456".to_string()).await;
+        assert!(result.is_err(), "기존 salt 존재 시 set_password 거부");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("이미 설정된") || msg.contains("비밀번호"),
+            "안내 메시지에 이유 포함: {}",
+            msg
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
