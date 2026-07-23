@@ -1,8 +1,10 @@
 ---
 name: tauri-window-confirm-blocked
 description: Tauri WebView는 window.confirm/alert/prompt를 차단(dialog.confirm not allowed) — 확인창은 커스텀 모달로 구현
-metadata:
+metadata: 
+  node_type: memory
   type: reference
+  originSessionId: 2378c691-d1e2-4779-9e75-29cb20834c60
 ---
 
 Tauri v2 WebView에서 `window.confirm()` / `window.alert()` / `window.prompt()` 호출 시
