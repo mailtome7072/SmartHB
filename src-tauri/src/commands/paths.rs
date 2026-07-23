@@ -33,9 +33,13 @@ const OUTPUT_SUBDIR: &str = "output";
 #[cfg(not(test))]
 mod storage {
     use super::{FALLBACK_DEV_ROOT, PathBuf};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock};
 
     static DATA_ROOT: OnceLock<Mutex<PathBuf>> = OnceLock::new();
+    // T2(C2): config.json 의 setup_completed 캐시 — build_pool/integrity 가 AppHandle 없이
+    // "셋업 완료 여부"를 판정하는 데 사용 (빈 DB 날조 방지). 앱 시작 시 1회 세팅.
+    static SETUP_COMPLETED: AtomicBool = AtomicBool::new(false);
 
     fn cell() -> &'static Mutex<PathBuf> {
         DATA_ROOT.get_or_init(|| Mutex::new(PathBuf::from(FALLBACK_DEV_ROOT)))
@@ -53,15 +57,25 @@ mod storage {
             *guard = new_path;
         }
     }
+
+    pub(super) fn read_setup_completed() -> bool {
+        SETUP_COMPLETED.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn write_setup_completed(v: bool) {
+        SETUP_COMPLETED.store(v, Ordering::Relaxed);
+    }
 }
 
 #[cfg(test)]
 mod storage {
     use super::{FALLBACK_DEV_ROOT, PathBuf};
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     thread_local! {
         static DATA_ROOT: RefCell<PathBuf> = RefCell::new(PathBuf::from(FALLBACK_DEV_ROOT));
+        // 테스트: thread_local 로 각 테스트가 독립된 setup_completed 를 보유 (병렬 안전).
+        static SETUP_COMPLETED: Cell<bool> = const { Cell::new(false) };
     }
 
     pub(super) fn read() -> PathBuf {
@@ -70,6 +84,14 @@ mod storage {
 
     pub(super) fn write(new_path: PathBuf) {
         DATA_ROOT.with(|c| *c.borrow_mut() = new_path);
+    }
+
+    pub(super) fn read_setup_completed() -> bool {
+        SETUP_COMPLETED.with(|c| c.get())
+    }
+
+    pub(super) fn write_setup_completed(v: bool) {
+        SETUP_COMPLETED.with(|c| c.set(v));
     }
 }
 
@@ -117,6 +139,20 @@ pub(crate) fn update_data_root(new_path: PathBuf) {
     storage::write(new_path);
 }
 
+/// config.json 의 `setup_completed` 캐시 값 — 마법사 완료 여부 (T2/C2).
+///
+/// `build_pool`(빈 DB 날조 방지) 과 `integrity` startup 검사가 AppHandle 없이 참조한다.
+/// 앱 시작 시 [`init_data_root_from_config`] 가 config 에서 읽어 세팅하고, `complete_setup`
+/// IPC 가 마법사 완료 시 갱신한다. 기본 false (최초 실행 = 셋업 미완료).
+pub(crate) fn setup_completed() -> bool {
+    storage::read_setup_completed()
+}
+
+/// `setup_completed` 캐시를 갱신한다 — `complete_setup` IPC / startup config 로드에서 호출.
+pub(crate) fn set_setup_completed(v: bool) {
+    storage::write_setup_completed(v);
+}
+
 /// 앱 시작 시 1회 호출 — config.json 의 cloud_folder_path 가 있으면 그 하위 `smarthb/` 로
 /// data root 를 설정. 없으면 fallback 유지.
 pub(crate) fn init_data_root_from_config(config_path: &std::path::Path) {
@@ -126,6 +162,13 @@ pub(crate) fn init_data_root_from_config(config_path: &std::path::Path) {
     let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) else {
         return;
     };
+    // T2(C2): setup_completed 캐시 — cloud_folder_path 유무와 무관하게 먼저 반영.
+    set_setup_completed(
+        parsed
+            .get("setup_completed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    );
     let Some(path) = parsed
         .get("cloud_folder_path")
         .and_then(|v| v.as_str())
@@ -175,6 +218,29 @@ mod tests {
         .unwrap();
         init_data_root_from_config(&tmp);
         assert_eq!(data_root(), PathBuf::from("/tmp/my-cloud").join(SMARTHB_SUBDIR));
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn init_from_config_caches_setup_completed_flag() {
+        let tmp = std::env::temp_dir().join("smarthb-paths-test-setupflag.json");
+        std::fs::write(
+            &tmp,
+            r#"{"cloud_folder_path":"/tmp/c","setup_completed":true}"#,
+        )
+        .unwrap();
+        assert!(!setup_completed(), "초기값 false");
+        init_data_root_from_config(&tmp);
+        assert!(setup_completed(), "config 의 setup_completed=true 반영");
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn init_from_config_setup_flag_false_when_missing() {
+        let tmp = std::env::temp_dir().join("smarthb-paths-test-setupflag-false.json");
+        std::fs::write(&tmp, r#"{"cloud_folder_path":"/tmp/c"}"#).unwrap();
+        init_data_root_from_config(&tmp);
+        assert!(!setup_completed(), "필드 누락 시 false 유지");
         std::fs::remove_file(&tmp).ok();
     }
 

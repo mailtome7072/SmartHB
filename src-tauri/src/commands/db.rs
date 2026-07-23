@@ -80,15 +80,40 @@ pub(crate) async fn initialize(db_path: PathBuf) -> Result<&'static SqlitePool, 
 }
 
 async fn build_pool(db_path: PathBuf) -> Result<SqlitePool, AppError> {
+    // T2(C1): 셋업 완료(config.json setup_completed=true) 상태인데 app.db 가 없으면 = 클라우드
+    // 동기화 폴더의 DB 가 일시 부재(dehydration)하거나 유실된 것. 빈 DB 를 새로 날조하지 않고
+    // 명확한 안내 에러로 중단한다(RCA C1). 최초 설정(마법사)은 DB 생성이 setup_completed=true
+    // 전환보다 먼저 일어나므로(setup/page.tsx Step3<Step4) 이 가드에 걸리지 않는다.
+    // salt.bin 도 함께 확인하되, setup_completed 가 주 판별자다(salt 가 함께 dehydrate 돼도 안전).
+    let setup_done = crate::commands::paths::setup_completed();
+    if setup_done && !db_path.exists() {
+        let salt_hint = if crate::commands::paths::salt_path().exists() {
+            ""
+        } else {
+            " (설정 파일 salt.bin 도 확인되지 않습니다)"
+        };
+        return Err(AppError::Config(format!(
+            "DB 파일(app.db)이 없습니다. 클라우드 동기화가 완료된 후 다시 시도해 주세요.{}",
+            salt_hint
+        )));
+    }
+
     if let Some(parent) = db_path.parent() {
+        // 셋업 완료 상태에서 데이터 폴더 자체가 없으면(전체 dehydration) 생성하지 않는다.
+        if setup_done && !parent.exists() {
+            return Err(AppError::Config(
+                "데이터 폴더가 없습니다. 클라우드 동기화가 완료된 후 다시 시도해 주세요.".to_string(),
+            ));
+        }
         std::fs::create_dir_all(parent)
             .map_err(|e| AppError::Config(format!("DB 디렉토리 생성 실패: {}", e)))?;
     }
 
     let url = db_url(&db_path)?;
+    // 셋업 완료 상태에서는 절대 새 DB 를 만들지 않는다 (위 가드로 부재는 이미 차단됨 — 이중 방어).
     let connect_options = SqliteConnectOptions::from_str(&url)
         .map_err(|e| AppError::Config(format!("DB URL 파싱 실패: {}", e)))?
-        .create_if_missing(true);
+        .create_if_missing(!setup_done);
 
     // T1(A3): PRAGMA key(cipher) + startup PRAGMA 를 after_connect 훅으로 이전한다.
     // 풀이 새 커넥션을 열 때마다(유휴 close 후 재연결 포함) 자동 재적용되어 C3(키 유실)·H5 근절.
@@ -355,6 +380,50 @@ mod tests {
 
         pool.close().await;
         temp_db_cleanup(&path);
+    }
+
+    // ─── Sprint 23 T2: create_if_missing 가드 검증 (C1) ───
+
+    /// AC-T2-C1: 셋업 완료(setup_completed=true) + app.db 부재 → build_pool 이 빈 DB 를
+    /// 날조하지 않고 에러로 중단한다 (RCA 전면소실 근절).
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn build_pool_blocks_creation_when_setup_done_and_db_missing() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t2_block_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::commands::paths::update_data_root(dir.clone());
+        crate::commands::paths::set_setup_completed(true);
+        std::fs::write(dir.join("salt.bin"), [0u8; 32]).unwrap(); // 셋업 흔적
+        let db = dir.join("app.db");
+
+        let result = build_pool(db).await;
+        assert!(result.is_err(), "셋업 완료 + DB 부재 → 생성 차단(에러)");
+
+        crate::commands::paths::set_setup_completed(false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// AC-T2-C1: 최초 설정(setup_completed=false) + app.db 부재 → 정상 생성 + 마이그레이션.
+    /// 마법사 흐름(DB 생성이 complete_setup 보다 먼저)을 깨지 않음을 보장.
+    #[cfg(not(feature = "cipher"))]
+    #[tokio::test]
+    async fn build_pool_creates_on_first_setup() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t2_create_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::commands::paths::update_data_root(dir.clone());
+        crate::commands::paths::set_setup_completed(false); // 최초 설정
+        let db = dir.join("app.db");
+
+        let pool = build_pool(db).await.expect("최초 설정 DB 생성 성공");
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM students")
+            .fetch_one(&pool)
+            .await
+            .expect("students 조회");
+        assert_eq!(count.0, 0, "신규 DB 는 원생 0명 (마이그레이션만 적용)");
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ─── Sprint 8 T1: V106 출결 도메인 마이그레이션 검증 (PRD §6.2) ───

@@ -189,6 +189,9 @@ pub async fn complete_setup(app: AppHandle) -> Result<(), String> {
     }
     status.setup_completed = true;
     write_status(&app, &status).map_err(String::from)?;
+    // T2(C2): 런타임 캐시 즉시 반영 — 이후 재초기화 경로에서 build_pool/integrity 가드가
+    // 셋업 완료를 인지하도록. (config.json 은 위에서 이미 영속화됨)
+    paths::set_setup_completed(true);
     Ok(())
 }
 

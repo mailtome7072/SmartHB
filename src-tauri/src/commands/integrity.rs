@@ -308,17 +308,58 @@ pub(crate) fn restore_from_path(backup_path: &Path) -> Result<RestoreResult, App
 /// 안내 메시지를 startup 결과 필드(`integrity_ok=false`) 로 전달한다.
 pub(crate) fn check_integrity_quick_for_startup() -> Result<IntegrityCheckResult, AppError> {
     let db_path = paths::db_path();
+    let setup_done = paths::setup_completed();
     if !db_path.exists() {
-        // 첫 실행 — DB 파일 자체가 아직 없음. startup 이 db::initialize 로 생성한다.
+        // T2(C2) case A: 셋업 완료 상태인데 DB 파일이 없다 = 유실/클라우드 dehydration.
+        // Failed 로 승격 → startup 이 db::initialize(생성 차단) 전에 auto_restore 를 시도한다.
+        // 백업이 없으면 auto_restore 가 실패하고 build_pool C1 가드가 명확한 에러로 중단한다.
+        if setup_done {
+            return Ok(IntegrityCheckResult::Failed {
+                detail: "설정 완료 상태이나 DB 파일(app.db)이 존재하지 않습니다 (유실 또는 클라우드 동기화 미완료).".to_string(),
+            });
+        }
+        // 최초 실행 — DB 파일 자체가 아직 없음. startup 이 db::initialize 로 생성한다.
         return Ok(IntegrityCheckResult::Ok);
     }
     match run_pragma_check(&db_path, IntegrityMode::Quick) {
-        Ok(r) => Ok(r),
+        Ok(IntegrityCheckResult::Ok) => {
+            // T2(C2) case B: quick_check 는 통과했으나 도메인 데이터가 비어 있고(원생 0명)
+            // 셋업이 완료된 상태면 "빈 DB 날조 의심" → Failed 로 승격해 auto_restore 유도.
+            // 판정 오류(키 로드 실패 등)는 오탐 방지를 위해 "비어있지 않음"으로 보수 처리.
+            #[cfg(feature = "cipher")]
+            if setup_done && is_empty_domain_db(&db_path).unwrap_or(false) {
+                return Ok(IntegrityCheckResult::Failed {
+                    detail: "DB 에 원생 데이터가 없습니다 (빈 DB 날조 의심).".to_string(),
+                });
+            }
+            Ok(IntegrityCheckResult::Ok)
+        }
+        Ok(failed) => Ok(failed),
         // cipher off 개발 빌드 — run_pragma_check 가 stub 안내. startup 은 fail-soft 진행.
         #[cfg(not(feature = "cipher"))]
         Err(AppError::Integrity(_)) => Ok(IntegrityCheckResult::Ok),
         Err(e) => Err(e),
     }
+}
+
+/// T2(C2): DB 에 도메인 데이터(원생)가 전혀 없는지 판정한다 — 빈 DB 날조 감지용.
+///
+/// 시드만 존재하는 날조 DB 는 `students` 행수 0. 정상 사용 DB 는 원생이 1명 이상.
+/// (최초 설정 직후 원생 미입력 상태도 0 이지만, 그 경로는 `setup_completed=false` 이거나
+/// 호출측에서 setup_done 전제를 함께 확인하므로 오탐하지 않는다.)
+#[cfg(feature = "cipher")]
+fn is_empty_domain_db(db_path: &Path) -> Result<bool, AppError> {
+    use crate::commands::auth::get_cached_or_load_key;
+    use rusqlite::Connection;
+
+    let key = get_cached_or_load_key()?;
+    let conn = Connection::open(db_path).map_err(|e| app_err!(Integrity, "DB 열기 실패", e))?;
+    conn.execute_batch(&paths::pragma_key_sql(key.to_hex().as_str()))
+        .map_err(|e| app_err!(Integrity, "PRAGMA key 적용 실패", e))?;
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM students", [], |r| r.get(0))
+        .map_err(|e| app_err!(Integrity, "students 행수 조회 실패", e))?;
+    Ok(count == 0)
 }
 
 // ============================================================================
@@ -363,6 +404,46 @@ mod tests {
     fn classify_ok_single_row() {
         let result = classify_pragma_rows(vec!["ok".to_string()]);
         assert_eq!(result, IntegrityCheckResult::Ok);
+    }
+
+    // ─── Sprint 23 T2: startup 빈/부재 DB fail-hard (C2) ───
+
+    /// AC-T2-C2 case A: 셋업 완료(setup_completed=true) + DB 부재 → Failed 승격
+    /// (startup 이 auto_restore 를 시도하도록). db_path 미존재는 cipher 무관하게 판정 가능.
+    #[test]
+    fn startup_check_flags_missing_db_when_setup_done() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t2c2_missing_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        paths::update_data_root(dir.clone());
+        paths::set_setup_completed(true);
+
+        let r = check_integrity_quick_for_startup().expect("래퍼는 Ok");
+        assert!(
+            matches!(r, IntegrityCheckResult::Failed { .. }),
+            "셋업 완료 + DB 부재 → Failed"
+        );
+
+        paths::set_setup_completed(false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// AC-T2-C2 case A 반례: 최초 실행(setup_completed=false) + DB 부재 → Ok (생성 허용).
+    #[test]
+    fn startup_check_ok_when_first_run_db_missing() {
+        let dir = std::env::temp_dir().join(format!("smarthb_t2c2_first_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        paths::update_data_root(dir.clone());
+        paths::set_setup_completed(false);
+
+        let r = check_integrity_quick_for_startup().expect("래퍼는 Ok");
+        assert!(
+            matches!(r, IntegrityCheckResult::Ok),
+            "최초 실행 + DB 부재 → Ok (db::initialize 가 생성)"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
