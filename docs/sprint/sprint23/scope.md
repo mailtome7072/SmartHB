@@ -42,7 +42,8 @@ T0(ADR-012) ✅ 완료 → T1부터 진행.
 - ✅ T6 A1 유휴 close + 활동 재연결 (A안 채택 — 사용자 결정: 처음부터 강력한 조치)
 - ✅ T7 B1 신규 PC 키 유도 + 키체인 채택
 - ✅ T8 B2 device.id 손상 + STALE 보정 (M3, M4) — STALE 값(86400) 유지로 A113 프론트 동기화 불필요
-- [ ] T9 통합 검증 + cipher 스모크 (자동 7항목)
+- ✅ T9 통합 검증 + cipher 스모크 (자동 7항목 전부 통과: cargo test 478 / clippy / cargo check --features cipher / pnpm lint / tsc / build / cargo test --features cipher 140)
+  - 수동 검증(배포 후) + 마이그레이션 self-check(V312 유지, 신규 없음)는 DEPLOY/실사용 단계
 
 ## 작업 순서 (의존성 기반)
 1. T1 (after_connect) → T6 의존
