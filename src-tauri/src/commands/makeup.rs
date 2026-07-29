@@ -218,7 +218,7 @@ async fn get_makeup_eligible_dates_impl(
     // 다월 교습기간 경계일 보강데이가 후보에서 누락되던 문제 해소. 확정 교습기간이 없거나
     // 미확정이면 달력월 범위로 폴백 (build_day_schedules 와 동일 패턴, 공유 헬퍼 재사용).
     let (first, next_month_first) =
-        match crate::commands::attendance::load_confirmed_period(pool, year_month).await {
+        match crate::commands::periods::load_confirmed_period(pool, year_month).await {
             Ok((sd, ed)) => {
                 let start = NaiveDate::parse_from_str(&sd, "%Y-%m-%d")
                     .map_err(|e| format!("교습기간 시작일 파싱 실패: {}", e))?;
@@ -390,17 +390,27 @@ async fn create_makeup_with_absences_impl(
     // Sprint 24 A2: 보강 출결 year_month 태깅을 보강일의 달력월이 아니라 해당 날짜가 속한
     // 확정 교습기간의 year_month 로 지정한다 — 다월 교습기간(예: 8월 7/30~9/2) 경계일 보강이
     // 잘못된 달로 계상되어 makeup_completed_minutes·캘린더 표시가 어긋나던 문제(A1과 동일 계열)
-    // 해소. 확정 교습기간에 속하지 않는 날짜는 달력월로 폴백(경고 로그). 조회는 공유 헬퍼 사용.
+    // 해소. 확정 교습기간에 속하지 않는 날짜는 달력월로 폴백. 조회는 공유 헬퍼(periods) 사용.
     let period_ym =
-        crate::commands::attendance::period_year_month_for_date(pool, &payload.event_date).await?;
-    let year_month = period_ym.unwrap_or_else(|| {
-        let calendar_ym = format!("{}-{:02}", event_d.year(), event_d.month());
-        eprintln!(
-            "[makeup::create] 보강일 {} 이 확정 교습기간에 속하지 않아 달력월({})로 태깅합니다.",
-            payload.event_date, calendar_ym
-        );
-        calendar_ym
-    });
+        crate::commands::periods::period_year_month_for_date(pool, &payload.event_date).await?;
+    let year_month = match period_ym {
+        Some(ym) => ym,
+        None => {
+            // 확정 교습기간이 없는 날짜의 보강 — 달력월로 폴백 태깅하고, 프로덕션에서 관찰
+            // 가능하도록 감사 로그에 기록한다 (리뷰 L2: eprintln 은 Tauri stderr 미캡처).
+            let calendar_ym = format!("{}-{:02}", event_d.year(), event_d.month());
+            audit::try_record(
+                AuditEventType::MakeupCalendarFallback,
+                Some(&payload.student_id.to_string()),
+                Some(&format!(
+                    r#"{{"eventDate":"{}","fallbackYearMonth":"{}"}}"#,
+                    payload.event_date, calendar_ym
+                )),
+            )
+            .await;
+            calendar_ym
+        }
+    };
 
     // 검증 1: event_date 가 보강 가능 일자인지 (Session #10 룰).
     // - 케이스 B: allows_makeup_class=1 코드가 명시된 일자 (요일 무관)

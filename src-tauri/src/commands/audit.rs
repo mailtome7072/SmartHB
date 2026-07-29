@@ -63,6 +63,8 @@ pub enum AuditEventType {
     GradesPromoted,
     // Sprint 20 T3 — 청구 삭제 (ADR-010 B안: 미수납만 삭제 허용)
     BillDeleted,
+    // Sprint 24 리뷰 L2 — 보강 등록 시 확정 교습기간이 없어 달력월로 태깅 폴백 (관찰용)
+    MakeupCalendarFallback,
 }
 
 impl AuditEventType {
@@ -88,6 +90,7 @@ impl AuditEventType {
             Self::ScheduleChangedWithRegen => "schedule-changed-with-regen",
             Self::GradesPromoted => "grades-promoted",
             Self::BillDeleted => "bill-deleted",
+            Self::MakeupCalendarFallback => "makeup-calendar-fallback",
         }
     }
 }

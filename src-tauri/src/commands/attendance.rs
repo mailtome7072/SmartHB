@@ -79,7 +79,7 @@ async fn check_exists_impl(pool: &SqlitePool, year_month: &str) -> Result<bool, 
 async fn generate_impl(pool: &SqlitePool, year_month: &str) -> Result<GenerateResult, String> {
     validate_year_month(year_month)?;
 
-    let (start_date, end_date) = load_confirmed_period(pool, year_month).await?;
+    let (start_date, end_date) = crate::commands::periods::load_confirmed_period(pool, year_month).await?;
 
     // hotfix post-Sprint 11: 출결 재호출 차단 폐지 — INSERT OR IGNORE 로 신규 원생만 추가.
     // 청구 generate_bills 와 동일 패턴 ("추가 출결 데이터 생성" UX 트리거).
@@ -214,37 +214,6 @@ pub(crate) fn validate_year_month(ym: &str) -> Result<(), String> {
 fn parse_date(s: &str) -> Result<NaiveDate, String> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d")
         .map_err(|e| format!("날짜 파싱 실패 ({}): {}", s, e))
-}
-
-pub(crate) async fn load_confirmed_period(
-    pool: &SqlitePool,
-    year_month: &str,
-) -> Result<(String, String), String> {
-    let row = sqlx::query(
-        "SELECT start_date, end_date, is_confirmed \
-         FROM study_periods WHERE year_month = ?",
-    )
-    .bind(year_month)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("교습기간 조회 실패: {}", e))?
-    .ok_or_else(|| {
-        format!(
-            "{} 교습기간이 설정되지 않았습니다. 학사 캘린더에서 먼저 교습기간을 설정하세요.",
-            year_month
-        )
-    })?;
-
-    let is_confirmed: i64 = row.try_get("is_confirmed").map_err(|e| e.to_string())?;
-    if is_confirmed == 0 {
-        return Err(format!(
-            "{} 교습기간이 아직 확정되지 않았습니다. 교습기간을 확정한 후 다시 시도하세요.",
-            year_month
-        ));
-    }
-    let start: String = row.try_get("start_date").map_err(|e| e.to_string())?;
-    let end: String = row.try_get("end_date").map_err(|e| e.to_string())?;
-    Ok((start, end))
 }
 
 async fn load_off_dates(
@@ -518,7 +487,7 @@ pub(crate) async fn count_ungenerated_attendance_students_impl(
     // 판정하도록 교체 — generate_impl 과 동일한 규칙(스케줄·enroll/withdraw·off일)을 재사용.
     //
     // 확정 교습기간이 없으면 생성 자체가 불가하므로 미생성 0 (버튼 표시는 exists 로 별도 판단).
-    let (start_date, end_date) = match load_confirmed_period(pool, year_month).await {
+    let (start_date, end_date) = match crate::commands::periods::load_confirmed_period(pool, year_month).await {
         Ok(range) => range,
         Err(_) => return Ok(0),
     };
@@ -773,7 +742,7 @@ async fn build_day_schedules(
     // 그리드 출결 셀은 교습기간(year_month) 기준으로 반환되므로, 다월 교습기간 경계일
     // (예: 8월 7/30~9/2)의 학사마커도 함께 커버해야 셀-헤더 범위가 일치한다.
     // 확정 교습기간이 없으면 달력월 범위로 폴백.
-    let (first, next_month_first) = match load_confirmed_period(pool, year_month).await {
+    let (first, next_month_first) = match crate::commands::periods::load_confirmed_period(pool, year_month).await {
         Ok((sd, ed)) => {
             let start = parse_date(&sd)?;
             let end_excl = parse_date(&ed)?
@@ -1166,26 +1135,6 @@ fn weekly_minutes_on(slices: &[ScheduleSlice], ref_date: NaiveDate) -> i64 {
         .sum()
 }
 
-/// 주어진 날짜가 속한 확정 교습기간의 year_month. 없으면 None.
-///
-/// Sprint 24: 다월 교습기간에서 "달력월(date[..7])"이 아닌 실제 소속 교습기간 라벨을 얻기 위한
-/// 공유 헬퍼. 교습기간 일자 중첩은 academic.rs IPC 레벨에서 금지되므로 날짜당 확정 교습기간은
-/// 최대 1개다.
-pub(crate) async fn period_year_month_for_date(
-    pool: &SqlitePool,
-    date: &str,
-) -> Result<Option<String>, String> {
-    sqlx::query_scalar(
-        "SELECT year_month FROM study_periods \
-         WHERE start_date <= ? AND end_date >= ? AND is_confirmed = 1",
-    )
-    .bind(date)
-    .bind(date)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("교습기간 조회 실패: {}", e))
-}
-
 /// 케이스1 — 특정일 1회성 수업일 이동 결과.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1259,8 +1208,8 @@ async fn move_attendance_impl(
     // 다월 교습기간(예: 8월 7/30~9/2)에서 8/31→9/1 처럼 같은 교습기간 내부인데도 달력월
     // 불일치로 오차단되던 문제, 그리고 인접 교습기간 간 이동(7/29→7/31)이 달력월 일치로
     // 오허용되며 year_month 가 갱신되지 않던 문제를 함께 해소한다.
-    let from_period = period_year_month_for_date(pool, from_date).await?;
-    let to_period = period_year_month_for_date(pool, to_date).await?;
+    let from_period = crate::commands::periods::period_year_month_for_date(pool, from_date).await?;
+    let to_period = crate::commands::periods::period_year_month_for_date(pool, to_date).await?;
     let target_ym = match (&from_period, &to_period) {
         (Some(fp), Some(tp)) if fp == tp => tp.clone(),
         _ => {
@@ -1593,43 +1542,39 @@ async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
         // 태깅 year_month 를 달력월이 아닌 교습기간 year_month 로 지정해 generate_impl 과 통일한다
         // — 다월 교습기간(예: 8월 7/30~9/2)에서 9/1 출결이 "2026-09"로 태깅되어 8월 그리드에 안
         // 뜨던 불일치(R136) 해소 (Sprint 24: 공유 헬퍼 period_year_month_for_date 로 통일).
-        let period_ym = period_year_month_for_date(pool, date).await?;
+        let period_ym = crate::commands::periods::period_year_month_for_date(pool, date).await?;
 
         if let Some(ym) = period_ym {
             let d = parse_date(date)?;
-            // Sprint 24 A114: 스케줄 이력 반영을 generate_impl 과 동일한 헬퍼
-            // (load_schedule_slices + minutes_for_date)로 통일한다. 이전에는 인라인
-            // SQL 로 effective_from/to 조건을 중복 표현했다 — 날짜별 유효 스케줄 판정을
-            // 단일 소스(minutes_for_date)로 일원화해 세 INSERT 경로(generate/apply/sync)의
-            // 판정 기준을 통일한다.
-            let student_rows = sqlx::query(
-                "SELECT id FROM students \
-                 WHERE enroll_date <= ? AND (withdraw_date IS NULL OR withdraw_date >= ?)",
+            let dow = d.weekday().number_from_monday() as i64;
+            // Sprint 24 A114: 스케줄 이력을 반영한 단일 set-based INSERT.
+            // `effective_from <= date AND (effective_to IS NULL OR effective_to > date)` 는
+            // minutes_for_date 의 `effective_from <= d < effective_to`(반개구간)와 동치이므로,
+            // 변경일 이후 날짜는 신 스케줄 시간으로 정확히 복원된다(A114 원 결함 = 이력 미반영 해소).
+            // 날짜당 단일 쿼리라 원생 수 비례 N+1 을 피한다 (sync 는 학사일정 저장 시 날짜 범위를
+            // 순회 호출하므로 set-based 가 유리 — 리뷰 M1).
+            sqlx::query(
+                "INSERT OR IGNORE INTO regular_attendances \
+                 (student_id, event_date, year_month, status, class_minutes) \
+                 SELECT ss.student_id, ?, ?, 'present', ss.duration_hours * 60 \
+                 FROM student_schedules ss \
+                 JOIN students s ON s.id = ss.student_id \
+                 WHERE ss.day_of_week = ? \
+                   AND ss.effective_from <= ? \
+                   AND (ss.effective_to IS NULL OR ss.effective_to > ?) \
+                   AND s.enroll_date <= ? \
+                   AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?)",
             )
             .bind(date)
+            .bind(&ym)
+            .bind(dow)
             .bind(date)
-            .fetch_all(pool)
+            .bind(date)
+            .bind(date)
+            .bind(date)
+            .execute(pool)
             .await
-            .map_err(|e| format!("재원 원생 조회 실패: {}", e))?;
-
-            for srow in student_rows {
-                let sid: i64 = srow.try_get("id").map_err(|e| e.to_string())?;
-                let slices = load_schedule_slices(pool, sid).await?;
-                if let Some(minutes) = minutes_for_date(&slices, d) {
-                    sqlx::query(
-                        "INSERT OR IGNORE INTO regular_attendances \
-                         (student_id, event_date, year_month, status, class_minutes) \
-                         VALUES (?, ?, ?, 'present', ?)",
-                    )
-                    .bind(sid)
-                    .bind(date)
-                    .bind(&ym)
-                    .bind(minutes)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| format!("출결 INSERT 실패: {}", e))?;
-                }
-            }
+            .map_err(|e| format!("출결 INSERT 실패: {}", e))?;
         }
     }
     Ok(())

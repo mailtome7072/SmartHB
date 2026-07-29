@@ -86,9 +86,9 @@ fn current_year_month() -> String {
 /// 2·3·4 가 활성 교습기간이 아닌 엉뚱한(지난) 달을 검사하게 된다. 오늘이 속한 확정 교습기간을
 /// 우선 사용해 검사 대상월과 자동진단 실행 주기(LAST_AUTO_DIAGNOSIS_KEY)를 교습기간 기준으로 통일한다.
 async fn active_year_month(pool: &SqlitePool, today: &str) -> Result<String, AppError> {
-    // 공유 헬퍼(attendance::period_year_month_for_date) 재사용 — "날짜→확정 교습기간 year_month"
+    // 공유 헬퍼(periods::period_year_month_for_date) 재사용 — "날짜→확정 교습기간 year_month"
     // 프리미티브를 단일 소스로 유지. 오늘이 확정 교습기간에 없으면 달력월로 폴백.
-    let ym = crate::commands::attendance::period_year_month_for_date(pool, today)
+    let ym = crate::commands::periods::period_year_month_for_date(pool, today)
         .await
         .map_err(AppError::Config)?;
     Ok(ym.unwrap_or_else(current_year_month))

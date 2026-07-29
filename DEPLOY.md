@@ -51,7 +51,7 @@ sprint-close / hotfix-close agent 및 팀원이 항목 추가 시 아래 형식�
 브랜치: `sprint24 → develop` 직접 머지 예정 (단일 개발자 정책)
 
 ### 스테이징 검증 (develop 로컬)
-- ⬜ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증)
+- ✅ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증)
 - ⬜ pnpm tauri:dev 실행하여 앱 동작 수동 확인 — V313 마이그레이션 자동 적용 후 CS 원인 사례(A 원생 8월 교습기간 7/30 "수업 없는 날" 표시 + "1명 변경 필요" 배지) 해소 확인
 - ⬜ 원장 PC / 자택 Mac 양 PC에서 새 버전 실행 — V313 데이터 자동 보정 적용 확인 (startup migration 자동 실행)
 - ⬜ 교습일정 인쇄 미리보기 확인 (Sprint 20 A122 계속 유지)

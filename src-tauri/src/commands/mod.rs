@@ -19,6 +19,7 @@ pub mod makeup;
 pub mod notice;
 pub mod pagination;
 pub mod paths;
+pub mod periods;
 pub mod runtime;
 pub mod schedules;
 pub mod settings;

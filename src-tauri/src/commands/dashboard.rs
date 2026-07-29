@@ -463,7 +463,7 @@ async fn dashboard_alerts(
     // (예: 8월 7/30~9/2) 경계일에 today 달력월과 교습기간이 달라 소멸 임박/미확정 청구를
     // 엉뚱한(지난) 달로 집계하던 문제 해소. 교습기간 밖이면 달력월로 폴백.
     let today_str = today.format("%Y-%m-%d").to_string();
-    let ym: String = crate::commands::attendance::period_year_month_for_date(pool, &today_str)
+    let ym: String = crate::commands::periods::period_year_month_for_date(pool, &today_str)
         .await
         .map_err(AppError::Config)?
         .unwrap_or_else(|| year_month_of(today));
