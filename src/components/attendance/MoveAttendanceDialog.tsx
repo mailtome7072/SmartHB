@@ -4,11 +4,14 @@
  * 수업일 이동 다이얼로그 — Sprint 16 T0 케이스1 (PI-26/27).
  *
  * present 셀 우클릭 → 액션 선택 → "수업일 이동" 진입. 흐름:
- * 1. 같은 달 달력(grid-cols-7)에서 도착일 선택 (텍스트 입력 아닌 시각적 달력)
- * 2. 선택 불가일 비활성: 출발일 자신 / 이미 출결 있는 날 / 휴일·정규수업 OFF 일자
+ * 1. **교습기간 범위 달력**(grid-cols-7)에서 도착일 선택 (텍스트 입력 아닌 시각적 달력)
+ * 2. 선택 불가일 비활성: 교습기간 밖 / 출발일 자신 / 이미 출결 있는 날 / 휴일·정규수업 OFF 일자 / 주말
  * 3. 날짜 클릭 → `moveAttendance(studentId, fromDate, toDate)` → 성공 시 onSuccess
  *
- * 동월 한정·OFF/충돌 차단은 백엔드가 최종 검증하며, 본 다이얼로그는 사전 비활성으로 실수를 줄인다.
+ * Sprint 24: 백엔드가 "같은 교습기간 안에서만" 이동을 허용하도록 바뀌어(B1), 다월 교습기간
+ * (예: 8월 = 7/30~9/2)의 이동 대상이 두 달에 걸칠 수 있다. 달력을 출발일 달력월이 아니라
+ * **교습기간 범위(periodStart~periodEnd)** 로 그려 9/1·9/2 같은 이웃 달 대상도 고를 수 있게 한다.
+ * 교습기간 밖(예: 9/30)은 다른 교습기간이므로 이동이 아닌 보강으로 등록한다.
  */
 
 import { useMemo, useState } from 'react'
@@ -22,15 +25,31 @@ interface Props {
   student: AttendanceGridStudent
   invalidationYm: string // YYYY-MM — 이동 반영 후 무효화할 출결 그리드 년월 (A126 명확화)
   fromDate: string // YYYY-MM-DD
+  /** 교습기간 시작/종료 (YYYY-MM-DD). 없으면 출발일 달력월로 폴백. */
+  periodStart: string | null
+  periodEnd: string | null
   daySchedules: DaySchedule[]
   onClose: () => void
   onSuccess: () => void
+}
+
+function parseISO(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+function toISO(dt: Date): string {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(
+    dt.getDate(),
+  ).padStart(2, '0')}`
 }
 
 export function MoveAttendanceDialog({
   student,
   invalidationYm,
   fromDate,
+  periodStart,
+  periodEnd,
   daySchedules,
   onClose,
   onSuccess,
@@ -41,14 +60,15 @@ export function MoveAttendanceDialog({
   const [startHour, setStartHour] = useState(16)
   const queryClient = useQueryClient()
 
-  // Sprint 21 T3: 수업일 이동은 백엔드가 '같은 달(달력월)' 한정이므로(다른 달은 보강으로),
-  // 달력을 교습기간 ym 이 아니라 **출발일(fromDate)의 달력월** 기준으로 그린다. 다월 교습기간의
-  // 이웃 달 출발일(예: 7/30)도 그 달(7월) 안에서 이동 대상을 고르게 되어 백엔드 제약과 정합.
-  const year = Number(fromDate.slice(0, 4))
-  const month = Number(fromDate.slice(5, 7))
-  const fromYm = fromDate.slice(0, 7)
-  const lastDay = new Date(year, month, 0).getDate()
-  const firstDow = new Date(year, month - 1, 1).getDay() // 0=일
+  // 이동 가능 범위 = 교습기간(periodStart~periodEnd). 미제공 시 출발일 달력월로 폴백.
+  const rangeStart = periodStart ?? `${fromDate.slice(0, 7)}-01`
+  const rangeEnd = useMemo(() => {
+    if (periodEnd) return periodEnd
+    const y = Number(fromDate.slice(0, 4))
+    const m = Number(fromDate.slice(5, 7))
+    const last = new Date(y, m, 0).getDate()
+    return `${fromDate.slice(0, 7)}-${String(last).padStart(2, '0')}`
+  }, [periodEnd, fromDate])
 
   // 이미 출결이 있는 일자 (충돌 차단)
   const occupied = useMemo(() => {
@@ -65,36 +85,47 @@ export function MoveAttendanceDialog({
   }, [daySchedules])
 
   // 정규수업 불가 코드일 (공휴일/방학/휴원/보강데이 — allows_regular_class=0) — 이동 차단 (PI-30)
-  // 공휴수업일처럼 보강 가능하지만 정규도 가능한 날은 regularBlocked=false 라 차단되지 않는다.
   const regularBlocked = useMemo(() => {
     const s = new Set<string>()
     for (const d of daySchedules) if (d.regularBlocked) s.add(d.eventDate)
     return s
   }, [daySchedules])
 
-  function dateStr(day: number): string {
-    return `${fromYm}-${String(day).padStart(2, '0')}`
-  }
+  // 교습기간 범위 시작주(일요일)~종료주(토요일) 의 모든 날짜 셀.
+  const cells = useMemo(() => {
+    const start = parseISO(rangeStart)
+    const end = parseISO(rangeEnd)
+    const gridStart = new Date(start)
+    gridStart.setDate(gridStart.getDate() - gridStart.getDay()) // 그 주 일요일
+    const gridEnd = new Date(end)
+    gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay())) // 그 주 토요일
+    const out: { iso: string; inRange: boolean }[] = []
+    const cur = new Date(gridStart)
+    while (cur <= gridEnd) {
+      const iso = toISO(cur)
+      out.push({ iso, inRange: iso >= rangeStart && iso <= rangeEnd })
+      cur.setDate(cur.getDate() + 1)
+    }
+    return out
+  }, [rangeStart, rangeEnd])
 
-  function reason(day: number): string | null {
-    const ds = dateStr(day)
-    if (ds === fromDate) return '현재 수업일'
-    if (occupied.has(ds)) return '이미 수업이 있는 날 (추가 수업은 보강으로 등록)'
-    // 정규수업은 평일만 — 주말/공휴일/보강데이로는 이동 불가 (PI-30)
-    const dow = new Date(year, month - 1, day).getDay()
+  function reason(iso: string, inRange: boolean): string | null {
+    if (!inRange) return '교습기간 밖 (다른 교습기간은 보강으로 등록)'
+    if (iso === fromDate) return '현재 수업일'
+    if (occupied.has(iso)) return '이미 수업이 있는 날 (추가 수업은 보강으로 등록)'
+    const dow = parseISO(iso).getDay()
     if (dow === 0 || dow === 6) return '주말 (정규수업 불가)'
-    if (blocked.has(ds)) return '휴일 (정규수업 불가)'
-    if (regularBlocked.has(ds)) return '정규수업 불가일'
+    if (blocked.has(iso)) return '휴일 (정규수업 불가)'
+    if (regularBlocked.has(iso)) return '정규수업 불가일'
     return null
   }
 
-  async function handleSelect(day: number) {
-    const to = dateStr(day)
+  async function handleSelect(iso: string) {
     const startTime = `${String(startHour).padStart(2, '0')}:00`
     setSubmitting(true)
     setError(null)
     try {
-      await moveAttendance(student.studentId, fromDate, to, startTime)
+      await moveAttendance(student.studentId, fromDate, iso, startTime)
       void queryClient.invalidateQueries({ queryKey: ['attendance-grid', invalidationYm] })
       onSuccess()
     } catch (e) {
@@ -103,10 +134,7 @@ export function MoveAttendanceDialog({
     }
   }
 
-  // 달력 셀 — 1일 앞 빈 칸 + 1~말일
-  const cells: (number | null)[] = []
-  for (let i = 0; i < firstDow; i += 1) cells.push(null)
-  for (let d = 1; d <= lastDay; d += 1) cells.push(d)
+  const rangeLabel = `${rangeStart.slice(5).replace('-', '/')}~${rangeEnd.slice(5).replace('-', '/')}`
 
   return (
     <div
@@ -126,7 +154,8 @@ export function MoveAttendanceDialog({
           {student.name} · {fromDate.slice(5).replace('-', '/')} 수업을 옮길 날짜를 선택하세요.
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          같은 달 안에서만 이동할 수 있습니다. 휴일·이미 수업이 있는 날은 선택할 수 없습니다.
+          같은 교습기간({rangeLabel}) 안에서만 이동할 수 있습니다. 다른 교습기간·휴일·이미 수업이
+          있는 날은 선택할 수 없습니다. (다른 교습기간으로 옮기려면 보강을 이용하세요.)
         </p>
 
         <div className="mt-3 flex items-center gap-2">
@@ -169,27 +198,32 @@ export function MoveAttendanceDialog({
               {w}
             </div>
           ))}
-          {cells.map((day, idx) => {
-            if (day === null) return <div key={`empty-${idx}`} />
-            const blockReason = reason(day)
-            const isFrom = dateStr(day) === fromDate
+          {cells.map(({ iso, inRange }) => {
+            const d = parseISO(iso)
+            const day = d.getDate()
+            // 월 경계 인식: 매월 1일은 "M/1" 로 표기해 달이 바뀌는 지점을 보여준다.
+            const label = day === 1 ? `${d.getMonth() + 1}/1` : String(day)
+            const blockReason = reason(iso, inRange)
+            const isFrom = iso === fromDate
             const disabled = blockReason !== null || submitting
             return (
               <button
-                key={day}
+                key={iso}
                 type="button"
                 disabled={disabled}
-                onClick={() => handleSelect(day)}
+                onClick={() => handleSelect(iso)}
                 title={blockReason ?? ''}
                 className={`min-h-[40px] rounded text-base ${
                   isFrom
                     ? 'bg-amber-100 font-bold text-amber-800'
-                    : blockReason === null
-                      ? 'hover:bg-[var(--accent)] hover:text-white'
-                      : 'cursor-not-allowed text-gray-300'
+                    : !inRange
+                      ? 'cursor-not-allowed text-gray-200'
+                      : blockReason === null
+                        ? 'hover:bg-[var(--accent)] hover:text-white'
+                        : 'cursor-not-allowed text-gray-300'
                 }`}
               >
-                {day}
+                {label}
               </button>
             )
           })}

@@ -582,6 +582,8 @@ export default function AttendancePage() {
           student={moveTarget.student}
           invalidationYm={yearMonth}
           fromDate={moveTarget.fromDate}
+          periodStart={selectedPeriod?.start_date ?? null}
+          periodEnd={selectedPeriod?.end_date ?? null}
           daySchedules={filteredGrid?.daySchedules ?? []}
           onClose={() => setMoveTarget(null)}
           onSuccess={() => {
