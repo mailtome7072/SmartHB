@@ -249,6 +249,14 @@ async fn run_startup(force_lock: bool, auth: AuthStep) -> Result<StartupResult, 
         }
     };
 
+    // 5-2. Sprint 24: 출결 year_month ↔ 교습기간 재동기화 (자가 치유, fail-soft).
+    //      V313(1회성) 이후 교습기간 경계 (재)설정으로 생긴 오태깅을 매 시작 시 교정한다.
+    match crate::commands::periods::reconcile_attendance_year_month(&startup_pool).await {
+        Ok(0) => {}
+        Ok(n) => eprintln!("[startup] year_month 재동기화 {n}건 교정"),
+        Err(e) => eprintln!("[startup] year_month 재동기화 실패 (무시): {}", e),
+    }
+
     // 6. 백그라운드 task spawn — 재진입 시 중복 spawn 방지.
     spawn_background_tasks();
 

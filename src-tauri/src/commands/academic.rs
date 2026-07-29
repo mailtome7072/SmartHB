@@ -137,6 +137,18 @@ async fn expire_fail_soft(pool: &sqlx::SqlitePool) -> crate::commands::expiratio
     }
 }
 
+/// Sprint 24: 교습기간 생성/수정/확정 직후 출결 year_month 를 새 경계에 맞춰 재동기화한다 (fail-soft).
+///
+/// 교습기간 경계가 바뀌면 기존 출결(예: 7/30)이 다른 교습기간으로 이동할 수 있는데, 그 year_month
+/// 태깅을 갱신하지 않으면 해당 월 그리드에서 누락된다(수동검증 발견). 경계 변경 직후 원천적으로 교정.
+async fn reconcile_year_month_fail_soft(pool: &sqlx::SqlitePool) {
+    match crate::commands::periods::reconcile_attendance_year_month(pool).await {
+        Ok(0) => {}
+        Ok(n) => eprintln!("[academic] 교습기간 변경 후 year_month 재동기화 {n}건 교정"),
+        Err(e) => eprintln!("[academic] year_month 재동기화 실패 (교습기간 작업은 성공): {}", e),
+    }
+}
+
 /// 교습기간 생성 (PRD §4.4.2). 일자 중첩 시 한국어 에러 반환 (AC-T5-1).
 ///
 /// 중첩 판정: 두 구간 `[a.start, a.end]` 와 `[b.start, b.end]` 가 겹친다 ⇔
@@ -182,6 +194,7 @@ pub async fn create_study_period(
     let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
     // Sprint 10 T4 (PI-05): 교습기간 등록 직후 소멸 자동 전이 (fail-soft, P2-10).
     let expiration_report = expire_fail_soft(pool).await;
+    reconcile_year_month_fail_soft(pool).await;
     Ok(StudyPeriodResult {
         study_period,
         expiration_report,
@@ -253,6 +266,7 @@ pub async fn update_study_period(
 
     let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
     let expiration_report = expire_fail_soft(pool).await;
+    reconcile_year_month_fail_soft(pool).await;
     Ok(StudyPeriodResult {
         study_period,
         expiration_report,
@@ -328,6 +342,7 @@ pub async fn confirm_study_period(id: i64) -> Result<StudyPeriodResult, String> 
     .ok_or_else(|| "해당 교습기간을 찾을 수 없습니다.".to_string())?;
     let study_period = StudyPeriod::from_row(&row).map_err(String::from)?;
     let expiration_report = expire_fail_soft(pool).await;
+    reconcile_year_month_fail_soft(pool).await;
     Ok(StudyPeriodResult {
         study_period,
         expiration_report,

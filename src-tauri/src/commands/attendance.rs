@@ -3145,6 +3145,26 @@ mod tests {
         assert_eq!(summary.present_count, 5, "경계일 포함 목요일 present 집계");
     }
 
+    /// 진단(수동검증 이슈) — 깨끗한 데이터에서 generate 가 다월 교습기간 경계일(7/30 목, 7/31 금)
+    /// 출결을 정상 생성하는지. 이 테스트가 통과하면 generate_impl 은 정상 → 실제 누락은 데이터
+    /// 조건(입교일/적용시작일 > 경계일, 또는 7/30·31 학사 OFF 이벤트) 때문임을 의미.
+    #[tokio::test]
+    async fn generate_creates_thu_fri_boundary_days() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        // 목(4)/금(5) 1시간, 입교 2026-04-01, 적용시작일=입교일(경계일 이전).
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(4, 1), (5, 1)]).await;
+        generate_impl(&pool, "2026-08").await.expect("generate");
+        let cnt730: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE student_id=? AND event_date='2026-07-30' AND year_month='2026-08'",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        let cnt731: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE student_id=? AND event_date='2026-07-31' AND year_month='2026-08'",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert_eq!(cnt730, 1, "7/30(목) 출결이 2026-08 로 생성돼야 함");
+        assert_eq!(cnt731, 1, "7/31(금) 출결이 2026-08 로 생성돼야 함");
+    }
+
     /// A114 회귀 — sync_single_date OFF→ON 복원이 공유 헬퍼(load_schedule_slices/minutes_for_date)로
     /// 스케줄 이력을 반영한다: 변경일 이후 날짜는 신 스케줄 시간으로 복원된다.
     #[tokio::test]
