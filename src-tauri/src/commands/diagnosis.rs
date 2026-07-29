@@ -1,6 +1,6 @@
 //! 데이터 자가 진단 IPC (Sprint 14 T1, PRD §6.6).
 //!
-//! 매월 1일 첫 실행 시 자동 + 사용자 수동 실행으로 7종 무결성 검사를 수행하고,
+//! 매월 1일 첫 실행 시 자동 + 사용자 수동 실행으로 8종 무결성 검사를 수행하고,
 //! 결과를 `diagnosis_history` (V303) 에 보관한다 (최근 12개월, 초과분 자동 정리).
 //!
 //! ## 설계
@@ -18,14 +18,15 @@
 //! 5. 결석 소멸기한 미설정 — status='absent' AND makeup_deadline IS NULL
 //! 6. 고아 보강 데이터 — 어떤 정규출결에서도 참조하지 않는 makeup_attendances
 //! 7. 수납 정합성 — is_paid=1 인데 결제수단 누락 / 카드결제인데 카드사 누락
+//! 8. year_month ↔ 소속 교습기간 불일치 — 다월 교습기간 경계일 오태깅 검출 (Sprint 24 D1)
 
 use crate::commands::db::pool;
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 
-/// 총 검사 항목 수 (PRD §6.6.1).
-const TOTAL_CHECKS: i64 = 7;
+/// 총 검사 항목 수 (PRD §6.6.1 + Sprint 24 D1 검사 8번).
+const TOTAL_CHECKS: i64 = 8;
 
 /// 월 1회 자동진단 추적 키 (app_settings) — 이상 0건이면 이력을 남기지 않으므로(완전 0건 정책),
 /// "이번 달 자동진단 실행 여부"는 이력이 아닌 이 설정값으로 판정한다 (AC-6.6-1).
@@ -77,6 +78,20 @@ fn current_date() -> String {
 /// 당월 (YYYY-MM).
 fn current_year_month() -> String {
     chrono::Local::now().format("%Y-%m").to_string()
+}
+
+/// 오늘이 속한 확정 교습기간의 year_month. 없으면 달력월(`current_year_month`)로 폴백.
+///
+/// Sprint 24 D1: 다월 교습기간 경계일(예: 8월 7/30~9/2)에서 "당월"을 달력월로 잡으면 검사
+/// 2·3·4 가 활성 교습기간이 아닌 엉뚱한(지난) 달을 검사하게 된다. 오늘이 속한 확정 교습기간을
+/// 우선 사용해 검사 대상월과 자동진단 실행 주기(LAST_AUTO_DIAGNOSIS_KEY)를 교습기간 기준으로 통일한다.
+async fn active_year_month(pool: &SqlitePool, today: &str) -> Result<String, AppError> {
+    // 공유 헬퍼(attendance::period_year_month_for_date) 재사용 — "날짜→확정 교습기간 year_month"
+    // 프리미티브를 단일 소스로 유지. 오늘이 확정 교습기간에 없으면 달력월로 폴백.
+    let ym = crate::commands::attendance::period_year_month_for_date(pool, today)
+        .await
+        .map_err(AppError::Config)?;
+    Ok(ym.unwrap_or_else(current_year_month))
 }
 
 // ----------------------------------------------------------------------------
@@ -354,7 +369,64 @@ async fn check_payment_integrity(pool: &SqlitePool) -> Result<Vec<DiagnosisIssue
         .collect())
 }
 
-/// 7종 검사 일괄 실행 — 발견 항목 전체를 모아 반환.
+/// 8. year_month ↔ 소속 교습기간 불일치 (Sprint 24 D1) — 다월 교습기간 오태깅 검출.
+///
+/// regular_attendances / makeup_attendances 의 year_month 가, event_date 를 포함하는 확정
+/// 교습기간(start_date <= event_date <= end_date, is_confirmed=1)의 year_month 와 다르면 error.
+/// A1/A2(달력월 태깅) 오태깅이 남긴 행을 검출한다 — V313 보정 이후에는 0건이어야 하며, 이후
+/// 코드가 이 불변식을 깨면 자가진단이 즉시 잡는다. 기존 검사 2·4 는 존재/요일만 보므로 이 불일치를
+/// 구조적으로 검출하지 못한다 (검출 공백 보완).
+async fn check_year_month_period_mismatch(
+    pool: &SqlitePool,
+) -> Result<Vec<DiagnosisIssue>, AppError> {
+    // 정규 출결 + 보강 출결을 UNION ALL 단일 정적 쿼리로 검사 (테이블/라벨은 리터럴 컬럼으로 SELECT).
+    let rows = sqlx::query(
+        "SELECT t.id AS id, t.event_date AS event_date, t.year_month AS current_ym, \
+                sp.year_month AS correct_ym, s.name AS name, \
+                'regular_attendances' AS tbl, '정규 출결' AS label \
+         FROM regular_attendances t \
+         JOIN students s ON s.id = t.student_id \
+         JOIN study_periods sp ON sp.start_date <= t.event_date \
+              AND sp.end_date >= t.event_date AND sp.is_confirmed = 1 \
+         WHERE t.year_month != sp.year_month \
+         UNION ALL \
+         SELECT t.id, t.event_date, t.year_month, sp.year_month, s.name, \
+                'makeup_attendances', '보강 출결' \
+         FROM makeup_attendances t \
+         JOIN students s ON s.id = t.student_id \
+         JOIN study_periods sp ON sp.start_date <= t.event_date \
+              AND sp.end_date >= t.event_date AND sp.is_confirmed = 1 \
+         WHERE t.year_month != sp.year_month \
+         ORDER BY tbl, event_date",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Db)?;
+
+    let mut issues = Vec::new();
+    for r in rows {
+        let id: i64 = r.try_get("id").map_err(AppError::Db)?;
+        let event_date: String = r.try_get("event_date").map_err(AppError::Db)?;
+        let current_ym: String = r.try_get("current_ym").map_err(AppError::Db)?;
+        let correct_ym: String = r.try_get("correct_ym").map_err(AppError::Db)?;
+        let name: String = r.try_get("name").map_err(AppError::Db)?;
+        let table: String = r.try_get("tbl").map_err(AppError::Db)?;
+        let label: String = r.try_get("label").map_err(AppError::Db)?;
+        issues.push(DiagnosisIssue {
+            check_id: "year_month_period_mismatch".to_string(),
+            severity: "error".to_string(),
+            message: format!(
+                "{} 원생의 {} {} 이(가) 소속 교습기간({})이 아닌 {} 로 기록되어 있습니다. 데이터 보정이 필요합니다.",
+                name, label, event_date, correct_ym, current_ym
+            ),
+            target_table: Some(table),
+            target_id: Some(id),
+        });
+    }
+    Ok(issues)
+}
+
+/// 8종 검사 일괄 실행 — 발견 항목 전체를 모아 반환.
 async fn run_all_checks(
     pool: &SqlitePool,
     year_month: &str,
@@ -367,6 +439,7 @@ async fn run_all_checks(
     issues.extend(check_absent_without_deadline(pool).await?);
     issues.extend(check_orphan_makeups(pool).await?);
     issues.extend(check_payment_integrity(pool).await?);
+    issues.extend(check_year_month_period_mismatch(pool).await?);
     Ok(issues)
 }
 
@@ -581,7 +654,9 @@ pub async fn run_diagnosis(run_type: String) -> Result<DiagnosisResult, String> 
     }
     let pool = pool().await.map_err(String::from)?;
     let pool = &pool;
-    run_and_record(pool, &run_type, &current_date(), &current_year_month())
+    let today = current_date();
+    let ym = active_year_month(pool, &today).await.map_err(String::from)?;
+    run_and_record(pool, &run_type, &today, &ym)
         .await
         .map_err(String::from)
 }
@@ -608,7 +683,8 @@ pub async fn get_latest_diagnosis() -> Result<Option<DiagnosisHistoryRow>, Strin
 pub async fn check_auto_diagnosis_needed() -> Result<bool, String> {
     let pool = pool().await.map_err(String::from)?;
     let pool = &pool;
-    auto_needed(pool, &current_year_month())
+    let ym = active_year_month(pool, &current_date()).await.map_err(String::from)?;
+    auto_needed(pool, &ym)
         .await
         .map_err(String::from)
 }
@@ -927,6 +1003,49 @@ mod tests {
         assert!(issues.is_empty());
     }
 
+    // ── 검사 8: year_month ↔ 교습기간 불일치 (Sprint 24 D1) ──
+    #[tokio::test]
+    async fn year_month_mismatch_detected() {
+        let pool = test_pool_in_memory().await.unwrap();
+        let sid = insert_student(&pool, "S1", "김학생").await;
+        // 다월 교습기간 "2026-08" = 7/30~9/2 (확정).
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2026-08', '2026-07-30', '2026-09-02', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // 경계일 7/30 출결이 달력월 '2026-07'로 오태깅됨 (A1 버그 재현).
+        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-07-30', '2026-07', 'present', 60)")
+            .bind(sid).execute(&pool).await.unwrap();
+        let issues = check_year_month_period_mismatch(&pool).await.unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].check_id, "year_month_period_mismatch");
+        assert_eq!(issues[0].severity, "error");
+        assert_eq!(issues[0].target_table.as_deref(), Some("regular_attendances"));
+    }
+
+    #[tokio::test]
+    async fn year_month_mismatch_clean_when_aligned() {
+        let pool = test_pool_in_memory().await.unwrap();
+        let sid = insert_student(&pool, "S1", "김학생").await;
+        sqlx::query(
+            "INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) \
+             VALUES ('2026-08', '2026-07-30', '2026-09-02', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // 경계일 출결/보강이 모두 올바르게 '2026-08'로 태깅됨.
+        sqlx::query("INSERT INTO regular_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-07-30', '2026-08', 'present', 60)")
+            .bind(sid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO makeup_attendances (student_id, event_date, year_month, status, class_minutes) VALUES (?, '2026-09-01', '2026-08', 'makeup_attended', 60)")
+            .bind(sid).execute(&pool).await.unwrap();
+        let issues = check_year_month_period_mismatch(&pool).await.unwrap();
+        assert!(issues.is_empty());
+    }
+
     // ── run_and_record + 이력 + auto_needed ──
     #[tokio::test]
     async fn run_and_record_persists_history_and_counts() {
@@ -936,7 +1055,7 @@ mod tests {
         sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '15:00', 2, '2026-01-01')")
             .bind(sid).execute(&pool).await.unwrap();
         let result = run_and_record(&pool, "manual", "2026-06-01", "2026-06").await.unwrap();
-        assert_eq!(result.total_checks, 7);
+        assert_eq!(result.total_checks, 8);
         assert!(result.issues_found >= 1);
 
         let history = fetch_history(&pool, 10).await.unwrap();

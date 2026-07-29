@@ -458,7 +458,15 @@ async fn dashboard_alerts(
     pool: &SqlitePool,
     today: NaiveDate,
 ) -> Result<Vec<DashboardAlert>, AppError> {
-    let ym = year_month_of(today);
+    // Sprint 24 B4: 알림 기준월을 달력월이 아니라 오늘이 속한 확정 교습기간의 year_month 로
+    // 잡는다. makeup_deadline·bill_year_month 는 모두 교습기간 라벨이므로, 다월 교습기간
+    // (예: 8월 7/30~9/2) 경계일에 today 달력월과 교습기간이 달라 소멸 임박/미확정 청구를
+    // 엉뚱한(지난) 달로 집계하던 문제 해소. 교습기간 밖이면 달력월로 폴백.
+    let today_str = today.format("%Y-%m-%d").to_string();
+    let ym: String = crate::commands::attendance::period_year_month_for_date(pool, &today_str)
+        .await
+        .map_err(AppError::Config)?
+        .unwrap_or_else(|| year_month_of(today));
     let mut alerts = Vec::new();
 
     // 1) 보강 소멸 임박 (makeup_deadline 이 당월인 결석) — 주황.

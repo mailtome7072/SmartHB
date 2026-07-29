@@ -1064,6 +1064,10 @@ pub async fn update_schedule_event(
         .map_err(AppError::Db)
         .map_err(String::from)?;
 
+    // Sprint 24 B7 (설계 결정): schedule_events 는 year_month 가 없는 순수 달력-날짜 엔티티로,
+    // 교습기간과 독립적으로 존재한다. "지난 달 수정 차단"의 '지남'은 물리적으로 지나간 날짜를
+    // 의미하므로 달력월 기준이 올바르다 — 다월 교습기간의 전월 경계일(예: 8월 교습기간의 7/30)이
+    // 8월 시점에 차단되는 것은 의도된 동작(이미 지난 학사 일정 수정 불가). 교습기간 기준 전환 안 함.
     let ym = year_month_of(&event_date).ok_or_else(|| "기존 일자 형식 오류".to_string())?;
     if ym.as_str() < current_year_month().as_str() {
         return Err("지난 달의 학사 일정은 수정할 수 없습니다.".to_string());
@@ -1161,6 +1165,8 @@ pub async fn delete_schedule_event(id: i64) -> Result<(), String> {
         return Err("시드된 공휴일은 삭제할 수 없습니다.".to_string());
     }
 
+    // Sprint 24 B7 (설계 결정): schedule_events 는 순수 달력-날짜 엔티티이므로 "지난 달 삭제
+    // 차단"도 달력월 기준이 올바르다 (수정 가드와 동일 근거). 교습기간 기준 전환 안 함.
     let ym = year_month_of(&event_date).ok_or_else(|| "기존 일자 형식 오류".to_string())?;
     if ym.as_str() < current_year_month().as_str() {
         return Err("지난 달의 학사 일정은 삭제할 수 없습니다.".to_string());

@@ -87,15 +87,17 @@ export function MakeupRegisterDialog({
 
   // I4: 선택 일자 이전 + 소멸기한 미도래 결석만 필터.
   // 소멸기한 미도래: deadline === null OR deadline >= target year_month
+  // Sprint 24 B8: 비교 기준을 eventDate 달력월이 아니라 authoritative 교습기간 yearMonth prop 으로
+  // 사용한다. makeupDeadline 은 교습기간 라벨이므로, 다월 교습기간 경계일(예: 8월 7/30~9/2)에서
+  // 달력월로 재파생하면 충당 후보가 과대/과소 노출된다 (백엔드 A2 태깅 수정과 정합).
   const filteredPending = useMemo(() => {
     if (pendingQuery.data === undefined) return []
-    const targetYearMonth = eventDate.slice(0, 7)
     return pendingQuery.data.filter(
       (a) =>
         a.eventDate < eventDate &&
-        (a.makeupDeadline === null || a.makeupDeadline >= targetYearMonth),
+        (a.makeupDeadline === null || a.makeupDeadline >= yearMonth),
     )
-  }, [pendingQuery.data, eventDate])
+  }, [pendingQuery.data, eventDate, yearMonth])
 
   // I5+I6: 결석 체크 토글 + 시간 자동 합산/차감
   // React Strict Mode 에서 setState 콜백 안의 또 다른 setState 호출은 중복 실행됨

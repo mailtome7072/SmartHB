@@ -497,6 +497,12 @@ pub(crate) async fn reinstate_student_impl(
     // absence_memo 도 함께 NULL 로 클리어 — 퇴교 외부 처리 메모(`ExternalExpire`)가
     // 일괄 덮어쓴 결과이므로 환원 시 의미가 사라진다. `attendance.rs::toggle_attendance`
     // 의 결석 → 출석 전환 시 동일 패턴(absence_memo=NULL).
+    // Sprint 24 B6: 자연 만기 전 결석만 환원하는 조건을 달력월 비교(makeup_deadline >=
+    // strftime('%Y-%m','now'))에서 "소멸기한 교습기간이 아직 종료되지 않았는가"로 교체한다.
+    // makeup_deadline 은 교습기간 라벨이므로 달력월과 직접 비교하면 다월 교습기간 경계일에
+    // 어긋난다. expiration.rs(소멸 전이: end_date <= today 인 교습기간 라벨을 소멸)와 대칭으로
+    // "종료된 교습기간에 속하지 않은" 기한만 환원한다. 단, 라벨에 해당하는 study_periods 행이
+    // 없는 레거시 데이터는 기존 달력월 비교로 폴백한다(안전망).
     let revived_ids: Vec<i64> = sqlx::query_scalar(
         "UPDATE regular_attendances \
          SET status = 'absent', \
@@ -506,7 +512,18 @@ pub(crate) async fn reinstate_student_impl(
            AND status = 'makeup_expired' \
            AND makeup_attendance_id IS NULL \
            AND makeup_deadline IS NOT NULL \
-           AND makeup_deadline >= strftime('%Y-%m', 'now') \
+           AND NOT ( \
+               makeup_deadline IN ( \
+                   SELECT year_month FROM study_periods \
+                   WHERE end_date <= strftime('%Y-%m-%d', 'now') \
+               ) \
+               OR ( \
+                   NOT EXISTS ( \
+                       SELECT 1 FROM study_periods sp WHERE sp.year_month = makeup_deadline \
+                   ) \
+                   AND makeup_deadline < strftime('%Y-%m', 'now') \
+               ) \
+           ) \
          RETURNING id",
     )
     .bind(id)

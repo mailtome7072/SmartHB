@@ -216,7 +216,7 @@ fn parse_date(s: &str) -> Result<NaiveDate, String> {
         .map_err(|e| format!("날짜 파싱 실패 ({}): {}", s, e))
 }
 
-async fn load_confirmed_period(
+pub(crate) async fn load_confirmed_period(
     pool: &SqlitePool,
     year_month: &str,
 ) -> Result<(String, String), String> {
@@ -769,19 +769,35 @@ async fn build_day_schedules(
     pool: &SqlitePool,
     year_month: &str,
 ) -> Result<Vec<DaySchedule>, String> {
-    let parts: Vec<&str> = year_month.split('-').collect();
-    let year: i32 = parts[0].parse().expect("validated");
-    let month: u32 = parts[1].parse().expect("validated");
-    let first = chrono::NaiveDate::from_ymd_opt(year, month, 1)
-        .ok_or_else(|| format!("일자 생성 실패: {}-{:02}-01", year, month))?;
-    let next_month_first = if month == 12 {
-        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
-    } else {
-        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
-    }
-    .ok_or_else(|| "다음 월 일자 생성 실패".to_string())?;
+    // Sprint 24 B2: 일자 헤더 학사마커 조회 범위를 달력월이 아니라 교습기간 범위로 맞춘다.
+    // 그리드 출결 셀은 교습기간(year_month) 기준으로 반환되므로, 다월 교습기간 경계일
+    // (예: 8월 7/30~9/2)의 학사마커도 함께 커버해야 셀-헤더 범위가 일치한다.
+    // 확정 교습기간이 없으면 달력월 범위로 폴백.
+    let (first, next_month_first) = match load_confirmed_period(pool, year_month).await {
+        Ok((sd, ed)) => {
+            let start = parse_date(&sd)?;
+            let end_excl = parse_date(&ed)?
+                .succ_opt()
+                .ok_or_else(|| "교습기간 종료일 다음 날짜 계산 오버플로".to_string())?;
+            (start, end_excl)
+        }
+        Err(_) => {
+            let parts: Vec<&str> = year_month.split('-').collect();
+            let year: i32 = parts[0].parse().expect("validated");
+            let month: u32 = parts[1].parse().expect("validated");
+            let first = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+                .ok_or_else(|| format!("일자 생성 실패: {}-{:02}-01", year, month))?;
+            let next_month_first = if month == 12 {
+                chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+            } else {
+                chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+            }
+            .ok_or_else(|| "다음 월 일자 생성 실패".to_string())?;
+            (first, next_month_first)
+        }
+    };
 
-    // month 와 겹치는 모든 schedule_events + 속성 조회.
+    // 교습기간(또는 달력월 폴백) 범위와 겹치는 모든 schedule_events + 속성 조회.
     let rows = sqlx::query(
         "SELECT e.event_date, COALESCE(e.period_end_date, e.event_date) AS end_d, \
                 c.code_name, c.allows_regular_class, c.allows_makeup_class \
@@ -1150,6 +1166,26 @@ fn weekly_minutes_on(slices: &[ScheduleSlice], ref_date: NaiveDate) -> i64 {
         .sum()
 }
 
+/// 주어진 날짜가 속한 확정 교습기간의 year_month. 없으면 None.
+///
+/// Sprint 24: 다월 교습기간에서 "달력월(date[..7])"이 아닌 실제 소속 교습기간 라벨을 얻기 위한
+/// 공유 헬퍼. 교습기간 일자 중첩은 academic.rs IPC 레벨에서 금지되므로 날짜당 확정 교습기간은
+/// 최대 1개다.
+pub(crate) async fn period_year_month_for_date(
+    pool: &SqlitePool,
+    date: &str,
+) -> Result<Option<String>, String> {
+    sqlx::query_scalar(
+        "SELECT year_month FROM study_periods \
+         WHERE start_date <= ? AND end_date >= ? AND is_confirmed = 1",
+    )
+    .bind(date)
+    .bind(date)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("교습기간 조회 실패: {}", e))
+}
+
 /// 케이스1 — 특정일 1회성 수업일 이동 결과.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1219,14 +1255,21 @@ async fn move_attendance_impl(
     if from_d == to_d {
         return Err("출발일과 도착일이 같습니다.".to_string());
     }
-    // 동월 한정 — 파싱된 날짜의 연·월 비교 (P1-8: 문자열 바이트 슬라이싱은 7바이트 미만
-    // 입력에서 panic — parse_date 는 "26-6-1" 같은 축약 표기도 통과시키므로 안전하지 않다)
-    if from_d.format("%Y-%m").to_string() != to_d.format("%Y-%m").to_string() {
-        return Err(
-            "수업일 이동은 같은 달 안에서만 가능합니다. 다른 달로 옮기려면 보강 기능을 이용하세요."
-                .to_string(),
-        );
-    }
+    // Sprint 24 B1: "동월 한정"을 달력월이 아닌 "같은 교습기간" 기준으로 판정한다.
+    // 다월 교습기간(예: 8월 7/30~9/2)에서 8/31→9/1 처럼 같은 교습기간 내부인데도 달력월
+    // 불일치로 오차단되던 문제, 그리고 인접 교습기간 간 이동(7/29→7/31)이 달력월 일치로
+    // 오허용되며 year_month 가 갱신되지 않던 문제를 함께 해소한다.
+    let from_period = period_year_month_for_date(pool, from_date).await?;
+    let to_period = period_year_month_for_date(pool, to_date).await?;
+    let target_ym = match (&from_period, &to_period) {
+        (Some(fp), Some(tp)) if fp == tp => tp.clone(),
+        _ => {
+            return Err(
+                "수업일 이동은 같은 교습기간 안에서만 가능합니다. 다른 교습기간으로 옮기려면 보강 기능을 이용하세요."
+                    .to_string(),
+            );
+        }
+    };
     // 원본 출결 — present 만 이동 허용
     let row = sqlx::query("SELECT id, status FROM regular_attendances WHERE student_id = ? AND event_date = ?")
         .bind(student_id)
@@ -1281,10 +1324,11 @@ async fn move_attendance_impl(
         weekday_ko(to_d)
     );
     sqlx::query(
-        "UPDATE regular_attendances SET event_date = ?, note = ?, start_time = ?, \
+        "UPDATE regular_attendances SET event_date = ?, year_month = ?, note = ?, start_time = ?, \
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
     )
     .bind(to_date)
+    .bind(&target_ym)
     .bind(&note)
     .bind(&start_time)
     .bind(att_id)
@@ -1373,7 +1417,7 @@ async fn apply_schedule_change_impl(
     // ── 트랜잭션 전 데이터 수집 ──
     // D 이후 ~ 와 겹치는 확정 교습기간들
     let period_rows = sqlx::query(
-        "SELECT start_date, end_date FROM study_periods \
+        "SELECT year_month, start_date, end_date FROM study_periods \
          WHERE is_confirmed = 1 AND end_date >= ? ORDER BY start_date",
     )
     .bind(effective_date)
@@ -1382,14 +1426,17 @@ async fn apply_schedule_change_impl(
     .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
 
     struct Period {
+        year_month: String,
         start: NaiveDate,
         end: NaiveDate,
     }
     let mut periods = Vec::with_capacity(period_rows.len());
     for r in &period_rows {
+        let ym: String = r.try_get("year_month").map_err(|e| e.to_string())?;
         let ps: String = r.try_get("start_date").map_err(|e| e.to_string())?;
         let pe: String = r.try_get("end_date").map_err(|e| e.to_string())?;
         periods.push(Period {
+            year_month: ym,
             start: parse_date(&ps)?,
             end: parse_date(&pe)?,
         });
@@ -1437,7 +1484,10 @@ async fn apply_schedule_change_impl(
                 let in_range = cur >= enroll_d && withdraw_d.is_none_or(|wd| cur <= wd);
                 let ds = cur.format("%Y-%m-%d").to_string();
                 if in_range && !off_dates.contains(&ds) {
-                    let ym = &ds[..7];
+                    // Sprint 24 A1: 재생성 출결 태깅은 달력월(ds[..7])이 아니라 해당 날짜가
+                    // 속한 교습기간의 year_month 를 사용한다 — 다월 교습기간(예: 8월 7/30~9/2)
+                    // 경계일이 잘못된 달로 태깅되어 그리드에서 누락되던 R136 계열 버그 해소.
+                    let ym = p.year_month.as_str();
                     let res = sqlx::query(
                         "INSERT OR IGNORE INTO regular_attendances \
                          (student_id, event_date, year_month, status, class_minutes) \
@@ -1540,45 +1590,46 @@ async fn sync_single_date(pool: &SqlitePool, date: &str) -> Result<(), String> {
         .map_err(|e| format!("출결 삭제 실패: {}", e))?;
     } else {
         // OFF 이벤트 없음 → 날짜가 속한 확정 교습기간 확인 후 INSERT OR IGNORE.
-        // T1(Sprint 21): 태깅 year_month 를 달력월(date[..7])이 아닌 **교습기간 year_month**로
-        // 지정해 generate_impl 과 태깅 기준을 통일한다 — 다월 교습기간(예: 8월 7/30~9/2)에서
-        // 9/1 출결이 "2026-09"로 태깅되어 8월 그리드에 안 뜨던 불일치(R136) 해소.
-        // 교습기간 일자 중첩은 academic.rs IPC 레벨에서 금지되므로 날짜당 교습기간은 최대 1개.
-        let period_ym: Option<String> = sqlx::query_scalar(
-            "SELECT year_month FROM study_periods \
-             WHERE start_date <= ? AND end_date >= ? AND is_confirmed = 1",
-        )
-        .bind(date)
-        .bind(date)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
+        // 태깅 year_month 를 달력월이 아닌 교습기간 year_month 로 지정해 generate_impl 과 통일한다
+        // — 다월 교습기간(예: 8월 7/30~9/2)에서 9/1 출결이 "2026-09"로 태깅되어 8월 그리드에 안
+        // 뜨던 불일치(R136) 해소 (Sprint 24: 공유 헬퍼 period_year_month_for_date 로 통일).
+        let period_ym = period_year_month_for_date(pool, date).await?;
 
         if let Some(ym) = period_ym {
             let d = parse_date(date)?;
-            let dow = d.weekday().number_from_monday() as i64;
-            sqlx::query(
-                "INSERT OR IGNORE INTO regular_attendances \
-                 (student_id, event_date, year_month, status, class_minutes) \
-                 SELECT ss.student_id, ?, ?, 'present', ss.duration_hours * 60 \
-                 FROM student_schedules ss \
-                 JOIN students s ON s.id = ss.student_id \
-                 WHERE ss.day_of_week = ? \
-                   AND ss.effective_from <= ? \
-                   AND (ss.effective_to IS NULL OR ss.effective_to > ?) \
-                   AND s.enroll_date <= ? \
-                   AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?)",
+            // Sprint 24 A114: 스케줄 이력 반영을 generate_impl 과 동일한 헬퍼
+            // (load_schedule_slices + minutes_for_date)로 통일한다. 이전에는 인라인
+            // SQL 로 effective_from/to 조건을 중복 표현했다 — 날짜별 유효 스케줄 판정을
+            // 단일 소스(minutes_for_date)로 일원화해 세 INSERT 경로(generate/apply/sync)의
+            // 판정 기준을 통일한다.
+            let student_rows = sqlx::query(
+                "SELECT id FROM students \
+                 WHERE enroll_date <= ? AND (withdraw_date IS NULL OR withdraw_date >= ?)",
             )
             .bind(date)
-            .bind(&ym)
-            .bind(dow)
             .bind(date)
-            .bind(date)
-            .bind(date)
-            .bind(date)
-            .execute(pool)
+            .fetch_all(pool)
             .await
-            .map_err(|e| format!("출결 INSERT 실패: {}", e))?;
+            .map_err(|e| format!("재원 원생 조회 실패: {}", e))?;
+
+            for srow in student_rows {
+                let sid: i64 = srow.try_get("id").map_err(|e| e.to_string())?;
+                let slices = load_schedule_slices(pool, sid).await?;
+                if let Some(minutes) = minutes_for_date(&slices, d) {
+                    sqlx::query(
+                        "INSERT OR IGNORE INTO regular_attendances \
+                         (student_id, event_date, year_month, status, class_minutes) \
+                         VALUES (?, ?, ?, 'present', ?)",
+                    )
+                    .bind(sid)
+                    .bind(date)
+                    .bind(&ym)
+                    .bind(minutes)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("출결 INSERT 실패: {}", e))?;
+                }
+            }
         }
     }
     Ok(())
@@ -2715,8 +2766,9 @@ mod tests {
         generate_impl(&pool, "2026-06").await.expect("generate");
         let from = first_event_date(&pool, sid).await;
 
+        // 2026-07 은 교습기간 미설정 → 다른(없는) 교습기간으로의 이동은 차단된다 (Sprint 24 B1).
         let err = move_attendance_impl(&pool, sid, &from, "2026-07-06", "16:00").await.unwrap_err();
-        assert!(err.contains("같은 달"), "월 경계 차단: {}", err);
+        assert!(err.contains("같은 교습기간"), "교습기간 경계 차단: {}", err);
     }
 
     #[tokio::test]
@@ -3009,5 +3061,162 @@ mod tests {
         .await
         .unwrap();
         assert!(cnt >= 1, "OFF+ON 공존 시 ON 우선 INSERT 기대, 실제 {}", cnt);
+    }
+
+    // ─────────── Sprint 24 T9: 다월 교습기간 경계일 회귀 테스트 ───────────
+
+    /// A1 회귀 — 다월 교습기간(8월=7/30~9/2)에서 스케줄 변경 재생성 시 경계일(7/30)이 달력월
+    /// "2026-07"이 아니라 교습기간 라벨 "2026-08"로 태깅되어야 하며 8월 그리드에 표시되어야 한다.
+    #[tokio::test]
+    async fn apply_schedule_change_tags_boundary_day_with_period_ym() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        // 2026-07-30 은 목요일(dow=4). 목 1시간 스케줄.
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(4, 1)]).await;
+        generate_impl(&pool, "2026-08").await.expect("generate");
+
+        // 스케줄 변경: 목요일 2시간, 적용일 2026-07-30 (기존 행 마감 + 신규 삽입).
+        sqlx::query("UPDATE student_schedules SET effective_to = '2026-07-30' WHERE student_id = ? AND day_of_week = 4 AND effective_to IS NULL")
+            .bind(sid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 4, '16:00', 2, '2026-07-30')")
+            .bind(sid).execute(&pool).await.unwrap();
+
+        apply_schedule_change_impl(&pool, sid, "2026-07-30").await.expect("apply");
+
+        // 경계일 7/30 은 "2026-08"로 태깅 + 변경된 2시간(120분).
+        let row: (String, i64) = sqlx::query_as(
+            "SELECT year_month, class_minutes FROM regular_attendances WHERE student_id = ? AND event_date = '2026-07-30'",
+        ).bind(sid).fetch_one(&pool).await.expect("7/30 행");
+        assert_eq!(row.0, "2026-08", "경계일 7/30 은 교습기간 라벨로 태깅");
+        assert_eq!(row.1, 120, "변경된 2시간 반영");
+
+        // 달력월 "2026-07"로 태깅된 행은 없어야 함 (오태깅 재발 방지).
+        let mistagged: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM regular_attendances WHERE student_id = ? AND year_month = '2026-07'",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert_eq!(mistagged, 0, "달력월 오태깅 행 없음");
+
+        // 8월 그리드에 7/30 셀이 표시되어야 함.
+        let grid = get_grid_impl(&pool, "2026-08").await.expect("grid");
+        let has_730 = grid.students.iter().any(|s| {
+            s.student_id == sid && s.attendances.iter().any(|a| a.event_date == "2026-07-30")
+        });
+        assert!(has_730, "8월 그리드에 7/30 셀 표시");
+    }
+
+    /// B1 회귀 — 같은 교습기간 내 달력월 경계 이동(8/31→9/1)은 허용되고 year_month 는 유지된다.
+    #[tokio::test]
+    async fn move_attendance_allows_same_period_cross_calendar_month() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        // 2026-08-31 은 월요일(dow=1).
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        generate_impl(&pool, "2026-08").await.expect("generate");
+
+        // 8/31(월) 출결 → 9/1(화)로 이동. 둘 다 8월 교습기간(7/30~9/2) 내부.
+        let r = move_attendance_impl(&pool, sid, "2026-08-31", "2026-09-01", "16:00")
+            .await
+            .expect("같은 교습기간 내 이동 허용");
+        assert_eq!(r.to_date, "2026-09-01");
+
+        let ym: String = sqlx::query_scalar(
+            "SELECT year_month FROM regular_attendances WHERE student_id = ? AND event_date = '2026-09-01'",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert_eq!(ym, "2026-08", "이동 후에도 교습기간 라벨 유지");
+    }
+
+    /// B2 회귀 — 다월 교습기간 경계일(7/30)의 학사마커가 8월 그리드 일자 헤더에 포함되어야 한다.
+    #[tokio::test]
+    async fn build_day_schedules_covers_period_boundary() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        let holiday = schedule_code_id(&pool, "공휴일").await;
+        add_schedule_event(&pool, holiday, "2026-07-30", None).await;
+
+        let days = build_day_schedules(&pool, "2026-08").await.expect("day_schedules");
+        assert!(
+            days.iter().any(|d| d.event_date == "2026-07-30"),
+            "경계일 7/30 학사마커가 8월 헤더에 포함되어야 함"
+        );
+    }
+
+    /// count_ungenerated 회귀 — 다월 교습기간 완전 생성 후 미생성 0 (경계일 포함 정합).
+    #[tokio::test]
+    async fn count_ungenerated_zero_after_full_generate_multimonth() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        let _sid = seed_student(&pool, "S001", "2026-04-01", None, &[(4, 1)]).await; // 목요일
+        generate_impl(&pool, "2026-08").await.expect("generate");
+        let cnt = count_ungenerated_attendance_students_impl(&pool, "2026-08")
+            .await
+            .expect("count");
+        assert_eq!(cnt, 0, "완전 생성 후 미생성 0 (경계일 포함 정합)");
+    }
+
+    /// count_ungenerated 회귀 — 경계일이 오태깅되면(달력월) 미생성으로 잡혀야 한다 (버그 재현 방지).
+    #[tokio::test]
+    async fn count_ungenerated_flags_mistagged_boundary() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(4, 1)]).await;
+        generate_impl(&pool, "2026-08").await.expect("generate");
+        // 경계일 7/30 을 인위적으로 달력월 "2026-07"로 오태깅 → 8월 기준 미생성 1건.
+        sqlx::query("UPDATE regular_attendances SET year_month = '2026-07' WHERE student_id = ? AND event_date = '2026-07-30'")
+            .bind(sid).execute(&pool).await.unwrap();
+        let cnt = count_ungenerated_attendance_students_impl(&pool, "2026-08")
+            .await
+            .expect("count");
+        assert_eq!(cnt, 1, "경계일 오태깅 시 미생성 1건으로 검출");
+    }
+
+    /// C그룹(하류) 회귀 — 경계일(7/30, "2026-08" 태깅) 결석 처리 시 소멸기한이 달력월이 아니라
+    /// 교습기간 라벨 기준(next_month_str("2026-08")="2026-09")으로 산출된다 (A1 태깅에 의존).
+    #[tokio::test]
+    async fn toggle_absent_on_boundary_uses_period_deadline() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(4, 1)]).await; // 목요일
+        generate_impl(&pool, "2026-08").await.expect("generate");
+        let att_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM regular_attendances WHERE student_id = ? AND event_date = '2026-07-30'",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        let r = toggle_impl(&pool, att_id, "absent").await.expect("toggle");
+        assert_eq!(
+            r.new_makeup_deadline.as_deref(),
+            Some("2026-09"),
+            "소멸기한 = 교습기간 라벨 + 1개월"
+        );
+    }
+
+    /// C그룹(하류) 회귀 — 경계일 present 가 8월 요약(present_count)에 포함된다.
+    #[tokio::test]
+    async fn summary_includes_boundary_present() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02", 1).await;
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(4, 1)]).await;
+        generate_impl(&pool, "2026-08").await.expect("generate");
+        let summary = compute_summary(&pool, sid, "2026-08").await.expect("summary");
+        // 7/30·8/6·8/13·8/20·8/27 = 목요일 5회 모두 present.
+        assert_eq!(summary.present_count, 5, "경계일 포함 목요일 present 집계");
+    }
+
+    /// A114 회귀 — sync_single_date OFF→ON 복원이 공유 헬퍼(load_schedule_slices/minutes_for_date)로
+    /// 스케줄 이력을 반영한다: 변경일 이후 날짜는 신 스케줄 시간으로 복원된다.
+    #[tokio::test]
+    async fn sync_single_date_restores_using_schedule_history() {
+        let pool = test_pool_in_memory().await.expect("pool");
+        seed_period(&pool, "2026-06", "2026-06-01", "2026-06-30", 1).await;
+        // 월요일 1시간 → 2026-06-08 부터 2시간으로 변경 (이력 2행).
+        let sid = seed_student(&pool, "S001", "2026-04-01", None, &[(1, 1)]).await;
+        sqlx::query("UPDATE student_schedules SET effective_to = '2026-06-08' WHERE student_id = ? AND day_of_week = 1 AND effective_to IS NULL")
+            .bind(sid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 1, '16:00', 2, '2026-06-08')")
+            .bind(sid).execute(&pool).await.unwrap();
+        // 2026-06-15(월, 변경 후) 복원 → 신 스케줄 2시간(120분).
+        sync_single_date(&pool, "2026-06-15").await.expect("sync");
+        let minutes: i64 = sqlx::query_scalar(
+            "SELECT class_minutes FROM regular_attendances WHERE student_id = ? AND event_date = '2026-06-15'",
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert_eq!(minutes, 120, "변경 후 날짜는 신 스케줄(2시간)으로 복원");
     }
 }
