@@ -51,10 +51,20 @@ sprint-close / hotfix-close agent 및 팀원이 항목 추가 시 아래 형식�
 브랜치: `sprint24 → develop` 직접 머지 예정 (단일 개발자 정책)
 
 ### 스테이징 검증 (develop 로컬)
-- ✅ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증)
-- ⬜ pnpm tauri:dev 실행하여 앱 동작 수동 확인 — V313 마이그레이션 자동 적용 후 CS 원인 사례(A 원생 8월 교습기간 7/30 "수업 없는 날" 표시 + "1명 변경 필요" 배지) 해소 확인
-- ⬜ 원장 PC / 자택 Mac 양 PC에서 새 버전 실행 — V313 데이터 자동 보정 적용 확인 (startup migration 자동 실행)
-- ⬜ 교습일정 인쇄 미리보기 확인 (Sprint 20 A122 계속 유지)
+- ✅ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증) — **초기 구현분 기준. 아래 QA 추가 수정분은 재리뷰 필요**
+- ✅ pnpm tauri:dev 실행하여 앱 동작 수동 확인 — CS 원인 사례(A 원생 8월 7/30 누락 + "변경 필요" 배지) 해소 확인
+- ✅ 수동 검증 중 발견·수정된 추가 결함 5건 정상 동작 확인 (아래 목록)
+- ⬜ 교습일정 인쇄 미리보기 확인 (Sprint 20 A122 계속 유지) — 미확인
+- ⬜ 원장 PC / 자택 Mac 양 PC에서 새 버전 실행 — V313 데이터 자동 보정 + startup 재동기화 적용 확인 (배포 후 실환경)
+
+#### 수동 검증 중 발견·수정된 추가 결함 (모두 develop 반영, 정상 동작 확인)
+1. 교습기간 경계 (재)설정 시 출결 재태깅 갭 — `periods::reconcile_attendance_year_month` + 시작/변경 훅
+2. 시수 변경 시 청구 재확인 팝업 신설 — `list_affected_bill_months` IPC + 모달
+3. 청구 주당시간 산정을 교습기간 유효 스케줄 기준(이력 인식)으로 수정 — 7월 3시간 정상화 + "추가 청구 데이터 생성" 유령 버튼 해소
+4. 수업일 이동 팝업 달력을 교습기간 범위로 확장 (B1 프론트 보완) — 다월 이동 대상 선택 가능
+5. (초기 sprint-review 지적 M1/M2/L1/L2 반영 — sync N+1 제거, reinstate CASE, periods 모듈 분리, 폴백 audit)
+
+> ⚠️ 위 추가 수정분은 초기 sprint-review 이후 커밋되었으므로, **배포 전 sprint-review 재실행 권장**.
 
 이전 배포 기록: `docs/deploy-history/2026-07-23.md` (v1.5.0 Sprint 23 프로덕션 아카이빙)
 
