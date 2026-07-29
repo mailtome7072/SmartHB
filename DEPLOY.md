@@ -51,7 +51,7 @@ sprint-close / hotfix-close agent 및 팀원이 항목 추가 시 아래 형식�
 브랜치: `sprint24 → develop` 직접 머지 예정 (단일 개발자 정책)
 
 ### 스테이징 검증 (develop 로컬)
-- ✅ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증) — **초기 구현분 기준. 아래 QA 추가 수정분은 재리뷰 필요**
+- ✅ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증) — 초기 + 재리뷰(추가 커밋 5건) 완료. cargo test 497 / clippy / tsc / lint / build 전수 통과. Critical/High 없음
 - ✅ pnpm tauri:dev 실행하여 앱 동작 수동 확인 — CS 원인 사례(A 원생 8월 7/30 누락 + "변경 필요" 배지) 해소 확인
 - ✅ 수동 검증 중 발견·수정된 추가 결함 5건 정상 동작 확인 (아래 목록)
 - ✅ 교습일정 인쇄 미리보기 확인 (Sprint 20 A122 계속 유지)

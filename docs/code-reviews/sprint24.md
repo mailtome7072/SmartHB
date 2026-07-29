@@ -133,3 +133,81 @@ Critical 0건, High 0건, Medium 2건, Low 2건. V313 마이그레이션 안전�
 | L2 | makeup A2 폴백의 `eprintln!`(Tauri stderr 미캡처)을 **감사 로그 기록**(`AuditEventType::MakeupCalendarFallback`)으로 교체 → 프로덕션에서 관찰 가능. |
 
 재검증: cargo test **493 passed** / clippy clean / cipher check OK. (프론트엔드 변경 없음)
+
+---
+
+## 재리뷰 — 수동검증 추가 커밋 5건 (2026-07-29)
+
+> 대상: 8e4825e..HEAD (38bc5f5 / 7efa8e1 / cd79826 / 5f65b03 / 670d8bc)
+> 자동 검증: cargo test **497 passed** / clippy clean / cipher check OK / lint clean / tsc clean / build 성공
+
+### RR-GP-1 billing weekly_hours 이력 인식 변경 회귀 안전성 (5f65b03)
+
+핵심 변경: `generate_bills_impl` / `get_billing_summary_impl`의 JOIN 조건을
+`effective_to IS NULL AND effective_from <= period_end`에서
+`effective_from <= period_end AND (effective_to IS NULL OR effective_to > period_end)`로 교체.
+
+- **period_end 대표일 타당성**: "교습기간 종료일 시점에 유효한 스케줄"은 해당 기간의 주된 요금 결정 근거로 합리적. 변경 적용일이 period_end 이후인 스케줄은 해당 기간에 영향 없음 — 올바름.
+- **중월 입퇴교 케이스**: `LEFT JOIN` + `enroll_date <= period_end AND withdraw_date >= period_start` 필터는 변경 없음. 스케줄 이력 조건만 교체. 안전.
+- **스케줄 없는 학생**: `LEFT JOIN + COALESCE to 0 → weekly_hours=0 → skipped`. 변경 없음. 안전.
+- **generate vs summary 일관성**: 두 함수 모두 동일한 조건으로 교체되어 weekly_hours 산정 기준이 일치 → 유령 버튼 재발 방지 확인됨.
+- **bind 순서 확인**: 기존 `period_end` 1회 → 신규 `period_end` 2회(effective_from <=, effective_to >) + 이후 `period_end`(enroll_date) / `period_start`(withdraw_date). 바인딩 순서 정상.
+- **회귀 테스트**: `generate_bills_uses_schedule_effective_during_period_not_current` — 목요일 1h→2h 변경(적용일 7/30), 7월 period_end=7/29 → 3h 정상 확인. 8월 → 4h 정상 확인. 케이스 충분.
+- **판정: 안전 확인됨. SAFE로 판정했던 초기 리뷰 전제 자체가 잘못됐음을 솔직히 기록 — billing.rs 미변경 가정이 "교습기간이 변경 적용일보다 앞선" 엣지케이스를 누락했다. 수정 후 로직 정확성 확인.**
+
+### RR-GP-2 reconcile_attendance_year_month 안전성 (7efa8e1)
+
+- **멱등성**: `WHERE year_month != 서브쿼리` → 이미 맞는 행은 UPDATE 제외. 재실행 0건. 테스트 확인.
+- **NULL 안전성**: 확정 교습기간 없는 날짜 → 서브쿼리 NULL → `year_month != NULL` = NULL(거짓) → UPDATE 제외. 안전.
+- **UNIQUE 충돌**: `event_date` 변경 없음 → `UNIQUE(student_id, event_date)` 충돌 없음. 안전.
+- **V313 SQL과 동기화**: 동일 로직의 런타임 판. 함수 주석에 "V313 SQL을 바꾸면 이 함수도 함께 동기화할 것" 명시됨. 적절.
+- **academic.rs 호출 위치**: `create_study_period` / `update_study_period` / `confirm_study_period` 직후 fail-soft 호출. 교습기간 삭제(delete) 경로는 미포함 — 삭제 시에도 오태깅 행이 생길 수 있으나, 삭제 후 해당 날짜의 확정 교습기간이 없으면 서브쿼리 NULL → 재태깅 안 됨(안전). startup 재동기화가 다음 실행 시 정리 역할. 허용 범위.
+- **startup 호출**: 단계 5-2에서 pool 획득 후 호출. fail-soft. 정상.
+- **판정: 안전 확인됨.**
+
+### RR-GP-3 list_affected_bill_months 정확성 (cd79826)
+
+- **쿼리 판정**: `sp.end_date >= effective_date` — 교습기간 종료일이 변경 적용일 이후인 경우만 포함. 날짜 문자열 비교(YYYY-MM-DD) SQLite에서 사전순 = 날짜순. 안전.
+- **확정/미확정 모두 대상**: status를 반환하고 UI에서 "(확정)"/"(미확정)" 구분 표시. 올바름.
+- **bind 파라미터**: student_id, effective_date 모두 bind — SQL 인젝션 없음.
+- **테스트**: 단일 기간 영향, 양 기간 영향, 청구 없는 원생 3케이스 커버. 충분.
+- **판정: 안전 확인됨.**
+
+### RR-GP-4 periods.rs 모듈 분리 정확성 (38bc5f5)
+
+- **전 호출부 재지정**: attendance.rs(generate_impl, count_ungenerated), dashboard.rs, diagnosis.rs, makeup.rs — `crate::commands::periods::` 경로로 전환 확인.
+- **academic.rs 호출 유지**: academic.rs의 reconcile 헬퍼는 periods.rs 함수를 직접 호출 — 양방향 결합(academic↔attendance) 회피 목적 달성.
+- **pub(crate) 범위**: 외부 크레이트 노출 없음. 적절.
+- **헬퍼 단위 테스트**: `period_year_month_for_date` / `load_confirmed_period` 2건 periods.rs 내 신규 테스트 포함.
+- **판정: 분리 정확성 확인됨.**
+
+### RR-GP-5 MoveAttendanceDialog 범위 달력 (670d8bc)
+
+- **periodStart/periodEnd prop**: nullable, 미제공 시 fromDate 달력월로 폴백. 하위 호환 유지.
+- **범위 외 날짜 비활성**: `inRange` 플래그로 교습기간 밖 날짜 `cursor-not-allowed + text-gray-200` 비활성. 올바름.
+- **window.confirm 미사용**: 커스텀 달력 렌더링. Tauri 차단 패턴 없음. ✓
+- **월 경계 표기**: 1일에 "M/1" 표기로 달 전환 시점 사용자 인지 가능. 적절.
+- **판정: 프론트엔드 구현 정확성 확인됨.**
+
+---
+
+## 재리뷰 발견 사항 (2건, Low only)
+
+### L3 — reconcile fail-soft 및 startup 로그 eprintln! (Low, A132 이연 동일)
+
+- 위치: `src-tauri/src/commands/academic.rs::reconcile_year_month_fail_soft` / `src-tauri/src/startup.rs` 5-2단계
+- 내용: 재동기화 결과 로그가 `eprintln!`으로 출력. Tauri 프로덕션 환경에서 stderr 미캡처 — 관찰 불가. L2(makeup 폴백 eprintln!)와 동일 패턴.
+- 조치: A132(구조화 로깅) 이연 유지. 동일 이슈 인스턴스 2건 추가 확인.
+
+### L4 — 스케줄 삭제 warnAffectedBills(today) 커트라인 (Low, 허용)
+
+- 위치: `src/components/students/schedule-editor.tsx` — remove mutation onSuccess
+- 내용: 스케줄 삭제 시 `warnAffectedBills(today)`로 호출 → `sp.end_date >= today`. 삭제된 스케줄의 `effective_from`이 오늘 이전이면, 오늘 이전에 종료된 교습기간의 청구는 팝업 대상에서 누락 가능.
+- 실제 영향: 팝업은 advisory only. 기존 inline notice("주당 수업시간이 바뀌어 이번 달 청구액 재확인이 필요합니다")가 별도 유지됨. 청구 자체 계산 영향 없음.
+- 조치: 허용. 완전하게 수정하려면 삭제할 스케줄의 effective_from을 전달해야 하나, 1인 교습소 운영 맥락에서 현재 달의 inline notice로 충분. 향후 스케줄 편집기 리팩터 시 개선 검토.
+
+---
+
+## 재리뷰 결론
+
+Critical 0건, High 0건, Low 2건(L3/L4 — 기존 이연 사항 동일 패턴). 초기 리뷰에서 SAFE로 판정했던 billing.rs가 수동검증으로 실제 버그(유령 버튼 포함)가 발견되어 수정됨 — 이력 인식 전환 후 로직 정확성 재확인. reconcile 안전성·periods.rs 분리 정확성·팝업 모달 구현 모두 확인. 자동 검증 6종 재실행 전수 통과(cargo test 497). 배포 게이트 통과 조건 충족.
