@@ -78,6 +78,7 @@ pub fn run() {
             commands::fees::update_fee,
             commands::fees::match_fee_by_hours,
             commands::billing::generate_bills,
+            commands::billing::list_affected_bill_months,
             commands::billing::list_bills,
             commands::billing::list_billed_months,
             commands::billing::get_bill,

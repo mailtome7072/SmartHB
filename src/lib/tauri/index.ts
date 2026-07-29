@@ -1468,6 +1468,7 @@ export async function getAbsenceHistory(
 // ─────────────────────── Sprint 11 청구·수납 도메인 ───────────────────────
 
 import type {
+  AffectedBillMonth,
   Bill,
   BillingPeriodStats,
   BillingSearchResult,
@@ -1483,6 +1484,22 @@ export async function generateBills(yearMonth: string): Promise<GenerateBillsRes
   const inv = await getInvoke()
   if (!inv) return { yearMonth, generatedCount: 0, skippedCount: 0 }
   return inv('generate_bills', { yearMonth }) as Promise<GenerateBillsResult>
+}
+
+/**
+ * Sprint 24: 스케줄(시수) 변경이 영향을 주는, 원생의 이미 생성된 청구월 목록.
+ * 비어있지 않으면 "청구 관리에서 직접 확인·수정" 팝업을 띄운다.
+ */
+export async function listAffectedBillMonths(
+  studentId: number,
+  effectiveDate: string,
+): Promise<AffectedBillMonth[]> {
+  const inv = await getInvoke()
+  if (!inv) return []
+  return inv('list_affected_bill_months', {
+    studentId,
+    effectiveDate,
+  }) as Promise<AffectedBillMonth[]>
 }
 
 export async function listBills(yearMonth: string): Promise<Bill[]> {

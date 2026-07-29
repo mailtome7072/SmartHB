@@ -56,6 +56,13 @@ export interface GenerateBillsResult {
   skippedCount: number
 }
 
+/** Sprint 24: 시수 변경이 영향을 주는, 이미 생성된 청구월 (재확인 팝업용). */
+export interface AffectedBillMonth {
+  yearMonth: string
+  /** 'draft' | 'confirmed' */
+  status: string
+}
+
 export interface Payment {
   id: number
   billId: number

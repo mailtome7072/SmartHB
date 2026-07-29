@@ -20,12 +20,14 @@ import {
   getOperatingHours,
   getSchedules,
   getWeeklyHours,
+  listAffectedBillMonths,
   matchFeeByHours,
   setSchedule,
   type DayHours,
 } from '@/lib/tauri'
 import { todayLocalISO } from '@/lib/format'
 import type { StudentSchedule } from '@/types/schedule'
+import type { AffectedBillMonth } from '@/types/billing'
 
 const DAY_LABELS = ['', '월', '화', '수', '목', '금', '토', '일']
 
@@ -78,6 +80,8 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
   const [notice, setNotice] = useState<string | null>(null)
   // 수정 중인 원래 요일 (null = 추가 모드). 요일 변경 시 원래 요일 종료에 사용.
   const [editingDay, setEditingDay] = useState<number | null>(null)
+  // Sprint 24: 시수 변경이 이미 생성된 청구에 영향 줄 때 재확인 팝업(영향 청구월 목록).
+  const [billWarn, setBillWarn] = useState<AffectedBillMonth[] | null>(null)
   // 추가/변경/삭제 확인 다이얼로그 — 변경 내용 요약 후 사용자 확인 시 반영.
   const [confirm, setConfirm] = useState<
     | { kind: 'upsert'; row: DraftRow; summary: string }
@@ -123,6 +127,17 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
     return opts
   }, [operatingHours, draft.day_of_week])
 
+  // Sprint 24: 시수 변경 후, 이미 생성된 청구가 영향받는 교습월이 있으면 재확인 팝업을 띄운다.
+  // 청구는 자동 재계산되지 않으므로(생성 시점 스냅샷) 원장이 청구 관리에서 직접 수정해야 한다.
+  const warnAffectedBills = async (effectiveFrom: string) => {
+    try {
+      const affected = await listAffectedBillMonths(studentId, effectiveFrom)
+      if (affected.length > 0) setBillWarn(affected)
+    } catch {
+      // 조회 실패는 무시 — 인라인 안내(notice)로 대체.
+    }
+  }
+
   const upsert = useMutation({
     mutationFn: async (row: DraftRow) => {
       const [hh, mm] = row.start_time.split(':').map(Number)
@@ -149,7 +164,7 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
       // Sprint 16 T0 케이스2: 변경일 이후 출결을 신 스케줄로 재생성 (미처리만, 처리행 보존).
       return applyScheduleChange(studentId, row.effective_from)
     },
-    onSuccess: (result) => {
+    onSuccess: (result, row) => {
       setError(null)
       setEditingDay(null)
       setDraft({ ...EMPTY_ROW, effective_from: today })
@@ -158,13 +173,16 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
       if (result.preservedCount > 0) {
         parts.push(`결석·보강 ${result.preservedCount}건 보존`)
       }
-      if (result.weeklyMinutesBefore !== result.weeklyMinutesAfter) {
+      const hoursChanged = result.weeklyMinutesBefore !== result.weeklyMinutesAfter
+      if (hoursChanged) {
         parts.push('주당 수업시간이 바뀌어 이번 달 청구액 재확인이 필요합니다')
       }
       setNotice(parts.join(' · '))
       qc.invalidateQueries({ queryKey: ['schedules', studentId] })
       qc.invalidateQueries({ queryKey: ['weekly-hours', studentId] })
       qc.invalidateQueries({ queryKey: ['attendance-grid'] })
+      // Sprint 24: 시수가 바뀌었고 이미 생성된 청구가 있으면 재확인 팝업.
+      if (hoursChanged) void warnAffectedBills(row.effective_from)
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
@@ -185,6 +203,8 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
       qc.invalidateQueries({ queryKey: ['schedules', studentId] })
       qc.invalidateQueries({ queryKey: ['weekly-hours', studentId] })
       qc.invalidateQueries({ queryKey: ['attendance-grid'] })
+      // Sprint 24: 삭제도 시수를 줄이므로 이미 생성된 청구 재확인 팝업 (오늘 이후 기준).
+      void warnAffectedBills(today)
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
@@ -456,6 +476,46 @@ export function ScheduleEditor({ studentId }: { studentId: number }) {
                 }`}
               >
                 {confirm.kind === 'remove' ? '삭제' : '확인'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {billWarn !== null && billWarn.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setBillWarn(null)}
+          role="presentation"
+        >
+          <div
+            className="w-[460px] rounded-lg bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="청구 재확인 안내"
+          >
+            <h2 className="text-xl font-bold text-[var(--danger)]">청구 재확인 필요</h2>
+            <p className="mt-3 text-base leading-tight text-gray-800">
+              주당 수업시간이 바뀌었습니다. 아래 교습월은 <b>이미 청구가 생성</b>되어 있어
+              변경된 시수가 청구액에 자동 반영되지 않습니다. <b>청구 관리</b>에서 이 원생의 청구액을
+              직접 확인·수정해 주세요.
+            </p>
+            <ul className="mt-3 list-disc pl-5 text-base text-gray-800">
+              {billWarn.map((m) => (
+                <li key={m.yearMonth}>
+                  {m.yearMonth.replace('-', '년 ')}월
+                  {m.status === 'confirmed' ? ' (확정)' : ' (미확정)'}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setBillWarn(null)}
+                className="min-h-[44px] rounded-lg bg-[var(--accent)] px-4 text-base font-semibold text-white hover:bg-[var(--accent-hover)]"
+              >
+                확인
               </button>
             </div>
           </div>

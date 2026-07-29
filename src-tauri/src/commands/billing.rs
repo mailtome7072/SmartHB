@@ -1118,6 +1118,60 @@ pub(crate) async fn get_billing_summary_impl(
     })
 }
 
+/// Sprint 24: 스케줄(시수) 변경이 영향을 주는, 이미 생성된 청구월 1건.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AffectedBillMonth {
+    pub year_month: String,
+    /// 'draft' | 'confirmed'
+    pub status: String,
+}
+
+/// 변경일(effective_date) 이후로 영향받는, 원생의 기존 청구월 목록.
+///
+/// 스케줄(주당 시수) 변경 후 프론트가 호출 — 반환이 비어있지 않으면 "이미 생성된 청구가 있으니
+/// 청구 관리에서 직접 확인·수정하세요" 팝업을 띄운다. 청구는 생성 시점 시수 스냅샷이라 확정/미확정
+/// 무관하게 자동 재계산되지 않으므로, 변경일이 속하거나 그 이후인 교습기간(end_date >= effective_date)에
+/// 청구가 존재하면 재확인 대상이다.
+#[tauri::command]
+pub async fn list_affected_bill_months(
+    student_id: i64,
+    effective_date: String,
+) -> Result<Vec<AffectedBillMonth>, String> {
+    let pool = db::pool().await.map_err(String::from)?;
+    let pool = &pool;
+    list_affected_bill_months_impl(pool, student_id, &effective_date).await
+}
+
+pub(crate) async fn list_affected_bill_months_impl(
+    pool: &SqlitePool,
+    student_id: i64,
+    effective_date: &str,
+) -> Result<Vec<AffectedBillMonth>, String> {
+    let rows = sqlx::query(
+        "SELECT b.bill_year_month, b.status \
+         FROM bills b \
+         JOIN study_periods sp ON sp.year_month = b.bill_year_month \
+         WHERE b.student_id = ? AND sp.end_date >= ? \
+         ORDER BY b.bill_year_month",
+    )
+    .bind(student_id)
+    .bind(effective_date)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("영향 청구월 조회 실패: {}", e))?;
+    rows.iter()
+        .map(|r| {
+            Ok(AffectedBillMonth {
+                year_month: r
+                    .try_get("bill_year_month")
+                    .map_err(|e: sqlx::Error| e.to_string())?,
+                status: r.try_get("status").map_err(|e: sqlx::Error| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
 /// 기간 문자열을 `bill_year_month LIKE` 패턴으로 변환 + 검증.
 /// - 'YYYY' (4자리 숫자) → 연도 집계 → "YYYY-%"
 /// - 'YYYY-MM' → 월 집계 → "YYYY-MM" (와일드카드 없음 = 정확 일치)
@@ -1366,6 +1420,32 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed fee");
+    }
+
+    #[tokio::test]
+    async fn list_affected_bill_months_returns_bills_from_effective_date_onward() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "A1", "가", "2026-04-01", None).await;
+        seed_period(&pool, "2026-07", "2026-07-01", "2026-07-29").await;
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02").await;
+        sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount, status) VALUES (?, '2026-07', 3, 160000, 160000, 'confirmed')")
+            .bind(sid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO bills (student_id, bill_year_month, weekly_hours, bill_amount, adjusted_amount, status) VALUES (?, '2026-08', 3, 160000, 160000, 'draft')")
+            .bind(sid).execute(&pool).await.unwrap();
+
+        // 변경일 7/30 → 7월 기간(end 7/29)은 제외, 8월 기간(end 9/2)만 영향.
+        let aug = list_affected_bill_months_impl(&pool, sid, "2026-07-30").await.unwrap();
+        assert_eq!(aug.len(), 1);
+        assert_eq!(aug[0].year_month, "2026-08");
+        assert_eq!(aug[0].status, "draft");
+
+        // 변경일 7/1 → 두 기간 모두 영향.
+        let both = list_affected_bill_months_impl(&pool, sid, "2026-07-01").await.unwrap();
+        assert_eq!(both.len(), 2);
+
+        // 청구 없는 원생 → 빈 목록.
+        let sid2 = seed_student(&pool, "B1", "나", "2026-04-01", None).await;
+        assert!(list_affected_bill_months_impl(&pool, sid2, "2026-07-01").await.unwrap().is_empty());
     }
 
     #[test]
