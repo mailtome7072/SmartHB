@@ -21,9 +21,9 @@
 
 | 항목 | 내용 |
 |------|------|
-| 전체 진행률 | v1.4.0 릴리즈 완료 + Post-v1.4 Sprint 23 완료 (v1.5.0 배포 대기) |
-| 현재 Phase | **Post-v1.4** — Sprint 23 완료 (2026-07-23) |
-| 다음 마일스톤 | v1.5.0 배포 (deploy-prod) — 데이터 소실 사고 재발방지 패치 |
+| 전체 진행률 | v1.5.0 릴리즈 완료 + Post-v1.5 Sprint 24 진행 중 |
+| 현재 Phase | **Post-v1.5** — Sprint 24 진행 중 (2026-07-29~) |
+| 다음 마일스톤 | Sprint 24 완료 — 다월 교습기간 year_month 오태깅 전수 해소 |
 | MVP 범위 | PRD §4.0~§4.6, §4.9~§4.14, §5.3~§5.5, §6.6 (§4.7~§4.8 단원평가+학습보고서 취소, §4.15 Post-MVP 제외) |
 | 팀 규모 가정 | AI 페어 프로그래밍 1인 개발 (2주 스프린트) |
 
@@ -1124,6 +1124,35 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 
 ---
 
+### Sprint 24: 다월 교습기간 year_month 오태깅 계열 버그 일괄 수정 + 데이터 전수 보정 + 재발 방지 (2주) 🔄 진행 중
+
+> 계획 문서: `docs/sprint/sprint24.md`
+> Sprint 21 R136 동일 계열 잔존 버그 전수 해소. 데이터 오염 2건(A1/A2) + 표시/동작 오류 7건(B1~B8) + 데이터 보정(V313) + 자가진단 검사 + 회귀 테스트.
+> A114 (sync_single_date 이력 패턴, 7회 이연) 강제 포함.
+
+#### 작업 목록
+
+- ⬜ **T0**: A114 sync_single_date 이력 패턴 통일 (7회 이연 최종 해소)
+- ⬜ **T1**: A1 `apply_schedule_change_impl` 태깅 수정 (CRITICAL — 능동 오염) · skill: systematic-debugging
+- ⬜ **T2**: A2 `create_makeup_with_absences_impl` 태깅 수정 (CRITICAL) · skill: systematic-debugging
+- ⬜ **T3**: B1 `move_attendance_impl` 동월 한정 판정 + year_month 갱신
+- ⬜ **T4**: B2~B6 표시/동작 오류 5건 일괄 수정 (동일 패턴)
+- ⬜ **T5**: B7 학사일정 "지난달 수정 차단" 가드 설계 판단 · skill: brainstorming
+- ⬜ **T6**: B8 MakeupRegisterDialog 프론트엔드 수정
+- ⬜ **T7**: V313 데이터 전수 보정 마이그레이션
+- ⬜ **T8**: 자가진단 검사 8번 (year_month 불변식) + 진단 파라미터 점검
+- ⬜ **T9**: 다월 교습기간 회귀 테스트 일괄 추가 (15건+)
+- ⬜ **T10**: 통합 검증
+
+#### 완료 기준 (Definition of Done)
+- ⬜ 데이터 오염 버그 2건 + 표시/동작 오류 7건 수정 완료
+- ⬜ V313 데이터 전수 보정 적용 + 멱등성 검증
+- ⬜ 자가진단 검사 8번 + 회귀 테스트 15건+ 추가
+- ⬜ A114 최종 해소
+- ⬜ cargo test 490건+ / clippy --all-targets / cipher check / lint / tsc / build 전수 통과
+
+---
+
 ## 📈 마일스톤
 
 | 마일스톤 | Phase | Sprint | 예상 시점 | 핵심 산출물 |
@@ -1145,6 +1174,7 @@ V305 최신 유지 (Sprint 15 신규 마이그레이션 없음 — DB 변경 없
 | M13: 출결 그리드 정합성 | Post-v1.2 | Sprint 21 | +42주 ✅ | 출결 다월 그리드 태깅 통일 + 컬럼 모델 재설계 → v1.3.0 배포 예정 |
 | M14: 보강 부분 차감 | Post-v1.3 | Sprint 22 | +44주 ✅ | 보강 분 단위 부분 차감 + 유실 데이터 백필(V311/V312) + 출결 그리드 z-index 수정 |
 | M15: 데이터 안전 재발방지 | Post-v1.4 | Sprint 23 | +46주 ✅ | 데이터 소실 사고 RCA 재발방지 — 클라우드 유지+접근 강화(ADR-012 A안) + 빈 DB 가드 + after_connect 훅 + 유휴 close + 복원/백업 강화 + 2번째 PC 로그인 |
+| M16: year_month 오태깅 전수 해소 | Post-v1.5 | Sprint 24 | +48주 | 다월 교습기간 year_month 오태깅 버그 9건 일괄 수정 + V313 데이터 전수 보정 + 자가진단 검사 + 회귀 테스트 15건+ |
 
 ---
 
