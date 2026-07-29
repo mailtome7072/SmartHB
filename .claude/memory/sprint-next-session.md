@@ -1,10 +1,11 @@
 ---
 name: sprint-next-session
-description: "✅ Sprint 23 완료 + v1.5.0 프로덕션 배포 완료(2026-07-23). 데이터 소실 사고(2026-07-22) 재발방지(T1~T9, ADR-012 A안). 남은 것=원장 PC/자택 Mac 실환경 검증(무손실 업그레이드 최우선). Sprint 24 대기. 새 세션 진입 시 가장 먼저 확인"
+description: "Sprint 24 구현·리뷰·QA 완료(2026-07-29) — 다월 교습기간 year_month 오태깅 계열 일괄수정 + V313 전수보정 + 수동검증 중 추가 5건(청구 이력인식·reconcile·팝업 등). develop 13커밋 푸시완료, deploy-prod(v1.5.1) 대기. 다월 함정=[[multi-month-period-pitfall]]. 새 세션 진입 시 가장 먼저 확인"
 metadata:
   node_type: memory
   type: project
   originSessionId: sprint23-deploy-2026-07-23
+  modified: 2026-07-29T09:08:02.312Z
 ---
 
 ## ✅ 2026-07-23 — Sprint 23 완료 + v1.5.0 프로덕션 배포
@@ -41,7 +42,13 @@ metadata:
    - 자택 Mac: PIN→try_adopt_key→DB 열기 성공
    - create_if_missing 가드(salt 있고 app.db 없을 때 안내 메시지 정확히 표시 — 위 UX 수정 확인)
    - 이월: 교습일정 인쇄 미리보기(Sprint 20 A122)
-2. **Sprint 24 대기** — 필수 남은 작업 없음. ADR-012 **B안(로컬 라이브+클라우드 핸드오프)**은 A 배포 후 클라우드 간섭에 의한 손상/복원 이벤트 관찰 시 phase-planner로 착수(ROADMAP 후보 등록됨).
-- 이연: A114(sync_single_date 이력 패턴), A127(cancel_makeup N+1) — 7회째 이연.
+2. **Sprint 24 구현·리뷰·QA 완료 — `deploy-prod` 대기** (2026-07-29). develop 13커밋 푸시 완료. **v1.5.1 PATCH 후보**. SSOT: `docs/sprint/sprint24.md`, `docs/code-reviews/sprint24.md`, CHANGELOG [Unreleased].
+   - **주제**: 다월 교습기간(예: 8월=7/30~9/2) "날짜의 달력월 = 소속 교습기간 year_month" 오가정 계열 버그 일괄 수정 + V313 전수 보정. Sprint 21 R136 잔존분. CS 발단=A원생 목요일 변경 적용일 7/30 후 7/30이 8월 그리드에서 사라짐.
+   - **계획분**: A1 apply_schedule_change / A2 create_makeup 태깅(오염) / B1~B8 표시·동작 / E1 V313 마이그레이션 / D1 diagnosis 검사8(year_month↔교습기간 불변식) + D2 회귀테스트 / A114(7회 이연) 최종 해소.
+   - **수동검증 중 발견·수정 5건(중요)**: ①교습기간 (재)설정 시 기존 출결 재태깅 갭 → `periods::reconcile_attendance_year_month`(생성/수정/확정 훅 + **startup 자가치유**) ②시수 변경 시 청구 재확인 팝업 신설(`list_affected_bill_months` IPC + 모달) ③**청구 주당시간을 현행 스케줄→교습기간 종료일 유효 스케줄(이력 인식)로 수정** — billing "SAFE 전제가 틀림": "교습기간이 스케줄 변경 적용일보다 앞선" 케이스 누락. 7월 3h 정상화 + "추가 청구 데이터 생성" 유령 버튼 해소 ④이동 팝업 달력 교습기간 범위 확장(B1 프론트) ⑤리뷰지적 M1/M2/L1/L2(공유 헬퍼 `commands/periods.rs` 신설 등). 상세 함정: [[multi-month-period-pitfall]].
+   - 검증: cargo test 497 / clippy / cipher / lint / tsc / build 전수 통과. sprint-review 초기+재리뷰 완료(Critical/High 0, Low 2 이연=A132 로깅/팝업 advisory). **배포 게이트 통과.**
+   - 남은 것: **deploy-prod(v1.5.1 권장)** + 배포 후 실PC(원장/자택) 확인. 새 버전 첫 실행 시 V313 + startup 재동기화가 기존 오태깅 자동 교정(양 PC 모두 새 버전 실행 필요).
+   - (선택) Notion API 명세에 신규 IPC `list_affected_bill_months` 반영.
+   - ADR-012 **B안(로컬 라이브+클라우드 핸드오프)**은 A 배포 후 클라우드 간섭 손상 관찰 시 phase-planner로 착수(ROADMAP 후보 등록됨).
 
 관련: [[workflow-no-pr]], [[deploy-version-three-files]], [[data-loss-recovery-method]], [[dev-pc-db-is-test-data]], [[cipher-test-gate-trap]]

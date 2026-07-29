@@ -1,5 +1,6 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
-- [Sprint 다음 세션](sprint-next-session.md) — ✅Sprint23 완료+v1.5.0 프로덕션 배포(2026-07-23). 데이터소실(2026-07-22) 재발방지 T1~T9, ADR-012 A안. 남은 것=원장PC/자택Mac 실환경 검증(무손실 업그레이드 최우선). Sprint24 대기. 새 세션 진입 시 가장 먼저 확인
+- [Sprint 다음 세션](sprint-next-session.md) — Sprint24 구현·리뷰·QA 완료(2026-07-29)=다월 교습기간 year_month 오태깅 계열 일괄수정+V313+수동검증 추가5건. develop 13커밋 푸시완료, deploy-prod(v1.5.1) 대기. 새 세션 진입 시 가장 먼저 확인
+- [다월 교습기간 함정](multi-month-period-pitfall.md) — 교습기간이 달력월과 다를 때(8월=7/30~9/2) year_month는 소속 기간 기준, 청구 시수는 기간 유효 스케줄(이력) 기준. 날짜→월/스케줄→시수 로직 건드릴 때 필독. 헬퍼=commands/periods.rs
 - [데이터 소실 복구법](data-loss-recovery-method.md) — 암호화 DB 오프라인 복구(salt.bin+PIN→PBKDF2 키 재현, rusqlite bundled-sqlcipher로 복호화·행수검사·원자적 교체). 복사본에서만 작업·사고 중 재설정 금지. RCA: docs/incidents/2026-07-22
 - [배포 시 버전 파일 3곳](deploy-version-three-files.md) — package.json/Cargo.toml/tauri.conf.json 모두 동기화 필요, 하나라도 빠지면 인스톨러 파일명 틀어짐
 - [Sprint 13 PIN 옵션화](sprint13-pin-optional.md) — 실행 시 PIN 인증 옵션화(C안: 키체인 자동 스킵). Sprint 13 완료·머지
