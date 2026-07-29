@@ -46,33 +46,17 @@ sprint-close / hotfix-close agent 및 팀원이 항목 추가 시 아래 형식�
 
 ## 현재 배포 현황
 
-## 2026-07-23 | v1.5.0 | Sprint 23 — 프로덕션 데이터 소실 사고 재발방지 (ADR-012 A안)
+## 2026-07-29 | Sprint 24 — 다월 교습기간 year_month 오태깅 계열 버그 일괄 수정 + V313 데이터 전수 보정
 
-브랜치: `sprint23 → develop` 직접 머지 (단일 개발자 정책)
+브랜치: `sprint24 → develop` 직접 머지 예정 (단일 개발자 정책)
 
 ### 스테이징 검증 (develop 로컬)
-- ✅ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증)
-- ⬜ pnpm tauri:dev 실행하여 앱 동작 수동 확인 — 유휴 close 후 재연결 정상 동작 확인
-- ⬜ 2번째 PC(자택 Mac 또는 별도 환경)에서 try_adopt_key 흐름 확인 — PIN 입력 → 키 유도 → DB 열기 성공
-- ⬜ create_if_missing 가드 동작 확인 — salt.bin 있고 app.db 없을 때 앱이 fail-hard 종료하는지 확인
-- ⬜ 복원 다계층 폴백 동작 확인 — exit 백업 소스 검증 + 순환 삭제 시 마지막 정상 백업 보존 확인
-- ⬜ v1.4.0 → v1.5.0 무중단 업그레이드 확인 — 기존 실 DB(V312) 그대로 기동 정상 여부
+- ⬜ sprint-review 에이전트 실행 (코드 리뷰 + 자동 검증)
+- ⬜ pnpm tauri:dev 실행하여 앱 동작 수동 확인 — V313 마이그레이션 자동 적용 후 CS 원인 사례(A 원생 8월 교습기간 7/30 "수업 없는 날" 표시 + "1명 변경 필요" 배지) 해소 확인
+- ⬜ 원장 PC / 자택 Mac 양 PC에서 새 버전 실행 — V313 데이터 자동 보정 적용 확인 (startup migration 자동 실행)
 - ⬜ 교습일정 인쇄 미리보기 확인 (Sprint 20 A122 계속 유지)
 
-### 프로덕션 배포 (master 머지 + v태그 push)
-- ✅ 버전 파일 3곳 동기화 확인 — package.json / src-tauri/Cargo.toml / src-tauri/tauri.conf.json 모두 `1.5.0` (커밋 21dacf3)
-- ✅ develop → master 직접 머지 (커밋 15c0b91)
-- ✅ v1.5.0 태그 push → GitHub Actions 빌드 완료 (Run 29990099827, Windows ✅ / macOS ✅)
-- ✅ GitHub Release 아티팩트 업로드 확인
-  - ✅ Windows: SmartHB_1.5.0_x64-setup.exe (8.3 MB)
-  - ✅ macOS: SmartHB_1.5.0_aarch64.dmg (11.0 MB)
-
-### CV — 아티팩트 검증
-- ✅ gh release view v1.5.0 — Release 확인 (https://github.com/mailtome7072/SmartHB/releases/tag/v1.5.0)
-- ⬜ 원장님 PC 인스톨러 설치 — v1.4.0 → v1.5.0 업그레이드 후 기존 데이터 정상 로드 확인
-- ⬜ after_connect 훅 PRAGMA key 재적용 동작 확인 (실 DB 기준)
-
-이전 배포 기록: `docs/deploy-history/2026-07-22.md` (v1.4.0 Sprint 22 프로덕션 + Sprint 22 스테이징 아카이빙)
+이전 배포 기록: `docs/deploy-history/2026-07-23.md` (v1.5.0 Sprint 23 프로덕션 아카이빙)
 
 ---
 
