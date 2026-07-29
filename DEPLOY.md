@@ -64,7 +64,7 @@ sprint-close / hotfix-close agent 및 팀원이 항목 추가 시 아래 형식�
 4. 수업일 이동 팝업 달력을 교습기간 범위로 확장 (B1 프론트 보완) — 다월 이동 대상 선택 가능
 5. (초기 sprint-review 지적 M1/M2/L1/L2 반영 — sync N+1 제거, reinstate CASE, periods 모듈 분리, 폴백 audit)
 
-> ⚠️ 위 추가 수정분은 초기 sprint-review 이후 커밋되었으므로, **배포 전 sprint-review 재실행 권장**.
+> ✅ 위 추가 수정분에 대한 **sprint-review 재실행 완료**(2026-07-29) — Critical/High 0, Low 2(A132 로깅 이연 / 팝업 advisory 엣지). 배포 게이트 통과.
 
 이전 배포 기록: `docs/deploy-history/2026-07-23.md` (v1.5.0 Sprint 23 프로덕션 아카이빙)
 
