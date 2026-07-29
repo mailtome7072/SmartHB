@@ -596,25 +596,48 @@ pub async fn get_notice_month_info(year_month: String) -> Result<NoticeMonthInfo
         .fetch_optional(pool)
         .await
         .map_err(|e| format!("교습기간 조회 실패: {}", e))?;
-    let teaching_period_text = match sp {
+    let period_range: Option<(String, String)> = match &sp {
         Some(r) => {
             let start: String = r.try_get("start_date").map_err(|e| e.to_string())?;
             let end: String = r.try_get("end_date").map_err(|e| e.to_string())?;
-            teaching_period_label(pool, &start, &end).await?
+            Some((start, end))
         }
         None => None,
     };
+    let teaching_period_text = match &period_range {
+        Some((start, end)) => teaching_period_label(pool, start, end).await?,
+        None => None,
+    };
 
-    // 보강데이 (해당 월의 '보강데이' schedule_events)
-    let rows = sqlx::query(
-        "SELECT e.event_date FROM schedule_events e \
-         JOIN schedule_codes c ON c.id = e.code_id \
-         WHERE c.code_name = '보강데이' AND e.event_date LIKE ? \
-         ORDER BY e.event_date",
-    )
-    .bind(format!("{}-%", year_month))
-    .fetch_all(pool)
-    .await
+    // 보강데이 ('보강데이' schedule_events) — Sprint 24 B3: 달력월 LIKE 대신 교습기간
+    // 범위로 조회한다. 다월 교습기간(예: 8월 7/30~9/2) 경계일 보강데이가 달력월 필터에서
+    // 누락/오표기되던 문제 해소 (같은 함수 teaching_period_text 는 이미 범위 기반). 교습기간이
+    // 없으면 달력월로 폴백.
+    let rows = match &period_range {
+        Some((start, end)) => {
+            sqlx::query(
+                "SELECT e.event_date FROM schedule_events e \
+                 JOIN schedule_codes c ON c.id = e.code_id \
+                 WHERE c.code_name = '보강데이' AND e.event_date >= ? AND e.event_date <= ? \
+                 ORDER BY e.event_date",
+            )
+            .bind(start)
+            .bind(end)
+            .fetch_all(pool)
+            .await
+        }
+        None => {
+            sqlx::query(
+                "SELECT e.event_date FROM schedule_events e \
+                 JOIN schedule_codes c ON c.id = e.code_id \
+                 WHERE c.code_name = '보강데이' AND e.event_date LIKE ? \
+                 ORDER BY e.event_date",
+            )
+            .bind(format!("{}-%", year_month))
+            .fetch_all(pool)
+            .await
+        }
+    }
     .map_err(|e| format!("보강데이 조회 실패: {}", e))?;
     let parts: Vec<String> = rows
         .iter()

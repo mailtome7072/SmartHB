@@ -169,8 +169,10 @@ async fn get_pending_absences_impl(
 /// - OR 케이스 B: `allows_makeup_class=1` 명시 코드 (보강데이/단원평가 응시일/공휴수업일)
 ///   — 요일 무관
 ///
-/// `study_periods` 범위 제약은 없음 (소멸기한 기준 + 학생 입퇴교 범위만 제약).
-/// 학생의 정규 수업 요일에도 보강 등록 가능 (사용자 결정 — Session #10).
+/// 조회 범위(Sprint 24 B5): 해당 year_month 확정 교습기간의 start_date~end_date 범위.
+/// 다월 교습기간(예: 8월 7/30~9/2) 경계일 보강데이가 달력월 범위 밖으로 빠져 후보에서
+/// 누락되던 문제 해소 — create_makeup(A2)의 교습기간 태깅과 정합. 확정 교습기간이 없으면
+/// 달력월 범위로 폴백. 학생의 정규 수업 요일에도 보강 등록 가능 (사용자 결정 — Session #10).
 ///
 /// 응답 `schedule_code_name`:
 /// - 케이스 B 우선 — 보강 가능 코드명 (예: "보강데이")
@@ -212,20 +214,37 @@ async fn get_makeup_eligible_dates_impl(
         .transpose()
         .map_err(|e| format!("퇴교일 파싱 실패: {}", e))?;
 
-    // 2. year_month 범위 (validate 통과 후라 unwrap 안전).
-    let parts: Vec<&str> = year_month.split('-').collect();
-    let year: i32 = parts[0].parse().expect("validated");
-    let month: u32 = parts[1].parse().expect("validated");
-    let first = NaiveDate::from_ymd_opt(year, month, 1)
-        .ok_or_else(|| format!("일자 생성 실패: {}-{:02}-01", year, month))?;
-    let next_month_first = if month == 12 {
-        NaiveDate::from_ymd_opt(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd_opt(year, month + 1, 1)
-    }
-    .ok_or_else(|| "다음 월 일자 생성 실패".to_string())?;
+    // 2. 조회 범위 — Sprint 24 B5: 달력월이 아니라 해당 year_month 확정 교습기간 범위로 맞춘다.
+    // 다월 교습기간 경계일 보강데이가 후보에서 누락되던 문제 해소. 확정 교습기간이 없거나
+    // 미확정이면 달력월 범위로 폴백 (build_day_schedules 와 동일 패턴, 공유 헬퍼 재사용).
+    let (first, next_month_first) =
+        match crate::commands::attendance::load_confirmed_period(pool, year_month).await {
+            Ok((sd, ed)) => {
+                let start = NaiveDate::parse_from_str(&sd, "%Y-%m-%d")
+                    .map_err(|e| format!("교습기간 시작일 파싱 실패: {}", e))?;
+                let end_excl = NaiveDate::parse_from_str(&ed, "%Y-%m-%d")
+                    .map_err(|e| format!("교습기간 종료일 파싱 실패: {}", e))?
+                    .succ_opt()
+                    .ok_or_else(|| "교습기간 종료일 다음 날짜 계산 오버플로".to_string())?;
+                (start, end_excl)
+            }
+            Err(_) => {
+                let parts: Vec<&str> = year_month.split('-').collect();
+                let year: i32 = parts[0].parse().expect("validated");
+                let month: u32 = parts[1].parse().expect("validated");
+                let first = NaiveDate::from_ymd_opt(year, month, 1)
+                    .ok_or_else(|| format!("일자 생성 실패: {}-{:02}-01", year, month))?;
+                let next_month_first = if month == 12 {
+                    NaiveDate::from_ymd_opt(year + 1, 1, 1)
+                } else {
+                    NaiveDate::from_ymd_opt(year, month + 1, 1)
+                }
+                .ok_or_else(|| "다음 월 일자 생성 실패".to_string())?;
+                (first, next_month_first)
+            }
+        };
 
-    // 3. month 와 겹치는 모든 schedule_events + 코드 속성 조회 — 단일 쿼리.
+    // 3. 조회 범위와 겹치는 모든 schedule_events + 코드 속성 조회 — 단일 쿼리.
     let rows = sqlx::query(
         "SELECT e.event_date, COALESCE(e.period_end_date, e.event_date) AS end_d, \
                 c.code_name, c.allows_regular_class, c.allows_makeup_class \
@@ -368,7 +387,20 @@ async fn create_makeup_with_absences_impl(
 
     let event_d = NaiveDate::parse_from_str(&payload.event_date, "%Y-%m-%d")
         .map_err(|e| format!("이벤트 일자 파싱 실패 ({}): {}", payload.event_date, e))?;
-    let year_month = format!("{}-{:02}", event_d.year(), event_d.month());
+    // Sprint 24 A2: 보강 출결 year_month 태깅을 보강일의 달력월이 아니라 해당 날짜가 속한
+    // 확정 교습기간의 year_month 로 지정한다 — 다월 교습기간(예: 8월 7/30~9/2) 경계일 보강이
+    // 잘못된 달로 계상되어 makeup_completed_minutes·캘린더 표시가 어긋나던 문제(A1과 동일 계열)
+    // 해소. 확정 교습기간에 속하지 않는 날짜는 달력월로 폴백(경고 로그). 조회는 공유 헬퍼 사용.
+    let period_ym =
+        crate::commands::attendance::period_year_month_for_date(pool, &payload.event_date).await?;
+    let year_month = period_ym.unwrap_or_else(|| {
+        let calendar_ym = format!("{}-{:02}", event_d.year(), event_d.month());
+        eprintln!(
+            "[makeup::create] 보강일 {} 이 확정 교습기간에 속하지 않아 달력월({})로 태깅합니다.",
+            payload.event_date, calendar_ym
+        );
+        calendar_ym
+    });
 
     // 검증 1: event_date 가 보강 가능 일자인지 (Session #10 룰).
     // - 케이스 B: allows_makeup_class=1 코드가 명시된 일자 (요일 무관)
@@ -1918,5 +1950,76 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(cnt.0, 1);
+    }
+
+    // ─────────── Sprint 24 T9: 다월 교습기간 경계일 회귀 테스트 ───────────
+
+    /// A2 회귀 — 다월 교습기간(8월=7/30~9/2) 경계일(9/1)에 보강 등록 시 makeup_attendances
+    /// .year_month 가 달력월 "2026-09"이 아니라 교습기간 라벨 "2026-08"로 태깅되어야 한다.
+    #[tokio::test]
+    async fn create_makeup_tags_boundary_day_with_period_ym() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        sqlx::query("INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) VALUES ('2026-08','2026-07-30','2026-09-02',1)")
+            .execute(&pool).await.unwrap();
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)]).await;
+        // 결석 1건(8/15, 8월 소속)
+        let aid = insert_absence(&pool, sid, "2026-08-15", "2026-08", 60, Some("2026-09")).await;
+        // 경계일 9/1 에 보강 가능 학사일정 등록.
+        fixture_makeup_eligible_date(&pool, "2026-09-01").await;
+
+        let result = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-09-01", vec![aid]))
+            .await
+            .expect("보강 생성");
+        let ym: String = sqlx::query_scalar("SELECT year_month FROM makeup_attendances WHERE id = ?")
+            .bind(result.makeup_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(ym, "2026-08", "경계일 보강은 교습기간 라벨로 태깅");
+    }
+
+    /// A2 폴백 — 확정 교습기간에 속하지 않는 날짜의 보강은 달력월로 폴백 태깅한다.
+    #[tokio::test]
+    async fn create_makeup_falls_back_to_calendar_month_without_period() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        // 교습기간 미등록.
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)]).await;
+        let aid = insert_absence(&pool, sid, "2026-06-15", "2026-06", 60, Some("2026-07")).await;
+        fixture_makeup_eligible_date(&pool, "2026-06-13").await; // 토요일 + 공휴수업일
+
+        let result = create_makeup_with_absences_impl(&pool, &payload(sid, "2026-06-13", vec![aid]))
+            .await
+            .expect("보강 생성");
+        let ym: String = sqlx::query_scalar("SELECT year_month FROM makeup_attendances WHERE id = ?")
+            .bind(result.makeup_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(ym, "2026-06", "교습기간 없으면 달력월 폴백");
+    }
+
+    /// B5 회귀 — 다월 교습기간 조회 시 경계일 보강 가능일이 교습기간 범위로 후보에 포함된다.
+    #[tokio::test]
+    async fn get_makeup_eligible_dates_covers_period_boundary() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        sqlx::query("INSERT INTO study_periods (year_month, start_date, end_date, is_confirmed) VALUES ('2026-08','2026-07-30','2026-09-02',1)")
+            .execute(&pool).await.unwrap();
+        let sid = seed_student(&pool, "S001", "2026-01-01", None, &[]).await;
+        // 경계일 9/1(익월)에 보강데이 등록.
+        let code = schedule_code_id(&pool, "보강데이").await;
+        insert_schedule_event(&pool, code, "2026-09-01", None).await;
+
+        let dates = get_makeup_eligible_dates_impl(&pool, sid, "2026-08")
+            .await
+            .expect("eligible");
+        assert!(
+            dates.iter().any(|d| d.event_date == "2026-09-01"),
+            "경계일 9/1 보강데이가 8월 교습기간 후보에 포함"
+        );
+        // 8월 교습기간 밖(9/3 이후)은 후보에서 제외.
+        assert!(
+            !dates.iter().any(|d| d.event_date.as_str() >= "2026-09-03"),
+            "교습기간 종료(9/2) 이후 날짜는 후보에서 제외"
+        );
     }
 }

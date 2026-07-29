@@ -37,6 +37,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Sprint 24: **다월 교습기간 경계일 year_month 오태깅 — 데이터 오염 2건 수정** — `apply_schedule_change_impl`(A1)이 재생성 출결을 달력월로 오태깅하던 버그와 `create_makeup_with_absences_impl`(A2)이 보강 출결을 보강일 달력월로 오태깅하던 버그 수정. 두 함수 모두 확정 교습기간의 `year_month`를 조회하여 태깅하도록 전환
+- Sprint 24: **다월 교습기간 경계일 표시/동작 오류 7건 일괄 수정** — `move_attendance_impl` 동월 한정 판정을 "같은 교습기간 소속" 기준으로 전환(B1), `build_day_schedules` 학사마커 조회를 교습기간 범위 기반으로 교체(B2), `get_notice_month_info` 보강데이 필터 교습기간 범위 기반 통일(B3), `dashboard.rs` 소멸 임박·미확정 알림 활성 교습기간 year_month 기준(B4), `get_makeup_eligible_dates` 보강 가능일 교습기간 범위 기반(B5), `reinstate_student_impl` 소멸기한 판정 교습기간 종료일 기준(B6), `MakeupRegisterDialog.tsx` deadline 비교를 authoritative yearMonth prop 사용(B8)
+- Sprint 24: **V313 마이그레이션 — 기존 오태깅 출결·보강 year_month 전수 자동 보정** — `regular_attendances` / `makeup_attendances` 전체에서 달력월로 오태깅된 행을 확정 교습기간의 `year_month`로 일괄 교정. 멱등·트랜잭션 보장, 앱 시작 시 자동 적용
+
+### Changed
+- Sprint 24: **자가진단 검사 8번 신규** — `year_month ↔ 교습기간 불변식` 검사 추가. 기존 진단 함수의 당월 기준을 달력월에서 활성 교습기간 `year_month`(`active_year_month`) 기준으로 전환
+
+### Added
+- Sprint 24: **다월 교습기간 회귀 테스트 14건 신규** — 경계일(교습기간 시작/종료일이 달력월과 어긋나는 날짜) 시나리오 단위 테스트 일괄 추가 (attendance 9건 + makeup 3건 + diagnosis 2건). A114(`sync_single_date` 이력 패턴 통일) 최종 해소
+
 ---
 
 ## [1.5.0] - 2026-07-23

@@ -3,6 +3,7 @@
 이 파일은 sprint-planner 에이전트의 영구 메모리입니다.
 프로젝트 진행 상황, 기술 스택, 패턴 등을 기록합니다.
 
+- [Sprint 24 계획](sprint24-context.md) -- 다월 교습기간 year_month 오태깅 전수 수정, V313 보정, A114 강제 포함
 - [Sprint 23 계획](sprint23-context.md) -- 데이터 소실 사고 재발방지(RCA A+B). ADR-012 A안 확정(클라우드 유지+강화). T0~T9 10Task, 29h 예상(T0완료+T6축소). B 항목 MUST 승격
 - [Sprint 22 계획](sprint22-context.md) -- 보강 분 단위 부분 차감 + z-index 수정, V311/V312, ADR-011, 36h 예상
 - [Sprint 21 계획](sprint21-context.md) -- 출결 다월 그리드 태깅/표시 수정(R136). A안 확정. 15.5h 예상, 마이그레이션/의존성 없음
@@ -24,8 +25,9 @@
 ## 스프린트 현황
 
 <!-- sprint-close 완료 시 업데이트 -->
-- 마지막 완료 스프린트: Sprint 23 (2026-07-23)
-- 다음 스프린트 번호: 24
+- 마지막 완료 스프린트: Sprint 24 (2026-07-29)
+- 다음 스프린트 번호: 25
+- Sprint 24 계획 수립: 2026-07-29 (다월 교습기간 year_month 오태깅 전수 수정 -- T0~T10 11개 Task, 21.5h 예상, V313 마이그레이션 1건, 신규 의존성 없음. A114 강제 포함. 데이터 오염 2건(A1/A2) + 표시/동작 7건(B1~B8) + 전수 보정 + 진단 + 회귀 테스트)
 - Sprint 23 계획 수립: 2026-07-22 (프로덕션 데이터 소실 사고 재발방지 -- T0~T9 10개 Task, 35h 예상, DB마이그레이션 없음(V312 유지), ADR-012, 신규 의존성 없음. A115 cipher 스모크 반영. RCA 결함 C1~C3+H1~H4+M1~M2 수정(MUST) + B1~B2(SHOULD))
 - Sprint 22 계획 수립: 2026-07-21 (보강 분 단위 부분 차감 전환 -- T0~T9 10개 Task, 36h 예상, V311/V312 마이그레이션 2건, ADR-011, 신규 의존성 없음. 회고 A126+A114 반영)
 - Sprint 21 계획 수립: 2026-07-19 (출결 다월 그리드 태깅/표시 수정 R136 -- T0~T4 5개 Task, 15.5h 예상, 마이그레이션/의존성 없음. sync_single_date 태깅 통일 + AttendanceGrid 컬럼 모델 재설계 + MoveAttendanceDialog 대응. Sprint 20+21 함께 v1.3.0 배포 예정)
@@ -78,7 +80,7 @@ Sprint 6 시각 검증 carry-over 8건 해소를 위해 Sprint 7이 carry-over �
 ## 프로젝트 기본 정보
 
 - **기술 스택**: Tauri 2 (Rust) + Next.js 15 (React 19) + SQLite (sqlx 0.8)
-- **Phase 구조**: 6 Phase (Phase 5 단원평가 취소). Phase 1~6 완료 (v1.0.0 릴리즈). Post-v1.4 Sprint 23 진행 중 (데이터 소실 재발방지)
+- **Phase 구조**: 6 Phase (Phase 5 단원평가 취소). Phase 1~6 완료 (v1.0.0 릴리즈). Post-v1.5 Sprint 24 진행 중 (다월 교습기간 year_month 오태깅 전수 수정)
 - **핵심 참조 문서**: PRD.md (v1.5.1), ROADMAP.md (SSOT), docs/phase/phase1.md (Phase 설계)
 - **데이터 모델**: docs/data-model.md v1.5 (V001~V008 마이그레이션 가이드)
 
