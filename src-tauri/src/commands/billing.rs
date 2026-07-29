@@ -20,7 +20,10 @@
 //! ## 비즈니스 규칙 (PRD §4.9)
 //! - 청구 대상: `enroll_date <= 월말 AND (withdraw_date IS NULL OR withdraw_date >= 월초)`
 //!   → 재원중 + 월중입교 + 월중퇴교 모두 포함 (월 일부라도 재원했으면 청구).
-//! - `weekly_hours = SUM(student_schedules.duration_hours)` (현재 유효 스케줄, `effective_to IS NULL`).
+//! - `weekly_hours = SUM(student_schedules.duration_hours)` — **해당 교습기간 종료일에 유효했던
+//!   스케줄**(이력 인식: `effective_from <= period_end < effective_to`). Sprint 24 수정: 이전에는
+//!   현행 스케줄(`effective_to IS NULL`)만 봐서, 교습기간이 스케줄 변경 적용일보다 앞선 경우(예:
+//!   7월 교습기간 + 목요일 변경 적용일 7/30) 변경 전 시수를 놓치는 오산이 있었다.
 //! - `bill_amount = standard_fees.amount WHERE weekly_hours = ?` (UNIQUE).
 //!   - 매핑 없거나 `weekly_hours = 0` 이면 청구 skip (skipped_count 카운트).
 //! - `adjusted_amount` 초기값 = `bill_amount` (사용자가 후속 조정).
@@ -111,13 +114,15 @@ pub(crate) async fn generate_bills_impl(
                 COALESCE(SUM(sch.duration_hours), 0) AS weekly_hours \
          FROM students s \
          LEFT JOIN student_schedules sch \
-                ON sch.student_id = s.id AND sch.effective_to IS NULL \
+                ON sch.student_id = s.id \
                    AND sch.effective_from <= ? \
+                   AND (sch.effective_to IS NULL OR sch.effective_to > ?) \
          WHERE s.enroll_date <= ? \
            AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
          GROUP BY s.id, s.enroll_date, s.withdraw_date \
          ORDER BY s.id",
     )
+    .bind(&period_end)
     .bind(&period_end)
     .bind(&period_end)
     .bind(&period_start)
@@ -1084,14 +1089,16 @@ pub(crate) async fn get_billing_summary_impl(
                 SELECT s.id \
                 FROM students s \
                 INNER JOIN student_schedules sch \
-                    ON sch.student_id = s.id AND sch.effective_to IS NULL \
+                    ON sch.student_id = s.id \
                        AND sch.effective_from <= ? \
+                       AND (sch.effective_to IS NULL OR sch.effective_to > ?) \
                 WHERE s.enroll_date <= ? \
                   AND (s.withdraw_date IS NULL OR s.withdraw_date >= ?) \
                 GROUP BY s.id \
                 HAVING SUM(sch.duration_hours) > 0 \
              )",
         )
+        .bind(period_end)
         .bind(period_end)
         .bind(period_end)
         .bind(period_start)
@@ -1446,6 +1453,38 @@ mod tests {
         // 청구 없는 원생 → 빈 목록.
         let sid2 = seed_student(&pool, "B1", "나", "2026-04-01", None).await;
         assert!(list_affected_bill_months_impl(&pool, sid2, "2026-07-01").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn generate_bills_uses_schedule_effective_during_period_not_current() {
+        let pool = db::test_pool_in_memory().await.expect("pool");
+        let sid = seed_student(&pool, "A1", "한지우", "2026-04-01", None).await;
+        // 월·수 1시간(현행). 목요일: 1시간(6/02~7/30 마감) → 2시간(7/30~ 현행) 으로 변경.
+        for dow in [1i64, 3] {
+            sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, ?, '16:00', 1, '2026-06-02')")
+                .bind(sid).bind(dow).execute(&pool).await.unwrap();
+        }
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from, effective_to) VALUES (?, 4, '16:00', 1, '2026-06-02', '2026-07-30')")
+            .bind(sid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO student_schedules (student_id, day_of_week, start_time, duration_hours, effective_from) VALUES (?, 4, '16:00', 2, '2026-07-30')")
+            .bind(sid).execute(&pool).await.unwrap();
+        seed_period(&pool, "2026-07", "2026-07-01", "2026-07-29").await;
+        seed_period(&pool, "2026-08", "2026-07-30", "2026-09-02").await;
+        // 표준 요금표(2~6시간)는 V104 시드로 이미 존재 → 별도 INSERT 불필요.
+
+        // 7월: 목요일 변경 적용일(7/30) 이전이라 1시간 유효 → 주 3시간 (2시간 오산 아님).
+        generate_bills_impl(&pool, "2026-07").await.expect("gen jul");
+        let jul_wh: i64 = sqlx::query_scalar(
+            "SELECT weekly_hours FROM bills WHERE student_id=? AND bill_year_month='2026-07'",
+        ).bind(sid).fetch_one(&pool).await.expect("7월 청구 존재(3시간)");
+        assert_eq!(jul_wh, 3, "7월은 변경 전 스케줄 기준 3시간");
+
+        // 8월: 목요일 2시간 유효 → 주 4시간.
+        generate_bills_impl(&pool, "2026-08").await.expect("gen aug");
+        let aug_wh: i64 = sqlx::query_scalar(
+            "SELECT weekly_hours FROM bills WHERE student_id=? AND bill_year_month='2026-08'",
+        ).bind(sid).fetch_one(&pool).await.expect("8월 청구 존재(4시간)");
+        assert_eq!(aug_wh, 4, "8월은 변경 후 4시간");
     }
 
     #[test]
