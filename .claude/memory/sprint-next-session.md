@@ -4,7 +4,7 @@ description: "v1.5.1(Sprint24) 배포 완료. 2026-08-01 프로덕션 사고=v1.
 metadata: 
   node_type: memory
   type: project
-  modified: 2026-08-01T11:46:22.144Z
+  modified: 2026-08-01T11:55:22.099Z
   originSessionId: 2de8b3ba-b8a7-4d3d-bec8-87adf8a9081b
 ---
 
@@ -18,6 +18,7 @@ metadata:
    - **계획 상세는 [[v151-migration-hang]] "v1.5.2 계획" 섹션에 기록됨** (트랙 A 진단 + 트랙 B timeout·fail-soft 하드닝, 범위, DoD, 재현 자산). 착수 시 `docs/sprint/sprint25.md`로 정식화.
    - Mac 독립 harness로는 재현 불가 → **실 Windows 환경 필요**(원장 PC 접근 가능할 때 착수).
 2. **양 PC 안정성 관찰**: v1.5.1 며칠 정상 사용 확인 후 `PREREPLACE` 안전본 정리.
-3. (선택) 이번 오프라인 마이그레이션 도구/재현 harness는 스크래치패드에 있음 — v1.5.2 착수 시 재사용.
+3. **기능 요청 — 선(先)수업/미리 수업** (원장 2026-08-01): 미래 결석 예정 수업을 이전 날에 미리 진행. 핵심 갭 = 이미 수업 있는 날에 추가 수업 등록 불가. 상세·설계질문 = [[feature-advance-class-request]]. ROADMAP 백로그 등재. 다음 스프린트 계획 시 포함.
+4. (선택) 이번 오프라인 마이그레이션 도구/재현 harness는 스크래치패드에 있음 — v1.5.2 착수 시 재사용.
 
 관련: [[v151-migration-hang]], [[offline-migration-apply]], [[data-loss-recovery-method]], [[multi-month-period-pitfall]], [[workflow-no-pr]], [[deploy-version-three-files]], [[dev-pc-db-is-test-data]]
