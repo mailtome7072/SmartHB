@@ -1,4 +1,5 @@
 - [PR 단계 생략 정책](workflow-no-pr.md) — 단일 개발자라 sprint/hotfix/deploy 전부 직접 머지, `gh pr create` 호출 금지
+- [실사용 PC 2대 모두 Windows](actual-pcs-both-windows.md) — 교습소+자택 둘 다 Windows. 문서의 '자택 Mac' 가정은 틀림. 실 PC 검증은 Windows 2대 기준. 단 앱의 macOS 지원 자체는 별개(임의 제거 금지)
 - [Sprint 다음 세션](sprint-next-session.md) — Sprint24 구현·리뷰·QA 완료(2026-07-29)=다월 교습기간 year_month 오태깅 계열 일괄수정+V313+수동검증 추가5건. develop 13커밋 푸시완료, deploy-prod(v1.5.1) 대기. 새 세션 진입 시 가장 먼저 확인
 - [다월 교습기간 함정](multi-month-period-pitfall.md) — 교습기간이 달력월과 다를 때(8월=7/30~9/2) year_month는 소속 기간 기준, 청구 시수는 기간 유효 스케줄(이력) 기준. 날짜→월/스케줄→시수 로직 건드릴 때 필독. 헬퍼=commands/periods.rs
 - [데이터 소실 복구법](data-loss-recovery-method.md) — 암호화 DB 오프라인 복구(salt.bin+PIN→PBKDF2 키 재현, rusqlite bundled-sqlcipher로 복호화·행수검사·원자적 교체). 복사본에서만 작업·사고 중 재설정 금지. RCA: docs/incidents/2026-07-22
