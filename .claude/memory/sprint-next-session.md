@@ -4,7 +4,7 @@ description: "v1.5.1(Sprint24) 배포 완료. 2026-08-01 프로덕션 사고=v1.
 metadata: 
   node_type: memory
   type: project
-  modified: 2026-08-01T11:43:13.731Z
+  modified: 2026-08-01T11:46:22.144Z
   originSessionId: 2de8b3ba-b8a7-4d3d-bec8-87adf8a9081b
 ---
 
@@ -15,9 +15,8 @@ metadata:
 
 ## ⬜ 다음 세션 / 남은 작업
 1. **[최우선] v1.5.2 — 마이그레이션 hang 근본원인 대응** (사고는 우회했으나 **다음 마이그레이션 V314 배포 시 재발**).
-   - 계획 문서: `docs/sprint/sprint25.md`.
-   - 핵심: (a) 실 Windows에서 계측(파일 로그)으로 backup↔migrate 사이 정확한 블록 지점 특정, (b) 그와 별개로 **무한 hang 방지**(마이그레이션/백업 구간 timeout + fail-soft로 에러 노출) 하드닝.
-   - Mac 독립 harness로는 재현 불가([[v151-migration-hang]]) → 실 Windows 환경 필요.
+   - **계획 상세는 [[v151-migration-hang]] "v1.5.2 계획" 섹션에 기록됨** (트랙 A 진단 + 트랙 B timeout·fail-soft 하드닝, 범위, DoD, 재현 자산). 착수 시 `docs/sprint/sprint25.md`로 정식화.
+   - Mac 독립 harness로는 재현 불가 → **실 Windows 환경 필요**(원장 PC 접근 가능할 때 착수).
 2. **양 PC 안정성 관찰**: v1.5.1 며칠 정상 사용 확인 후 `PREREPLACE` 안전본 정리.
 3. (선택) 이번 오프라인 마이그레이션 도구/재현 harness는 스크래치패드에 있음 — v1.5.2 착수 시 재사용.
 
