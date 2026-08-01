@@ -57,18 +57,31 @@ sprint-close / hotfix-close agent 및 팀원이 항목 추가 시 아래 형식�
 - ✅ CHANGELOG [Unreleased] → [1.5.1] 버전 전환
 - ✅ 버전 파일 3곳 + Cargo.lock 동기화 (1.5.0 → 1.5.1)
 - ✅ develop → master 직접 머지 완료
-- ⬜ v1.5.1 태그 push → GitHub Actions 빌드 완료
-- ⬜ GitHub Release 아티팩트 업로드 확인
-  - ⬜ Windows: SmartHB_1.5.1_x64-setup.exe
-  - ⬜ macOS: SmartHB_1.5.1_aarch64.dmg
+- ✅ v1.5.1 태그 push → GitHub Actions 빌드 완료
+- ✅ GitHub Release 아티팩트 업로드 확인 (2026-07-29, Latest)
+  - ✅ Windows: SmartHB_1.5.1_x64-setup.exe
+  - ✅ macOS: SmartHB_1.5.1_aarch64.dmg
 
 ### CV — 아티팩트 검증
-- ⬜ gh release view v1.5.1 으로 Release 확인
-- ⬜ 다운로드 URL 유효성 확인
-- ⬜ 원장 PC(교습소) / 자택 Mac — 새 버전 설치 후 첫 실행
-  - ⬜ V313 마이그레이션 + startup 재동기화 자동 적용 확인 (기존 오태깅 출결 자동 교정)
-  - ⬜ CS 원인 사례(A 원생 8월 7/30 표시) 해소 확인
-  - ⬜ 기존 데이터 무손실 로드 확인
+- ✅ gh release view v1.5.1 으로 Release 확인 (Latest, 2026-07-29)
+- ✅ 아티팩트 2종 업로드 확인 (dmg / exe)
+
+### CV — 실 PC 수동 검증 (실물 PC에서 직접 수행 — 자동화 불가)
+> 원장 PC(교습소, Windows) + 자택 Mac **양쪽 모두** v1.5.1 설치 후 실행해야 오태깅 자동 교정이 완결됨.
+
+**원장 PC (교습소, Windows)**
+- ⬜ v1.5.1 설치 후 첫 실행 — 정상 기동 + 로그인
+- ⬜ V313 마이그레이션 + startup 재동기화 자동 적용 (기존 오태깅 출결·보강 year_month 자동 교정)
+- ⬜ CS 원인 사례(A 원생 8월 그리드에 7/30 표시) 해소 확인
+- ⬜ 기존 데이터 무손실 로드 (원생/출결/청구/수납)
+
+**자택 Mac**
+- ⬜ v1.5.1 설치 후 첫 실행 — 정상 기동 + 로그인
+- ⬜ 양 PC 모두 새 버전 실행 후 오태깅 교정 결과 최종 반영 확인
+- ⬜ 기존 데이터 무손실 로드
+
+**이월 검증 (Sprint 20 A122)**
+- ⬜ 교습일정 인쇄 미리보기 — 교습기간 1/2/3개월 걸침 각각 읽을 수 있는 크기로 정상 출력
 
 ### 배포 노트
 - DB 마이그레이션 V313 포함 — 앱 첫 실행 시 자동 적용(기존 오태깅 출결·보강 year_month 전수 교정, 멱등·트랜잭션 보장)
